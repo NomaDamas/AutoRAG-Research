@@ -18,7 +18,7 @@ check: ## Run code quality tools.
 .PHONY: test
 test: ## Test the code with pytest
 	@echo "🚀 Testing code: Running pytest"
-	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml
+	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -n auto
 
 .PHONY: build
 build: clean-build ## Build wheel file
