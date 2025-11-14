@@ -7,11 +7,13 @@ from autorag_research.schema import MetricInput
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_f1(metric_input: MetricInput):
-    """
-    Compute f1 score for retrieval.
+    """Compute f1 score for retrieval.
 
-    :param metric_input: The MetricInput schema for AutoRAG metric.
-    :return: The f1 score.
+    Args:
+        metric_input: The MetricInput schema for AutoRAG metric.
+
+    Returns:
+        The f1 score.
     """
     recall_score = retrieval_recall.__wrapped__(metric_input)
     precision_score = retrieval_precision.__wrapped__(metric_input)
@@ -23,6 +25,14 @@ def retrieval_f1(metric_input: MetricInput):
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_recall(metric_input: MetricInput) -> float:
+    """Compute recall score for retrieval.
+
+    Args:
+        metric_input: The MetricInput schema for AutoRAG metric.
+
+    Returns:
+        The recall score.
+    """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
 
     gt_sets = [frozenset(g) for g in gt]
@@ -34,6 +44,14 @@ def retrieval_recall(metric_input: MetricInput) -> float:
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_precision(metric_input: MetricInput) -> float:
+    """Compute precision score for retrieval.
+
+    Args:
+        metric_input: The MetricInput schema for AutoRAG metric.
+
+    Returns:
+        The precision score.
+    """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
 
     gt_sets = [frozenset(g) for g in gt]
@@ -45,6 +63,14 @@ def retrieval_precision(metric_input: MetricInput) -> float:
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_ndcg(metric_input: MetricInput) -> float:
+    """Compute NDCG (Normalized Discounted Cumulative Gain) score for retrieval.
+
+    Args:
+        metric_input: The MetricInput schema for AutoRAG metric.
+
+    Returns:
+        The NDCG score.
+    """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
 
     gt_sets = [frozenset(g) for g in gt]
@@ -64,9 +90,16 @@ def retrieval_ndcg(metric_input: MetricInput) -> float:
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_mrr(metric_input: MetricInput) -> float:
-    """
+    """Compute MRR (Mean Reciprocal Rank) score for retrieval.
+
     Reciprocal Rank (RR) is the reciprocal of the rank of the first relevant item.
     Mean of RR in whole queries is MRR.
+
+    Args:
+        metric_input: The MetricInput schema for AutoRAG metric.
+
+    Returns:
+        The MRR score.
     """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
 
@@ -84,8 +117,15 @@ def retrieval_mrr(metric_input: MetricInput) -> float:
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_map(metric_input: MetricInput) -> float:
-    """
+    """Compute MAP (Mean Average Precision) score for retrieval.
+
     Mean Average Precision (MAP) is the mean of Average Precision (AP) for all queries.
+
+    Args:
+        metric_input: The MetricInput schema for AutoRAG metric.
+
+    Returns:
+        The MAP score.
     """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
 

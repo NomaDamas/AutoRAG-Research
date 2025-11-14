@@ -11,7 +11,15 @@ from pydantic.v1 import BaseModel
 
 
 def to_list(item):
-    """Recursively convert collections to Python lists."""
+    """Recursively convert collections to Python lists.
+
+    Args:
+        item: The item to convert to a list. Can be numpy array, pandas Series,
+            or any iterable collection.
+
+    Returns:
+        The converted Python list.
+    """
     if isinstance(item, np.ndarray):
         # Convert numpy array to list and recursively process each element
         return [to_list(sub_item) for sub_item in item.tolist()]
@@ -26,7 +34,14 @@ def to_list(item):
 
 
 def convert_inputs_to_list(func):
-    """Decorator to convert all function inputs to Python lists."""
+    """Decorator to convert all function inputs to Python lists.
+
+    Args:
+        func: The function to be decorated.
+
+    Returns:
+        The wrapped function that converts all inputs to lists.
+    """
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -38,12 +53,14 @@ def convert_inputs_to_list(func):
 
 
 def truncate_texts(str_list: list[str], max_tokens: int) -> list[str]:
-    """
-    Truncate each string in the list to a maximum number of tokens using tiktoken.
+    """Truncate each string in the list to a maximum number of tokens using tiktoken.
 
-    :param str_list: List of strings to be truncated.
-    :param max_tokens: Maximum number of tokens allowed per string.
-    :return: List of truncated strings.
+    Args:
+        str_list: List of strings to be truncated.
+        max_tokens: Maximum number of tokens allowed per string.
+
+    Returns:
+        List of truncated strings.
     """
     encoder = tiktoken.get_encoding("cl100k_base")
 
@@ -59,8 +76,16 @@ def truncate_texts(str_list: list[str], max_tokens: int) -> list[str]:
 
 
 def unpack_and_run(target_list: list[list[Any]], func: callable, *args, **kwargs) -> list[Any]:
-    """
-    Unpack each sublist in target_list and run func with the unpacked arguments.
+    """Unpack each sublist in target_list and run func with the unpacked arguments.
+
+    Args:
+        target_list: List of sublists to be unpacked and processed.
+        func: Callable function to run on the flattened list.
+        *args: Additional positional arguments to pass to func.
+        **kwargs: Additional keyword arguments to pass to func.
+
+    Returns:
+        List of results grouped by original sublist lengths.
     """
     lengths = list(map(len, target_list))
     flattened = list(itertools.chain.from_iterable(target_list))
