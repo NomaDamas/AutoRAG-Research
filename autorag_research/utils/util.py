@@ -1,6 +1,6 @@
 import functools
 import itertools
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 import numpy as np
@@ -75,7 +75,7 @@ def truncate_texts(str_list: list[str], max_tokens: int) -> list[str]:
     return truncated_list
 
 
-def unpack_and_run(target_list: list[list[Any]], func: callable, *args, **kwargs) -> list[Any]:
+def unpack_and_run(target_list: list[list[Any]], func: Callable, *args, **kwargs) -> list[Any]:
     """Unpack each sublist in target_list and run func with the unpacked arguments.
 
     Args:

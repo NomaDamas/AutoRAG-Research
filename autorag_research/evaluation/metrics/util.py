@@ -103,7 +103,7 @@ def metric_loop(fields_to_check: list[str]):
     def decorator_metric_loop(func):
         @functools.wraps(func)
         @convert_inputs_to_list
-        def wrapper(metric_inputs: list[MetricInput], **kwargs) -> list[float]:
+        def wrapper(metric_inputs: list[MetricInput], **kwargs) -> list[float | None]:
             """Wrapper function for metric_loop decorator.
 
             Args:

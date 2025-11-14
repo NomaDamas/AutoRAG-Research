@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -88,7 +89,7 @@ class MetricInput:
         return True
 
 
-type_checks: dict[type, callable[[Any], bool]] = {
+type_checks: dict[type, Callable[[Any], bool]] = {
     str: lambda x: len(x.strip()) > 0,
     list: MetricInput._check_list,
     np.ndarray: MetricInput._check_list,

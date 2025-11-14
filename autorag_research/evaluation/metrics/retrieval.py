@@ -34,6 +34,8 @@ def retrieval_recall(metric_input: MetricInput) -> float:
         The recall score.
     """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
+    if pred is None or gt is None:
+        return 0.0
 
     gt_sets = [frozenset(g) for g in gt]
     pred_set = set(pred)
@@ -53,6 +55,8 @@ def retrieval_precision(metric_input: MetricInput) -> float:
         The precision score.
     """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
+    if pred is None or gt is None:
+        return 0.0
 
     gt_sets = [frozenset(g) for g in gt]
     pred_set = set(pred)
@@ -72,6 +76,8 @@ def retrieval_ndcg(metric_input: MetricInput) -> float:
         The NDCG score.
     """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
+    if pred is None or gt is None:
+        return 0.0
 
     gt_sets = [frozenset(g) for g in gt]
     pred_set = set(pred)
@@ -102,6 +108,8 @@ def retrieval_mrr(metric_input: MetricInput) -> float:
         The MRR score.
     """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
+    if pred is None or gt is None:
+        return 0.0
 
     # Flatten the ground truth list of lists into a single set of relevant documents
     gt_sets = [frozenset(g) for g in gt]
@@ -128,6 +136,8 @@ def retrieval_map(metric_input: MetricInput) -> float:
         The MAP score.
     """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
+    if pred is None or gt is None:
+        return 0.0
 
     gt_sets = [frozenset(g) for g in gt]
 

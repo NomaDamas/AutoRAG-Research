@@ -192,7 +192,7 @@ def bert_score(
     metric_inputs: list[MetricInput],
     lang: str = "en",
     batch: int = 128,
-    n_threads: int = os.cpu_count(),
+    n_threads: int | None = os.cpu_count(),
 ) -> list[float]:
     """Compute BERTScore metric for generation.
 
@@ -216,13 +216,14 @@ def bert_score(
     })
 
     df = df.explode("reference", ignore_index=False)
-    df["bert_score"] = evaluator.compute(
+    result = evaluator.compute(
         predictions=df["prediction"].tolist(),
         references=df["reference"].tolist(),
         lang=lang,
         nthreads=n_threads,
         batch_size=batch,
-    )["f1"]
+    )
+    df["bert_score"] = result["f1"]
 
     del evaluator
 
