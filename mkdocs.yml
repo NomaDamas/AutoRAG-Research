@@ -1,0 +1,52 @@
+site_name: AutoRAG-Research
+repo_url: https://github.com/vkehfdl1/AutoRAG-Research
+site_url: https://vkehfdl1.github.io/AutoRAG-Research
+site_description: Automate your RAG research.
+site_author: NomaDamas
+edit_uri: edit/main/docs/
+repo_name: vkehfdl1/AutoRAG-Research
+copyright: Maintained by <a href="https://vkehfdl1.com">vkehfdl1</a>.
+
+nav:
+  - Home: index.md
+  - Modules: modules.md
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["autorag_research"]
+theme:
+  name: material
+  feature:
+    tabs: true
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/vkehfdl1/AutoRAG-Research
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/AutoRAG-Research
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
