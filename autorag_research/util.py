@@ -10,7 +10,7 @@ from pydantic import BaseModel as BM
 from pydantic.v1 import BaseModel
 
 
-def to_list(item):
+def to_list(item: Any) -> Any:
     """Recursively convert collections to Python lists.
 
     Args:
@@ -33,7 +33,7 @@ def to_list(item):
         return item
 
 
-def convert_inputs_to_list(func):
+def convert_inputs_to_list(func: Callable) -> Callable:
     """Decorator to convert all function inputs to Python lists.
 
     Args:
@@ -75,7 +75,7 @@ def truncate_texts(str_list: list[str], max_tokens: int) -> list[str]:
     return truncated_list
 
 
-def unpack_and_run(target_list: list[list[Any]], func: Callable, *args, **kwargs) -> list[Any]:
+def unpack_and_run(target_list: list[list[Any]], func: Callable, *args: tuple, **kwargs: Any) -> list[Any]:
     """Unpack each sublist in target_list and run func with the unpacked arguments.
 
     Args:

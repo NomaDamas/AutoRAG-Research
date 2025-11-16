@@ -1,4 +1,5 @@
 import os
+from typing import Any
 
 import evaluate
 import nltk
@@ -14,7 +15,7 @@ from autorag_research.util import convert_inputs_to_list, truncate_texts, unpack
 
 
 @convert_inputs_to_list
-def huggingface_evaluate(instance, key: str, metric_inputs: list[MetricInput], **kwargs) -> list[float]:
+def huggingface_evaluate(instance: Any, key: str, metric_inputs: list[MetricInput], **kwargs: Any) -> list[float]:
     """Compute huggingface evaluate metric.
 
     Args:
@@ -43,7 +44,7 @@ def bleu(
     max_ngram_order: int = 4,
     trg_lang: str = "",
     effective_order: bool = True,
-    **kwargs,
+    **kwargs: Any,
 ) -> list[float]:
     """Computes the BLEU metric given pred and ground-truth.
 

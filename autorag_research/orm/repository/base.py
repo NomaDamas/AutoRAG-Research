@@ -144,7 +144,7 @@ class UnitOfWork:
     into a single atomic transaction.
     """
 
-    def __init__(self, session_factory):
+    def __init__(self, session_factory: Any):
         """Initialize Unit of Work with a session factory.
 
         Args:
@@ -153,7 +153,7 @@ class UnitOfWork:
         self.session_factory = session_factory
         self.session: Session | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> "UnitOfWork":
         """Enter the context manager and create a new session.
 
         Returns:
@@ -162,7 +162,7 @@ class UnitOfWork:
         self.session = self.session_factory()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Exit the context manager and clean up session.
 
         Automatically rolls back if an exception occurred.
@@ -177,17 +177,17 @@ class UnitOfWork:
         if self.session:
             self.session.close()
 
-    def commit(self):
+    def commit(self) -> None:
         """Commit the current transaction."""
         if self.session:
             self.session.commit()
 
-    def rollback(self):
+    def rollback(self) -> None:
         """Rollback the current transaction."""
         if self.session:
             self.session.rollback()
 
-    def flush(self):
+    def flush(self) -> None:
         """Flush pending changes without committing."""
         if self.session:
             self.session.flush()
