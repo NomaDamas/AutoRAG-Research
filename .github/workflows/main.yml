@@ -37,7 +37,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_DB: testdb
         ports:
           - 5432:5432
         options: >-
@@ -48,7 +48,7 @@ jobs:
     env:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
+      POSTGRES_DB: testdb
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
     defaults:
@@ -63,8 +63,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Initialize PostgreSQL database
+        run: |
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U postgres -d testdb -f postgresql/db/init/001-schema.sql
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U postgres -d testdb -f postgresql/db/init/002-seed.sql
+
       - name: Run tests
         run: uv run python -m pytest tests -n auto --cov --cov-config=pyproject.toml --cov-report=xml -m "not gpu"
+        env:
+          POSTGRES_URL: postgresql+psycopg://postgres:postgres@localhost:5432/testdb
 
       - name: Check typing
         run: uv run ty check
