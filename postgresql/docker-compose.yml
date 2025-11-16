@@ -3,6 +3,8 @@ services:
     # TensorChord VectorChord Postgres image (per installation guide)
     image: tensorchord/vchord-postgres:pg18-v1.0.0
     container_name: postgreschord
+    env_file:
+      - .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-autorag}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -15,10 +17,24 @@ services:
       # /var/lib/postgresql/18/docker
       # Use a bind mount to a host directory for best performance.
       - ./pgdata:/var/lib/postgresql/18/docker
-      - ./db:/docker-entrypoint-initdb.d
+      - ./db/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  db-init:
+    image: tensorchord/vchord-postgres:pg18-v1.0.0
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: ["bash","-lc","psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -f /seed/001-enable-vector.sql"]
+    volumes:
+      - ./db/init/001-enable-vector.sql:/seed/001-enable-vector.sql:ro
+    restart: "no"
+
+volumes: {}
