@@ -64,13 +64,6 @@ def test_get_all_ordered_by_name(pipeline_repository: PipelineRepository):
         assert results[i].name <= results[i + 1].name
 
 
-def test_search_by_config(pipeline_repository: PipelineRepository):
-    results = pipeline_repository.search_by_config("k", "5")
-
-    assert len(results) >= 1
-    assert all(p.config.get("k") == 5 for p in results if p.config)
-
-
 def test_exists_by_name(pipeline_repository: PipelineRepository):
     exists = pipeline_repository.exists_by_name("baseline")
     assert exists is True

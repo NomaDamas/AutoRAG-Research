@@ -32,7 +32,7 @@ class PipelineRepository(GenericRepository[Pipeline]):
             The pipeline if found, None otherwise.
         """
         stmt = select(Pipeline).where(Pipeline.name == name)
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_experiment_results(self, pipeline_id: int) -> Pipeline | None:
         """Retrieve a pipeline with its experiment results eagerly loaded.
@@ -44,7 +44,7 @@ class PipelineRepository(GenericRepository[Pipeline]):
             The pipeline with experiment results loaded, None if not found.
         """
         stmt = select(Pipeline).where(Pipeline.id == pipeline_id).options(joinedload(Pipeline.experiment_results))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_summaries(self, pipeline_id: int) -> Pipeline | None:
         """Retrieve a pipeline with its summaries eagerly loaded.
@@ -56,7 +56,7 @@ class PipelineRepository(GenericRepository[Pipeline]):
             The pipeline with summaries loaded, None if not found.
         """
         stmt = select(Pipeline).where(Pipeline.id == pipeline_id).options(joinedload(Pipeline.summaries))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_retrieved_results(self, pipeline_id: int) -> Pipeline | None:
         """Retrieve a pipeline with its retrieved results eagerly loaded.
@@ -75,7 +75,7 @@ class PipelineRepository(GenericRepository[Pipeline]):
                 joinedload(Pipeline.image_chunk_retrieved_results),
             )
         )
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_all_relations(self, pipeline_id: int) -> Pipeline | None:
         """Retrieve a pipeline with all relations eagerly loaded.
@@ -96,7 +96,7 @@ class PipelineRepository(GenericRepository[Pipeline]):
                 joinedload(Pipeline.image_chunk_retrieved_results),
             )
         )
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def search_by_name(self, search_text: str, limit: int = 10) -> list[Pipeline]:
         """Search pipelines containing the specified text in their name.

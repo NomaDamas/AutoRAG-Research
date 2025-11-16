@@ -125,6 +125,9 @@ ignore = [
 [tool.ruff.format]
 preview = true
 
+[tool.deptry.per_rule_ignores]
+DEP002 = ["bert-score"]
+
 [tool.coverage.report]
 skip_empty = true
 

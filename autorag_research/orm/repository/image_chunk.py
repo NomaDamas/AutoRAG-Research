@@ -44,7 +44,7 @@ class ImageChunkRepository(BaseVectorRepository[ImageChunk]):
             The image chunk if found, None otherwise.
         """
         stmt = select(ImageChunk).where(ImageChunk.image_path == image_path_id)
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_page(self, image_chunk_id: int) -> ImageChunk | None:
         """Retrieve an image chunk with its page eagerly loaded.
@@ -56,7 +56,7 @@ class ImageChunkRepository(BaseVectorRepository[ImageChunk]):
             The image chunk with page loaded, None if not found.
         """
         stmt = select(ImageChunk).where(ImageChunk.id == image_chunk_id).options(joinedload(ImageChunk.page))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_image_file(self, image_chunk_id: int) -> ImageChunk | None:
         """Retrieve an image chunk with its image file eagerly loaded.
@@ -68,7 +68,7 @@ class ImageChunkRepository(BaseVectorRepository[ImageChunk]):
             The image chunk with image file loaded, None if not found.
         """
         stmt = select(ImageChunk).where(ImageChunk.id == image_chunk_id).options(joinedload(ImageChunk.image_file))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_retrieval_relations(self, image_chunk_id: int) -> ImageChunk | None:
         """Retrieve an image chunk with its retrieval relations eagerly loaded.
@@ -84,7 +84,7 @@ class ImageChunkRepository(BaseVectorRepository[ImageChunk]):
             .where(ImageChunk.id == image_chunk_id)
             .options(joinedload(ImageChunk.retrieval_relations))
         )
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_image_chunk_retrieved_results(self, image_chunk_id: int) -> ImageChunk | None:
         """Retrieve an image chunk with its image chunk retrieved results eagerly loaded.
@@ -100,7 +100,7 @@ class ImageChunkRepository(BaseVectorRepository[ImageChunk]):
             .where(ImageChunk.id == image_chunk_id)
             .options(joinedload(ImageChunk.image_chunk_retrieved_results))
         )
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_image_chunks_with_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[ImageChunk]:
         """Retrieve image chunks that have embeddings.
@@ -168,4 +168,4 @@ class ImageChunkRepository(BaseVectorRepository[ImageChunk]):
                 joinedload(ImageChunk.image_chunk_retrieved_results),
             )
         )
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()

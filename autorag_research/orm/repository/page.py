@@ -45,7 +45,7 @@ class PageRepository(GenericRepository[Page]):
             The page if found, None otherwise.
         """
         stmt = select(Page).where(Page.document_id == document_id, Page.page_num == page_num)
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_document(self, page_id: int) -> Page | None:
         """Retrieve a page with its document eagerly loaded.
@@ -57,7 +57,7 @@ class PageRepository(GenericRepository[Page]):
             The page with document loaded, None if not found.
         """
         stmt = select(Page).where(Page.id == page_id).options(joinedload(Page.document))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_captions(self, page_id: int) -> Page | None:
         """Retrieve a page with its captions eagerly loaded.
@@ -69,7 +69,7 @@ class PageRepository(GenericRepository[Page]):
             The page with captions loaded, None if not found.
         """
         stmt = select(Page).where(Page.id == page_id).options(joinedload(Page.captions))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_image_chunks(self, page_id: int) -> Page | None:
         """Retrieve a page with its image chunks eagerly loaded.
@@ -81,7 +81,7 @@ class PageRepository(GenericRepository[Page]):
             The page with image chunks loaded, None if not found.
         """
         stmt = select(Page).where(Page.id == page_id).options(joinedload(Page.image_chunks))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_image_file(self, page_id: int) -> Page | None:
         """Retrieve a page with its image file eagerly loaded.
@@ -93,7 +93,7 @@ class PageRepository(GenericRepository[Page]):
             The page with image file loaded, None if not found.
         """
         stmt = select(Page).where(Page.id == page_id).options(joinedload(Page.image_file))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_all_with_document(self, limit: int | None = None, offset: int | None = None) -> list[Page]:
         """Retrieve all pages with their documents eagerly loaded.

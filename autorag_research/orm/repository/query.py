@@ -32,7 +32,7 @@ class QueryRepository(GenericRepository[Query]):
             The query if found, None otherwise.
         """
         stmt = select(Query).where(Query.query == query_text)
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_retrieval_relations(self, query_id: int) -> Query | None:
         """Retrieve a query with its retrieval relations eagerly loaded.
@@ -44,7 +44,7 @@ class QueryRepository(GenericRepository[Query]):
             The query with retrieval relations loaded, None if not found.
         """
         stmt = select(Query).where(Query.id == query_id).options(joinedload(Query.retrieval_relations))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_experiment_results(self, query_id: int) -> Query | None:
         """Retrieve a query with its experiment results eagerly loaded.
@@ -56,7 +56,7 @@ class QueryRepository(GenericRepository[Query]):
             The query with experiment results loaded, None if not found.
         """
         stmt = select(Query).where(Query.id == query_id).options(joinedload(Query.experiment_results))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_all_relations(self, query_id: int) -> Query | None:
         """Retrieve a query with all relations eagerly loaded.
@@ -77,7 +77,7 @@ class QueryRepository(GenericRepository[Query]):
                 joinedload(Query.image_chunk_retrieved_results),
             )
         )
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def search_by_query_text(self, search_text: str, limit: int = 10) -> list[Query]:
         """Search queries containing the specified text.

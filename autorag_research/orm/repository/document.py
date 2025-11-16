@@ -32,7 +32,7 @@ class DocumentRepository(GenericRepository[Document]):
             The document if found, None otherwise.
         """
         stmt = select(Document).where(Document.filename == filename)
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_by_title(self, title: str) -> Document | None:
         """Retrieve a document by its title.
@@ -44,7 +44,7 @@ class DocumentRepository(GenericRepository[Document]):
             The document if found, None otherwise.
         """
         stmt = select(Document).where(Document.title == title)
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_by_author(self, author: str) -> list[Document]:
         """Retrieve all documents by a specific author.
@@ -68,7 +68,7 @@ class DocumentRepository(GenericRepository[Document]):
             The document with pages loaded, None if not found.
         """
         stmt = select(Document).where(Document.id == document_id).options(joinedload(Document.pages))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_file(self, document_id: int) -> Document | None:
         """Retrieve a document with its file eagerly loaded.
@@ -80,7 +80,7 @@ class DocumentRepository(GenericRepository[Document]):
             The document with file loaded, None if not found.
         """
         stmt = select(Document).where(Document.id == document_id).options(joinedload(Document.file))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_all_with_pages(self, limit: int | None = None, offset: int | None = None) -> list[Document]:
         """Retrieve all documents with their pages eagerly loaded.

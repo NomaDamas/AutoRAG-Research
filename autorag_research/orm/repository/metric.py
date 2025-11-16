@@ -69,7 +69,7 @@ class MetricRepository(GenericRepository[Metric]):
             The metric with experiment results loaded, None if not found.
         """
         stmt = select(Metric).where(Metric.id == metric_id).options(joinedload(Metric.experiment_results))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_summaries(self, metric_id: int) -> Metric | None:
         """Retrieve a metric with its summaries eagerly loaded.
@@ -81,7 +81,7 @@ class MetricRepository(GenericRepository[Metric]):
             The metric with summaries loaded, None if not found.
         """
         stmt = select(Metric).where(Metric.id == metric_id).options(joinedload(Metric.summaries))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_retrieved_results(self, metric_id: int) -> Metric | None:
         """Retrieve a metric with its retrieved results eagerly loaded.
@@ -100,7 +100,7 @@ class MetricRepository(GenericRepository[Metric]):
                 joinedload(Metric.image_chunk_retrieved_results),
             )
         )
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_all_relations(self, metric_id: int) -> Metric | None:
         """Retrieve a metric with all relations eagerly loaded.
@@ -121,7 +121,7 @@ class MetricRepository(GenericRepository[Metric]):
                 joinedload(Metric.image_chunk_retrieved_results),
             )
         )
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def search_by_name(self, search_text: str, limit: int = 10) -> list[Metric]:
         """Search metrics containing the specified text in their name.

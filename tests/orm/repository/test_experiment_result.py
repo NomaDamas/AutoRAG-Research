@@ -87,7 +87,7 @@ def test_get_by_metric_result_range(experiment_result_repository: ExperimentResu
 
     assert len(results) >= 1
     assert all(r is not None for r in results)
-    assert all(0.7 <= r.metric_result <= 0.85 for r in results)
+    assert all(0.7 <= r.metric_result <= 0.85 for r in results)  # ty: ignore
 
 
 def test_exists_by_composite_key(experiment_result_repository: ExperimentResultRepository):
