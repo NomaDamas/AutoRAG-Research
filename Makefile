@@ -15,8 +15,39 @@ check: ## Run code quality tools.
 	@echo "🚀 Checking for obsolete dependencies: Running deptry"
 	@uv run deptry .
 
-.PHONY: test
-test: ## Test the code with pytest
+.PHONY: test docker-up docker-down docker-wait clean-docker
+
+# PostgreSQL 컨테이너 시작
+docker-up:
+	@echo "🐘 Starting PostgreSQL containers..."
+	@cd postgresql && docker compose up -d
+
+# PostgreSQL 준비 대기
+docker-wait:
+	@echo "⏳ Waiting for PostgreSQL to be ready..."
+	@until docker compose -f postgresql/docker-compose.yml exec -T db pg_isready -U postgres > /dev/null 2>&1; do \
+		sleep 1; \
+	done
+	@echo "✅ PostgreSQL is ready!"
+
+# PostgreSQL 컨테이너 중지 및 삭제
+docker-down:
+	@echo "🛑 Stopping PostgreSQL containers..."
+	@cd postgresql && docker compose down
+
+# 완전 정리 (볼륨 포함)
+clean-docker:
+	@echo "🧹 Cleaning up PostgreSQL containers and volumes..."
+	@cd postgresql && docker compose down -v
+
+# 테스트 실행 (PostgreSQL 자동 관리)
+test: docker-up docker-wait ## Test the code with pytest
+	@echo "🚀 Testing code: Running pytest"
+	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -n auto
+	@make docker-down
+
+# 테스트만 실행 (컨테이너는 유지)
+test-only: ## Run tests without managing Docker containers
 	@echo "🚀 Testing code: Running pytest"
 	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -n auto
 
