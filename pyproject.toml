@@ -18,6 +18,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "bert-score>=0.3.13",
     "evaluate>=0.4.6",
     "llama-index>=0.12.52",
     "nltk>=3.9.2",
@@ -50,6 +51,7 @@ dev = [
     "mkdocs-material>=8.5.10",
     "mkdocstrings[python]>=0.26.1",
     "pytest-xdist>=3.8.0",
+    "pytest-env>=1.2.0",
 ]
 
 [build-system]
@@ -63,8 +65,14 @@ packages = ["autorag_research"]
 python = "./.venv"
 python-version = "3.10"
 
-[tool.pytest.ini_options]
+[tool.pytest]
 testpaths = ["tests"]
+env = [
+    "POSTGRES_URL=postgresql+psycopg://postgres:postgres@localhost:5432/testdb",
+]
+markers = [
+    "gpu: mark test as requiring a GPU to run",
+]
 
 [tool.ruff]
 target-version = "py310"

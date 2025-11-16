@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-autorag}
+      POSTGRES_DB: ${POSTGRES_DB:-testdb}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
@@ -24,5 +24,3 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-
-  volumes: {}

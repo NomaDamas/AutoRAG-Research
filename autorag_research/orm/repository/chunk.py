@@ -56,7 +56,7 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
             The chunk with caption-chunk relations loaded, None if not found.
         """
         stmt = select(Chunk).where(Chunk.id == chunk_id).options(joinedload(Chunk.caption_chunk_relations))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_retrieval_relations(self, chunk_id: int) -> Chunk | None:
         """Retrieve a chunk with its retrieval relations eagerly loaded.
@@ -68,7 +68,7 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
             The chunk with retrieval relations loaded, None if not found.
         """
         stmt = select(Chunk).where(Chunk.id == chunk_id).options(joinedload(Chunk.retrieval_relations))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_chunk_retrieved_results(self, chunk_id: int) -> Chunk | None:
         """Retrieve a chunk with its chunk retrieved results eagerly loaded.
@@ -80,7 +80,7 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
             The chunk with chunk retrieved results loaded, None if not found.
         """
         stmt = select(Chunk).where(Chunk.id == chunk_id).options(joinedload(Chunk.chunk_retrieved_results))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def search_by_contents(self, search_text: str) -> list[Chunk]:
         """Search chunks by contents using SQL LIKE.
@@ -170,4 +170,4 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
                 joinedload(Chunk.chunk_retrieved_results),
             )
         )
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()

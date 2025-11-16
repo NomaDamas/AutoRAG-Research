@@ -56,7 +56,7 @@ class CaptionRepository(GenericRepository[Caption]):
             The caption with chunks loaded, None if not found.
         """
         stmt = select(Caption).where(Caption.id == caption_id).options(joinedload(Caption.chunks))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_caption_chunk_relations(self, caption_id: int) -> Caption | None:
         """Retrieve a caption with its caption-chunk relations eagerly loaded.
@@ -68,7 +68,7 @@ class CaptionRepository(GenericRepository[Caption]):
             The caption with caption-chunk relations loaded, None if not found.
         """
         stmt = select(Caption).where(Caption.id == caption_id).options(joinedload(Caption.caption_chunk_relations))
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def search_by_contents(self, search_text: str) -> list[Caption]:
         """Search captions by contents using SQL LIKE.
@@ -140,4 +140,4 @@ class CaptionRepository(GenericRepository[Caption]):
                 joinedload(Caption.caption_chunk_relations),
             )
         )
-        return self.session.execute(stmt).scalar_one_or_none()
+        return self.session.execute(stmt).unique().scalar_one_or_none()
