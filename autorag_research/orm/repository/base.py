@@ -11,6 +11,8 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from autorag_research.exceptions import NoSessionError
+
 T = TypeVar("T")
 
 
@@ -323,5 +325,7 @@ def repository_context(session_factory, model_cls: type[T]):
         ...     uow.commit()
     """
     with UnitOfWork(session_factory) as uow:
+        if uow.session is None:
+            raise NoSessionError
         repo = GenericRepository(uow.session, model_cls)
         yield repo, uow

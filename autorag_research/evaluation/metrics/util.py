@@ -24,7 +24,7 @@ def calculate_cosine_similarity(a: list[float] | np.ndarray, b: list[float] | np
     return similarity
 
 
-def calculate_l2_distance(a: list[float] | np.ndarray, b: list[float] | np.ndarray) -> float:
+def calculate_l2_distance(a: np.ndarray, b: np.ndarray) -> float:
     """Calculate L2 distance between two vectors.
 
     Args:
@@ -34,7 +34,7 @@ def calculate_l2_distance(a: list[float] | np.ndarray, b: list[float] | np.ndarr
     Returns:
         The L2 distance.
     """
-    return np.linalg.norm(a - b)
+    return float(np.linalg.norm(a - b))
 
 
 def calculate_inner_product(a: list[float] | np.ndarray, b: list[float] | np.ndarray) -> float:
