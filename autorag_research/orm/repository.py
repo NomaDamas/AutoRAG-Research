@@ -7,6 +7,7 @@ CRUD operations and transaction management with SQLAlchemy.
 from contextlib import contextmanager
 from typing import Any, Generic, TypeVar
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.util import concurrency
@@ -229,7 +230,11 @@ class BaseVectorRepository(GenericRepository[T]):
     """
 
     def vector_search(
-        self, query_vector: list[float], vector_column: str, limit: int = 10, distance_threshold: float | None = None
+        self,
+        query_vector: list[float],
+        vector_column: str = "embedding",
+        limit: int = 10,
+        distance_threshold: float | None = None,
     ) -> list[T]:
         """Perform vector similarity search using VectorChord.
 
@@ -242,14 +247,70 @@ class BaseVectorRepository(GenericRepository[T]):
         Returns:
             List of entities ordered by similarity.
 
-        Raises:
-            NotImplementedError: Subclasses must implement actual vector search logic.
+        Note:
+            Uses pgvector's cosine distance operator (<=>).
+            Requires VectorChord index on embedding column for performance.
+        """
+        # Convert list to pgvector format
+        query_embedding = Vector(query_vector)
+
+        # Get the vector column dynamically
+        vector_col = getattr(self.model_cls, vector_column)
+
+        # Build query with distance ordering
+        stmt = (
+            select(self.model_cls).where(vector_col.is_not(None)).order_by(vector_col.cosine_distance(query_embedding))
+        )
+
+        # Apply distance threshold if provided
+        if distance_threshold is not None:
+            stmt = stmt.where(vector_col.cosine_distance(query_embedding) <= distance_threshold)
+
+        # Apply limit
+        stmt = stmt.limit(limit)
+
+        return list(self.session.execute(stmt).scalars().all())
+
+    def vector_search_with_scores(
+        self,
+        query_vector: list[float],
+        vector_column: str = "embedding",
+        limit: int = 10,
+        distance_threshold: float | None = None,
+    ) -> list[tuple[T, float]]:
+        """Perform vector similarity search and return entities with their distance scores.
+
+        Args:
+            query_vector: The query embedding vector.
+            vector_column: Name of the vector column to search.
+            limit: Maximum number of results to return.
+            distance_threshold: Optional maximum distance threshold.
+
+        Returns:
+            List of tuples (entity, distance_score) ordered by similarity.
 
         Note:
-            Requires pgvector extension and VectorChord index for performance.
-            Subclasses should override this method with actual pgvector operations.
+            Lower distance scores indicate higher similarity.
         """
-        raise NotImplementedError("Subclasses must implement vector_search with actual pgvector logic")
+        # Convert list to pgvector format
+        query_embedding = Vector(query_vector)
+
+        # Get the vector column dynamically
+        vector_col = getattr(self.model_cls, vector_column)
+
+        # Build query with distance as a column
+        distance = vector_col.cosine_distance(query_embedding).label("distance")
+        stmt = select(self.model_cls, distance).where(vector_col.is_not(None)).order_by(distance)
+
+        # Apply distance threshold if provided
+        if distance_threshold is not None:
+            stmt = stmt.where(distance <= distance_threshold)
+
+        # Apply limit
+        stmt = stmt.limit(limit)
+
+        results = self.session.execute(stmt).all()
+        return [(entity, float(dist)) for entity, dist in results]
 
 
 def create_repository(session: Session, model_cls: type[T]) -> GenericRepository[T]:
