@@ -1,0 +1,28 @@
+services:
+  db:
+    # TensorChord VectorChord Postgres image (per installation guide)
+    image: tensorchord/vchord-postgres:pg18-v1.0.0
+    container_name: postgreschord
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-autorag}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      # Default to 5432 to match VectorChord docs; override via PG_PORT
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      # For PostgreSQL 18 the recommended data dir for performance is:
+      # /var/lib/postgresql/18/docker
+      # Use a bind mount to a host directory for best performance.
+      - ./pgdata:/var/lib/postgresql/18/docker
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  volumes: {}
