@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
 from autorag_research.exceptions import EnvNotFoundError
 
@@ -34,18 +34,19 @@ def db_engine():
 
 @pytest.fixture(scope="session")
 def session_factory(db_engine):
-    """Create a session factory for the test session.
+    """Create a thread-safe scoped session factory for the test session.
 
-    This follows the pattern from db_pattern.md using sessionmaker.
+    This follows the pattern from db_pattern.md using scoped_session.
+    The scoped_session ensures thread-safety for multi-worker test execution.
     """
-    return sessionmaker(bind=db_engine)
+    return scoped_session(sessionmaker(bind=db_engine))
 
 
 @pytest.fixture
 def db_session(session_factory) -> Generator[Session, Any, None]:
     """Create a new database session for each test.
 
-    This fixture provides a clean session for each test function.
+    This fixture provides a clean, thread-safe session for each test function.
     The session is automatically rolled back after the test to maintain isolation.
     """
     session = session_factory()
@@ -53,4 +54,4 @@ def db_session(session_factory) -> Generator[Session, Any, None]:
     yield session
 
     session.rollback()
-    session.close()
+    session_factory.remove()  # Clean up the scoped session
