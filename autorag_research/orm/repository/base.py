@@ -10,7 +10,6 @@ from typing import Any, Generic, TypeVar
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from sqlalchemy.util import concurrency
 
 T = TypeVar("T")
 
@@ -175,7 +174,8 @@ class UnitOfWork:
         """
         if exc_type is not None:
             self.rollback()
-        self.session.close()
+        if self.session:
+            self.session.close()
 
     def commit(self):
         """Commit the current transaction."""
@@ -191,35 +191,6 @@ class UnitOfWork:
         """Flush pending changes without committing."""
         if self.session:
             self.session.flush()
-
-
-class AsyncRepositoryBridge:
-    """Bridge for using sync repositories in async contexts.
-
-    Uses SQLAlchemy's greenlet-based bridging as recommended by maintainers.
-    Requires async dialect (asyncpg) for application and sync driver (psycopg)
-    for repository code.
-    """
-
-    @staticmethod
-    async def execute_sync(func, *args, **kwargs):
-        """Execute a synchronous repository method in async context.
-
-        This method uses greenlet_spawn to bridge between async and sync code,
-        avoiding code duplication while maintaining compatibility with both contexts.
-
-        Args:
-            func: The sync function to execute.
-            *args: Positional arguments for the function.
-            **kwargs: Keyword arguments for the function.
-
-        Returns:
-            The result of the sync function.
-
-        Note:
-            Adds overhead from context switching but avoids code duplication.
-        """
-        return await concurrency.greenlet_spawn(func, *args, **kwargs)
 
 
 class BaseVectorRepository(GenericRepository[T]):

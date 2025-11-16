@@ -10,7 +10,7 @@ from sacrebleu.metrics.bleu import BLEU
 
 from autorag_research.evaluation.metrics.util import calculate_cosine_similarity, metric_loop
 from autorag_research.schema import MetricInput
-from autorag_research.utils.util import convert_inputs_to_list, truncate_texts, unpack_and_run
+from autorag_research.util import convert_inputs_to_list, truncate_texts, unpack_and_run
 
 
 @convert_inputs_to_list
@@ -30,7 +30,7 @@ def huggingface_evaluate(instance, key: str, metric_inputs: list[MetricInput], *
     def compute_score(gt: list[str], pred: str) -> float:
         return max([instance.compute(predictions=[pred], references=[x], **kwargs)[key] for x in gt])
 
-    result = [compute_score(x.generation_gt, x.generated_texts) for x in metric_inputs]
+    result = [compute_score(x.generation_gt, x.generated_texts) for x in metric_inputs]  # ty: ignore
     return result
 
 
@@ -72,7 +72,7 @@ def bleu(
         **kwargs,
     )
 
-    result = [bleu_instance.sentence_score(x.generated_texts, x.generation_gt).score for x in metric_inputs]
+    result = [bleu_instance.sentence_score(x.generated_texts, x.generation_gt).score for x in metric_inputs]  # ty: ignore
     return result
 
 
@@ -170,8 +170,8 @@ def sem_score(
     generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 
     # Truncate texts to fit embedding model limit (Use tiktoken)
-    generations = truncate_texts(generations, max_tokens=truncate_length)
-    generation_gt = [truncate_texts(gen_gt, max_tokens=truncate_length) for gen_gt in generation_gt]
+    generations = truncate_texts(generations, max_tokens=truncate_length)  # ty: ignore
+    generation_gt = [truncate_texts(gen_gt, max_tokens=truncate_length) for gen_gt in generation_gt]  # ty: ignore
 
     embedded_pred: list[list[float]] = embedding_model.get_text_embedding_batch(generations, show_progress=True)
     embedded_gt: list[list[float]] = unpack_and_run(
@@ -216,14 +216,14 @@ def bert_score(
     })
 
     df = df.explode("reference", ignore_index=False)
-    result = evaluator.compute(
+    result = evaluator.compute(  # ty: ignore
         predictions=df["prediction"].tolist(),
         references=df["reference"].tolist(),
         lang=lang,
         nthreads=n_threads,
         batch_size=batch,
     )
-    df["bert_score"] = result["f1"]
+    df["bert_score"] = result["f1"]  # ty: ignore
 
     del evaluator
 

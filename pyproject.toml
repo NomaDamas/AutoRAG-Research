@@ -29,7 +29,6 @@ dependencies = [
     "rouge-score>=0.1.2",
     "sacrebleu>=2.5.1",
     "sqlalchemy>=2.0.44",
-    "sqlalchemy-utils>=0.42.0",
     "tiktoken>=0.12.0",
 ]
 

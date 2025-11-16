@@ -3,7 +3,7 @@ import functools
 import numpy as np
 
 from autorag_research.schema import MetricInput
-from autorag_research.utils.util import convert_inputs_to_list
+from autorag_research.util import convert_inputs_to_list
 
 
 def calculate_cosine_similarity(a, b):
