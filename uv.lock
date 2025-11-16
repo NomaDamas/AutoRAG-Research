@@ -223,9 +223,11 @@ dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas" },
+    { name = "pgvector" },
     { name = "pydantic" },
     { name = "rouge-score" },
     { name = "sacrebleu" },
+    { name = "sqlalchemy" },
     { name = "tiktoken" },
 ]
 
@@ -251,9 +253,11 @@ requires-dist = [
     { name = "nltk", specifier = ">=3.9.2" },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "pandas", specifier = ">=2.3.3" },
+    { name = "pgvector", specifier = ">=0.4.1" },
     { name = "pydantic", specifier = ">=2.12.4" },
     { name = "rouge-score", specifier = ">=0.1.2" },
     { name = "sacrebleu", specifier = ">=2.5.1" },
+    { name = "sqlalchemy", specifier = ">=2.0.44" },
     { name = "tiktoken", specifier = ">=0.12.0" },
 ]
 
@@ -2319,6 +2323,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ca/bc/f35b8446f4531a7cb215605d100cd88b7ac6f44ab3fc94870c120ab3adbf/pathspec-0.12.1.tar.gz", hash = "sha256:a482d51503a1ab33b1c67a6c3813a26953dbdc71c31dacaef9a838c4e29f5712", size = 51043, upload-time = "2023-12-10T22:30:45Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/20/ff623b09d963f88bfde16306a54e12ee5ea43e9b597108672ff3a408aad6/pathspec-0.12.1-py3-none-any.whl", hash = "sha256:a0d503e138a4c123b27490a4f7beda6a01c6f288df0e4a8b79c7eb0dc7b4cc08", size = 31191, upload-time = "2023-12-10T22:30:43.14Z" },
+]
+
+[[package]]
+name = "pgvector"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/44/43/9a0fb552ab4fd980680c2037962e331820f67585df740bedc4a2b50faf20/pgvector-0.4.1.tar.gz", hash = "sha256:83d3a1c044ff0c2f1e95d13dfb625beb0b65506cfec0941bfe81fd0ad44f4003", size = 30646, upload-time = "2025-04-26T18:56:37.151Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/21/b5735d5982892c878ff3d01bb06e018c43fc204428361ee9fc25a1b2125c/pgvector-0.4.1-py3-none-any.whl", hash = "sha256:34bb4e99e1b13d08a2fe82dda9f860f15ddcd0166fbb25bffe15821cbfeb7362", size = 27086, upload-time = "2025-04-26T18:56:35.956Z" },
 ]
 
 [[package]]
