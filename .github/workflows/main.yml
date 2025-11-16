@@ -7,53 +7,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-env:
-  POSTGRES_USER: postgres
-  POSTGRES_PASSWORD: postgres
-  POSTGRES_DB: postgres
-  POSTGRES_HOST: localhost
-  POSTGRES_PORT: 5432
-
 jobs:
-  postgres:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: tensorchord/vchord-postgres:pg18-v1.0.0
-        env:
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Wait for Postgres to be healthy
-        run: |
-          for i in {1..60}; do
-            status=$(docker inspect --format='{{json .State.Health.Status}}' ${{ job.services.postgres.id }} 2>/dev/null || echo '"starting"')
-            echo "health=$status"
-            if [ "$status" = '"healthy"' ]; then
-              echo "Service is healthy"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Service did not become healthy in time" >&2
-          docker ps -a
-          docker logs ${{ job.services.postgres.id }} || true
-          exit 1
-
-      - name: Simple sanity query
-        run: |
-          docker exec -e PGPASSWORD=${{ env.POSTGRES_PASSWORD }} ${{ job.services.postgres.id }} \
-            psql -U ${{ env.POSTGRES_USER }} -d ${{ env.POSTGRES_DB }} -c "SELECT version();"
-
   quality:
     runs-on: ubuntu-latest
     steps:
@@ -77,6 +31,26 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
       fail-fast: false
+    services:
+      postgres:
+        image: tensorchord/vchord-postgres:pg18-v1.0.0
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
     defaults:
       run:
         shell: bash
@@ -94,7 +68,6 @@ jobs:
 
       - name: Check typing
         run: uv run ty check
-
 
       - name: Upload coverage reports to Codecov with GitHub Action on Python 3.11
         uses: codecov/codecov-action@v4
