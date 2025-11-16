@@ -15,12 +15,10 @@ services:
       # /var/lib/postgresql/18/docker
       # Use a bind mount to a host directory for best performance.
       - ./pgdata:/var/lib/postgresql/18/docker
-      - ./db/init:/docker-entrypoint-initdb.d
+      - ./db:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
-
-volumes: {}
