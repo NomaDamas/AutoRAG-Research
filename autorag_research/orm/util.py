@@ -6,31 +6,26 @@ for PostgreSQL with vectorchord support.
 
 import logging
 
-import psycopg2
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT, connection
+import psycopg
+from psycopg import Connection, sql
 
 logger = logging.getLogger("AutoRAG-Research")
 
 
-def _database_exists(conn: connection, database: str) -> bool:
+def _database_exists(conn: Connection, database: str) -> bool:
     """Internal helper to check if a PostgreSQL database exists.
 
     Args:
-        conn: Active psycopg2 connection.
+        conn: Active psycopg connection.
         database: Name of the database to check.
 
     Returns:
         True if database exists, False otherwise.
     """
-    cursor = None
-    try:
-        cursor = conn.cursor()
+    with conn.cursor() as cursor:
         cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (database,))
         exists = cursor.fetchone()
         return exists is not None
-    finally:
-        if cursor:
-            cursor.close()
 
 
 def create_database(
@@ -60,7 +55,7 @@ def create_database(
         True if database was created, False if it already exists.
 
     Raises:
-        psycopg2.Error: If connection or creation fails.
+        psycopg.Error: If connection or creation fails.
 
     Example:
         >>> create_database(
@@ -71,22 +66,16 @@ def create_database(
         ... )
         True
     """
-    conn = None
-    cursor = None
-
-    try:
-        # Connect to default postgres database
-        conn = psycopg2.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database="postgres",
-        )
-
-        # Set autocommit mode (CREATE DATABASE must run outside transaction)
-        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-
+    # Connect to default postgres database with autocommit
+    # (CREATE DATABASE must run outside transaction)
+    with psycopg.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        dbname="postgres",
+        autocommit=True,
+    ) as conn:
         # Check if database already exists using helper function
         if _database_exists(conn, database):
             logger.info(f"Database '{database}' already exists")
@@ -94,21 +83,17 @@ def create_database(
 
         # Create database with specified encoding and template
         # Use identifier quoting to prevent SQL injection
-        cursor = conn.cursor()
-        cursor.execute(
-            f"CREATE DATABASE {psycopg2.extensions.quote_ident(database, cursor)} "
-            f"ENCODING '{encoding}' "
-            f"TEMPLATE {template}"
-        )
+        with conn.cursor() as cursor:
+            cursor.execute(
+                sql.SQL("CREATE DATABASE {} ENCODING %s TEMPLATE {}").format(
+                    sql.Identifier(database),
+                    sql.Identifier(template),
+                ),
+                (encoding,),
+            )
 
         logger.info(f"Database '{database}' created successfully")
         return True
-
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 
 def drop_database(
@@ -133,7 +118,7 @@ def drop_database(
         True if database was dropped, False if it didn't exist.
 
     Raises:
-        psycopg2.Error: If connection or drop fails.
+        psycopg.Error: If connection or drop fails.
 
     Example:
         >>> drop_database(
@@ -145,50 +130,36 @@ def drop_database(
         ... )
         True
     """
-    conn = None
-    cursor = None
-
-    try:
-        # Connect to default postgres database
-        conn = psycopg2.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database="postgres",
-        )
-
-        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-
+    # Connect to default postgres database with autocommit
+    with psycopg.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        dbname="postgres",
+        autocommit=True,
+    ) as conn:
         # Check if database exists using helper function
         if not _database_exists(conn, database):
             logger.info(f"Database '{database}' does not exist")
             return False
 
-        # Terminate connections if force=True (PostgreSQL 13+)
-        if force:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT pg_terminate_backend(pg_stat_activity.pid) "
-                "FROM pg_stat_activity "
-                "WHERE pg_stat_activity.datname = %s "
-                "AND pid <> pg_backend_pid()",
-                (database,),
-            )
+        with conn.cursor() as cursor:
+            # Terminate connections if force=True (PostgreSQL 13+)
+            if force:
+                cursor.execute(
+                    "SELECT pg_terminate_backend(pg_stat_activity.pid) "
+                    "FROM pg_stat_activity "
+                    "WHERE pg_stat_activity.datname = %s "
+                    "AND pid <> pg_backend_pid()",
+                    (database,),
+                )
 
-        # Drop database
-        if not cursor:
-            cursor = conn.cursor()
-        cursor.execute(f"DROP DATABASE {psycopg2.extensions.quote_ident(database, cursor)}")
+            # Drop database
+            cursor.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(database)))
 
         logger.info(f"Database '{database}' dropped successfully")
         return True
-
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 
 def database_exists(
@@ -219,19 +190,11 @@ def database_exists(
         ... )
         True
     """
-    conn = None
-
-    try:
-        conn = psycopg2.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database="postgres",
-        )
-
+    with psycopg.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        dbname="postgres",
+    ) as conn:
         return _database_exists(conn, database)
-
-    finally:
-        if conn:
-            conn.close()

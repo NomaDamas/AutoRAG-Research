@@ -281,10 +281,13 @@ async def async_get_user(repo: Repository, user_id: int):
     return await concurrency.greenlet_spawn(
         repo.get_user, user_id
     )
-This approach adds overhead from context switching but avoids code duplication. The key requirement is that your async application must use an async dialect (like asyncpg) while sync code uses sync drivers (like psycopg2).
+This approach adds overhead from context switching but avoids code duplication. The key requirement is that your async application must use an async dialect (like asyncpg) while sync code uses sync drivers (like psycopg).
 
 
 # About vector search
 
 We use "VectorChord" for vector search in AutoRAG-Research.
 Also, use pgvector "Vector" type for vector column in SQLAlchemy ORM model.
+
+# READ THIS
+We use pyscopg (a.k.a pyscopg3) as the latest PostgreSQL driver. Rememeber it!

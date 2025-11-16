@@ -197,7 +197,7 @@ class AsyncRepositoryBridge:
     """Bridge for using sync repositories in async contexts.
 
     Uses SQLAlchemy's greenlet-based bridging as recommended by maintainers.
-    Requires async dialect (asyncpg) for application and sync driver (psycopg2)
+    Requires async dialect (asyncpg) for application and sync driver (psycopg)
     for repository code.
     """
 
