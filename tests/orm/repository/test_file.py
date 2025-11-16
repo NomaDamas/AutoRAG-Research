@@ -4,13 +4,10 @@ Tests all FileRepository methods with atomic operations that leave no trace.
 Uses existing database data for read operations and cleans up write operations.
 """
 
-import uuid
-
 import pytest
 from sqlalchemy.orm import Session
 
 from autorag_research.orm.repository.file import FileRepository
-from autorag_research.orm.schema import File
 
 
 @pytest.fixture
@@ -28,199 +25,87 @@ def file_repository(db_session: Session) -> FileRepository:
 
 def test_get_by_path(file_repository: FileRepository, db_session: Session):
     """Test retrieving a file by its path."""
-    # Create a file
-    unique_path = f"/test/path/file_{uuid.uuid4()}.txt"
-    file = File(type="raw", path=unique_path)
-    db_session.add(file)
-    db_session.commit()
-
-    # Test retrieval
-    result = file_repository.get_by_path(unique_path)
+    # Use existing seed data (file id=1, path='/data/doc1.pdf')
+    result = file_repository.get_by_path("/data/doc1.pdf")
 
     assert result is not None
-    assert result.path == unique_path
-
-    # Cleanup
-    db_session.delete(file)
-    db_session.commit()
+    assert result.path == "/data/doc1.pdf"
+    assert result.type == "raw"
 
 
 def test_get_by_type(file_repository: FileRepository, db_session: Session):
     """Test retrieving files by type."""
-    # Create files of specific type
-    unique_id = uuid.uuid4()
-    files = [
-        File(type="audio", path=f"/test/path/audio1_{unique_id}.mp3"),
-        File(type="audio", path=f"/test/path/audio2_{unique_id}.mp3"),
-    ]
-    db_session.add_all(files)
-    db_session.commit()
+    # Use existing seed data (files with type='raw' exist: ids 1-5)
+    results = file_repository.get_by_type("raw")
 
-    # Test retrieval
-    results = file_repository.get_by_type("audio")
-
-    assert len(results) >= 2
-    assert all(f.type == "audio" for f in results)
-
-    # Cleanup
-    for f in files:
-        db_session.delete(f)
-    db_session.commit()
+    assert len(results) >= 5
+    assert all(f.type == "raw" for f in results)
 
 
 def test_get_with_documents(file_repository: FileRepository, db_session: Session):
     """Test retrieving a file with documents eagerly loaded."""
-    # Create a file
-    unique_path = f"/test/path/file_{uuid.uuid4()}.txt"
-    file = File(type="raw", path=unique_path)
-    db_session.add(file)
-    db_session.commit()
-    file_id = file.id
-
-    # Test retrieval
-    result = file_repository.get_with_documents(file_id)
+    # Use existing seed data (file id=1 has document id=1)
+    result = file_repository.get_with_documents(1)
 
     assert result is not None
-    assert result.id == file_id
-    # Documents relationship is loaded (even if empty)
+    assert result.id == 1
     assert hasattr(result, "documents")
-
-    # Cleanup
-    db_session.delete(file)
-    db_session.commit()
+    assert len(result.documents) >= 1
 
 
 def test_get_with_pages(file_repository: FileRepository, db_session: Session):
     """Test retrieving a file with pages eagerly loaded."""
-    # Create a file
-    unique_path = f"/test/path/file_{uuid.uuid4()}.txt"
-    file = File(type="image", path=unique_path)
-    db_session.add(file)
-    db_session.commit()
-    file_id = file.id
-
-    # Test retrieval
-    result = file_repository.get_with_pages(file_id)
+    # Use existing seed data (file id=6 is image with pages)
+    result = file_repository.get_with_pages(6)
 
     assert result is not None
-    assert result.id == file_id
-    # Pages relationship is loaded (even if empty)
+    assert result.id == 6
     assert hasattr(result, "pages")
-
-    # Cleanup
-    db_session.delete(file)
-    db_session.commit()
+    assert len(result.pages) >= 1
 
 
 def test_get_with_image_chunks(file_repository: FileRepository, db_session: Session):
     """Test retrieving a file with image chunks eagerly loaded."""
-    # Create a file
-    unique_path = f"/test/path/file_{uuid.uuid4()}.png"
-    file = File(type="image", path=unique_path)
-    db_session.add(file)
-    db_session.commit()
-    file_id = file.id
-
-    # Test retrieval
-    result = file_repository.get_with_image_chunks(file_id)
+    # Use existing seed data (file id=6 has image_chunks)
+    result = file_repository.get_with_image_chunks(6)
 
     assert result is not None
-    assert result.id == file_id
-    # Image chunks relationship is loaded (even if empty)
+    assert result.id == 6
     assert hasattr(result, "image_chunks")
-
-    # Cleanup
-    db_session.delete(file)
-    db_session.commit()
+    assert len(result.image_chunks) >= 1
 
 
 def test_get_all_by_type(file_repository: FileRepository, db_session: Session):
     """Test retrieving all files by type with pagination."""
-    # Create files
-    unique_id = uuid.uuid4()
-    files = [
-        File(type="video", path=f"/test/path/video1_{unique_id}.mp4"),
-        File(type="video", path=f"/test/path/video2_{unique_id}.mp4"),
-    ]
-    db_session.add_all(files)
-    db_session.commit()
+    # Use existing seed data (type='image' files exist: ids 6-10)
+    results = file_repository.get_all_by_type("image", limit=10, offset=0)
 
-    # Test retrieval with pagination
-    results = file_repository.get_all_by_type("video", limit=10, offset=0)
-
-    assert len(results) >= 2
-    assert all(f.type == "video" for f in results)
-
-    # Cleanup
-    for f in files:
-        db_session.delete(f)
-    db_session.commit()
+    assert len(results) >= 5
+    assert all(f.type == "image" for f in results)
 
 
 def test_search_by_path_pattern(file_repository: FileRepository, db_session: Session):
     """Test searching files by path pattern."""
-    # Create files with specific pattern
-    unique_id = uuid.uuid4()
-    search_pattern = f"test_pattern_{unique_id}"
-    files = [
-        File(type="raw", path=f"/test/{search_pattern}/file1.txt"),
-        File(type="raw", path=f"/test/{search_pattern}/file2.txt"),
-    ]
-    db_session.add_all(files)
-    db_session.commit()
+    # Use existing seed data (paths start with '/data/')
+    results = file_repository.search_by_path_pattern("%/data/%")
 
-    # Test search
-    results = file_repository.search_by_path_pattern(f"%{search_pattern}%")
-
-    assert len(results) >= 2
-    assert all(search_pattern in f.path for f in results)
-
-    # Cleanup
-    for f in files:
-        db_session.delete(f)
-    db_session.commit()
+    assert len(results) >= 10
+    assert all("/data/" in f.path for f in results)
 
 
 def test_count_by_type(file_repository: FileRepository, db_session: Session):
     """Test counting files by type."""
-    # Create files of specific type
-    unique_id = uuid.uuid4()
-    files = [
-        File(type="raw", path=f"/test/path/count1_{unique_id}.txt"),
-        File(type="raw", path=f"/test/path/count2_{unique_id}.txt"),
-    ]
-    db_session.add_all(files)
-    db_session.commit()
-
-    # Test count
+    # Use existing seed data (5 raw files exist)
     count = file_repository.count_by_type("raw")
 
-    assert count >= 2
-
-    # Cleanup
-    for f in files:
-        db_session.delete(f)
-    db_session.commit()
+    assert count >= 5
 
 
 def test_get_all_types(file_repository: FileRepository, db_session: Session):
     """Test getting all unique file types."""
-    # Create files with different types
-    unique_id = uuid.uuid4()
-    files = [
-        File(type="raw", path=f"/test/path/types1_{unique_id}.txt"),
-        File(type="image", path=f"/test/path/types2_{unique_id}.png"),
-    ]
-    db_session.add_all(files)
-    db_session.commit()
-
-    # Test retrieval
+    # Use existing seed data (types: 'raw', 'image')
     types = file_repository.get_all_types()
 
-    assert len(types) > 0
-    assert "raw" in types or "image" in types
-
-    # Cleanup
-    for f in files:
-        db_session.delete(f)
-    db_session.commit()
+    assert len(types) >= 2
+    assert "raw" in types
+    assert "image" in types
