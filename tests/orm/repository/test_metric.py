@@ -2,7 +2,6 @@ import pytest
 from sqlalchemy.orm import Session
 
 from autorag_research.orm.repository.metric import MetricRepository
-from autorag_research.orm.schema import Metric
 
 
 @pytest.fixture
@@ -100,4 +99,3 @@ def test_exists_by_name_and_type(metric_repository: MetricRepository):
 
     not_exists = metric_repository.exists_by_name_and_type("bleu", "retrieval")
     assert not_exists is False
-

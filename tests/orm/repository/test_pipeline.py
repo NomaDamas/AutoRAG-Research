@@ -2,7 +2,6 @@ import pytest
 from sqlalchemy.orm import Session
 
 from autorag_research.orm.repository.pipeline import PipelineRepository
-from autorag_research.orm.schema import Pipeline
 
 
 @pytest.fixture
@@ -78,4 +77,3 @@ def test_exists_by_name(pipeline_repository: PipelineRepository):
 
     not_exists = pipeline_repository.exists_by_name("nonexistent_pipeline")
     assert not_exists is False
-

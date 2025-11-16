@@ -59,4 +59,3 @@ def test_count_by_generation_gt_size(query_repository: QueryRepository):
     count = query_repository.count_by_generation_gt_size(1)
 
     assert count >= 5
-

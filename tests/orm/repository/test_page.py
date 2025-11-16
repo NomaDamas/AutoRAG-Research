@@ -89,4 +89,3 @@ def test_get_page_range(page_repository: PageRepository):
     assert all(p.document_id == 1 for p in results)
     assert results[0].page_num == 1
     assert results[1].page_num == 2
-

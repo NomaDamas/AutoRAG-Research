@@ -110,4 +110,3 @@ def test_exists_by_composite_key(summary_repository: SummaryRepository):
 
     not_exists = summary_repository.exists_by_composite_key(999, 999)
     assert not_exists is False
-

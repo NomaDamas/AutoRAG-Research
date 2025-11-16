@@ -140,4 +140,3 @@ SELECT setval(pg_get_serial_sequence('image_chunk','id'), (SELECT COALESCE(MAX(i
 SELECT setval(pg_get_serial_sequence('query','id'), (SELECT COALESCE(MAX(id), 1) FROM query), true);
 
 COMMIT;
-

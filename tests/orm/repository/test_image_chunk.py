@@ -82,4 +82,3 @@ def test_get_with_all_relations(image_chunk_repository: ImageChunkRepository):
     assert hasattr(result, "image_file")
     assert hasattr(result, "retrieval_relations")
     assert hasattr(result, "image_chunk_retrieved_results")
-
