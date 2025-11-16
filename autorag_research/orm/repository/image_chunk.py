@@ -7,7 +7,7 @@ the base vector repository pattern for similarity search.
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from autorag_research.orm.repository import BaseVectorRepository
+from autorag_research.orm.repository.base import BaseVectorRepository
 from autorag_research.orm.schema import ImageChunk
 
 

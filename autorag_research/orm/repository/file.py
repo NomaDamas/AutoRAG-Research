@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, select
 from sqlalchemy.orm import Session, joinedload
 
-from autorag_research.orm.repository import GenericRepository
+from autorag_research.orm.repository.base import GenericRepository
 from autorag_research.orm.schema import File
 
 

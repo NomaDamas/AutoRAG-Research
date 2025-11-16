@@ -7,7 +7,7 @@ the generic repository pattern.
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from autorag_research.orm.repository import GenericRepository
+from autorag_research.orm.repository.base import GenericRepository
 from autorag_research.orm.schema import Caption
 
 
