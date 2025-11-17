@@ -18,14 +18,18 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "bert-score>=0.3.13",
     "evaluate>=0.4.6",
     "llama-index>=0.12.52",
     "nltk>=3.9.2",
     "numpy>=2.2.6",
     "pandas>=2.3.3",
+    "pgvector>=0.4.1",
+    "psycopg[binary]>=3.2.12",
     "pydantic>=2.12.4",
     "rouge-score>=0.1.2",
     "sacrebleu>=2.5.1",
+    "sqlalchemy>=2.0.44",
     "tiktoken>=0.12.0",
 ]
 
@@ -47,6 +51,7 @@ dev = [
     "mkdocs-material>=8.5.10",
     "mkdocstrings[python]>=0.26.1",
     "pytest-xdist>=3.8.0",
+    "pytest-env>=1.2.0",
 ]
 
 [build-system]
@@ -60,8 +65,14 @@ packages = ["autorag_research"]
 python = "./.venv"
 python-version = "3.10"
 
-[tool.pytest.ini_options]
+[tool.pytest]
 testpaths = ["tests"]
+env = [
+    "POSTGRES_URL=postgresql+psycopg://postgres:postgres@localhost:5432/testdb",
+]
+markers = [
+    "gpu: mark test as requiring a GPU to run",
+]
 
 [tool.ruff]
 target-version = "py310"
@@ -113,6 +124,9 @@ ignore = [
 
 [tool.ruff.format]
 preview = true
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["bert-score"]
 
 [tool.coverage.report]
 skip_empty = true

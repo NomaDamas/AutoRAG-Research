@@ -1,12 +1,13 @@
 import functools
+from collections.abc import Callable
 
 import numpy as np
 
 from autorag_research.schema import MetricInput
-from autorag_research.utils.util import convert_inputs_to_list
+from autorag_research.util import convert_inputs_to_list
 
 
-def calculate_cosine_similarity(a, b):
+def calculate_cosine_similarity(a: list[float] | np.ndarray, b: list[float] | np.ndarray) -> float:
     """Calculate cosine similarity between two vectors.
 
     Args:
@@ -23,7 +24,7 @@ def calculate_cosine_similarity(a, b):
     return similarity
 
 
-def calculate_l2_distance(a, b):
+def calculate_l2_distance(a: np.ndarray, b: np.ndarray) -> float:
     """Calculate L2 distance between two vectors.
 
     Args:
@@ -33,10 +34,10 @@ def calculate_l2_distance(a, b):
     Returns:
         The L2 distance.
     """
-    return np.linalg.norm(a - b)
+    return float(np.linalg.norm(a - b))
 
 
-def calculate_inner_product(a, b):
+def calculate_inner_product(a: list[float] | np.ndarray, b: list[float] | np.ndarray) -> float:
     """Calculate inner product between two vectors.
 
     Args:
@@ -49,7 +50,7 @@ def calculate_inner_product(a, b):
     return np.dot(a, b)
 
 
-def metric(fields_to_check: list[str]):
+def metric(fields_to_check: list[str]) -> Callable:
     """Decorator for AutoRAG metrics that processes each metric input individually.
 
     Use 'for loop' to run each metric input.
@@ -88,7 +89,7 @@ def metric(fields_to_check: list[str]):
     return decorator_autorag_metric
 
 
-def metric_loop(fields_to_check: list[str]):
+def metric_loop(fields_to_check: list[str]) -> Callable:
     """Decorator for AutoRAG metrics that processes all metric inputs at once.
 
     Put the list of metric inputs into the metric function.

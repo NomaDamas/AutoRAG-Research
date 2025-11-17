@@ -6,7 +6,7 @@ from autorag_research.schema import MetricInput
 
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
-def retrieval_f1(metric_input: MetricInput):
+def retrieval_f1(metric_input: MetricInput) -> float:
     """Compute f1 score for retrieval.
 
     Args:
