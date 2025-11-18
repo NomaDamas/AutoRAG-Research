@@ -106,7 +106,7 @@ Table EvaluationResult {
   pipeline_id bigint [ref: > Pipeline.id, not null]
   metric_id bigint [ref: > Metric.id, not null]
 
-  metric_result float
+  metric_result float [not null]
 
   indexes {
     (query_id, pipeline_id, metric_id) [pk]

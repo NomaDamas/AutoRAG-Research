@@ -108,11 +108,19 @@ INSERT INTO metric (id, name, type) VALUES
 	(2, 'bleu', 'generation')
 ON CONFLICT DO NOTHING;
 
+-- Executor results
+INSERT INTO executor_result (query_id, pipeline_id, generation_result, token_usage, execution_time, result_metadata) VALUES
+	(1, 1,  NULL, 100, 1200, '{"notes": "ok"}'),
+	(1, 2,  NULL,  120, 1400, '{"notes": "better"}'),
+	(2, 1,  'Generated text 1', 200, 2500, '{"len": 20}')
+ON CONFLICT DO NOTHING;
+
+
 -- Experiment results
-INSERT INTO experiment_result (query_id, pipeline_id, metric_id, generation_result, metric_result, token_usage, execution_time, result_metadata) VALUES
-	(1, 1, 1, NULL, 0.8, 100, 1200, '{"notes": "ok"}'),
-	(1, 2, 1, NULL, 0.85, 120, 1400, '{"notes": "better"}'),
-	(2, 1, 2, 'Generated text 1', 0.6, 200, 2500, '{"len": 20}')
+INSERT INTO evaluation_result (query_id, pipeline_id, metric_id, metric_result) VALUES
+	(1, 1, 1, 0.8),
+	(1, 2, 1, 0.85),
+	(2, 1, 2, 0.6)
 ON CONFLICT DO NOTHING;
 
 -- Retrieved results (image/text)
