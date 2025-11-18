@@ -125,11 +125,13 @@ ON CONFLICT DO NOTHING;
 
 -- Retrieved results (image/text)
 INSERT INTO image_chunk_retrieved_result (query_id, pipeline_id, metric_id, image_chunk_id, rel_score) VALUES
-	(3, 1, 1, 1), (4, 2, 1, 2, 0.7)
+	(3, 1, 1, 1, 0.9),
+	(4, 2, 1, 2, 0.7)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO chunk_retrieved_result (query_id, pipeline_id, metric_id, chunk_id, rel_score) VALUES
-	(1, 1, 1, 1), (2, 2, 1, 3, 0.4)
+	(1, 1, 1, 1, 0.85),
+	(2, 2, 1, 3, 0.4)
 ON CONFLICT DO NOTHING;
 
 -- Summary

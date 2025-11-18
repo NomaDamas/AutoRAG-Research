@@ -121,10 +121,10 @@ CREATE TABLE IF NOT EXISTS executor_result (
 	token_usage INT,
 	execution_time INT,
 	result_metadata JSONB,
-	PRIMARY KEY (query_id, pipeline_id, metric_id)
+	PRIMARY KEY (query_id, pipeline_id)
 );
 
-CREATE TABLE IF NOT EXISTS experiment_result (
+CREATE TABLE IF NOT EXISTS evaluation_result (
     query_id BIGINT NOT NULL REFERENCES query(id),
     pipeline_id BIGINT NOT NULL REFERENCES pipeline(id),
     metric_id BIGINT NOT NULL REFERENCES metric(id),
