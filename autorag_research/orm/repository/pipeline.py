@@ -34,16 +34,16 @@ class PipelineRepository(GenericRepository[Pipeline]):
         stmt = select(Pipeline).where(Pipeline.name == name)
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_experiment_results(self, pipeline_id: int) -> Pipeline | None:
-        """Retrieve a pipeline with its experiment results eagerly loaded.
+    def get_with_executor_results(self, pipeline_id: int) -> Pipeline | None:
+        """Retrieve a pipeline with its executor results eagerly loaded.
 
         Args:
             pipeline_id: The pipeline ID.
 
         Returns:
-            The pipeline with experiment results loaded, None if not found.
+            The pipeline with executor results loaded, None if not found.
         """
-        stmt = select(Pipeline).where(Pipeline.id == pipeline_id).options(joinedload(Pipeline.experiment_results))
+        stmt = select(Pipeline).where(Pipeline.id == pipeline_id).options(joinedload(Pipeline.executor_results))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_summaries(self, pipeline_id: int) -> Pipeline | None:
@@ -90,7 +90,7 @@ class PipelineRepository(GenericRepository[Pipeline]):
             select(Pipeline)
             .where(Pipeline.id == pipeline_id)
             .options(
-                joinedload(Pipeline.experiment_results),
+                joinedload(Pipeline.executor_results),
                 joinedload(Pipeline.summaries),
                 joinedload(Pipeline.chunk_retrieved_results),
                 joinedload(Pipeline.image_chunk_retrieved_results),

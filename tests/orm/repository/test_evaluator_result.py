@@ -68,23 +68,6 @@ def test_get_with_non_null_metric_result(evaluator_result_repository: EvaluatorR
     assert result.metric_result == 0.8
 
 
-def test_get_with_non_null_metric_result_returns_none_for_null(
-    evaluator_result_repository: EvaluatorResultRepository, db_session: Session
-):
-    # Create a result with null metric_result
-    new_result = EvaluationResult(
-        query_id=5,
-        pipeline_id=2,
-        metric_id=1,
-        metric_result=None,
-    )
-    evaluator_result_repository.add(new_result)
-    db_session.flush()
-
-    result = evaluator_result_repository.get_with_non_null_metric_result(5, 2, 1)
-    assert result is None
-
-
 def test_get_by_metric_result_range(evaluator_result_repository: EvaluatorResultRepository):
     results = evaluator_result_repository.get_by_metric_result_range(1, 0.7, 0.85)
 

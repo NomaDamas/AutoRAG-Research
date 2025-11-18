@@ -85,23 +85,6 @@ class ExecutorResultRepository(GenericRepository[ExecutorResult]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_with_generation_results(self, query_id: int, pipeline_id: int) -> ExecutorResult | None:
-        """Retrieve executor result with non-null generation result.
-
-        Args:
-            query_id: The query ID.
-            pipeline_id: The pipeline ID.
-
-        Returns:
-            The executor result if it has a generation result, None otherwise.
-        """
-        stmt = select(ExecutorResult).where(
-            ExecutorResult.query_id == query_id,
-            ExecutorResult.pipeline_id == pipeline_id,
-            ExecutorResult.generation_result.is_not(None),
-        )
-        return self.session.execute(stmt).scalar_one_or_none()
-
     def get_by_execution_time_range(self, pipeline_id: int, min_time: int, max_time: int) -> list[ExecutorResult]:
         """Retrieve executor results within an execution time range.
 
