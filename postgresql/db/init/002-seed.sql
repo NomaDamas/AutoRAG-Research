@@ -79,12 +79,12 @@ INSERT INTO caption_chunk_relation (caption_id, chunk_id) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Queries
-INSERT INTO query (id, query, generation_gt) VALUES
-	(1, 'What is Doc One about?', ARRAY['alpha']),
-	(2, 'Find details in Doc Two', ARRAY['beta']),
-	(3, 'Summarize Doc Three', ARRAY['gamma']),
-	(4, 'Topics in Doc Four', ARRAY['delta']),
-	(5, 'Explain Doc Five', ARRAY['epsilon'])
+INSERT INTO query (id, query, generation_gt, embedding, embeddings) VALUES
+	(1, 'What is Doc One about?', ARRAY['alpha'], NULL, NULL),
+	(2, 'Find details in Doc Two', ARRAY['beta'], NULL, NULL),
+	(3, 'Summarize Doc Three', ARRAY['gamma'], NULL, NULL),
+	(4, 'Topics in Doc Four', ARRAY['delta'], NULL, NULL),
+	(5, 'Explain Doc Five', ARRAY['epsilon'], NULL, NULL)
 ON CONFLICT DO NOTHING;
 
 -- Retrieval relations (exactly one of chunk_id, image_chunk_id)

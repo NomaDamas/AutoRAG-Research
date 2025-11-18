@@ -56,6 +56,8 @@ Table Query {
   id bigserial [pk]
   query text [not null]
   generation_gt text[] [not null]
+  embedding vector(768)
+  embeddings vector
 }
 
 Table RetrievalRelation {
@@ -85,41 +87,49 @@ Table Metric {
   type varchar(255) [not null] // retrieval, generation
 }
 
-Table ExperimentResult {
+Table ExecutorResult {
   query_id bigint [ref: > Query.id, not null]
   pipeline_id bigint [ref: > Pipeline.id, not null]
-  metric_id bigint [ref: > Metric.id, not null]
 
   generation_result text
-  metric_result float
   token_usage int
   execution_time int //아무튼 시간임
   result_metadata jsonb
 
   indexes {
-    (query_id, pipeline_id, metric_id) [pk]
+    (query_id, pipeline_id) [pk]
   }
+}
+
+Table EvaluationResult {
+  query_id bigint [ref: > Query.id, not null]
+  pipeline_id bigint [ref: > Pipeline.id, not null]
+  metric_id bigint [ref: > Metric.id, not null]
+
+  metric_result float
+
+  indexes {
+    (query_id, pipeline_id, metric_id) [pk]
+    }
 }
 
 Table ImageChunkRetrievedResult {
   query_id bigint [ref: > Query.id, not null]
   pipeline_id bigint [ref: > Pipeline.id, not null]
-  metric_id bigint [ref: > Metric.id, not null]
   image_chunk_id bigint [ref: > ImageChunk.id, not null]
 
   indexes {
-    (query_id, pipeline_id, metric_id, image_chunk_id) [pk]
+    (query_id, pipeline_id, image_chunk_id) [pk]
   }
 }
 
 Table ChunkRetrievedResult {
   query_id bigint [ref: > Query.id, not null]
   pipeline_id bigint [ref: > Pipeline.id, not null]
-  metric_id bigint [ref: > Metric.id, not null]
   chunk_id bigint [ref: > Chunk.id, not null]
 
   indexes {
-    (query_id, pipeline_id, metric_id, chunk_id) [pk]
+    (query_id, pipeline_id, chunk_id) [pk]
   }
 }
 
@@ -128,7 +138,7 @@ Table Summary {
   metric_id bigint [ref: > Metric.id, not null]
   metric_result float [not null]
   token_usage int
-  execution_time int // This has to be time
+  execution_time int //아무튼 시간임
   result_metadata jsonb
 
   indexes {

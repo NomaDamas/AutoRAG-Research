@@ -83,7 +83,9 @@ CREATE TABLE IF NOT EXISTS caption_chunk_relation (
 CREATE TABLE IF NOT EXISTS query (
 	id BIGSERIAL PRIMARY KEY,
 	query TEXT NOT NULL,
-	generation_gt TEXT[] NOT NULL
+	generation_gt TEXT[] NOT NULL,
+	embedding VECTOR(768),
+	embeddings VECTOR(768)[]
 );
 
 -- RetrievalRelation

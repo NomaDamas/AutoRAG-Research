@@ -59,3 +59,22 @@ def test_count_by_generation_gt_size(query_repository: QueryRepository):
     count = query_repository.count_by_generation_gt_size(1)
 
     assert count >= 5
+
+
+def test_query_has_embedding_attributes(query_repository: QueryRepository):
+    """Test that Query entities have embedding and embeddings attributes."""
+    result = query_repository.get_by_id(1)
+
+    assert result is not None
+    assert hasattr(result, "embedding")
+    assert hasattr(result, "embeddings")
+    # Verify they can be None (as per seed data)
+    assert result.embedding is None
+    assert result.embeddings is None
+
+
+def test_vector_search_capability(query_repository: QueryRepository):
+    """Test that QueryRepository inherits vector search methods from BaseVectorRepository."""
+    # Verify the repository has vector search methods
+    assert hasattr(query_repository, "vector_search")
+    assert hasattr(query_repository, "vector_search_with_scores")

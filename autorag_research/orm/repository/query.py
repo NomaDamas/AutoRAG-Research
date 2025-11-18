@@ -7,12 +7,12 @@ for managing evaluation queries and their ground truth data.
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from autorag_research.orm.repository.base import GenericRepository
+from autorag_research.orm.repository.base import BaseVectorRepository
 from autorag_research.orm.schema import Query
 
 
-class QueryRepository(GenericRepository[Query]):
-    """Repository for Query entity with relationship loading capabilities."""
+class QueryRepository(BaseVectorRepository[Query]):
+    """Repository for Query entity with relationship loading and vector search capabilities."""
 
     def __init__(self, session: Session):
         """Initialize query repository.
