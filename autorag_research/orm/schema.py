@@ -313,6 +313,7 @@ class ImageChunkRetrievedResult(Base):
     image_chunk_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("image_chunk.id", ondelete="CASCADE"), nullable=False, primary_key=True
     )
+    rel_score: Mapped[float | None] = mapped_column(Float)
 
     # Relationships
     query_obj: Mapped["Query"] = relationship(back_populates="image_chunk_retrieved_results")
@@ -338,6 +339,7 @@ class ChunkRetrievedResult(Base):
     chunk_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("chunk.id", ondelete="CASCADE"), nullable=False, primary_key=True
     )
+    rel_score: Mapped[float | None] = mapped_column(Float)
 
     # Relationships
     query_obj: Mapped["Query"] = relationship(back_populates="chunk_retrieved_results")

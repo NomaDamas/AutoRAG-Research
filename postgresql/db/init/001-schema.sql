@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS image_chunk_retrieved_result (
 	pipeline_id BIGINT NOT NULL REFERENCES pipeline(id),
 	metric_id BIGINT NOT NULL REFERENCES metric(id),
 	image_chunk_id BIGINT NOT NULL REFERENCES image_chunk(id),
+    rel_score FLOAT,
 	PRIMARY KEY (query_id, pipeline_id, metric_id, image_chunk_id)
 );
 
@@ -147,6 +148,7 @@ CREATE TABLE IF NOT EXISTS chunk_retrieved_result (
 	pipeline_id BIGINT NOT NULL REFERENCES pipeline(id),
 	metric_id BIGINT NOT NULL REFERENCES metric(id),
 	chunk_id BIGINT NOT NULL REFERENCES chunk(id),
+    rel_score FLOAT,
 	PRIMARY KEY (query_id, pipeline_id, metric_id, chunk_id)
 );
 

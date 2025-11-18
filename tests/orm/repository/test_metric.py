@@ -33,7 +33,7 @@ def test_get_by_type(metric_repository: MetricRepository):
 
 
 def test_get_with_experiment_results(metric_repository: MetricRepository):
-    result = metric_repository.get_with_experiment_results(1)
+    result = metric_repository.get_with_executor_results(1)
 
     assert result is not None
     assert hasattr(result, "experiment_results")

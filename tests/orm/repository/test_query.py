@@ -24,11 +24,11 @@ def test_get_with_retrieval_relations(query_repository: QueryRepository):
     assert hasattr(result, "retrieval_relations")
 
 
-def test_get_with_experiment_results(query_repository: QueryRepository):
-    result = query_repository.get_with_experiment_results(1)
+def test_get_with_executor_results(query_repository: QueryRepository):
+    result = query_repository.get_with_executor_results(1)
 
     assert result is not None
-    assert hasattr(result, "experiment_results")
+    assert hasattr(result, "executor_results")
 
 
 def test_get_with_all_relations(query_repository: QueryRepository):
@@ -36,9 +36,10 @@ def test_get_with_all_relations(query_repository: QueryRepository):
 
     assert result is not None
     assert hasattr(result, "retrieval_relations")
-    assert hasattr(result, "experiment_results")
+    assert hasattr(result, "executor_results")
     assert hasattr(result, "chunk_retrieved_results")
     assert hasattr(result, "image_chunk_retrieved_results")
+    assert hasattr(result, "evaluation_results")
 
 
 def test_search_by_query_text(query_repository: QueryRepository):

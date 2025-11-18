@@ -59,7 +59,7 @@ class MetricRepository(GenericRepository[Metric]):
         stmt = select(Metric).where(Metric.type == metric_type).order_by(Metric.name)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_experiment_results(self, metric_id: int) -> Metric | None:
+    def get_with_executor_results(self, metric_id: int) -> Metric | None:
         """Retrieve a metric with its experiment results eagerly loaded.
 
         Args:

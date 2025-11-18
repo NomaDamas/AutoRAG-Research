@@ -46,16 +46,16 @@ class QueryRepository(BaseVectorRepository[Query]):
         stmt = select(Query).where(Query.id == query_id).options(joinedload(Query.retrieval_relations))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_experiment_results(self, query_id: int) -> Query | None:
-        """Retrieve a query with its experiment results eagerly loaded.
+    def get_with_executor_results(self, query_id: int) -> Query | None:
+        """Retrieve a query with its executor results eagerly loaded.
 
         Args:
             query_id: The query ID.
 
         Returns:
-            The query with experiment results loaded, None if not found.
+            The query with executor results loaded, None if not found.
         """
-        stmt = select(Query).where(Query.id == query_id).options(joinedload(Query.experiment_results))
+        stmt = select(Query).where(Query.id == query_id).options(joinedload(Query.executor_results))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_all_relations(self, query_id: int) -> Query | None:
@@ -72,9 +72,10 @@ class QueryRepository(BaseVectorRepository[Query]):
             .where(Query.id == query_id)
             .options(
                 joinedload(Query.retrieval_relations),
-                joinedload(Query.experiment_results),
+                joinedload(Query.executor_results),
                 joinedload(Query.chunk_retrieved_results),
                 joinedload(Query.image_chunk_retrieved_results),
+                joinedload(Query.evaluation_results),
             )
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()

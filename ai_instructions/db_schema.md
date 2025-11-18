@@ -117,6 +117,7 @@ Table ImageChunkRetrievedResult {
   query_id bigint [ref: > Query.id, not null]
   pipeline_id bigint [ref: > Pipeline.id, not null]
   image_chunk_id bigint [ref: > ImageChunk.id, not null]
+  rel_score float
 
   indexes {
     (query_id, pipeline_id, image_chunk_id) [pk]
@@ -127,6 +128,7 @@ Table ChunkRetrievedResult {
   query_id bigint [ref: > Query.id, not null]
   pipeline_id bigint [ref: > Pipeline.id, not null]
   chunk_id bigint [ref: > Chunk.id, not null]
+  rel_score float
 
   indexes {
     (query_id, pipeline_id, chunk_id) [pk]
