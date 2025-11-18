@@ -7,12 +7,12 @@ for managing evaluation queries and their ground truth data.
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from autorag_research.orm.repository.base import GenericRepository
+from autorag_research.orm.repository.base import BaseVectorRepository
 from autorag_research.orm.schema import Query
 
 
-class QueryRepository(GenericRepository[Query]):
-    """Repository for Query entity with relationship loading capabilities."""
+class QueryRepository(BaseVectorRepository[Query]):
+    """Repository for Query entity with relationship loading and vector search capabilities."""
 
     def __init__(self, session: Session):
         """Initialize query repository.
@@ -46,16 +46,16 @@ class QueryRepository(GenericRepository[Query]):
         stmt = select(Query).where(Query.id == query_id).options(joinedload(Query.retrieval_relations))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_experiment_results(self, query_id: int) -> Query | None:
-        """Retrieve a query with its experiment results eagerly loaded.
+    def get_with_executor_results(self, query_id: int) -> Query | None:
+        """Retrieve a query with its executor results eagerly loaded.
 
         Args:
             query_id: The query ID.
 
         Returns:
-            The query with experiment results loaded, None if not found.
+            The query with executor results loaded, None if not found.
         """
-        stmt = select(Query).where(Query.id == query_id).options(joinedload(Query.experiment_results))
+        stmt = select(Query).where(Query.id == query_id).options(joinedload(Query.executor_results))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_all_relations(self, query_id: int) -> Query | None:
@@ -72,9 +72,10 @@ class QueryRepository(GenericRepository[Query]):
             .where(Query.id == query_id)
             .options(
                 joinedload(Query.retrieval_relations),
-                joinedload(Query.experiment_results),
+                joinedload(Query.executor_results),
                 joinedload(Query.chunk_retrieved_results),
                 joinedload(Query.image_chunk_retrieved_results),
+                joinedload(Query.evaluation_results),
             )
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()

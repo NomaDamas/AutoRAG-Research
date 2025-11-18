@@ -59,18 +59,6 @@ class MetricRepository(GenericRepository[Metric]):
         stmt = select(Metric).where(Metric.type == metric_type).order_by(Metric.name)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_experiment_results(self, metric_id: int) -> Metric | None:
-        """Retrieve a metric with its experiment results eagerly loaded.
-
-        Args:
-            metric_id: The metric ID.
-
-        Returns:
-            The metric with experiment results loaded, None if not found.
-        """
-        stmt = select(Metric).where(Metric.id == metric_id).options(joinedload(Metric.experiment_results))
-        return self.session.execute(stmt).unique().scalar_one_or_none()
-
     def get_with_summaries(self, metric_id: int) -> Metric | None:
         """Retrieve a metric with its summaries eagerly loaded.
 
@@ -115,7 +103,6 @@ class MetricRepository(GenericRepository[Metric]):
             select(Metric)
             .where(Metric.id == metric_id)
             .options(
-                joinedload(Metric.experiment_results),
                 joinedload(Metric.summaries),
                 joinedload(Metric.chunk_retrieved_results),
                 joinedload(Metric.image_chunk_retrieved_results),
