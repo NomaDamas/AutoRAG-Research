@@ -79,12 +79,12 @@ INSERT INTO caption_chunk_relation (caption_id, chunk_id) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Queries
-INSERT INTO query (id, query, generation_gt) VALUES
-	(1, 'What is Doc One about?', ARRAY['alpha']),
-	(2, 'Find details in Doc Two', ARRAY['beta']),
-	(3, 'Summarize Doc Three', ARRAY['gamma']),
-	(4, 'Topics in Doc Four', ARRAY['delta']),
-	(5, 'Explain Doc Five', ARRAY['epsilon'])
+INSERT INTO query (id, query, generation_gt, embedding, embeddings) VALUES
+	(1, 'What is Doc One about?', ARRAY['alpha'], NULL, NULL),
+	(2, 'Find details in Doc Two', ARRAY['beta'], NULL, NULL),
+	(3, 'Summarize Doc Three', ARRAY['gamma'], NULL, NULL),
+	(4, 'Topics in Doc Four', ARRAY['delta'], NULL, NULL),
+	(5, 'Explain Doc Five', ARRAY['epsilon'], NULL, NULL)
 ON CONFLICT DO NOTHING;
 
 -- Retrieval relations (exactly one of chunk_id, image_chunk_id)
@@ -108,20 +108,30 @@ INSERT INTO metric (id, name, type) VALUES
 	(2, 'bleu', 'generation')
 ON CONFLICT DO NOTHING;
 
+-- Executor results
+INSERT INTO executor_result (query_id, pipeline_id, generation_result, token_usage, execution_time, result_metadata) VALUES
+	(1, 1,  NULL, 100, 1200, '{"notes": "ok"}'),
+	(1, 2,  NULL,  120, 1400, '{"notes": "better"}'),
+	(2, 1,  'Generated text 1', 200, 2500, '{"len": 20}')
+ON CONFLICT DO NOTHING;
+
+
 -- Experiment results
-INSERT INTO experiment_result (query_id, pipeline_id, metric_id, generation_result, metric_result, token_usage, execution_time, result_metadata) VALUES
-	(1, 1, 1, NULL, 0.8, 100, 1200, '{"notes": "ok"}'),
-	(1, 2, 1, NULL, 0.85, 120, 1400, '{"notes": "better"}'),
-	(2, 1, 2, 'Generated text 1', 0.6, 200, 2500, '{"len": 20}')
+INSERT INTO evaluation_result (query_id, pipeline_id, metric_id, metric_result) VALUES
+	(1, 1, 1, 0.8),
+	(1, 2, 1, 0.85),
+	(2, 1, 2, 0.6)
 ON CONFLICT DO NOTHING;
 
 -- Retrieved results (image/text)
-INSERT INTO image_chunk_retrieved_result (query_id, pipeline_id, metric_id, image_chunk_id) VALUES
-	(3, 1, 1, 1), (4, 2, 1, 2)
+INSERT INTO image_chunk_retrieved_result (query_id, pipeline_id, metric_id, image_chunk_id, rel_score) VALUES
+	(3, 1, 1, 1, 0.9),
+	(4, 2, 1, 2, 0.7)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO chunk_retrieved_result (query_id, pipeline_id, metric_id, chunk_id) VALUES
-	(1, 1, 1, 1), (2, 2, 1, 3)
+INSERT INTO chunk_retrieved_result (query_id, pipeline_id, metric_id, chunk_id, rel_score) VALUES
+	(1, 1, 1, 1, 0.85),
+	(2, 2, 1, 3, 0.4)
 ON CONFLICT DO NOTHING;
 
 -- Summary

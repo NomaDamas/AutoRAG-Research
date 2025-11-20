@@ -159,12 +159,17 @@ class Query(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     query: Mapped[str] = mapped_column(Text, nullable=False)
     generation_gt: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    embedding: Mapped[Vector | None] = mapped_column(Vector(768))
+    embeddings: Mapped[list[Vector] | None] = mapped_column(ARRAY(Vector(768)))
 
     # Relationships
     retrieval_relations: Mapped[list["RetrievalRelation"]] = relationship(
         back_populates="query_obj", cascade="all, delete-orphan"
     )
-    experiment_results: Mapped[list["ExperimentResult"]] = relationship(
+    executor_results: Mapped[list["ExecutorResult"]] = relationship(
+        back_populates="query_obj", cascade="all, delete-orphan"
+    )
+    evaluation_results: Mapped[list["EvaluationResult"]] = relationship(
         back_populates="query_obj", cascade="all, delete-orphan"
     )
     image_chunk_retrieved_results: Mapped[list["ImageChunkRetrievedResult"]] = relationship(
@@ -211,7 +216,10 @@ class Pipeline(Base):
     config: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
     # Relationships
-    experiment_results: Mapped[list["ExperimentResult"]] = relationship(
+    executor_results: Mapped[list["ExecutorResult"]] = relationship(
+        back_populates="pipeline", cascade="all, delete-orphan"
+    )
+    evaluation_results: Mapped[list["EvaluationResult"]] = relationship(
         back_populates="pipeline", cascade="all, delete-orphan"
     )
     image_chunk_retrieved_results: Mapped[list["ImageChunkRetrievedResult"]] = relationship(
@@ -233,7 +241,7 @@ class Metric(Base):
     type: Mapped[str] = mapped_column(String(255), nullable=False)  # retrieval, generation
 
     # Relationships
-    experiment_results: Mapped[list["ExperimentResult"]] = relationship(
+    evaluation_results: Mapped[list["EvaluationResult"]] = relationship(
         back_populates="metric", cascade="all, delete-orphan"
     )
     image_chunk_retrieved_results: Mapped[list["ImageChunkRetrievedResult"]] = relationship(
@@ -245,10 +253,31 @@ class Metric(Base):
     summaries: Mapped[list["Summary"]] = relationship(back_populates="metric", cascade="all, delete-orphan")
 
 
-class ExperimentResult(Base):
-    """Experiment result table for query-level metrics"""
+class ExecutorResult(Base):
+    """Executor result table for query execution details"""
 
-    __tablename__ = "experiment_result"
+    __tablename__ = "executor_result"
+
+    query_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("query.id", ondelete="CASCADE"), nullable=False, primary_key=True
+    )
+    pipeline_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pipeline.id", ondelete="CASCADE"), nullable=False, primary_key=True
+    )
+    generation_result: Mapped[str | None] = mapped_column(Text)
+    token_usage: Mapped[int | None] = mapped_column(Integer)
+    execution_time: Mapped[int | None] = mapped_column(Integer)  # Time in milliseconds or seconds
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB)
+
+    # Relationships
+    query_obj: Mapped["Query"] = relationship(back_populates="executor_results")
+    pipeline: Mapped["Pipeline"] = relationship(back_populates="executor_results")
+
+
+class EvaluationResult(Base):
+    """Evaluation result table for query-level metrics"""
+
+    __tablename__ = "evaluation_result"
 
     query_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("query.id", ondelete="CASCADE"), nullable=False, primary_key=True
@@ -259,16 +288,12 @@ class ExperimentResult(Base):
     metric_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("metric.id", ondelete="CASCADE"), nullable=False, primary_key=True
     )
-    generation_result: Mapped[str | None] = mapped_column(Text)
     metric_result: Mapped[float | None] = mapped_column(Float)
-    token_usage: Mapped[int | None] = mapped_column(Integer)
-    execution_time: Mapped[int | None] = mapped_column(Integer)  # Time in milliseconds or seconds
-    result_metadata: Mapped[dict | None] = mapped_column(JSONB)
 
     # Relationships
-    query_obj: Mapped["Query"] = relationship(back_populates="experiment_results")
-    pipeline: Mapped["Pipeline"] = relationship(back_populates="experiment_results")
-    metric: Mapped["Metric"] = relationship(back_populates="experiment_results")
+    query_obj: Mapped["Query"] = relationship(back_populates="evaluation_results")
+    pipeline: Mapped["Pipeline"] = relationship(back_populates="evaluation_results")
+    metric: Mapped["Metric"] = relationship(back_populates="evaluation_results")
 
 
 class ImageChunkRetrievedResult(Base):
@@ -288,6 +313,7 @@ class ImageChunkRetrievedResult(Base):
     image_chunk_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("image_chunk.id", ondelete="CASCADE"), nullable=False, primary_key=True
     )
+    rel_score: Mapped[float | None] = mapped_column(Float)
 
     # Relationships
     query_obj: Mapped["Query"] = relationship(back_populates="image_chunk_retrieved_results")
@@ -313,6 +339,7 @@ class ChunkRetrievedResult(Base):
     chunk_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("chunk.id", ondelete="CASCADE"), nullable=False, primary_key=True
     )
+    rel_score: Mapped[float | None] = mapped_column(Float)
 
     # Relationships
     query_obj: Mapped["Query"] = relationship(back_populates="chunk_retrieved_results")

@@ -83,7 +83,9 @@ CREATE TABLE IF NOT EXISTS caption_chunk_relation (
 CREATE TABLE IF NOT EXISTS query (
 	id BIGSERIAL PRIMARY KEY,
 	query TEXT NOT NULL,
-	generation_gt TEXT[] NOT NULL
+	generation_gt TEXT[] NOT NULL,
+	embedding VECTOR(768),
+	embeddings VECTOR(768)[]
 );
 
 -- RetrievalRelation
@@ -112,16 +114,22 @@ CREATE TABLE IF NOT EXISTS metric (
 );
 
 -- ExperimentResult
-CREATE TABLE IF NOT EXISTS experiment_result (
+CREATE TABLE IF NOT EXISTS executor_result (
 	query_id BIGINT NOT NULL REFERENCES query(id),
 	pipeline_id BIGINT NOT NULL REFERENCES pipeline(id),
-	metric_id BIGINT NOT NULL REFERENCES metric(id),
 	generation_result TEXT,
-	metric_result FLOAT,
 	token_usage INT,
 	execution_time INT,
 	result_metadata JSONB,
-	PRIMARY KEY (query_id, pipeline_id, metric_id)
+	PRIMARY KEY (query_id, pipeline_id)
+);
+
+CREATE TABLE IF NOT EXISTS evaluation_result (
+    query_id BIGINT NOT NULL REFERENCES query(id),
+    pipeline_id BIGINT NOT NULL REFERENCES pipeline(id),
+    metric_id BIGINT NOT NULL REFERENCES metric(id),
+    metric_result FLOAT NOT NULL,
+    PRIMARY KEY (query_id, pipeline_id, metric_id)
 );
 
 -- ImageChunkRetrievedResult
@@ -130,6 +138,7 @@ CREATE TABLE IF NOT EXISTS image_chunk_retrieved_result (
 	pipeline_id BIGINT NOT NULL REFERENCES pipeline(id),
 	metric_id BIGINT NOT NULL REFERENCES metric(id),
 	image_chunk_id BIGINT NOT NULL REFERENCES image_chunk(id),
+    rel_score FLOAT,
 	PRIMARY KEY (query_id, pipeline_id, metric_id, image_chunk_id)
 );
 
@@ -139,6 +148,7 @@ CREATE TABLE IF NOT EXISTS chunk_retrieved_result (
 	pipeline_id BIGINT NOT NULL REFERENCES pipeline(id),
 	metric_id BIGINT NOT NULL REFERENCES metric(id),
 	chunk_id BIGINT NOT NULL REFERENCES chunk(id),
+    rel_score FLOAT,
 	PRIMARY KEY (query_id, pipeline_id, metric_id, chunk_id)
 );
 

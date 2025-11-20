@@ -17,11 +17,11 @@ def test_get_by_name(pipeline_repository: PipelineRepository):
     assert result.config == {"k": 5}
 
 
-def test_get_with_experiment_results(pipeline_repository: PipelineRepository):
-    result = pipeline_repository.get_with_experiment_results(1)
+def test_get_with_executor_results(pipeline_repository: PipelineRepository):
+    result = pipeline_repository.get_with_executor_results(1)
 
     assert result is not None
-    assert hasattr(result, "experiment_results")
+    assert hasattr(result, "executor_results")
 
 
 def test_get_with_summaries(pipeline_repository: PipelineRepository):
@@ -43,7 +43,7 @@ def test_get_with_all_relations(pipeline_repository: PipelineRepository):
     result = pipeline_repository.get_with_all_relations(1)
 
     assert result is not None
-    assert hasattr(result, "experiment_results")
+    assert hasattr(result, "executor_results")
     assert hasattr(result, "summaries")
     assert hasattr(result, "chunk_retrieved_results")
     assert hasattr(result, "image_chunk_retrieved_results")
