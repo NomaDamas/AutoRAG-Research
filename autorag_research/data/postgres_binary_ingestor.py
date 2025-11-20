@@ -1,95 +1,74 @@
-"""Utilities for exporting PostgreSQL datasets to compressed binary archives."""
+"""Utilities for exporting PostgreSQL datasets via `pg_dump`."""
 
 from __future__ import annotations
 
-import gzip
 import os
-import pickle
+import subprocess
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import text
-from sqlalchemy.engine import Engine, create_engine
+from sqlalchemy.engine.url import make_url
+
+from autorag_research.data.base import DataIngestor
 
 
-DEFAULT_TABLES = (
-    "file",
-    "document",
-    "page",
-    "caption",
-    "chunk",
-    "image_chunk",
-    "caption_chunk_relation",
-    "query",
-    "retrieval_relation",
-    "pipeline",
-    "metric",
-    "experiment_result",
-    "image_chunk_retrieved_result",
-    "chunk_retrieved_result",
-    "summary",
-)
-
-
-class PostgresBinaryIngestor:
-    """Serialize PostgreSQL tables into a single compressed binary asset."""
+class PostgresBinaryIngestor(DataIngestor):
+    """Export a PostgreSQL database using native `pg_dump`."""
 
     def __init__(
         self,
         dsn: str,
         *,
         output_path: str | os.PathLike[str],
-        schema: str | None = None,
-        table_names: tuple[str, ...] = DEFAULT_TABLES,
-        chunk_size: int = 1000,
+        pg_dump_args: list[str] | None = None,
     ) -> None:
-        super().__init__(dsn, schema=schema)
+        super().__init__(dsn, schema=None)
         self.output_path = Path(output_path)
-        self.table_names = table_names
-        self.chunk_size = chunk_size
-        self._engine: Engine | None = None
+        self.pg_dump_args = list(pg_dump_args or [])
+        self.url = make_url(dsn)
 
-    # Lifecycle -----------------------------------------------------------------
+        if self.url.drivername == "postgresql+psycopg2":
+            raise ValueError(
+                "PostgresBinaryIngestor only supports psycopg (v3). Use a DSN with the "
+                "'postgresql+psycopg' driver or omit the driver for SQLAlchemy's default."
+            )
+        if self.url.drivername not in {
+            "postgresql",
+            "postgresql+psycopg",
+        }:
+            raise ValueError(
+                "PostgresBinaryIngestor requires a PostgreSQL DSN using the psycopg driver."
+            )
 
     def prepare(self) -> None:
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
-        self._engine = create_engine(self.dsn, future=True)
 
     def ingest(self) -> None:
-        if self._engine is None:
-            raise RuntimeError("Engine not initialized; call prepare() before ingest().")
+        cmd: list[str] = [
+            "pg_dump",
+            "--format=custom",
+            f"--file={self.output_path}",
+        ]
 
-        payload: dict[str, list[dict[str, Any]]] = {}
-        metadata: dict[str, Any] = {
-            "schema": self.schema,
-            "tables": list(self.table_names),
-        }
+        if self.url.database:
+            cmd.append(f"--dbname={self.url.database}")
+        if self.url.username:
+            cmd.append(f"--username={self.url.username}")
+        if self.url.host:
+            cmd.append(f"--host={self.url.host}")
+        if self.url.port:
+            cmd.append(f"--port={self.url.port}")
 
-        with self._engine.connect() as conn:
-            if self.schema:
-                conn.execute(text(f"SET search_path TO {self.schema}"))
+        cmd.extend(self.pg_dump_args)
 
-            for table in self.table_names:
-                rows: list[dict[str, Any]] = []
-                offset = 0
-                while True:
-                    result = conn.execute(
-                        text(f"SELECT * FROM {table} OFFSET :offset LIMIT :limit"),
-                        {"offset": offset, "limit": self.chunk_size},
-                    )
-                    chunk = [dict(row._mapping) for row in result]
-                    rows.extend(chunk)
-                    if len(chunk) < self.chunk_size:
-                        break
-                    offset += self.chunk_size
+        env = os.environ.copy()
+        if self.url.password:
+            env.setdefault("PGPASSWORD", self.url.password)
 
-                payload[table] = rows
+        subprocess.run(cmd, check=True, env=env)
 
-        binary_blob = pickle.dumps({"metadata": metadata, "payload": payload})
-        with gzip.open(self.output_path, "wb") as fp:
-            fp.write(binary_blob)
-
-    # Public helpers ------------------------------------------------------------
+    def finalize(self) -> None:
+        pass
 
     @classmethod
     def ingest_to_file(
@@ -97,27 +76,16 @@ class PostgresBinaryIngestor:
         dsn: str,
         *,
         output_path: str | os.PathLike[str],
-        schema: str | None = None,
-        table_names: tuple[str, ...] = DEFAULT_TABLES,
-        chunk_size: int = 1000,
+        pg_dump_args: list[str] | None = None,
         config_override: dict[str, Any] | None = None,
     ) -> Path:
-        config_override = config_override or {}
-        ingestor = cls(
-            dsn,
-            output_path=output_path,
-            schema=schema,
-            table_names=table_names,
-            chunk_size=chunk_size,
-        )
-        ingestor.configure(**config_override)
+        config = {"pg_dump_args": pg_dump_args or []}
+        if config_override:
+            config.update(config_override)
+
+        ingestor = cls(dsn, output_path=output_path, **config)
         ingestor.run()
-        return Path(output_path)
+        return ingestor.output_path
 
 
-def load_binary_archive(path: str | os.PathLike[str]) -> dict[str, Any]:
-    """Utility to hydrate previously exported archives."""
-
-    with gzip.open(path, "rb") as fp:
-        return pickle.load(fp)
-
+__all__ = ["PostgresBinaryIngestor"]
