@@ -58,3 +58,15 @@ if [[ -n "$PASSWORD" ]]; then
 fi
 
 "${CMD[@]}"
+
+# pg_dump 성공 시 업로드 진행
+if [[ -f "$OUTPUT" ]]; then
+	echo "pg_dump completed successfully: $OUTPUT"
+	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	KEY_NAME="$(basename "$OUTPUT")"
+	python "$SCRIPT_DIR/upload_postgres.py" --file-path "$OUTPUT" --key-name "$KEY_NAME"
+	echo "Upload completed successfully"
+else
+	echo "Error: dump file not created" >&2
+	exit 1
+fi
