@@ -72,6 +72,7 @@ env = [
 ]
 markers = [
     "gpu: mark test as requiring a GPU to run",
+    "api: mark test that needs LLM API call to run",
 ]
 
 [tool.ruff]
