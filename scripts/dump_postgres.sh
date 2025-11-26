@@ -35,7 +35,7 @@ while [[ $# -gt 0 ]]; do
 		*)
 			echo "Unknown option: $1" >&2
 			usage ;;
-	_esac
+	esac
 done
 
 if [[ -z "$DBNAME" || -z "$OUTPUT" ]]; then

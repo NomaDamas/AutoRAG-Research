@@ -5,6 +5,7 @@ created with pg_dump in custom format.
 """
 
 import logging
+import os
 import subprocess
 from pathlib import Path
 
@@ -129,7 +130,7 @@ def restore_database(
         )
 
     cmd = [
-        "pg_restore",
+        "pg_restore-18",
         f"--host={host}",
         f"--port={port}",
         f"--username={user}",
@@ -148,7 +149,8 @@ def restore_database(
 
     cmd.append(str(dump_path))
 
-    env = {"PGPASSWORD": password}
+    env = os.environ.copy()
+    env["PGPASSWORD"] = password
 
     logger.info(f"Restoring database '{database}' from '{dump_path}'")
 

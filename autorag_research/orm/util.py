@@ -83,13 +83,14 @@ def create_database(
 
         # Create database with specified encoding and template
         # Use identifier quoting to prevent SQL injection
+        # Note: ENCODING must be a literal, not a parameter (DDL limitation)
         with conn.cursor() as cursor:
             cursor.execute(
-                sql.SQL("CREATE DATABASE {} ENCODING %s TEMPLATE {}").format(
+                sql.SQL("CREATE DATABASE {} ENCODING {} TEMPLATE {}").format(
                     sql.Identifier(database),
+                    sql.Literal(encoding),
                     sql.Identifier(template),
                 ),
-                (encoding,),
             )
 
         logger.info(f"Database '{database}' created successfully")
