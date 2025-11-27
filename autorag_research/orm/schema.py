@@ -158,7 +158,7 @@ class Query(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     query: Mapped[str] = mapped_column(Text, nullable=False)
-    generation_gt: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    generation_gt: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=True)
     embedding: Mapped[Vector | None] = mapped_column(Vector(768))
     embeddings: Mapped[list[Vector] | None] = mapped_column(ARRAY(Vector(768)))
 
