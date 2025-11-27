@@ -19,7 +19,9 @@ classifiers = [
 ]
 dependencies = [
     "aiofiles>=25.1.0",
+    "aiohttp>=3.13.2",
     "bert-score>=0.3.13",
+    "datasets>=4.4.1",
     "evaluate>=0.4.6",
     "llama-index>=0.12.52",
     "nltk>=3.9.2",
@@ -131,6 +133,9 @@ preview = true
 
 [tool.deptry.per_rule_ignores]
 DEP002 = ["bert-score"]
+
+[tool.deptry]
+exclude = ["tests/*", "scripts/*", ".venv/*", "venv/*"]
 
 [tool.coverage.report]
 skip_empty = true

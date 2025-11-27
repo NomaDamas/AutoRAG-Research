@@ -380,7 +380,7 @@ class TestEmbedding:
 
         assert result is not None
         assert result.embedding is not None
-        assert len(result.embedding) == 768
+        assert len(list(result.embedding)) == 768  # ty: ignore
 
         db_session.delete(db_session.get(Query, query.id))
         db_session.commit()
@@ -395,7 +395,7 @@ class TestEmbedding:
 
         assert result is not None
         assert result.embedding is not None
-        assert len(result.embedding) == 768
+        assert len(list(result.embedding)) == 768  # ty: ignore
 
         db_session.delete(db_session.get(Chunk, chunk.id))
         db_session.commit()

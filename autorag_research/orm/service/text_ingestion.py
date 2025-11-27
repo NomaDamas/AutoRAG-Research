@@ -9,7 +9,7 @@ from collections.abc import Callable
 from llama_index.core.base.embeddings.base import BaseEmbedding
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.exceptions import EmbeddingNotSetError
+from autorag_research.exceptions import EmbeddingNotSetError, SessionNotSetError
 from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
 from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
 
@@ -122,6 +122,8 @@ class TextDataIngestionService:
             The created Query entity with assigned ID.
         """
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             if qid is not None:
                 query = Query(id=qid, query=query_text, generation_gt=generation_gt)
             else:
@@ -148,6 +150,8 @@ class TextDataIngestionService:
             List of created Query entities with assigned IDs.
         """
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             if qids is None:
                 query_entities = [Query(query=query_text, generation_gt=gen_gt) for query_text, gen_gt in queries]
             else:
@@ -177,6 +181,8 @@ class TextDataIngestionService:
             List of created Query entities with assigned IDs.
         """
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             if qids is None:
                 query_entities = [Query(query=text) for text in query_texts]
             else:
@@ -230,6 +236,8 @@ class TextDataIngestionService:
             The created Chunk entity with assigned ID.
         """
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             if chunk_id is not None:
                 chunk = Chunk(id=chunk_id, contents=contents, parent_caption=parent_caption_id)
             else:
@@ -255,6 +263,8 @@ class TextDataIngestionService:
             List of created Chunk entities with assigned IDs.
         """
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             if chunk_ids is None:
                 chunk_entities = [
                     Chunk(contents=contents, parent_caption=parent_caption_id) for contents, parent_caption_id in chunks
@@ -288,6 +298,8 @@ class TextDataIngestionService:
             List of created Chunk entities with assigned IDs.
         """
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             if chunk_ids is None:
                 chunk_entities = [Chunk(contents=contents) for contents in contents_list]
             else:
@@ -348,6 +360,8 @@ class TextDataIngestionService:
             The created RetrievalRelation entity.
         """
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             # If group_index not provided, default to 0 (single-hop)
             if group_index is None:
                 group_index = 0
@@ -387,6 +401,8 @@ class TextDataIngestionService:
             List of created RetrievalRelation entities.
         """
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             # Get current max order for group 0
             max_order = uow.retrieval_relations.get_max_group_order(query_id, 0)
             start_order = (max_order or -1) + 1
@@ -430,6 +446,8 @@ class TextDataIngestionService:
             List of all created RetrievalRelation entities.
         """
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             # Get current max group index
             max_group_idx = uow.retrieval_relations.get_max_group_index(query_id)
             start_group_idx = (max_group_idx or -1) + 1
@@ -490,6 +508,8 @@ class TextDataIngestionService:
             raise EmbeddingNotSetError
 
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             query = uow.queries.get_by_id(query_id)
             if query is None:
                 return None
@@ -517,6 +537,8 @@ class TextDataIngestionService:
             raise EmbeddingNotSetError
 
         with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
             chunk = uow.chunks.get_by_id(chunk_id)
             if chunk is None:
                 return None
