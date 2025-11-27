@@ -109,18 +109,23 @@ class TextDataIngestionService:
         self,
         query_text: str,
         generation_gt: list[str] | None = None,
+        qid: int | None = None,
     ) -> Query:
         """Add a single query to the database.
 
         Args:
             query_text: The query text content.
             generation_gt: Optional list of generation ground truth answers.
+            qid: Optional query ID to set explicitly.
 
         Returns:
             The created Query entity with assigned ID.
         """
         with self._create_uow() as uow:
-            query = Query(query=query_text, generation_gt=generation_gt)
+            if qid is not None:
+                query = Query(id=qid, query=query_text, generation_gt=generation_gt)
+            else:
+                query = Query(query=query_text, generation_gt=generation_gt)
             uow.queries.add(query)
             uow.commit()
             # Refresh to get the ID
@@ -130,18 +135,26 @@ class TextDataIngestionService:
     def add_queries(
         self,
         queries: list[tuple[str, list[str] | None]],
+        qids: list[int] | None = None,
     ) -> list[Query]:
         """Add multiple queries to the database.
 
         Args:
             queries: List of tuples (query_text, generation_gt).
                     generation_gt can be None for each query.
+            qids: Optional list of query IDs to set explicitly.
 
         Returns:
             List of created Query entities with assigned IDs.
         """
         with self._create_uow() as uow:
-            query_entities = [Query(query=query_text, generation_gt=gen_gt) for query_text, gen_gt in queries]
+            if qids is None:
+                query_entities = [Query(query=query_text, generation_gt=gen_gt) for query_text, gen_gt in queries]
+            else:
+                query_entities = [
+                    Query(id=qid, query=query_text, generation_gt=gen_gt)
+                    for (query_text, gen_gt), qid in zip(queries, qids, strict=True)
+                ]
             uow.queries.add_all(query_entities)
             uow.commit()
             # Refresh to get IDs
@@ -152,17 +165,22 @@ class TextDataIngestionService:
     def add_queries_simple(
         self,
         query_texts: list[str],
+        qids: list[int] | None = None,
     ) -> list[Query]:
         """Add multiple queries without generation ground truth.
 
         Args:
             query_texts: List of query text strings.
+            qids: Optional list of query IDs to set explicitly.
 
         Returns:
             List of created Query entities with assigned IDs.
         """
         with self._create_uow() as uow:
-            query_entities = [Query(query=text) for text in query_texts]
+            if qids is None:
+                query_entities = [Query(query=text) for text in query_texts]
+            else:
+                query_entities = [Query(id=qid, query=text) for text, qid in zip(query_texts, qids, strict=True)]
             uow.queries.add_all(query_entities)
             uow.commit()
             for q in query_entities:
@@ -199,18 +217,23 @@ class TextDataIngestionService:
         self,
         contents: str,
         parent_caption_id: int | None = None,
+        chunk_id: int | None = None,
     ) -> Chunk:
         """Add a single chunk to the database.
 
         Args:
             contents: The chunk text content.
             parent_caption_id: Optional parent caption ID (for document-based chunks).
+            chunk_id: Optional chunk ID to set explicitly.
 
         Returns:
             The created Chunk entity with assigned ID.
         """
         with self._create_uow() as uow:
-            chunk = Chunk(contents=contents, parent_caption=parent_caption_id)
+            if chunk_id is not None:
+                chunk = Chunk(id=chunk_id, contents=contents, parent_caption=parent_caption_id)
+            else:
+                chunk = Chunk(contents=contents, parent_caption=parent_caption_id)
             uow.chunks.add(chunk)
             uow.commit()
             uow.session.refresh(chunk)
@@ -219,20 +242,28 @@ class TextDataIngestionService:
     def add_chunks(
         self,
         chunks: list[tuple[str, int | None]],
+        chunk_ids: list[int] | None = None,
     ) -> list[Chunk]:
         """Add multiple chunks to the database.
 
         Args:
             chunks: List of tuples (contents, parent_caption_id).
                    parent_caption_id can be None for standalone chunks.
+            chunk_ids: Optional list of chunk IDs to set explicitly.
 
         Returns:
             List of created Chunk entities with assigned IDs.
         """
         with self._create_uow() as uow:
-            chunk_entities = [
-                Chunk(contents=contents, parent_caption=parent_caption_id) for contents, parent_caption_id in chunks
-            ]
+            if chunk_ids is None:
+                chunk_entities = [
+                    Chunk(contents=contents, parent_caption=parent_caption_id) for contents, parent_caption_id in chunks
+                ]
+            else:
+                chunk_entities = [
+                    Chunk(id=cid, contents=contents, parent_caption=parent_caption_id)
+                    for (contents, parent_caption_id), cid in zip(chunks, chunk_ids, strict=True)
+                ]
             uow.chunks.add_all(chunk_entities)
             uow.commit()
             for c in chunk_entities:
@@ -242,6 +273,7 @@ class TextDataIngestionService:
     def add_chunks_simple(
         self,
         contents_list: list[str],
+        chunk_ids: list[int] | None = None,
     ) -> list[Chunk]:
         """Add multiple standalone chunks (no parent caption).
 
@@ -250,12 +282,18 @@ class TextDataIngestionService:
 
         Args:
             contents_list: List of chunk text contents.
+            chunk_ids: Optional list of chunk IDs to set explicitly.
 
         Returns:
             List of created Chunk entities with assigned IDs.
         """
         with self._create_uow() as uow:
-            chunk_entities = [Chunk(contents=contents) for contents in contents_list]
+            if chunk_ids is None:
+                chunk_entities = [Chunk(contents=contents) for contents in contents_list]
+            else:
+                chunk_entities = [
+                    Chunk(id=cid, contents=contents) for contents, cid in zip(contents_list, chunk_ids, strict=True)
+                ]
             uow.chunks.add_all(chunk_entities)
             uow.commit()
             for c in chunk_entities:
@@ -327,6 +365,7 @@ class TextDataIngestionService:
             )
             uow.retrieval_relations.add(relation)
             uow.commit()
+            uow.session.refresh(relation)
             return relation
 
     def add_retrieval_gt_simple(
@@ -363,6 +402,8 @@ class TextDataIngestionService:
             ]
             uow.retrieval_relations.add_all(relations)
             uow.commit()
+            for r in relations:
+                uow.session.refresh(r)
             return relations
 
     def add_retrieval_gt_multihop(
@@ -407,6 +448,8 @@ class TextDataIngestionService:
 
             uow.retrieval_relations.add_all(all_relations)
             uow.commit()
+            for r in all_relations:
+                uow.session.refresh(r)
             return all_relations
 
     def get_retrieval_gt_by_query(self, query_id: int) -> list[RetrievalRelation]:
@@ -455,6 +498,7 @@ class TextDataIngestionService:
             embedding = self.embedding_model.get_query_embedding(query.query)
             query.embedding = embedding
             uow.commit()
+            uow.session.refresh(query)
             return query
 
     def embed_chunk(self, chunk_id: int) -> Chunk | None:
@@ -481,6 +525,7 @@ class TextDataIngestionService:
             embedding = self.embedding_model.get_text_embedding(chunk.contents)
             chunk.embedding = embedding
             uow.commit()
+            uow.session.refresh(chunk)
             return chunk
 
     def embed_queries_batch(
