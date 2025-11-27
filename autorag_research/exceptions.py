@@ -32,3 +32,10 @@ class SessionNotSetError(Exception):
 
     def __init__(self):
         super().__init__("Database session is not set.")
+
+
+class LengthMismatchError(Exception):
+    """Raised when there is a length mismatch between two related lists."""
+
+    def __init__(self, list1_name: str, list2_name: str):
+        super().__init__(f"Length mismatch between '{list1_name}' and '{list2_name}'.")

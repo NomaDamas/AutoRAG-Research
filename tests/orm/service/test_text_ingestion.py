@@ -1,5 +1,4 @@
 import pytest
-from llama_index.core.embeddings.mock_embed_model import MockEmbedding
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
@@ -352,61 +351,105 @@ class TestGetRetrievalGT:
 
 
 class TestEmbedding:
-    def test_embed_query_without_model_raises_error(self, text_ingestion_service: TextDataIngestionService):
-        from autorag_research.exceptions import EmbeddingNotSetError
-
-        with pytest.raises(EmbeddingNotSetError):
-            text_ingestion_service.embed_query(1)
-
-    def test_embed_chunk_without_model_raises_error(self, text_ingestion_service: TextDataIngestionService):
-        from autorag_research.exceptions import EmbeddingNotSetError
-
-        with pytest.raises(EmbeddingNotSetError):
-            text_ingestion_service.embed_chunk(1)
-
-    def test_set_embedding_model(self, text_ingestion_service: TextDataIngestionService):
-        mock_model = MockEmbedding(embed_dim=768)
-        text_ingestion_service.set_embedding_model(mock_model)
-
-        assert text_ingestion_service.embedding_model is mock_model
-
-    def test_embed_query_with_mock_model(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
+    def test_set_query_embedding(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
         query = text_ingestion_service.add_query("Query to embed for test")
+        embedding = [0.1] * 768
 
-        mock_model = MockEmbedding(embed_dim=768)
-        text_ingestion_service.set_embedding_model(mock_model)
-
-        result = text_ingestion_service.embed_query(query.id)
+        result = text_ingestion_service.set_query_embedding(query.id, embedding)
 
         assert result is not None
         assert result.embedding is not None
-        assert len(list(result.embedding)) == 768  # ty: ignore
+        assert len(list(result.embedding)) == 768
 
         db_session.delete(db_session.get(Query, query.id))
         db_session.commit()
 
-    def test_embed_chunk_with_mock_model(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
+    def test_set_chunk_embedding(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
         chunk = text_ingestion_service.add_chunk("Chunk to embed for test")
+        embedding = [0.2] * 768
 
-        mock_model = MockEmbedding(embed_dim=768)
-        text_ingestion_service.set_embedding_model(mock_model)
-
-        result = text_ingestion_service.embed_chunk(chunk.id)
+        result = text_ingestion_service.set_chunk_embedding(chunk.id, embedding)
 
         assert result is not None
         assert result.embedding is not None
-        assert len(list(result.embedding)) == 768  # ty: ignore
+        assert len(list(result.embedding)) == 768
 
         db_session.delete(db_session.get(Chunk, chunk.id))
         db_session.commit()
 
-    def test_embed_query_not_found(self, text_ingestion_service: TextDataIngestionService):
-        mock_model = MockEmbedding(embed_dim=768)
-        text_ingestion_service.set_embedding_model(mock_model)
-
-        result = text_ingestion_service.embed_query(999999)
+    def test_set_query_embedding_not_found(self, text_ingestion_service: TextDataIngestionService):
+        embedding = [0.1] * 768
+        result = text_ingestion_service.set_query_embedding(999999, embedding)
 
         assert result is None
+
+    def test_set_chunk_embedding_not_found(self, text_ingestion_service: TextDataIngestionService):
+        embedding = [0.1] * 768
+        result = text_ingestion_service.set_chunk_embedding(999999, embedding)
+
+        assert result is None
+
+    def test_set_query_embeddings_batch(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
+        queries = text_ingestion_service.add_queries_simple(["Query 1", "Query 2", "Query 3"])
+        embeddings = [[0.1 * i] * 768 for i in range(1, 4)]
+
+        result = text_ingestion_service.set_query_embeddings([q.id for q in queries], embeddings)
+
+        assert result == 3
+
+        for q in queries:
+            db_session.delete(db_session.get(Query, q.id))
+        db_session.commit()
+
+    def test_set_chunk_embeddings_batch(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
+        chunks = text_ingestion_service.add_chunks_simple(["Chunk 1", "Chunk 2", "Chunk 3"])
+        embeddings = [[0.2 * i] * 768 for i in range(1, 4)]
+
+        result = text_ingestion_service.set_chunk_embeddings([c.id for c in chunks], embeddings)
+
+        assert result == 3
+
+        for c in chunks:
+            db_session.delete(db_session.get(Chunk, c.id))
+        db_session.commit()
+
+    def test_set_query_embeddings_length_mismatch(self, text_ingestion_service: TextDataIngestionService):
+        with pytest.raises(ValueError, match="must have the same length"):
+            text_ingestion_service.set_query_embeddings([1, 2], [[0.1] * 768])
+
+    def test_set_chunk_embeddings_length_mismatch(self, text_ingestion_service: TextDataIngestionService):
+        with pytest.raises(ValueError, match="must have the same length"):
+            text_ingestion_service.set_chunk_embeddings([1, 2], [[0.1] * 768])
+
+    def test_set_query_embeddings_partial_success(
+        self, text_ingestion_service: TextDataIngestionService, db_session: Session
+    ):
+        """Test that set_query_embeddings only updates existing queries."""
+        query = text_ingestion_service.add_query("Existing query")
+        embeddings = [[0.1] * 768, [0.2] * 768]
+
+        # One valid query ID and one invalid
+        result = text_ingestion_service.set_query_embeddings([query.id, 999999], embeddings)
+
+        assert result == 1  # Only one query was updated
+
+        db_session.delete(db_session.get(Query, query.id))
+        db_session.commit()
+
+    def test_set_chunk_embeddings_partial_success(
+        self, text_ingestion_service: TextDataIngestionService, db_session: Session
+    ):
+        """Test that set_chunk_embeddings only updates existing chunks."""
+        chunk = text_ingestion_service.add_chunk("Existing chunk")
+        embeddings = [[0.1] * 768, [0.2] * 768]
+
+        # One valid chunk ID and one invalid
+        result = text_ingestion_service.set_chunk_embeddings([chunk.id, 999999], embeddings)
+
+        assert result == 1  # Only one chunk was updated
+
+        db_session.delete(db_session.get(Chunk, chunk.id))
+        db_session.commit()
 
 
 class TestGetStatistics:

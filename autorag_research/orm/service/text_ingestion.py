@@ -4,12 +4,9 @@ Provides service layer for ingesting text-based data including queries,
 chunks, and retrieval ground truth relations with embedding support.
 """
 
-from collections.abc import Callable
-
-from llama_index.core.base.embeddings.base import BaseEmbedding
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.exceptions import EmbeddingNotSetError, SessionNotSetError
+from autorag_research.exceptions import LengthMismatchError, SessionNotSetError
 from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
 from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
 
@@ -22,7 +19,7 @@ class TextDataIngestionService:
     - Adding queries (with optional generation_gt)
     - Adding chunks (text-only, no parent caption required)
     - Creating retrieval ground truth relations (with multi-hop support)
-    - Embedding queries and chunks using LlamaIndex BaseEmbedding
+    - Setting embeddings for queries and chunks (accepts pre-computed vectors)
 
     Example:
         Basic usage with queries, chunks, and retrieval ground truth:
@@ -30,7 +27,6 @@ class TextDataIngestionService:
         ```python
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
-        from llama_index.embeddings.openai import OpenAIEmbedding
 
         from autorag_research.orm.service import TextDataIngestionService
 
@@ -38,9 +34,8 @@ class TextDataIngestionService:
         engine = create_engine("postgresql://user:pass@localhost/dbname")
         session_factory = sessionmaker(bind=engine)
 
-        # Initialize service with embedding model
-        embedding_model = OpenAIEmbedding(model="text-embedding-3-small")
-        service = TextDataIngestionService(session_factory, embedding_model)
+        # Initialize service
+        service = TextDataIngestionService(session_factory)
 
         # Add queries with generation ground truth
         query = service.add_query(
@@ -69,11 +64,15 @@ class TextDataIngestionService:
             ]
         )
 
-        # Embed all queries and chunks without embeddings
-        queries_embedded, chunks_embedded = service.embed_all_missing(
-            batch_size=32
+        # Set embeddings using pre-computed vectors
+        query_embedding = [0.1, 0.2, ...]  # from your embedding model
+        service.set_query_embedding(query.id, query_embedding)
+
+        chunk_embeddings = [[0.1, 0.2, ...], [0.3, 0.4, ...]]  # from your embedding model
+        service.set_chunk_embeddings(
+            [c.id for c in chunks],
+            chunk_embeddings
         )
-        print(f"Embedded {queries_embedded} queries, {chunks_embedded} chunks")
 
         # Get statistics
         stats = service.get_statistics()
@@ -84,16 +83,13 @@ class TextDataIngestionService:
     def __init__(
         self,
         session_factory: sessionmaker[Session],
-        embedding_model: BaseEmbedding | None = None,
     ):
         """Initialize the text data ingestion service.
 
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
-            embedding_model: Optional LlamaIndex BaseEmbedding model for embeddings.
         """
         self.session_factory = session_factory
-        self.embedding_model = embedding_model
 
     def _create_uow(self) -> TextOnlyUnitOfWork:
         """Create a new TextOnlyUnitOfWork instance.
@@ -484,29 +480,16 @@ class TextDataIngestionService:
 
     # ==================== Embedding Operations ====================
 
-    def set_embedding_model(self, embedding_model: BaseEmbedding) -> None:
-        """Set or update the embedding model.
+    def set_query_embedding(self, query_id: int, embedding: list[float]) -> Query | None:
+        """Set the embedding for a single query.
 
         Args:
-            embedding_model: LlamaIndex BaseEmbedding model instance.
-        """
-        self.embedding_model = embedding_model
-
-    def embed_query(self, query_id: int) -> Query | None:
-        """Embed a single query and update it in the database.
-
-        Args:
-            query_id: The query ID to embed.
+            query_id: The query ID to set embedding for.
+            embedding: The pre-computed embedding vector.
 
         Returns:
             The updated Query with embedding, None if not found.
-
-        Raises:
-            EmbeddingNotSetError: If embedding model is not set.
         """
-        if self.embedding_model is None:
-            raise EmbeddingNotSetError
-
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -514,28 +497,21 @@ class TextDataIngestionService:
             if query is None:
                 return None
 
-            # Get embedding (use query embedding for queries)
-            embedding = self.embedding_model.get_query_embedding(query.query)
             query.embedding = embedding
             uow.commit()
             uow.session.refresh(query)
             return query
 
-    def embed_chunk(self, chunk_id: int) -> Chunk | None:
-        """Embed a single chunk and update it in the database.
+    def set_chunk_embedding(self, chunk_id: int, embedding: list[float]) -> Chunk | None:
+        """Set the embedding for a single chunk.
 
         Args:
-            chunk_id: The chunk ID to embed.
+            chunk_id: The chunk ID to set embedding for.
+            embedding: The pre-computed embedding vector.
 
         Returns:
             The updated Chunk with embedding, None if not found.
-
-        Raises:
-            EmbeddingNotSetError: If embedding model is not set.
         """
-        if self.embedding_model is None:
-            raise EmbeddingNotSetError
-
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -543,252 +519,80 @@ class TextDataIngestionService:
             if chunk is None:
                 return None
 
-            # Get embedding (use text embedding for chunks/documents)
-            embedding = self.embedding_model.get_text_embedding(chunk.contents)
             chunk.embedding = embedding
             uow.commit()
             uow.session.refresh(chunk)
             return chunk
 
-    def embed_queries_batch(
+    def set_query_embeddings(
         self,
         query_ids: list[int],
-        batch_size: int = 32,
-        progress_callback: Callable[[int, int], None] | None = None,
+        embeddings: list[list[float]],
     ) -> int:
-        """Embed multiple queries in batches.
+        """Set embeddings for multiple queries.
 
         Args:
-            query_ids: List of query IDs to embed.
-            batch_size: Number of queries to embed at once.
-            progress_callback: Optional callback(processed, total) for progress updates.
+            query_ids: List of query IDs to set embeddings for.
+            embeddings: List of pre-computed embedding vectors (must match query_ids length).
 
         Returns:
-            Total number of queries successfully embedded.
+            Total number of queries successfully updated.
 
         Raises:
-            EmbeddingNotSetError: If embedding model is not set.
+            ValueError: If query_ids and embeddings have different lengths.
         """
-        if self.embedding_model is None:
-            raise EmbeddingNotSetError
+        if len(query_ids) != len(embeddings):
+            raise LengthMismatchError("query_ids", "embeddings")
 
-        total_embedded = 0
-        total = len(query_ids)
+        total_updated = 0
 
-        for i in range(0, len(query_ids), batch_size):
-            batch_ids = query_ids[i : i + batch_size]
+        with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
+            for query_id, embedding in zip(query_ids, embeddings, strict=True):
+                query = uow.queries.get_by_id(query_id)
+                if query:
+                    query.embedding = embedding
+                    total_updated += 1
 
-            with self._create_uow() as uow:
-                queries = []
-                for qid in batch_ids:
-                    query = uow.queries.get_by_id(qid)
-                    if query:
-                        queries.append(query)
+            uow.commit()
 
-                if not queries:
-                    continue
+        return total_updated
 
-                # Batch embed
-                texts = [q.query for q in queries]
-                embeddings = self.embedding_model.get_text_embedding_batch(texts)
-
-                for query, emb in zip(queries, embeddings, strict=True):
-                    query.embedding = emb
-
-                uow.commit()
-                total_embedded += len(queries)
-
-            if progress_callback:
-                progress_callback(min(i + batch_size, total), total)
-
-        return total_embedded
-
-    def embed_chunks_batch(
+    def set_chunk_embeddings(
         self,
         chunk_ids: list[int],
-        batch_size: int = 32,
-        progress_callback: Callable[[int, int], None] | None = None,
+        embeddings: list[list[float]],
     ) -> int:
-        """Embed multiple chunks in batches.
+        """Set embeddings for multiple chunks.
 
         Args:
-            chunk_ids: List of chunk IDs to embed.
-            batch_size: Number of chunks to embed at once.
-            progress_callback: Optional callback(processed, total) for progress updates.
+            chunk_ids: List of chunk IDs to set embeddings for.
+            embeddings: List of pre-computed embedding vectors (must match chunk_ids length).
 
         Returns:
-            Total number of chunks successfully embedded.
+            Total number of chunks successfully updated.
 
         Raises:
-            EmbeddingNotSetError: If embedding model is not set.
+            ValueError: If chunk_ids and embeddings have different lengths.
         """
-        if self.embedding_model is None:
-            raise EmbeddingNotSetError
+        if len(chunk_ids) != len(embeddings):
+            raise LengthMismatchError("chunk_ids", "embeddings")
 
-        total_embedded = 0
-        total = len(chunk_ids)
+        total_updated = 0
 
-        for i in range(0, len(chunk_ids), batch_size):
-            batch_ids = chunk_ids[i : i + batch_size]
+        with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
+            for chunk_id, embedding in zip(chunk_ids, embeddings, strict=True):
+                chunk = uow.chunks.get_by_id(chunk_id)
+                if chunk:
+                    chunk.embedding = embedding
+                    total_updated += 1
 
-            with self._create_uow() as uow:
-                chunks = []
-                for cid in batch_ids:
-                    chunk = uow.chunks.get_by_id(cid)
-                    if chunk:
-                        chunks.append(chunk)
+            uow.commit()
 
-                if not chunks:
-                    continue
-
-                # Batch embed
-                texts = [c.contents for c in chunks]
-                embeddings = self.embedding_model.get_text_embedding_batch(texts)
-
-                for chunk, emb in zip(chunks, embeddings, strict=True):
-                    chunk.embedding = emb
-
-                uow.commit()
-                total_embedded += len(chunks)
-
-            if progress_callback:
-                progress_callback(min(i + batch_size, total), total)
-
-        return total_embedded
-
-    def embed_all_queries_without_embeddings(
-        self,
-        batch_size: int = 32,
-        progress_callback: Callable[[int, int], None] | None = None,
-    ) -> int:
-        """Embed all queries that don't have embeddings yet.
-
-        Iteratively fetches and embeds queries in batches.
-
-        Args:
-            batch_size: Number of queries per batch.
-            progress_callback: Optional callback(processed, total) for progress updates.
-
-        Returns:
-            Total number of queries embedded.
-
-        Raises:
-            EmbeddingNotSetError: If embedding model is not set.
-        """
-        if self.embedding_model is None:
-            raise EmbeddingNotSetError
-
-        total_embedded = 0
-
-        while True:
-            with self._create_uow() as uow:
-                # Fetch queries without embeddings
-                queries = uow.queries.get_all(limit=batch_size)
-                # Filter to only those without embeddings
-                queries = [q for q in queries if q.embedding is None]
-
-                if not queries:
-                    break
-
-                # Batch embed
-                texts = [q.query for q in queries]
-                embeddings = self.embedding_model.get_text_embedding_batch(texts)
-
-                for query, emb in zip(queries, embeddings, strict=True):
-                    query.embedding = emb
-
-                uow.commit()
-                total_embedded += len(queries)
-
-            if progress_callback:
-                progress_callback(total_embedded, -1)  # -1 indicates unknown total
-
-        return total_embedded
-
-    def embed_all_chunks_without_embeddings(
-        self,
-        batch_size: int = 32,
-        progress_callback: Callable[[int, int], None] | None = None,
-    ) -> int:
-        """Embed all chunks that don't have embeddings yet.
-
-        Iteratively fetches and embeds chunks in batches.
-
-        Args:
-            batch_size: Number of chunks per batch.
-            progress_callback: Optional callback(processed, total) for progress updates.
-
-        Returns:
-            Total number of chunks embedded.
-
-        Raises:
-            EmbeddingNotSetError: If embedding model is not set.
-        """
-        if self.embedding_model is None:
-            raise EmbeddingNotSetError
-
-        total_embedded = 0
-
-        while True:
-            with self._create_uow() as uow:
-                # Use the existing method to get chunks without embeddings
-                chunks = uow.chunks.get_chunks_without_embeddings(limit=batch_size)
-
-                if not chunks:
-                    break
-
-                # Batch embed
-                texts = [c.contents for c in chunks]
-                embeddings = self.embedding_model.get_text_embedding_batch(texts)
-
-                for chunk, emb in zip(chunks, embeddings, strict=True):
-                    chunk.embedding = emb
-
-                uow.commit()
-                total_embedded += len(chunks)
-
-            if progress_callback:
-                progress_callback(total_embedded, -1)  # -1 indicates unknown total
-
-        return total_embedded
-
-    def embed_all_missing(
-        self,
-        batch_size: int = 32,
-        progress_callback: Callable[[str, int, int], None] | None = None,
-    ) -> tuple[int, int]:
-        """Embed all queries and chunks that are missing embeddings.
-
-        Convenience method that calls both embed_all_queries_without_embeddings
-        and embed_all_chunks_without_embeddings.
-
-        Args:
-            batch_size: Number of items per batch.
-            progress_callback: Optional callback(type, processed, total) for progress updates.
-                              type is "queries" or "chunks".
-
-        Returns:
-            Tuple of (queries_embedded, chunks_embedded).
-
-        Raises:
-            EmbeddingNotSetError: If embedding model is not set.
-        """
-        query_callback = None
-        chunk_callback = None
-
-        if progress_callback:
-            query_callback = lambda p, t: progress_callback("queries", p, t)
-            chunk_callback = lambda p, t: progress_callback("chunks", p, t)
-
-        queries_embedded = self.embed_all_queries_without_embeddings(
-            batch_size=batch_size,
-            progress_callback=query_callback,
-        )
-        chunks_embedded = self.embed_all_chunks_without_embeddings(
-            batch_size=batch_size,
-            progress_callback=chunk_callback,
-        )
-        return queries_embedded, chunks_embedded
+        return total_updated
 
     # ==================== Statistics ====================
 

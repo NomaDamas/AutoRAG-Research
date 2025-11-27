@@ -20,6 +20,7 @@ classifiers = [
 dependencies = [
     "aiofiles>=25.1.0",
     "aiohttp>=3.13.2",
+    "beir>=2.2.0",
     "bert-score>=0.3.13",
     "datasets>=4.4.1",
     "evaluate>=0.4.6",
@@ -28,6 +29,7 @@ dependencies = [
     "numpy>=2.2.6",
     "pandas>=2.3.3",
     "pgvector>=0.4.1",
+    "platformdirs>=4.5.0",
     "psycopg[binary]>=3.2.12",
     "pydantic>=2.12.4",
     "rouge-score>=0.1.2",
@@ -73,11 +75,16 @@ python-version = "3.10"
 [tool.pytest]
 testpaths = ["tests"]
 env = [
-    "POSTGRES_URL=postgresql+psycopg://postgres:postgres@localhost:5432/testdb",
+    "POSTGRES_HOST=localhost",
+    "POSTGRES_PORT=5432",
+    "POSTGRES_USER=postgres",
+    "POSTGRES_PASSWORD=postgres",
+    "TEST_DB_NAME=testdb",
 ]
 markers = [
     "gpu: mark test as requiring a GPU to run",
     "api: mark test that needs LLM API call to run",
+    "data: mark test that needs external data download",
 ]
 
 [tool.ruff]

@@ -69,9 +69,13 @@ jobs:
           PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U postgres -d testdb -f postgresql/db/init/002-seed.sql
 
       - name: Run tests
-        run: uv run python -m pytest tests -n auto --cov --cov-config=pyproject.toml --cov-report=xml -m "not gpu"
+        run: uv run python -m pytest tests -n auto --cov --cov-config=pyproject.toml --cov-report=xml -m "not gpu and not data"
         env:
-          POSTGRES_URL: postgresql+psycopg://postgres:postgres@localhost:5432/testdb
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          TEST_DB_NAME: testdb
 
       - name: Check typing
         run: uv run ty check
