@@ -115,3 +115,20 @@ class QueryRepository(BaseVectorRepository[Query]):
 
         stmt = select(func.count()).select_from(Query).where(func.array_length(Query.generation_gt, 1) == size)
         return self.session.execute(stmt).scalar_one()
+
+    def get_queries_without_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[Query]:
+        """Retrieve queries that do not have embeddings.
+
+        Args:
+            limit: Maximum number of results to return.
+            offset: Number of results to skip.
+
+        Returns:
+            List of queries without embeddings.
+        """
+        stmt = select(Query).where(Query.embedding.is_(None))
+        if offset:
+            stmt = stmt.offset(offset)
+        if limit:
+            stmt = stmt.limit(limit)
+        return list(self.session.execute(stmt).scalars().all())

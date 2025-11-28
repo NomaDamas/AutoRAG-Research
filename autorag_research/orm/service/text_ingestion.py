@@ -4,11 +4,18 @@ Provides service layer for ingesting text-based data including queries,
 chunks, and retrieval ground truth relations with embedding support.
 """
 
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable
+
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.exceptions import LengthMismatchError, SessionNotSetError
 from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
 from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
+
+EmbeddingFunc = Callable[[str], Awaitable[list[float]]]
+logger = logging.getLogger("AutoRAG-Research")
 
 
 class TextDataIngestionService:
@@ -593,6 +600,127 @@ class TextDataIngestionService:
             uow.commit()
 
         return total_updated
+
+    # ==================== Async Batch Embedding Operations ====================
+
+    async def embed_all_queries(
+        self,
+        embed_func: EmbeddingFunc,
+        batch_size: int = 100,
+        max_concurrency: int = 10,
+    ) -> int:
+        """Embed all queries that don't have embeddings.
+
+        Processes queries in batches, using semaphore to limit concurrent
+        embedding calls. After each batch completes, updates the database.
+
+        Args:
+            embed_func: Async function that takes a text string and returns embedding vector.
+            batch_size: Number of queries to process per batch before DB update.
+            max_concurrency: Maximum number of concurrent embedding calls.
+
+        Returns:
+            Total number of queries successfully embedded.
+        """
+        total_embedded = 0
+
+        while True:
+            # Get queries without embeddings for this batch
+            with self._create_uow() as uow:
+                queries = uow.queries.get_queries_without_embeddings(limit=batch_size)
+                if not queries:
+                    break
+                items_to_embed = [(q.id, q.query) for q in queries]
+
+            # Embed batch with semaphore
+            embeddings = await self._embed_batch(items_to_embed, embed_func, max_concurrency)
+
+            # Update database with embeddings
+            with self._create_uow() as uow:
+                if uow.session is None:
+                    raise SessionNotSetError
+                for (item_id, _), embedding in zip(items_to_embed, embeddings, strict=True):
+                    query = uow.queries.get_by_id(item_id)
+                    if query and embedding is not None:
+                        query.embedding = embedding
+                        total_embedded += 1
+                uow.commit()
+
+        return total_embedded
+
+    async def embed_all_chunks(
+        self,
+        embed_func: EmbeddingFunc,
+        batch_size: int = 100,
+        max_concurrency: int = 10,
+    ) -> int:
+        """Embed all chunks that don't have embeddings.
+
+        Processes chunks in batches, using semaphore to limit concurrent
+        embedding calls. After each batch completes, updates the database.
+
+        Args:
+            embed_func: Async function that takes a text string and returns embedding vector.
+            batch_size: Number of chunks to process per batch before DB update.
+            max_concurrency: Maximum number of concurrent embedding calls.
+
+        Returns:
+            Total number of chunks successfully embedded.
+        """
+        total_embedded = 0
+
+        while True:
+            # Get chunks without embeddings for this batch
+            with self._create_uow() as uow:
+                chunks = uow.chunks.get_chunks_without_embeddings(limit=batch_size)
+                if not chunks:
+                    break
+                items_to_embed = [(c.id, c.contents) for c in chunks]
+
+            # Embed batch with semaphore
+            embeddings = await self._embed_batch(items_to_embed, embed_func, max_concurrency)
+
+            # Update database with embeddings
+            with self._create_uow() as uow:
+                if uow.session is None:
+                    raise SessionNotSetError
+                for (item_id, _), embedding in zip(items_to_embed, embeddings, strict=True):
+                    chunk = uow.chunks.get_by_id(item_id)
+                    if chunk and embedding is not None:
+                        chunk.embedding = embedding
+                        total_embedded += 1
+                uow.commit()
+
+        return total_embedded
+
+    @staticmethod
+    async def _embed_batch(
+        items: list[tuple[int, str]],
+        embed_func: EmbeddingFunc,
+        max_concurrency: int,
+    ) -> list[list[float] | None]:
+        """Embed a batch of items with concurrency control.
+
+        Args:
+            items: List of (id, text) tuples to embed.
+            embed_func: Async function that takes text and returns embedding.
+            max_concurrency: Maximum concurrent embedding calls.
+
+        Returns:
+            List of embeddings (or None if failed) in same order as items.
+        """
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def embed_with_semaphore(text: str) -> list[float] | None:
+            async with semaphore:
+                try:
+                    return await embed_func(text)
+                except Exception:
+                    logger.exception(f"Failed to embed {text}")
+                    return None
+
+        tasks = [embed_with_semaphore(text) for _, text in items]
+        return await asyncio.gather(*tasks)
 
     # ==================== Statistics ====================
 
