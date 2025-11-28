@@ -22,7 +22,6 @@ dependencies = [
     "aiohttp>=3.13.2",
     "beir>=2.2.0",
     "bert-score>=0.3.13",
-    "datasets>=4.4.1",
     "evaluate>=0.4.6",
     "llama-index>=0.12.52",
     "nltk>=3.9.2",
@@ -86,6 +85,7 @@ markers = [
     "gpu: mark test as requiring a GPU to run",
     "api: mark test that needs LLM API call to run",
     "data: mark test that needs external data download",
+    "ci_skip: mark test to be skipped in CI environment",
 ]
 
 [tool.ruff]

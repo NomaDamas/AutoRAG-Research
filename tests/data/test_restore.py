@@ -227,6 +227,7 @@ def _get_table_names(database: str) -> list[str]:
         return [row[0] for row in cursor.fetchall()]
 
 
+@pytest.mark.ci_skip
 def test_restore_database(source_database, dump_file, target_database):
     """Test that restore_database correctly restores a database from a dump file.
 

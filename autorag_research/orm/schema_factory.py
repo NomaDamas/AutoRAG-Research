@@ -395,23 +395,23 @@ def create_schema(embedding_dim: int = 768):
         pass
 
     # Attach all classes to Schema namespace
-    Schema.Base = Base
-    Schema.File = File
-    Schema.Document = Document
-    Schema.Page = Page
-    Schema.Caption = Caption
-    Schema.Chunk = Chunk
-    Schema.ImageChunk = ImageChunk
-    Schema.CaptionChunkRelation = CaptionChunkRelation
-    Schema.Query = Query
-    Schema.RetrievalRelation = RetrievalRelation
-    Schema.Pipeline = Pipeline
-    Schema.Metric = Metric
-    Schema.ExecutorResult = ExecutorResult
-    Schema.EvaluationResult = EvaluationResult
-    Schema.ImageChunkRetrievedResult = ImageChunkRetrievedResult
-    Schema.ChunkRetrievedResult = ChunkRetrievedResult
-    Schema.Summary = Summary
-    Schema.embedding_dim = embedding_dim
+    Schema.Base = Base  # ty: ignore
+    Schema.File = File  # ty: ignore
+    Schema.Document = Document  # ty: ignore
+    Schema.Page = Page  # ty: ignore
+    Schema.Caption = Caption  # ty: ignore
+    Schema.Chunk = Chunk  # ty: ignore
+    Schema.ImageChunk = ImageChunk  # ty: ignore
+    Schema.CaptionChunkRelation = CaptionChunkRelation  # ty: ignore
+    Schema.Query = Query  # ty: ignore
+    Schema.RetrievalRelation = RetrievalRelation  # ty: ignore
+    Schema.Pipeline = Pipeline  # ty: ignore
+    Schema.Metric = Metric  # ty: ignore
+    Schema.ExecutorResult = ExecutorResult  # ty: ignore
+    Schema.EvaluationResult = EvaluationResult  # ty: ignore
+    Schema.ImageChunkRetrievedResult = ImageChunkRetrievedResult  # ty: ignore
+    Schema.ChunkRetrievedResult = ChunkRetrievedResult  # ty: ignore
+    Schema.Summary = Summary  # ty: ignore
+    Schema.embedding_dim = embedding_dim  # ty: ignore
 
     return Schema

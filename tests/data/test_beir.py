@@ -15,10 +15,10 @@ EMBEDDING_DIM = 768
 
 @pytest.fixture(scope="session")
 def beir_db_engine():
-    host = os.getenv("POSTGRES_HOST")
-    user = os.getenv("POSTGRES_USER")
-    pwd = os.getenv("POSTGRES_PASSWORD")
-    port = int(os.getenv("POSTGRES_PORT"))
+    host = os.getenv("POSTGRES_HOST", "localhost")
+    user = os.getenv("POSTGRES_USER", "postgres")
+    pwd = os.getenv("POSTGRES_PASSWORD", "postgres")
+    port = int(os.getenv("POSTGRES_PORT", "5432"))
     db_name = "autorag_research_beir_test"
 
     schema = create_schema(EMBEDDING_DIM)
