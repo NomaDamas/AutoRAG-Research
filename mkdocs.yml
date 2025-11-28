@@ -9,6 +9,8 @@ copyright: Maintained by <a href="https://vkehfdl1.com">vkehfdl1</a>.
 
 nav:
   - Home: index.md
+  - Installation: installation.md
+  - Dataset Setup: dataset_setup.md
   - Modules: modules.md
 plugins:
   - search
@@ -50,3 +52,8 @@ markdown_extensions:
       permalink: true
   - pymdownx.arithmatex:
       generic: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.superfences
+  - attr_list
+  - md_in_html

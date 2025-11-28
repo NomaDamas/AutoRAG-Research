@@ -55,7 +55,7 @@ Table CaptionChunkRelation {
 Table Query {
   id bigserial [pk]
   query text [not null]
-  generation_gt text[] [not null]
+  generation_gt text[]
   embedding vector(768)
   embeddings vector
 }

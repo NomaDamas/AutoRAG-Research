@@ -13,12 +13,19 @@ from autorag_research.exceptions import EnvNotFoundError
 def db_engine():
     """Create a database engine for the test session.
 
-    Expects POSTGRES_URL environment variable to be set.
-    The database, tables, and data should already exist at this URL.
+    Expects POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_PORT, TEST_DB_NAME environment variable to be set.
     """
-    postgres_url = os.getenv("POSTGRES_URL")
-    if not postgres_url:
-        raise EnvNotFoundError("POSTGRES_URL")
+    host = os.getenv("POSTGRES_HOST")
+    user = os.getenv("POSTGRES_USER")
+    pwd = os.getenv("POSTGRES_PASSWORD")
+    port = int(os.getenv("POSTGRES_PORT"))
+    db_name = os.getenv("TEST_DB_NAME")
+    if not all([host, user, pwd, port, db_name]):
+        raise EnvNotFoundError(  # noqa: TRY003
+            "POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_PORT, and TEST_DB_NAME must be set"
+        )
+
+    postgres_url = f"postgresql+psycopg://{user}:{pwd}@{host}:{port}/{db_name}"
 
     engine = create_engine(
         postgres_url,
