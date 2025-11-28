@@ -23,13 +23,5 @@ class TextEmbeddingDataIngestor(DataIngestor, ABC):
         self.embedding_model = embedding_model
 
     @abstractmethod
-    async def embed_queries(self):
-        pass
-
-    @abstractmethod
-    async def embed_chunks(self):
-        pass
-
-    @abstractmethod
-    def embed_all(self, concurrent_limit: int = 16) -> None:
+    def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
         pass

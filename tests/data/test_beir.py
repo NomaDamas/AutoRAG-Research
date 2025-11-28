@@ -61,7 +61,7 @@ def test_beir_ingest_embed_all(beir_ingestor):
     assert stats["chunks"]["total"] == 5183
     assert stats["chunks"]["with_embeddings"] == 0
 
-    beir_ingestor.embed_all(concurrent_limit=16)
+    beir_ingestor.embed_all(max_concurrency=16)
     stats = beir_ingestor.service.get_statistics()
     assert stats["queries"]["total"] == 300
     assert stats["chunks"]["total"] == 5183

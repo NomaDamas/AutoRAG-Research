@@ -53,11 +53,14 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         # From a given dict, return only keys that the value is more than zero
         return [k for k, v in dictionary.items() if v > 0]
 
-    async def embed_queries(self):
-        pass
-
-    async def embed_chunks(self):
-        pass
-
-    def embed_all(self, concurrent_limit: int = 16) -> None:
-        pass
+    def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
+        self.service.embed_all_queries(
+            self.embedding_model.aget_query_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )
+        self.service.embed_all_chunks(
+            self.embedding_model.aget_text_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )

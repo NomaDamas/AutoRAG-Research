@@ -601,9 +601,9 @@ class TextDataIngestionService:
 
         return total_updated
 
-    # ==================== Async Batch Embedding Operations ====================
+    # ==================== Batch Embedding Operations ====================
 
-    async def embed_all_queries(
+    def embed_all_queries(
         self,
         embed_func: EmbeddingFunc,
         batch_size: int = 100,
@@ -633,7 +633,7 @@ class TextDataIngestionService:
                 items_to_embed = [(q.id, q.query) for q in queries]
 
             # Embed batch with semaphore
-            embeddings = await self._embed_batch(items_to_embed, embed_func, max_concurrency)
+            embeddings = asyncio.run(self._embed_batch(items_to_embed, embed_func, max_concurrency))
 
             # Update database with embeddings
             with self._create_uow() as uow:
@@ -648,7 +648,7 @@ class TextDataIngestionService:
 
         return total_embedded
 
-    async def embed_all_chunks(
+    def embed_all_chunks(
         self,
         embed_func: EmbeddingFunc,
         batch_size: int = 100,
@@ -678,7 +678,7 @@ class TextDataIngestionService:
                 items_to_embed = [(c.id, c.contents) for c in chunks]
 
             # Embed batch with semaphore
-            embeddings = await self._embed_batch(items_to_embed, embed_func, max_concurrency)
+            embeddings = asyncio.run(self._embed_batch(items_to_embed, embed_func, max_concurrency))
 
             # Update database with embeddings
             with self._create_uow() as uow:
