@@ -9,7 +9,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from autorag_research.orm.util import install_vector_extensions
+from autorag_research.orm.util import create_database, install_vector_extensions
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -63,6 +63,15 @@ def restore_database(
     dump_path = Path(dump_file)
     if not dump_path.exists():
         raise FileNotFoundError
+
+    # Create database if it doesn't exist
+    create_database(
+        host=host,
+        user=user,
+        password=password,
+        database=database,
+        port=port,
+    )
 
     # Install vector extensions before restoring if requested
     if install_extensions:
