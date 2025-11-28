@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from llama_index.core import MockEmbedding
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -48,14 +49,21 @@ def service(session_factory_beir):
 
 @pytest.fixture
 def beir_ingestor(db_session, service):
-    ingestor = BEIRIngestor(service, "scifact")
+    ingestor = BEIRIngestor(service, MockEmbedding(768), "scifact")
     yield ingestor
 
 
 @pytest.mark.data
-def test_beir_ingest_download(beir_ingestor):
+def test_beir_ingest_embed_all(beir_ingestor):
     beir_ingestor.ingest(subset="test")
     stats = beir_ingestor.service.get_statistics()
     assert stats["queries"]["total"] == 300
     assert stats["chunks"]["total"] == 5183
     assert stats["chunks"]["with_embeddings"] == 0
+
+    beir_ingestor.embed_all(concurrent_limit=16)
+    stats = beir_ingestor.service.get_statistics()
+    assert stats["queries"]["total"] == 300
+    assert stats["chunks"]["total"] == 5183
+    assert stats["chunks"]["with_embeddings"] == 5183
+    assert stats["chunks"]["without_embeddings"] == 0

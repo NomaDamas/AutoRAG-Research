@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Literal
 
+from llama_index.core.base.embeddings.base import BaseEmbedding
+
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 
 
@@ -15,9 +17,10 @@ class DataIngestor(ABC):
 
 
 class TextEmbeddingDataIngestor(DataIngestor, ABC):
-    def __init__(self, text_data_ingestion_service: TextDataIngestionService):
+    def __init__(self, text_data_ingestion_service: TextDataIngestionService, embedding_model: BaseEmbedding):
         super().__init__()
         self.service = text_data_ingestion_service
+        self.embedding_model = embedding_model
 
     @abstractmethod
     async def embed_queries(self):

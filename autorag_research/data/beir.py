@@ -4,6 +4,7 @@ from typing import Literal
 
 from beir.datasets.data_loader import GenericDataLoader
 from beir.util import download_and_unzip
+from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from autorag_research.data import USER_DATA_DIR
 from autorag_research.data.base import TextEmbeddingDataIngestor
@@ -13,8 +14,10 @@ logger = logging.getLogger("AutoRAG-Research")
 
 
 class BEIRIngestor(TextEmbeddingDataIngestor):
-    def __init__(self, text_data_ingestion_service: TextDataIngestionService, dataset_name: str):
-        super().__init__(text_data_ingestion_service)
+    def __init__(
+        self, text_data_ingestion_service: TextDataIngestionService, embedding_model: BaseEmbedding, dataset_name: str
+    ):
+        super().__init__(text_data_ingestion_service, embedding_model)
         self.dataset_name = dataset_name
         url = f"https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{self.dataset_name}.zip"
         out_dir = os.path.join(USER_DATA_DIR, "beir", self.dataset_name)
@@ -37,11 +40,13 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         corpus_ids = [int(x) for x in list(corpus.keys())]
         corpus_contents = [(doc.get("title", "") + " " + doc["text"]).strip() for doc in corpus.values()]
         self.service.add_chunks_simple(corpus_contents, corpus_ids)
-        # TODO: Handle HotpotQA multi-hop queries
         for qid, doc_dict in qrels.items():
             gt_ids = self.filter_valid_retrieval_gt_ids(doc_dict)
             gt_ids = [int(x) for x in gt_ids]
-            self.service.add_retrieval_gt_simple(int(qid), gt_ids)
+            if self.dataset_name == "hotpotqa":
+                self.service.add_retrieval_gt_multihop(int(qid), [[gt_id] for gt_id in gt_ids])
+            else:
+                self.service.add_retrieval_gt_simple(int(qid), gt_ids)
 
     @staticmethod
     def filter_valid_retrieval_gt_ids(dictionary: dict[str, int]) -> list[str]:
