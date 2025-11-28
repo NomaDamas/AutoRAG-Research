@@ -199,3 +199,58 @@ def database_exists(
         dbname="postgres",
     ) as conn:
         return _database_exists(conn, database)
+
+
+# SQL to install vector extensions with fallback (vchord -> vectors -> vector)
+_INSTALL_VECTOR_EXTENSIONS_SQL = """
+DO $$
+BEGIN
+    BEGIN
+        CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
+    EXCEPTION WHEN others THEN
+        PERFORM 1;
+    END;
+    BEGIN
+        CREATE EXTENSION IF NOT EXISTS vectors;
+    EXCEPTION WHEN others THEN
+        PERFORM 1;
+    END;
+    BEGIN
+        CREATE EXTENSION IF NOT EXISTS vector;
+    EXCEPTION WHEN others THEN
+        PERFORM 1;
+    END;
+END $$;
+"""
+
+
+def install_vector_extensions(
+    host: str,
+    user: str,
+    password: str,
+    database: str,
+    port: int = 5432,
+) -> None:
+    """Install vector extensions (vchord, vectors, vector) with fallback.
+
+    Tries to install extensions in order: vchord -> vectors -> vector.
+    Silently continues if an extension is not available.
+
+    Args:
+        host: PostgreSQL server host.
+        user: PostgreSQL user.
+        password: User password.
+        database: Target database name.
+        port: PostgreSQL server port (default: 5432).
+    """
+    with psycopg.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        dbname=database,
+    ) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(_INSTALL_VECTOR_EXTENSIONS_SQL)
+        conn.commit()
+    logger.info("Vector extensions installed successfully")

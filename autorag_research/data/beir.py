@@ -37,6 +37,7 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         corpus_ids = [int(x) for x in list(corpus.keys())]
         corpus_contents = [(doc.get("title", "") + " " + doc["text"]).strip() for doc in corpus.values()]
         self.service.add_chunks_simple(corpus_contents, corpus_ids)
+        # TODO: Handle HotpotQA multi-hop queries
         for qid, doc_dict in qrels.items():
             gt_ids = self.filter_valid_retrieval_gt_ids(doc_dict)
             gt_ids = [int(x) for x in gt_ids]
@@ -44,8 +45,8 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
 
     @staticmethod
     def filter_valid_retrieval_gt_ids(dictionary: dict[str, int]) -> list[str]:
-        # From a given dict, return only keys that the value is 1
-        return [k for k, v in dictionary.items() if v == 1]
+        # From a given dict, return only keys that the value is more than zero
+        return [k for k, v in dictionary.items() if v > 0]
 
     async def embed_queries(self):
         pass
