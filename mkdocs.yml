@@ -10,6 +10,7 @@ copyright: Maintained by <a href="https://vkehfdl1.com">vkehfdl1</a>.
 nav:
   - Home: index.md
   - Installation: installation.md
+  - Dataset Setup: dataset_setup.md
   - Modules: modules.md
 plugins:
   - search
