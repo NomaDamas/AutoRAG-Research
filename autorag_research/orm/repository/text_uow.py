@@ -14,21 +14,25 @@ from autorag_research.exceptions import SessionNotSetError
 from autorag_research.orm.repository.base import GenericRepository
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.query import QueryRepository
-from autorag_research.orm.schema import RetrievalRelation
 
 
-class RetrievalRelationRepository(GenericRepository[RetrievalRelation]):
+class RetrievalRelationRepository(GenericRepository[Any]):
     """Repository for RetrievalRelation entity (text-only, no image_chunk support)."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, model_cls: type | None = None):
         """Initialize retrieval relation repository.
 
         Args:
             session: SQLAlchemy session for database operations.
+            model_cls: The RetrievalRelation model class. If None, uses default schema.
         """
-        super().__init__(session, RetrievalRelation)
+        if model_cls is None:
+            from autorag_research.orm.schema import RetrievalRelation
 
-    def get_by_query_id(self, query_id: int) -> list[RetrievalRelation]:
+            model_cls = RetrievalRelation
+        super().__init__(session, model_cls)
+
+    def get_by_query_id(self, query_id: int) -> list[Any]:
         """Retrieve all retrieval relations for a specific query.
 
         Args:
@@ -38,9 +42,9 @@ class RetrievalRelationRepository(GenericRepository[RetrievalRelation]):
             List of retrieval relations for the query, ordered by group_index and group_order.
         """
         stmt = (
-            select(RetrievalRelation)
-            .where(RetrievalRelation.query_id == query_id)
-            .order_by(RetrievalRelation.group_index, RetrievalRelation.group_order)
+            select(self.model_cls)
+            .where(self.model_cls.query_id == query_id)
+            .order_by(self.model_cls.group_index, self.model_cls.group_order)
         )
         return list(self.session.execute(stmt).scalars().all())
 
@@ -53,7 +57,7 @@ class RetrievalRelationRepository(GenericRepository[RetrievalRelation]):
         Returns:
             Maximum group_index value, None if no relations exist.
         """
-        stmt = select(func.max(RetrievalRelation.group_index)).where(RetrievalRelation.query_id == query_id)
+        stmt = select(func.max(self.model_cls.group_index)).where(self.model_cls.query_id == query_id)
         return self.session.execute(stmt).scalar_one_or_none()
 
     def get_max_group_order(self, query_id: int, group_index: int) -> int | None:
@@ -66,9 +70,9 @@ class RetrievalRelationRepository(GenericRepository[RetrievalRelation]):
         Returns:
             Maximum group_order value, None if no relations exist.
         """
-        stmt = select(func.max(RetrievalRelation.group_order)).where(
-            RetrievalRelation.query_id == query_id,
-            RetrievalRelation.group_index == group_index,
+        stmt = select(func.max(self.model_cls.group_order)).where(
+            self.model_cls.query_id == query_id,
+            self.model_cls.group_index == group_index,
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
@@ -81,7 +85,7 @@ class RetrievalRelationRepository(GenericRepository[RetrievalRelation]):
         Returns:
             Number of retrieval relations for the query.
         """
-        stmt = select(func.count()).select_from(RetrievalRelation).where(RetrievalRelation.query_id == query_id)
+        stmt = select(func.count()).select_from(self.model_cls).where(self.model_cls.query_id == query_id)
         return self.session.execute(stmt).scalar_one()
 
 
@@ -94,17 +98,32 @@ class TextOnlyUnitOfWork:
     Provides lazy-initialized repositories for efficient resource usage.
     """
 
-    def __init__(self, session_factory: sessionmaker[Session]):
+    def __init__(self, session_factory: sessionmaker[Session], schema: Any | None = None):
         """Initialize Text-only Unit of Work with a session factory.
 
         Args:
             session_factory: SQLAlchemy sessionmaker instance.
+            schema: Schema namespace from create_schema(). If None, uses default 768-dim schema.
         """
         self.session_factory = session_factory
+        self._schema = schema
         self.session: Session | None = None
         self._query_repo: QueryRepository | None = None
         self._chunk_repo: ChunkRepository | None = None
         self._retrieval_relation_repo: RetrievalRelationRepository | None = None
+
+    def _get_schema_classes(self) -> tuple[type, type, type]:
+        """Get Query, Chunk, RetrievalRelation classes from schema.
+
+        Returns:
+            Tuple of (Query, Chunk, RetrievalRelation) model classes.
+        """
+        if self._schema is not None:
+            return self._schema.Query, self._schema.Chunk, self._schema.RetrievalRelation
+        # Use default schema
+        from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
+
+        return Query, Chunk, RetrievalRelation
 
     def __enter__(self) -> "TextOnlyUnitOfWork":
         """Enter the context manager and create a new session.
@@ -147,7 +166,8 @@ class TextOnlyUnitOfWork:
         if self.session is None:
             raise SessionNotSetError
         if self._query_repo is None:
-            self._query_repo = QueryRepository(self.session)
+            query_cls, _, _ = self._get_schema_classes()
+            self._query_repo = QueryRepository(self.session, query_cls)
         return self._query_repo
 
     @property
@@ -163,7 +183,8 @@ class TextOnlyUnitOfWork:
         if self.session is None:
             raise SessionNotSetError
         if self._chunk_repo is None:
-            self._chunk_repo = ChunkRepository(self.session)
+            _, chunk_cls, _ = self._get_schema_classes()
+            self._chunk_repo = ChunkRepository(self.session, chunk_cls)
         return self._chunk_repo
 
     @property
@@ -179,7 +200,8 @@ class TextOnlyUnitOfWork:
         if self.session is None:
             raise SessionNotSetError
         if self._retrieval_relation_repo is None:
-            self._retrieval_relation_repo = RetrievalRelationRepository(self.session)
+            _, _, retrieval_relation_cls = self._get_schema_classes()
+            self._retrieval_relation_repo = RetrievalRelationRepository(self.session, retrieval_relation_cls)
         return self._retrieval_relation_repo
 
     def commit(self) -> None:

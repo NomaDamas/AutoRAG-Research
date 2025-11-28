@@ -4,25 +4,31 @@ Implements chunk-specific CRUD operations and queries extending
 the base vector repository pattern for similarity search.
 """
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from autorag_research.orm.repository.base import BaseVectorRepository
-from autorag_research.orm.schema import Chunk
 
 
-class ChunkRepository(BaseVectorRepository[Chunk]):
+class ChunkRepository(BaseVectorRepository[Any]):
     """Repository for Chunk entity with vector search capabilities."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, model_cls: type | None = None):
         """Initialize chunk repository.
 
         Args:
             session: SQLAlchemy session for database operations.
+            model_cls: The Chunk model class to use. If None, uses default schema.
         """
-        super().__init__(session, Chunk)
+        if model_cls is None:
+            from autorag_research.orm.schema import Chunk
 
-    def get_by_caption_id(self, caption_id: int) -> list[Chunk]:
+            model_cls = Chunk
+        super().__init__(session, model_cls)
+
+    def get_by_caption_id(self, caption_id: int) -> list[Any]:
         """Retrieve all chunks for a specific caption.
 
         Args:
@@ -31,10 +37,10 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
         Returns:
             List of chunks belonging to the caption.
         """
-        stmt = select(Chunk).where(Chunk.parent_caption == caption_id)
+        stmt = select(self.model_cls).where(self.model_cls.parent_caption == caption_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_parent_caption(self, chunk_id: int) -> Chunk | None:
+    def get_with_parent_caption(self, chunk_id: int) -> Any | None:
         """Retrieve a chunk with its parent caption eagerly loaded.
 
         Args:
@@ -43,10 +49,14 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
         Returns:
             The chunk with parent caption loaded, None if not found.
         """
-        stmt = select(Chunk).where(Chunk.id == chunk_id).options(joinedload(Chunk.parent_caption_obj))
+        stmt = (
+            select(self.model_cls)
+            .where(self.model_cls.id == chunk_id)
+            .options(joinedload(self.model_cls.parent_caption_obj))
+        )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_with_caption_chunk_relations(self, chunk_id: int) -> Chunk | None:
+    def get_with_caption_chunk_relations(self, chunk_id: int) -> Any | None:
         """Retrieve a chunk with its caption-chunk relations eagerly loaded.
 
         Args:
@@ -55,10 +65,14 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
         Returns:
             The chunk with caption-chunk relations loaded, None if not found.
         """
-        stmt = select(Chunk).where(Chunk.id == chunk_id).options(joinedload(Chunk.caption_chunk_relations))
+        stmt = (
+            select(self.model_cls)
+            .where(self.model_cls.id == chunk_id)
+            .options(joinedload(self.model_cls.caption_chunk_relations))
+        )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_retrieval_relations(self, chunk_id: int) -> Chunk | None:
+    def get_with_retrieval_relations(self, chunk_id: int) -> Any | None:
         """Retrieve a chunk with its retrieval relations eagerly loaded.
 
         Args:
@@ -67,10 +81,14 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
         Returns:
             The chunk with retrieval relations loaded, None if not found.
         """
-        stmt = select(Chunk).where(Chunk.id == chunk_id).options(joinedload(Chunk.retrieval_relations))
+        stmt = (
+            select(self.model_cls)
+            .where(self.model_cls.id == chunk_id)
+            .options(joinedload(self.model_cls.retrieval_relations))
+        )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_chunk_retrieved_results(self, chunk_id: int) -> Chunk | None:
+    def get_with_chunk_retrieved_results(self, chunk_id: int) -> Any | None:
         """Retrieve a chunk with its chunk retrieved results eagerly loaded.
 
         Args:
@@ -79,10 +97,14 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
         Returns:
             The chunk with chunk retrieved results loaded, None if not found.
         """
-        stmt = select(Chunk).where(Chunk.id == chunk_id).options(joinedload(Chunk.chunk_retrieved_results))
+        stmt = (
+            select(self.model_cls)
+            .where(self.model_cls.id == chunk_id)
+            .options(joinedload(self.model_cls.chunk_retrieved_results))
+        )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def search_by_contents(self, search_text: str) -> list[Chunk]:
+    def search_by_contents(self, search_text: str) -> list[Any]:
         """Search chunks by contents using SQL LIKE.
 
         Args:
@@ -91,10 +113,10 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
         Returns:
             List of matching chunks.
         """
-        stmt = select(Chunk).where(Chunk.contents.like(f"%{search_text}%"))
+        stmt = select(self.model_cls).where(self.model_cls.contents.like(f"%{search_text}%"))
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_contents_exact(self, contents: str) -> list[Chunk]:
+    def get_by_contents_exact(self, contents: str) -> list[Any]:
         """Retrieve chunks with exact contents match.
 
         Args:
@@ -103,10 +125,10 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
         Returns:
             List of chunks with matching contents.
         """
-        stmt = select(Chunk).where(Chunk.contents == contents)
+        stmt = select(self.model_cls).where(self.model_cls.contents == contents)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_chunks_with_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[Chunk]:
+    def get_chunks_with_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[Any]:
         """Retrieve chunks that have embeddings.
 
         Args:
@@ -116,14 +138,14 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
         Returns:
             List of chunks with embeddings.
         """
-        stmt = select(Chunk).where(Chunk.embedding.is_not(None))
+        stmt = select(self.model_cls).where(self.model_cls.embedding.is_not(None))
         if offset:
             stmt = stmt.offset(offset)
         if limit:
             stmt = stmt.limit(limit)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_chunks_without_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[Chunk]:
+    def get_chunks_without_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[Any]:
         """Retrieve chunks that do not have embeddings.
 
         Args:
@@ -133,7 +155,7 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
         Returns:
             List of chunks without embeddings.
         """
-        stmt = select(Chunk).where(Chunk.embedding.is_(None))
+        stmt = select(self.model_cls).where(self.model_cls.embedding.is_(None))
         if offset:
             stmt = stmt.offset(offset)
         if limit:
@@ -149,9 +171,9 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
         Returns:
             Number of chunks for the caption.
         """
-        return self.session.query(Chunk).filter(Chunk.parent_caption == caption_id).count()
+        return self.session.query(self.model_cls).filter(self.model_cls.parent_caption == caption_id).count()
 
-    def get_with_all_relations(self, chunk_id: int) -> Chunk | None:
+    def get_with_all_relations(self, chunk_id: int) -> Any | None:
         """Retrieve a chunk with all relationships eagerly loaded.
 
         Args:
@@ -161,13 +183,13 @@ class ChunkRepository(BaseVectorRepository[Chunk]):
             The chunk with all relations loaded, None if not found.
         """
         stmt = (
-            select(Chunk)
-            .where(Chunk.id == chunk_id)
+            select(self.model_cls)
+            .where(self.model_cls.id == chunk_id)
             .options(
-                joinedload(Chunk.parent_caption_obj),
-                joinedload(Chunk.caption_chunk_relations),
-                joinedload(Chunk.retrieval_relations),
-                joinedload(Chunk.chunk_retrieved_results),
+                joinedload(self.model_cls.parent_caption_obj),
+                joinedload(self.model_cls.caption_chunk_relations),
+                joinedload(self.model_cls.retrieval_relations),
+                joinedload(self.model_cls.chunk_retrieved_results),
             )
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()

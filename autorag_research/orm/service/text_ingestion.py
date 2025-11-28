@@ -7,12 +7,12 @@ chunks, and retrieval ground truth relations with embedding support.
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.exceptions import LengthMismatchError, SessionNotSetError
 from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
-from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
 
 EmbeddingFunc = Callable[[str], Awaitable[list[float]]]
 logger = logging.getLogger("AutoRAG-Research")
@@ -90,13 +90,29 @@ class TextDataIngestionService:
     def __init__(
         self,
         session_factory: sessionmaker[Session],
+        schema: Any | None = None,
     ):
         """Initialize the text data ingestion service.
 
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
+            schema: Schema namespace from create_schema(). If None, uses default 768-dim schema.
         """
         self.session_factory = session_factory
+        self._schema = schema
+
+    def _get_schema_classes(self) -> tuple[type, type, type]:
+        """Get Query, Chunk, RetrievalRelation classes from schema.
+
+        Returns:
+            Tuple of (Query, Chunk, RetrievalRelation) model classes.
+        """
+        if self._schema is not None:
+            return self._schema.Query, self._schema.Chunk, self._schema.RetrievalRelation
+        # Use default schema
+        from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
+
+        return Query, Chunk, RetrievalRelation
 
     def _create_uow(self) -> TextOnlyUnitOfWork:
         """Create a new TextOnlyUnitOfWork instance.
@@ -104,7 +120,7 @@ class TextDataIngestionService:
         Returns:
             New TextOnlyUnitOfWork instance.
         """
-        return TextOnlyUnitOfWork(self.session_factory)
+        return TextOnlyUnitOfWork(self.session_factory, self._schema)
 
     # ==================== Query Operations ====================
 
@@ -113,7 +129,7 @@ class TextDataIngestionService:
         query_text: str,
         generation_gt: list[str] | None = None,
         qid: int | None = None,
-    ) -> Query:
+    ) -> Any:
         """Add a single query to the database.
 
         Args:
@@ -124,6 +140,7 @@ class TextDataIngestionService:
         Returns:
             The created Query entity with assigned ID.
         """
+        Query, _, _ = self._get_schema_classes()
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -141,7 +158,7 @@ class TextDataIngestionService:
         self,
         queries: list[tuple[str, list[str] | None]],
         qids: list[int] | None = None,
-    ) -> list[Query]:
+    ) -> list[Any]:
         """Add multiple queries to the database.
 
         Args:
@@ -152,6 +169,7 @@ class TextDataIngestionService:
         Returns:
             List of created Query entities with assigned IDs.
         """
+        Query, _, _ = self._get_schema_classes()
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -173,7 +191,7 @@ class TextDataIngestionService:
         self,
         query_texts: list[str],
         qids: list[int] | None = None,
-    ) -> list[Query]:
+    ) -> list[Any]:
         """Add multiple queries without generation ground truth.
 
         Args:
@@ -183,6 +201,7 @@ class TextDataIngestionService:
         Returns:
             List of created Query entities with assigned IDs.
         """
+        Query, _, _ = self._get_schema_classes()
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -196,7 +215,7 @@ class TextDataIngestionService:
                 uow.session.refresh(q)
             return query_entities
 
-    def get_query_by_text(self, query_text: str) -> Query | None:
+    def get_query_by_text(self, query_text: str) -> Any | None:
         """Get a query by its text content.
 
         Args:
@@ -208,7 +227,7 @@ class TextDataIngestionService:
         with self._create_uow() as uow:
             return uow.queries.get_by_query_text(query_text)
 
-    def get_query_by_id(self, query_id: int) -> Query | None:
+    def get_query_by_id(self, query_id: int) -> Any | None:
         """Get a query by its ID.
 
         Args:
@@ -227,7 +246,7 @@ class TextDataIngestionService:
         contents: str,
         parent_caption_id: int | None = None,
         chunk_id: int | None = None,
-    ) -> Chunk:
+    ) -> Any:
         """Add a single chunk to the database.
 
         Args:
@@ -238,6 +257,7 @@ class TextDataIngestionService:
         Returns:
             The created Chunk entity with assigned ID.
         """
+        _, Chunk, _ = self._get_schema_classes()
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -254,7 +274,7 @@ class TextDataIngestionService:
         self,
         chunks: list[tuple[str, int | None]],
         chunk_ids: list[int] | None = None,
-    ) -> list[Chunk]:
+    ) -> list[Any]:
         """Add multiple chunks to the database.
 
         Args:
@@ -265,6 +285,7 @@ class TextDataIngestionService:
         Returns:
             List of created Chunk entities with assigned IDs.
         """
+        _, Chunk, _ = self._get_schema_classes()
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -287,7 +308,7 @@ class TextDataIngestionService:
         self,
         contents_list: list[str],
         chunk_ids: list[int] | None = None,
-    ) -> list[Chunk]:
+    ) -> list[Any]:
         """Add multiple standalone chunks (no parent caption).
 
         This is the "chunk-only" scenario where chunks exist without
@@ -300,6 +321,7 @@ class TextDataIngestionService:
         Returns:
             List of created Chunk entities with assigned IDs.
         """
+        _, Chunk, _ = self._get_schema_classes()
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -315,7 +337,7 @@ class TextDataIngestionService:
                 uow.session.refresh(c)
             return chunk_entities
 
-    def get_chunk_by_id(self, chunk_id: int) -> Chunk | None:
+    def get_chunk_by_id(self, chunk_id: int) -> Any | None:
         """Get a chunk by its ID.
 
         Args:
@@ -327,7 +349,7 @@ class TextDataIngestionService:
         with self._create_uow() as uow:
             return uow.chunks.get_by_id(chunk_id)
 
-    def get_chunks_by_contents(self, contents: str) -> list[Chunk]:
+    def get_chunks_by_contents(self, contents: str) -> list[Any]:
         """Get chunks by exact contents match.
 
         Args:
@@ -347,7 +369,7 @@ class TextDataIngestionService:
         chunk_id: int,
         group_index: int | None = None,
         group_order: int | None = None,
-    ) -> RetrievalRelation:
+    ) -> Any:
         """Add a single retrieval ground truth relation.
 
         For non-multi-hop scenarios, group_index defaults to 0 and
@@ -362,6 +384,7 @@ class TextDataIngestionService:
         Returns:
             The created RetrievalRelation entity.
         """
+        _, _, RetrievalRelation = self._get_schema_classes()
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -389,7 +412,7 @@ class TextDataIngestionService:
         self,
         query_id: int,
         chunk_ids: list[int],
-    ) -> list[RetrievalRelation]:
+    ) -> list[Any]:
         """Add multiple retrieval GTs for a query (non-multi-hop).
 
         All chunks are added to the same group (group_index=0) with
@@ -403,6 +426,7 @@ class TextDataIngestionService:
         Returns:
             List of created RetrievalRelation entities.
         """
+        _, _, RetrievalRelation = self._get_schema_classes()
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -429,7 +453,7 @@ class TextDataIngestionService:
         self,
         query_id: int,
         chunk_groups: list[list[int]],
-    ) -> list[RetrievalRelation]:
+    ) -> list[Any]:
         """Add multiple retrieval GTs for a query with multi-hop support.
 
         Each inner list represents a separate "hop" or alternative path.
@@ -448,6 +472,7 @@ class TextDataIngestionService:
         Returns:
             List of all created RetrievalRelation entities.
         """
+        _, _, RetrievalRelation = self._get_schema_classes()
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
@@ -473,7 +498,7 @@ class TextDataIngestionService:
                 uow.session.refresh(r)
             return all_relations
 
-    def get_retrieval_gt_by_query(self, query_id: int) -> list[RetrievalRelation]:
+    def get_retrieval_gt_by_query(self, query_id: int) -> list[Any]:
         """Get all retrieval ground truth relations for a query.
 
         Args:
@@ -487,7 +512,7 @@ class TextDataIngestionService:
 
     # ==================== Embedding Operations ====================
 
-    def set_query_embedding(self, query_id: int, embedding: list[float]) -> Query | None:
+    def set_query_embedding(self, query_id: int, embedding: list[float]) -> Any | None:
         """Set the embedding for a single query.
 
         Args:
@@ -509,7 +534,7 @@ class TextDataIngestionService:
             uow.session.refresh(query)
             return query
 
-    def set_chunk_embedding(self, chunk_id: int, embedding: list[float]) -> Chunk | None:
+    def set_chunk_embedding(self, chunk_id: int, embedding: list[float]) -> Any | None:
         """Set the embedding for a single chunk.
 
         Args:

@@ -24,7 +24,12 @@ DATASET_TYPES = {
 }
 
 
-def create_session_factory(db_name: str, embedding_dim: int):
+def create_session_factory_and_schema(db_name: str, embedding_dim: int):
+    """Create session factory and schema for a given embedding dimension.
+
+    Returns:
+        Tuple of (session_factory, schema)
+    """
     host = os.getenv("POSTGRES_HOST", "localhost")
     user = os.getenv("POSTGRES_USER", "postgres")
     pwd = os.getenv("POSTGRES_PASSWORD", "postgres")
@@ -37,7 +42,7 @@ def create_session_factory(db_name: str, embedding_dim: int):
     postgres_url = f"postgresql+psycopg://{user}:{pwd}@{host}:{port}/{db_name}"
     engine = create_engine(postgres_url, pool_pre_ping=True)
     schema.Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine)
+    return sessionmaker(bind=engine), schema
 
 
 def health_check_embedding(embedding_model: OpenAILikeEmbedding) -> int:
@@ -103,8 +108,8 @@ def main(
     click.echo(f"Embedding model is healthy. Dimension: {embedding_dim}")
 
     db_name = f"{dataset_name}_{embedding_model_name}"
-    session_factory = create_session_factory(db_name, embedding_dim)
-    service = TextDataIngestionService(session_factory)
+    session_factory, schema = create_session_factory_and_schema(db_name, embedding_dim)
+    service = TextDataIngestionService(session_factory, schema)
 
     ingestor_class = DATASET_TYPES[dataset_type]
     ingestor = ingestor_class(service, embedding_model, dataset_name)
