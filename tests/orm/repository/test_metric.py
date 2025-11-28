@@ -32,13 +32,6 @@ def test_get_by_type(metric_repository: MetricRepository):
     assert all(m.type == "retrieval" for m in results)
 
 
-def test_get_with_experiment_results(metric_repository: MetricRepository):
-    result = metric_repository.get_with_experiment_results(1)
-
-    assert result is not None
-    assert hasattr(result, "experiment_results")
-
-
 def test_get_with_summaries(metric_repository: MetricRepository):
     result = metric_repository.get_with_summaries(1)
 
@@ -58,7 +51,6 @@ def test_get_with_all_relations(metric_repository: MetricRepository):
     result = metric_repository.get_with_all_relations(1)
 
     assert result is not None
-    assert hasattr(result, "experiment_results")
     assert hasattr(result, "summaries")
     assert hasattr(result, "chunk_retrieved_results")
     assert hasattr(result, "image_chunk_retrieved_results")

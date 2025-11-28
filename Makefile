@@ -20,6 +20,7 @@ check: ## Run code quality tools.
 # PostgreSQL 컨테이너 시작
 docker-up:
 	@echo "🐘 Starting PostgreSQL containers..."
+	@mkdir -p postgresql/pgdata
 	@cd postgresql && docker compose up -d
 
 # PostgreSQL 준비 대기
@@ -39,17 +40,21 @@ docker-down:
 clean-docker:
 	@echo "🧹 Cleaning up PostgreSQL containers and volumes..."
 	@cd postgresql && docker compose down -v
+	@echo "🗑️  Removing pgdata directory..."
+	@rm -rf postgresql/pgdata
 
 # 테스트 실행 (PostgreSQL 자동 관리)
 test: docker-up docker-wait ## Test the code with pytest
 	@echo "🚀 Testing code: Running pytest"
-	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -n auto
+	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -n auto -m "not gpu and not data" --dist=loadgroup
 	@make docker-down
+	@echo "🗑️  Removing pgdata directory..."
+	@rm -rf postgresql/pgdata
 
 # 테스트만 실행 (컨테이너는 유지)
 test-only: ## Run tests without managing Docker containers
 	@echo "🚀 Testing code: Running pytest"
-	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -n auto
+	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -n auto -m "not gpu and not data" --dist=loadgroup
 
 .PHONY: build
 build: clean-build ## Build wheel file

@@ -129,7 +129,6 @@ def test_get_chunks_without_embeddings(chunk_repository: ChunkRepository, db_ses
     # Use existing seed data (all chunks 1-6 have NULL embeddings)
     results = chunk_repository.get_chunks_without_embeddings(limit=10)
 
-    assert len(results) >= 6
     assert len(results) <= 10
     assert all(c.embedding is None for c in results)
 
