@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from autorag_research.data.beir import BEIRIngestor
 from autorag_research.exceptions import EmbeddingNotSetError
+from autorag_research.orm.schema_factory import create_schema
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 from autorag_research.orm.util import create_database, install_vector_extensions
 
@@ -23,22 +24,27 @@ DATASET_TYPES = {
 }
 
 
-def create_session_factory(db_name: str):
+def create_session_factory(db_name: str, embedding_dim: int):
     host = os.getenv("POSTGRES_HOST", "localhost")
     user = os.getenv("POSTGRES_USER", "postgres")
     pwd = os.getenv("POSTGRES_PASSWORD", "postgres")
     port = int(os.getenv("POSTGRES_PORT", "5432"))
 
+    schema = create_schema(embedding_dim)
+
     create_database(host, user, pwd, db_name, port=port)
     install_vector_extensions(host, user, pwd, db_name, port=port)
     postgres_url = f"postgresql+psycopg://{user}:{pwd}@{host}:{port}/{db_name}"
     engine = create_engine(postgres_url, pool_pre_ping=True)
+    schema.Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)
 
 
-def health_check_embedding(embedding_model: OpenAILikeEmbedding) -> None:
+def health_check_embedding(embedding_model: OpenAILikeEmbedding) -> int:
+    """Health check embedding model and return embedding dimension."""
     try:
-        embedding_model.get_text_embedding("health check")
+        embedding = embedding_model.get_text_embedding("health check")
+        return len(embedding)
     except Exception as e:
         raise EmbeddingNotSetError from e
 
@@ -93,11 +99,11 @@ def main(
     )
 
     click.echo("Checking embedding model health...")
-    health_check_embedding(embedding_model)
-    click.echo("Embedding model is healthy.")
+    embedding_dim = health_check_embedding(embedding_model)
+    click.echo(f"Embedding model is healthy. Dimension: {embedding_dim}")
 
     db_name = f"{dataset_name}_{embedding_model_name}"
-    session_factory = create_session_factory(db_name)
+    session_factory = create_session_factory(db_name, embedding_dim)
     service = TextDataIngestionService(session_factory)
 
     ingestor_class = DATASET_TYPES[dataset_type]

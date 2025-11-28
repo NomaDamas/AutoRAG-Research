@@ -6,9 +6,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from autorag_research.data.beir import BEIRIngestor
-from autorag_research.orm.schema import Base
+from autorag_research.orm.schema_factory import create_schema
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 from autorag_research.orm.util import create_database, drop_database, install_vector_extensions
+
+EMBEDDING_DIM = 768
 
 
 @pytest.fixture(scope="session")
@@ -19,17 +21,19 @@ def beir_db_engine():
     port = int(os.getenv("POSTGRES_PORT"))
     db_name = "autorag_research_beir_test"
 
+    schema = create_schema(EMBEDDING_DIM)
+
     create_database(host, user, pwd, db_name, port=port)
     install_vector_extensions(host, user, pwd, db_name, port=port)
     url = f"postgresql+psycopg://{user}:{pwd}@{host}:{port}/autorag_research_beir_test"
 
     engine = create_engine(
         url,
-        pool_pre_ping=True,  # Check connection health
+        pool_pre_ping=True,
         pool_size=10,
         max_overflow=20,
     )
-    Base.metadata.create_all(engine)  # make all schema
+    schema.Base.metadata.create_all(engine)
     yield engine
     engine.dispose()
 
@@ -49,7 +53,7 @@ def service(session_factory_beir):
 
 @pytest.fixture
 def beir_ingestor(db_session, service):
-    ingestor = BEIRIngestor(service, MockEmbedding(768), "scifact")
+    ingestor = BEIRIngestor(service, MockEmbedding(EMBEDDING_DIM), "scifact")
     yield ingestor
 
 
