@@ -61,34 +61,14 @@ class BM25Module(BaseModule):
             self.index_name = None
             self.index_path = Path(index_path)
 
+        # Set search language
+        self.searcher.set_language(language)
+
         # Set BM25 parameters
         self.searcher.set_bm25(k1=k1, b=b)
 
-        # Set language analyzer if not English
-        if language != "en":
-            self._set_language_analyzer(language)
-
         self.k1 = k1
         self.b = b
-        self.language = language
-
-    def _set_language_analyzer(self, language: str):
-        """Set appropriate analyzer for non-English languages."""
-        analyzer_map = {
-            "ko": "korean",
-            "zh": "chinese",
-            "ja": "japanese",
-            "ar": "arabic",
-            "de": "german",
-            "fr": "french",
-            "es": "spanish",
-            "ru": "russian",
-        }
-
-        if language in analyzer_map:
-            # Note: This requires the searcher to be configured with proper analyzer
-            # Pyserini handles this internally for pre-built indices
-            pass
 
     def run(self, queries: list[str], top_k: int = 10) -> list[list[dict]]:
         """
