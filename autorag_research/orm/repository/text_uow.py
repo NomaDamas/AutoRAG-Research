@@ -88,6 +88,37 @@ class RetrievalRelationRepository(GenericRepository[Any]):
         stmt = select(func.count()).select_from(self.model_cls).where(self.model_cls.query_id == query_id)
         return self.session.execute(stmt).scalar_one()
 
+    def delete_by_query_id(self, query_id: int) -> int:
+        """Delete all retrieval relations for a specific query.
+
+        Args:
+            query_id: The query ID.
+
+        Returns:
+            Number of deleted relations.
+        """
+        relations = self.get_by_query_id(query_id)
+        count = len(relations)
+        for rel in relations:
+            self.session.delete(rel)
+        return count
+
+    def delete_by_chunk_id(self, chunk_id: int) -> int:
+        """Delete all retrieval relations referencing a specific chunk.
+
+        Args:
+            chunk_id: The chunk ID.
+
+        Returns:
+            Number of deleted relations.
+        """
+        stmt = select(self.model_cls).where(self.model_cls.chunk_id == chunk_id)
+        relations = list(self.session.execute(stmt).scalars().all())
+        count = len(relations)
+        for rel in relations:
+            self.session.delete(rel)
+        return count
+
 
 class TextOnlyUnitOfWork:
     """Text-only Unit of Work for managing text data ingestion transactions.

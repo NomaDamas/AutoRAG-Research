@@ -626,6 +626,105 @@ class TextDataIngestionService:
 
         return total_updated
 
+    # ==================== Cleaning Operations ====================
+
+    def clean(self) -> dict[str, int]:
+        """Delete empty queries and chunks along with their associated retrieval relations.
+
+        This method should be called after data ingestion and before embedding to remove
+        any queries or chunks with empty or whitespace-only content. It also removes
+        associated retrieval relations to maintain referential integrity.
+
+        Returns:
+            Dictionary with counts of deleted queries and chunks.
+        """
+        deleted_queries = self._delete_empty_queries()
+        deleted_chunks = self._delete_empty_chunks()
+        return {
+            "deleted_queries": deleted_queries,
+            "deleted_chunks": deleted_chunks,
+        }
+
+    def _delete_empty_queries(self) -> int:
+        """Delete queries with empty content and their associated retrieval relations.
+
+        This method finds all queries where the query text is empty or whitespace-only,
+        deletes their associated retrieval relations first (to avoid FK violations),
+        then deletes the queries themselves.
+
+        Returns:
+            Total number of queries deleted.
+        """
+        total_deleted = 0
+
+        while True:
+            with self._create_uow() as uow:
+                if uow.session is None:
+                    raise SessionNotSetError
+
+                # Get batch of empty queries
+                empty_queries = uow.queries.get_queries_with_empty_content(limit=100)
+                if not empty_queries:
+                    break
+
+                # Delete retrieval relations and queries
+                for query in empty_queries:
+                    # Delete retrieval relations first (FK constraint)
+                    deleted_relations = uow.retrieval_relations.delete_by_query_id(query.id)
+                    if deleted_relations > 0:
+                        logger.info(f"Deleted {deleted_relations} retrieval relations for empty query {query.id}.")
+
+                    # Delete the query
+                    uow.queries.delete(query)
+                    total_deleted += 1
+
+                uow.commit()
+
+        if total_deleted > 0:
+            logger.warning(f"Deleted {total_deleted} queries with empty content.")
+
+        return total_deleted
+
+    def _delete_empty_chunks(self) -> int:
+        """Delete chunks with empty content and their associated retrieval relations.
+
+        This method finds all chunks where the contents is empty or whitespace-only,
+        deletes their associated retrieval relations first (to avoid FK violations),
+        then deletes the chunks themselves.
+
+        Returns:
+            Total number of chunks deleted.
+        """
+        total_deleted = 0
+
+        while True:
+            with self._create_uow() as uow:
+                if uow.session is None:
+                    raise SessionNotSetError
+
+                # Get batch of empty chunks
+                empty_chunks = uow.chunks.get_chunks_with_empty_content(limit=100)
+                if not empty_chunks:
+                    break
+
+                # Delete retrieval relations and chunks
+                for chunk in empty_chunks:
+                    # Delete retrieval relations first (FK constraint)
+                    deleted_relations = uow.retrieval_relations.delete_by_chunk_id(chunk.id)
+                    if deleted_relations > 0:
+                        logger.info(f"Deleted {deleted_relations} retrieval relations for empty chunk {chunk.id}.")
+
+                    # Delete the chunk
+                    uow.chunks.delete(chunk)
+                    total_deleted += 1
+
+                uow.commit()
+
+        if total_deleted > 0:
+            logger.warning(f"Deleted {total_deleted} chunks with empty content.")
+
+        return total_deleted
+
     # ==================== Batch Embedding Operations ====================
 
     def embed_all_queries(
@@ -639,6 +738,9 @@ class TextDataIngestionService:
         Processes queries in batches, using semaphore to limit concurrent
         embedding calls. After each batch completes, updates the database.
 
+        Before embedding, this method identifies and deletes queries with empty
+        content along with their associated retrieval relations.
+
         Args:
             embed_func: Async function that takes a text string and returns embedding vector.
             batch_size: Number of queries to process per batch before DB update.
@@ -647,6 +749,9 @@ class TextDataIngestionService:
         Returns:
             Total number of queries successfully embedded.
         """
+        # First, delete queries with empty content and their retrieval relations
+        self._delete_empty_queries()
+
         total_embedded = 0
 
         while True:
@@ -684,6 +789,9 @@ class TextDataIngestionService:
         Processes chunks in batches, using semaphore to limit concurrent
         embedding calls. After each batch completes, updates the database.
 
+        Before embedding, this method identifies and deletes chunks with empty
+        content along with their associated retrieval relations.
+
         Args:
             embed_func: Async function that takes a text string and returns embedding vector.
             batch_size: Number of chunks to process per batch before DB update.
@@ -692,6 +800,9 @@ class TextDataIngestionService:
         Returns:
             Total number of chunks successfully embedded.
         """
+        # First, delete chunks with empty content and their retrieval relations
+        self._delete_empty_chunks()
+
         total_embedded = 0
 
         while True:
@@ -732,11 +843,15 @@ class TextDataIngestionService:
             max_concurrency: Maximum concurrent embedding calls.
 
         Returns:
-            List of embeddings (or None if failed) in same order as items.
+            List of embeddings (or None if failed or empty content) in same order as items.
         """
         semaphore = asyncio.Semaphore(max_concurrency)
 
         async def embed_with_semaphore(text: str) -> list[float] | None:
+            # Return None for empty content - do not attempt to embed
+            if not text or not text.strip():
+                logger.warning("Skipping embedding for empty content.")
+                return None
             async with semaphore:
                 try:
                     return await embed_func(text)

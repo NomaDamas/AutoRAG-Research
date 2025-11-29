@@ -465,7 +465,6 @@ class TestGetStatistics:
         assert stats["chunks"]["total"] >= 6
 
 
-@pytest.mark.xdist_group("embed_tests")
 class TestEmbedAllQueries:
     """Tests for embed_all_queries using only existing seed data."""
 
@@ -495,15 +494,10 @@ class TestEmbedAllQueries:
         db_session.commit()
 
 
-@pytest.mark.xdist_group("embed_tests")
 class TestEmbedAllChunks:
-    """Tests for embed_all_chunks using only existing seed data."""
-
     def test_embed_all_chunks(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
-        """Test that all chunks without embeddings get embedded."""
-        # Count existing chunks without embeddings
         initial_count = db_session.query(Chunk).filter(Chunk.embedding.is_(None)).count()
-        assert initial_count > 0, "Seed data should have chunks without embeddings"
+        assert initial_count > 0
 
         async def mock_embed_func(text: str) -> list[float]:
             return [0.2] * 768
@@ -516,10 +510,70 @@ class TestEmbedAllChunks:
 
         assert result == initial_count
 
-        # Verify all chunks now have embeddings
         remaining = db_session.query(Chunk).filter(Chunk.embedding.is_(None)).count()
         assert remaining == 0
 
-        # Cleanup: reset all chunk embeddings to NULL
         db_session.query(Chunk).update({Chunk.embedding: None})
         db_session.commit()
+
+
+class TestClean:
+    def test_clean_empty_queries(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
+        text_ingestion_service.add_query("", qid=900101)
+        text_ingestion_service.add_query("   ", qid=900102)
+        text_ingestion_service.add_query("Valid query", qid=900103)
+
+        result = text_ingestion_service.clean()
+
+        assert result["deleted_queries"] >= 2
+        assert db_session.get(Query, 900101) is None
+        assert db_session.get(Query, 900102) is None
+        assert db_session.get(Query, 900103) is not None
+
+        db_session.delete(db_session.get(Query, 900103))
+        db_session.commit()
+
+    def test_clean_empty_chunks(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
+        text_ingestion_service.add_chunk("", chunk_id=900201)
+        text_ingestion_service.add_chunk("   ", chunk_id=900202)
+        text_ingestion_service.add_chunk("Valid chunk", chunk_id=900203)
+
+        result = text_ingestion_service.clean()
+
+        assert result["deleted_chunks"] >= 2
+        assert db_session.get(Chunk, 900201) is None
+        assert db_session.get(Chunk, 900202) is None
+        assert db_session.get(Chunk, 900203) is not None
+
+        db_session.delete(db_session.get(Chunk, 900203))
+        db_session.commit()
+
+    def test_clean_deletes_associated_retrieval_relations(
+        self, text_ingestion_service: TextDataIngestionService, db_session: Session
+    ):
+        empty_query = text_ingestion_service.add_query("", qid=900301)
+        valid_chunk = text_ingestion_service.add_chunk("Valid chunk for relation", chunk_id=900302)
+        text_ingestion_service.add_retrieval_gt(empty_query.id, valid_chunk.id)
+
+        valid_query = text_ingestion_service.add_query("Valid query for relation", qid=900303)
+        empty_chunk = text_ingestion_service.add_chunk("", chunk_id=900304)
+        text_ingestion_service.add_retrieval_gt(valid_query.id, empty_chunk.id)
+
+        result = text_ingestion_service.clean()
+
+        assert result["deleted_queries"] >= 1
+        assert result["deleted_chunks"] >= 1
+        assert db_session.get(Query, 900301) is None
+        assert db_session.get(Chunk, 900304) is None
+        assert db_session.get(RetrievalRelation, (900301, 0, 0)) is None
+        assert db_session.get(RetrievalRelation, (900303, 0, 0)) is None
+
+        db_session.delete(db_session.get(Chunk, 900302))
+        db_session.delete(db_session.get(Query, 900303))
+        db_session.commit()
+
+    def test_clean_with_no_empty_content(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
+        text_ingestion_service.clean()
+
+        assert db_session.get(Query, 1) is not None
+        assert db_session.get(Chunk, 2) is not None
