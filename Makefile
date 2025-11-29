@@ -46,7 +46,7 @@ clean-docker:
 # 테스트 실행 (PostgreSQL 자동 관리)
 test: docker-up docker-wait ## Test the code with pytest
 	@echo "🚀 Testing code: Running pytest"
-	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -n auto -m "not gpu and not data" --dist=loadgroup
+	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -m "not gpu and not data"
 	@make docker-down
 	@echo "🗑️  Removing pgdata directory..."
 	@rm -rf postgresql/pgdata
