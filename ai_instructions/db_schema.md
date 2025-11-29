@@ -11,7 +11,8 @@ Table Page {
   id bigserial [pk]
   page_num int [not null]
   document_id bigint [ref: > Document.id, not null]
-  image_path bigint [ref: - File.id]
+  image_content bytea
+  mimetype varchar(255)
   page_metadata jsonb
 
   indexes {
@@ -42,7 +43,8 @@ Table Chunk {
 Table ImageChunk {
   id bigserial [pk]
   parent_page bigint [ref: > Page.id]
-  image_path bigint [ref: - File.id, not null]
+  content bytea [not null]
+  mimetype varchar(255) [not null]
   embedding vector(768)
   embeddings vector[](768)
 }

@@ -96,15 +96,17 @@ class TestAddPages:
             db_session.delete(db_session.get(Page, page_id))
         db_session.commit()
 
-    def test_add_pages_with_image_path(self, multi_modal_service: MultiModalIngestionService, db_session: Session):
-        file_ids = multi_modal_service.add_files([("/test/page_image.png", "image")])
-        page_ids = multi_modal_service.add_pages([{"document_id": 1, "page_num": 200, "image_path_id": file_ids[0]}])
+    def test_add_pages_with_image_content(self, multi_modal_service: MultiModalIngestionService, db_session: Session):
+        image_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        page_ids = multi_modal_service.add_pages([
+            {"document_id": 1, "page_num": 200, "image_content": image_bytes, "mimetype": "image/png"}
+        ])
 
         page = db_session.get(Page, page_ids[0])
-        assert page.image_path == file_ids[0]
+        assert page.image_content == image_bytes
+        assert page.mimetype == "image/png"
 
         db_session.delete(db_session.get(Page, page_ids[0]))
-        db_session.delete(db_session.get(File, file_ids[0]))
         db_session.commit()
 
 
@@ -154,11 +156,12 @@ class TestAddChunks:
 
 class TestAddImageChunks:
     def test_add_image_chunks(self, multi_modal_service: MultiModalIngestionService, db_session: Session):
-        file_ids = multi_modal_service.add_files([("/test/img_chunk1.png", "image"), ("/test/img_chunk2.png", "image")])
+        image_bytes1 = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        image_bytes2 = b"\xff\xd8\xff\xe0\x00\x10JFIF"
 
         image_chunks_data = [
-            (file_ids[0], 1),
-            (file_ids[1], None),
+            (image_bytes1, "image/png", 1),
+            (image_bytes2, "image/jpeg", None),
         ]
         image_chunk_ids = multi_modal_service.add_image_chunks(image_chunks_data)
 
@@ -168,14 +171,15 @@ class TestAddImageChunks:
         # Verify by fetching from DB
         ic1 = db_session.get(ImageChunk, image_chunk_ids[0])
         ic2 = db_session.get(ImageChunk, image_chunk_ids[1])
-        assert ic1.image_path == file_ids[0]
+        assert ic1.content == image_bytes1
+        assert ic1.mimetype == "image/png"
         assert ic1.parent_page == 1
+        assert ic2.content == image_bytes2
+        assert ic2.mimetype == "image/jpeg"
         assert ic2.parent_page is None
 
         for ic_id in image_chunk_ids:
             db_session.delete(db_session.get(ImageChunk, ic_id))
-        for file_id in file_ids:
-            db_session.delete(db_session.get(File, file_id))
         db_session.commit()
 
 
@@ -231,8 +235,8 @@ class TestAddRetrievalGTBatch:
         self, multi_modal_service: MultiModalIngestionService, db_session: Session
     ):
         query_ids = multi_modal_service.add_queries([("Query for image batch gt", None)])
-        file_ids = multi_modal_service.add_files([("/test/batch_gt_img.png", "image")])
-        image_chunk_ids = multi_modal_service.add_image_chunks([(file_ids[0], None)])
+        image_bytes = b"\x89PNG\r\n\x1a\n"
+        image_chunk_ids = multi_modal_service.add_image_chunks([(image_bytes, "image/png", None)])
 
         relations_data = [
             {"query_id": query_ids[0], "image_chunk_id": image_chunk_ids[0], "group_index": 0, "group_order": 0},
@@ -249,7 +253,6 @@ class TestAddRetrievalGTBatch:
 
         db_session.delete(db_session.get(RetrievalRelation, relation_pks[0]))
         db_session.delete(db_session.get(ImageChunk, image_chunk_ids[0]))
-        db_session.delete(db_session.get(File, file_ids[0]))
         db_session.delete(db_session.get(Query, query_ids[0]))
         db_session.commit()
 
@@ -284,8 +287,8 @@ class TestAddRetrievalGTMultihopMixed:
     ):
         query_ids = multi_modal_service.add_queries([("Query for mixed multihop", None)])
         chunk_ids = multi_modal_service.add_chunks([("Mixed hop chunk 1", None), ("Mixed hop chunk 2", None)])
-        file_ids = multi_modal_service.add_files([("/test/mixed_hop_img.png", "image")])
-        image_chunk_ids = multi_modal_service.add_image_chunks([(file_ids[0], None)])
+        image_bytes = b"\x89PNG\r\n\x1a\n"
+        image_chunk_ids = multi_modal_service.add_image_chunks([(image_bytes, "image/png", None)])
 
         groups = [
             [("chunk", chunk_ids[0]), ("chunk", chunk_ids[1])],
@@ -316,7 +319,6 @@ class TestAddRetrievalGTMultihopMixed:
         for chunk_id in chunk_ids:
             db_session.delete(db_session.get(Chunk, chunk_id))
         db_session.delete(db_session.get(ImageChunk, image_chunk_ids[0]))
-        db_session.delete(db_session.get(File, file_ids[0]))
         db_session.delete(db_session.get(Query, query_ids[0]))
         db_session.commit()
 
@@ -358,8 +360,12 @@ class TestSetEmbeddings:
         db_session.commit()
 
     def test_set_image_chunk_embeddings(self, multi_modal_service: MultiModalIngestionService, db_session: Session):
-        file_ids = multi_modal_service.add_files([("/test/embed_img1.png", "image"), ("/test/embed_img2.png", "image")])
-        image_chunk_ids = multi_modal_service.add_image_chunks([(file_ids[0], None), (file_ids[1], None)])
+        image_bytes1 = b"\x89PNG\r\n\x1a\n"
+        image_bytes2 = b"\xff\xd8\xff\xe0"
+        image_chunk_ids = multi_modal_service.add_image_chunks([
+            (image_bytes1, "image/png", None),
+            (image_bytes2, "image/jpeg", None),
+        ])
         embeddings = [[0.1] * 768, [0.2] * 768]
 
         result = multi_modal_service.set_image_chunk_embeddings(image_chunk_ids, embeddings)
@@ -368,8 +374,6 @@ class TestSetEmbeddings:
 
         for ic_id in image_chunk_ids:
             db_session.delete(db_session.get(ImageChunk, ic_id))
-        for file_id in file_ids:
-            db_session.delete(db_session.get(File, file_id))
         db_session.commit()
 
     def test_set_query_embeddings_length_mismatch(self, multi_modal_service: MultiModalIngestionService):
@@ -400,55 +404,37 @@ class TestSetEmbeddings:
 
 class TestIngestImagePages:
     def test_ingest_image_pages(self, multi_modal_service: MultiModalIngestionService, db_session: Session):
+        image_bytes1 = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        image_bytes2 = b"\xff\xd8\xff\xe0\x00\x10JFIF"
         pages_data = [
-            (100, "/test/ingest_img1.png", "Caption for ingest page 1"),
-            (101, "/test/ingest_img2.png", "Caption for ingest page 2"),
+            (100, image_bytes1, "image/png", "Caption for ingest page 1"),
+            (101, image_bytes2, "image/jpeg", "Caption for ingest page 2"),
         ]
         results = multi_modal_service.ingest_image_pages(1, pages_data)
 
         assert len(results) == 2
 
-        file_id1, page_id1, caption_id1, image_chunk_id1 = results[0]
+        page_id1, caption_id1, image_chunk_id1 = results[0]
 
         # Verify by fetching from DB
-        file1 = db_session.get(File, file_id1)
         page1 = db_session.get(Page, page_id1)
         caption1 = db_session.get(Caption, caption_id1)
         image_chunk1 = db_session.get(ImageChunk, image_chunk_id1)
 
-        assert file1.path == "/test/ingest_img1.png"
-        assert file1.type == "image"
         assert page1.document_id == 1
         assert page1.page_num == 100
-        assert page1.image_path == file_id1
+        assert page1.image_content == image_bytes1
+        assert page1.mimetype == "image/png"
         assert caption1.page_id == page_id1
         assert caption1.contents == "Caption for ingest page 1"
-        assert image_chunk1.image_path == file_id1
+        assert image_chunk1.content == image_bytes1
+        assert image_chunk1.mimetype == "image/png"
         assert image_chunk1.parent_page == page_id1
 
-        for file_id, page_id, caption_id, image_chunk_id in results:
+        for page_id, caption_id, image_chunk_id in results:
             db_session.delete(db_session.get(ImageChunk, image_chunk_id))
             db_session.delete(db_session.get(Caption, caption_id))
             db_session.delete(db_session.get(Page, page_id))
-            db_session.delete(db_session.get(File, file_id))
-        db_session.commit()
-
-    def test_ingest_image_pages_custom_file_type(
-        self, multi_modal_service: MultiModalIngestionService, db_session: Session
-    ):
-        pages_data = [(102, "/test/ingest_custom.jpg", "Custom type caption")]
-        results = multi_modal_service.ingest_image_pages(1, pages_data, file_type="raw")
-
-        file_id, page_id, caption_id, image_chunk_id = results[0]
-
-        # Verify by fetching from DB
-        file = db_session.get(File, file_id)
-        assert file.type == "raw"
-
-        db_session.delete(db_session.get(ImageChunk, image_chunk_id))
-        db_session.delete(db_session.get(Caption, caption_id))
-        db_session.delete(db_session.get(Page, page_id))
-        db_session.delete(db_session.get(File, file_id))
         db_session.commit()
 
 
@@ -562,7 +548,7 @@ class TestEmbedAllImageChunks:
         initial_count = db_session.query(ImageChunk).filter(ImageChunk.embedding.is_(None)).count()
         assert initial_count > 0
 
-        async def mock_embed_func(image_path: str) -> list[float]:
+        async def mock_embed_func(image_content: bytes) -> list[float]:
             return [0.3] * 768
 
         result = multi_modal_service.embed_all_image_chunks(embed_func=mock_embed_func, batch_size=2, max_concurrency=2)

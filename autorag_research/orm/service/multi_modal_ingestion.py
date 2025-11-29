@@ -13,7 +13,8 @@ from autorag_research.orm.repository.multi_modal_uow import MultiModalUnitOfWork
 from autorag_research.orm.service.base_ingestion import BaseIngestionService
 
 # Type alias for image embedding function
-ImageEmbeddingFunc = Callable[[str], Awaitable[list[float]]]  # str = image file path
+# Takes image bytes (content) and returns embedding vector
+ImageEmbeddingFunc = Callable[[bytes], Awaitable[list[float]]]
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -44,18 +45,17 @@ class MultiModalIngestionService(BaseIngestionService):
         # Initialize service
         service = MultiModalIngestionService(session_factory)
 
-        # Batch add files
-        files = service.add_files([
-            ("/path/to/image1.jpg", "image"),
-            ("/path/to/image2.jpg", "image"),
-        ])
+        # Read image file as bytes
+        with open("/path/to/image1.jpg", "rb") as f:
+            image_bytes = f.read()
 
         # Ingest image pages (convenience method)
+        # Images are stored directly in the database as BYTEA
         results = service.ingest_image_pages(
             document_id=1,
             pages_data=[
-                (1, "/path/to/image1.jpg", "Caption for page 1"),
-                (2, "/path/to/image2.jpg", "Caption for page 2"),
+                (1, image_bytes, "image/jpeg", "Caption for page 1"),
+                (2, image_bytes, "image/jpeg", "Caption for page 2"),
             ]
         )
 
@@ -185,7 +185,8 @@ class MultiModalIngestionService(BaseIngestionService):
             pages: List of dicts with keys:
                   - document_id (int) - FK to Document (required)
                   - page_num (int) - Page number (required)
-                  - image_path_id (int | None) - FK to File for page image
+                  - image_content (bytes | None) - Image binary data
+                  - mimetype (str | None) - Image MIME type (e.g., "image/png")
                   - metadata (dict | None) - JSONB metadata
 
         Returns:
@@ -201,7 +202,8 @@ class MultiModalIngestionService(BaseIngestionService):
                 Page(
                     document_id=page["document_id"],
                     page_num=page["page_num"],
-                    image_path=page.get("image_path_id"),
+                    image_content=page.get("image_content"),
+                    mimetype=page.get("mimetype"),
                     page_metadata=page.get("metadata"),
                 )
                 for page in pages
@@ -259,12 +261,13 @@ class MultiModalIngestionService(BaseIngestionService):
             uow.commit()
             return chunk_ids
 
-    def add_image_chunks(self, image_chunks: list[tuple[int, int | None]]) -> list[int]:
+    def add_image_chunks(self, image_chunks: list[tuple[bytes, str, int | None]]) -> list[int]:
         """Batch add image chunks to the database.
 
         Args:
-            image_chunks: List of tuples (image_path_id, parent_page_id).
-                         image_path_id: FK to File (required)
+            image_chunks: List of tuples (content, mimetype, parent_page_id).
+                         content: Image binary data (required)
+                         mimetype: Image MIME type e.g., "image/png" (required)
                          parent_page_id: FK to Page (optional)
 
         Returns:
@@ -277,8 +280,8 @@ class MultiModalIngestionService(BaseIngestionService):
             if uow.session is None:
                 raise SessionNotSetError
             image_chunk_entities = [
-                ImageChunk(image_path=image_path_id, parent_page=parent_page_id)
-                for image_path_id, parent_page_id in image_chunks
+                ImageChunk(content=content, mimetype=mimetype, parent_page=parent_page_id)
+                for content, mimetype, parent_page_id in image_chunks
             ]
             uow.image_chunks.add_all(image_chunk_entities)
             uow.flush()
@@ -478,7 +481,7 @@ class MultiModalIngestionService(BaseIngestionService):
         Processes image chunks in batches with concurrent embedding calls.
 
         Args:
-            embed_func: Async function that takes image file path and returns embedding vector.
+            embed_func: Async function that takes image bytes and returns embedding vector.
             batch_size: Number of image chunks to process per batch.
             max_concurrency: Maximum concurrent embedding calls.
 
@@ -492,17 +495,11 @@ class MultiModalIngestionService(BaseIngestionService):
                 image_chunks = uow.image_chunks.get_image_chunks_without_embeddings(limit=batch_size)
                 if not image_chunks:
                     break
-                # Get image file paths for each image chunk
-                items_to_embed = []
-                for ic in image_chunks:
-                    image_file = uow.files.get_by_id(ic.image_path)
-                    if image_file:
-                        items_to_embed.append((ic.id, image_file.path))
-                    else:
-                        items_to_embed.append((ic.id, None))
+                # Get image content directly from each image chunk
+                items_to_embed = [(ic.id, ic.content) for ic in image_chunks]
 
-            # Filter out items without valid paths
-            valid_items = [(item_id, path) for item_id, path in items_to_embed if path is not None]
+            # Filter out items without valid content
+            valid_items = [(item_id, content) for item_id, content in items_to_embed if content is not None]
 
             if not valid_items:
                 break
@@ -523,15 +520,15 @@ class MultiModalIngestionService(BaseIngestionService):
 
     @staticmethod
     async def _embed_image_batch(
-        items: list[tuple[int, str]],
+        items: list[tuple[int, bytes]],
         embed_func: ImageEmbeddingFunc,
         max_concurrency: int,
     ) -> list[list[float] | None]:
         """Embed a batch of image items with concurrency control.
 
         Args:
-            items: List of (id, image_path) tuples.
-            embed_func: Async function that takes image path and returns embedding.
+            items: List of (id, image_content) tuples.
+            embed_func: Async function that takes image bytes and returns embedding.
             max_concurrency: Maximum concurrent calls.
 
         Returns:
@@ -539,15 +536,15 @@ class MultiModalIngestionService(BaseIngestionService):
         """
         semaphore = asyncio.Semaphore(max_concurrency)
 
-        async def embed_with_semaphore(image_path: str) -> list[float] | None:
+        async def embed_with_semaphore(image_content: bytes) -> list[float] | None:
             async with semaphore:
                 try:
-                    return await embed_func(image_path)
+                    return await embed_func(image_content)
                 except Exception:
-                    logger.exception(f"Failed to embed image: {image_path}")
+                    logger.exception("Failed to embed image")
                     return None
 
-        tasks = [embed_with_semaphore(path) for _, path in items]
+        tasks = [embed_with_semaphore(content) for _, content in items]
         return await asyncio.gather(*tasks)
 
     # ==================== Convenience Methods ====================
@@ -555,45 +552,43 @@ class MultiModalIngestionService(BaseIngestionService):
     def ingest_image_pages(
         self,
         document_id: int,
-        pages_data: list[tuple[int, str, str]],
-        file_type: str = "image",
-    ) -> list[tuple[int, int, int, int]]:
-        """Batch ingest image pages with files, captions, and image chunks.
+        pages_data: list[tuple[int, bytes, str, str]],
+    ) -> list[tuple[int, int, int]]:
+        """Batch ingest image pages with captions and image chunks.
 
-        Creates File, Page, Caption, and ImageChunk entities in a single transaction
-        for each page. This is a convenience method for common multi-modal ingestion.
+        Creates Page, Caption, and ImageChunk entities in a single transaction
+        for each page. Images are stored directly in the database as BYTEA.
+        This is a convenience method for common multi-modal ingestion.
 
         Args:
             document_id: The document ID to add pages to.
-            pages_data: List of tuples (page_num, image_path, caption_text).
-            file_type: File type for images (default: "image").
+            pages_data: List of tuples (page_num, image_content, mimetype, caption_text).
+                       - page_num: Page number
+                       - image_content: Image binary data
+                       - mimetype: Image MIME type (e.g., "image/png")
+                       - caption_text: Caption text for the page
 
         Returns:
-            List of tuples (file_id, page_id, caption_id, image_chunk_id) for each page.
+            List of tuples (page_id, caption_id, image_chunk_id) for each page.
         """
         classes = self._get_schema_classes()
-        File = classes["File"]
         Page = classes["Page"]
         Caption = classes["Caption"]
         ImageChunk = classes["ImageChunk"]
 
-        results: list[tuple[int, int, int, int]] = []
+        results: list[tuple[int, int, int]] = []
 
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
 
-            for page_num, image_path, caption_text in pages_data:
-                # Create file for the image
-                file = File(path=image_path, type=file_type)
-                uow.files.add(file)
-                uow.flush()
-
-                # Create page linked to document and image file
+            for page_num, image_content, mimetype, caption_text in pages_data:
+                # Create page with image content stored directly
                 page = Page(
                     document_id=document_id,
                     page_num=page_num,
-                    image_path=file.id,
+                    image_content=image_content,
+                    mimetype=mimetype,
                 )
                 uow.pages.add(page)
                 uow.flush()
@@ -603,15 +598,16 @@ class MultiModalIngestionService(BaseIngestionService):
                 uow.captions.add(caption)
                 uow.flush()
 
-                # Create image chunk linked to page and image file
+                # Create image chunk with image content stored directly
                 image_chunk = ImageChunk(
-                    image_path=file.id,
+                    content=image_content,
+                    mimetype=mimetype,
                     parent_page=page.id,
                 )
                 uow.image_chunks.add(image_chunk)
                 uow.flush()
 
-                results.append((file.id, page.id, caption.id, image_chunk.id))
+                results.append((page.id, caption.id, image_chunk.id))
 
             uow.commit()
 

@@ -94,18 +94,6 @@ class PageRepository(GenericRepository):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_image_file(self, page_id: int) -> Any | None:
-        """Retrieve a page with its image file eagerly loaded.
-
-        Args:
-            page_id: The page ID.
-
-        Returns:
-            The page with image file loaded, None if not found.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.id == page_id).options(joinedload(self.model_cls.image_file))
-        return self.session.execute(stmt).unique().scalar_one_or_none()
-
     def get_all_with_document(self, limit: int | None = None, offset: int | None = None) -> list[Any]:
         """Retrieve all pages with their documents eagerly loaded.
 
@@ -139,18 +127,6 @@ class PageRepository(GenericRepository):
         """
         stmt = select(self.model_cls).where(self.model_cls.page_metadata[metadata_key].astext == metadata_value)
         return list(self.session.execute(stmt).scalars().all())
-
-    def get_by_image_path_id(self, image_path_id: int) -> Any | None:
-        """Retrieve a page by its image path ID.
-
-        Args:
-            image_path_id: The file ID for the image.
-
-        Returns:
-            The page if found, None otherwise.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.image_path == image_path_id)
-        return self.session.execute(stmt).scalar_one_or_none()
 
     def count_by_document(self, document_id: int) -> int:
         """Count the number of pages in a document.

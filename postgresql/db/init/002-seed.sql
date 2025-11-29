@@ -27,17 +27,17 @@ INSERT INTO document (id, filepath, filename, author, title, doc_metadata) VALUE
 ON CONFLICT DO NOTHING;
 
 -- Pages (two pages per document)
-INSERT INTO page (id, page_num, document_id, image_path, page_metadata) VALUES
-	(1, 1, 1, 6, '{"dpi": 300}'),
-	(2, 2, 1, 7, '{"dpi": 300}'),
-	(3, 1, 2, 8, '{"dpi": 300}'),
-	(4, 2, 2, 9, '{"dpi": 300}'),
-	(5, 1, 3, 10, '{"dpi": 300}'),
-	(6, 2, 3, NULL, '{"dpi": 300}'),
-	(7, 1, 4, NULL, '{"dpi": 300}'),
-	(8, 2, 4, NULL, '{"dpi": 300}'),
-	(9, 1, 5, NULL, '{"dpi": 300}'),
-	(10, 2, 5, NULL, '{"dpi": 300}')
+INSERT INTO page (id, page_num, document_id, image_content, mimetype, page_metadata) VALUES
+	(1, 1, 1, NULL, NULL, '{"dpi": 300}'),
+	(2, 2, 1, NULL, NULL, '{"dpi": 300}'),
+	(3, 1, 2, NULL, NULL, '{"dpi": 300}'),
+	(4, 2, 2, NULL, NULL, '{"dpi": 300}'),
+	(5, 1, 3, NULL, NULL, '{"dpi": 300}'),
+	(6, 2, 3, NULL, NULL, '{"dpi": 300}'),
+	(7, 1, 4, NULL, NULL, '{"dpi": 300}'),
+	(8, 2, 4, NULL, NULL, '{"dpi": 300}'),
+	(9, 1, 5, NULL, NULL, '{"dpi": 300}'),
+	(10, 2, 5, NULL, NULL, '{"dpi": 300}')
 ON CONFLICT DO NOTHING;
 
 -- Captions (one per page)
@@ -65,12 +65,12 @@ INSERT INTO chunk (id, parent_caption, contents, embedding, embeddings) VALUES
 ON CONFLICT DO NOTHING;
 
 -- ImageChunks (image regions from pages)
-INSERT INTO image_chunk (id, parent_page, image_path, embedding, embeddings) VALUES
-	(1, 1, 6, NULL, NULL),
-	(2, 2, 7, NULL, NULL),
-	(3, 3, 8, NULL, NULL),
-	(4, 4, 9, NULL, NULL),
-	(5, 5, 10, NULL, NULL)
+INSERT INTO image_chunk (id, parent_page, content, mimetype, embedding, embeddings) VALUES
+	(1, 1, E'\\x00'::bytea, 'image/png', NULL, NULL),
+	(2, 2, E'\\x00'::bytea, 'image/png', NULL, NULL),
+	(3, 3, E'\\x00'::bytea, 'image/png', NULL, NULL),
+	(4, 4, E'\\x00'::bytea, 'image/png', NULL, NULL),
+	(5, 5, E'\\x00'::bytea, 'image/png', NULL, NULL)
 ON CONFLICT DO NOTHING;
 
 -- Caption-Chunk relations

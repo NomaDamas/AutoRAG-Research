@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS page (
 	id BIGSERIAL PRIMARY KEY,
 	page_num INT NOT NULL,
 	document_id BIGINT NOT NULL REFERENCES document(id),
-	image_path BIGINT REFERENCES file(id),
+	image_content BYTEA,
+	mimetype VARCHAR(255),
 	page_metadata JSONB,
 	CONSTRAINT uq_page_per_doc UNIQUE (document_id, page_num)
 );
@@ -67,7 +68,8 @@ CREATE TABLE IF NOT EXISTS chunk (
 CREATE TABLE IF NOT EXISTS image_chunk (
 	id BIGSERIAL PRIMARY KEY,
 	parent_page BIGINT REFERENCES page(id),
-	image_path BIGINT NOT NULL REFERENCES file(id),
+	content BYTEA NOT NULL,
+	mimetype VARCHAR(255) NOT NULL,
 	embedding VECTOR(768),
 	embeddings VECTOR(768)[]
 );

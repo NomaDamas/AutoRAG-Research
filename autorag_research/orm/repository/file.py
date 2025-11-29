@@ -64,32 +64,6 @@ class FileRepository(GenericRepository):
         stmt = select(self.model_cls).where(self.model_cls.id == file_id).options(joinedload(self.model_cls.documents))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_pages(self, file_id: int) -> Any | None:
-        """Retrieve a file with its pages eagerly loaded.
-
-        Args:
-            file_id: The file ID.
-
-        Returns:
-            The file with pages loaded, None if not found.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.id == file_id).options(joinedload(self.model_cls.pages))
-        return self.session.execute(stmt).unique().scalar_one_or_none()
-
-    def get_with_image_chunks(self, file_id: int) -> Any | None:
-        """Retrieve a file with its image chunks eagerly loaded.
-
-        Args:
-            file_id: The file ID.
-
-        Returns:
-            The file with image chunks loaded, None if not found.
-        """
-        stmt = (
-            select(self.model_cls).where(self.model_cls.id == file_id).options(joinedload(self.model_cls.image_chunks))
-        )
-        return self.session.execute(stmt).unique().scalar_one_or_none()
-
     def get_all_by_type(self, file_type: str, limit: int | None = None, offset: int | None = None) -> list[Any]:
         """Retrieve all files of a specific type with pagination.
 
