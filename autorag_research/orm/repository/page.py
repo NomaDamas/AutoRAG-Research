@@ -4,25 +4,31 @@ Implements page-specific CRUD operations and queries extending
 the generic repository pattern.
 """
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from autorag_research.orm.repository.base import GenericRepository
-from autorag_research.orm.schema import Page
 
 
-class PageRepository(GenericRepository[Page]):
+class PageRepository(GenericRepository):
     """Repository for Page entity with specialized queries."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, model_cls: type | None = None):
         """Initialize page repository.
 
         Args:
             session: SQLAlchemy session for database operations.
+            model_cls: The Page model class. If None, uses default schema.
         """
-        super().__init__(session, Page)
+        if model_cls is None:
+            from autorag_research.orm.schema import Page
 
-    def get_by_document_id(self, document_id: int) -> list[Page]:
+            model_cls = Page
+        super().__init__(session, model_cls)
+
+    def get_by_document_id(self, document_id: int) -> list[Any]:
         """Retrieve all pages for a specific document.
 
         Args:
@@ -31,10 +37,10 @@ class PageRepository(GenericRepository[Page]):
         Returns:
             List of pages belonging to the document.
         """
-        stmt = select(Page).where(Page.document_id == document_id).order_by(Page.page_num)
+        stmt = select(self.model_cls).where(self.model_cls.document_id == document_id).order_by(self.model_cls.page_num)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_document_and_page_num(self, document_id: int, page_num: int) -> Page | None:
+    def get_by_document_and_page_num(self, document_id: int, page_num: int) -> Any | None:
         """Retrieve a specific page by document ID and page number.
 
         Args:
@@ -44,10 +50,13 @@ class PageRepository(GenericRepository[Page]):
         Returns:
             The page if found, None otherwise.
         """
-        stmt = select(Page).where(Page.document_id == document_id, Page.page_num == page_num)
+        stmt = select(self.model_cls).where(
+            self.model_cls.document_id == document_id,
+            self.model_cls.page_num == page_num,
+        )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_document(self, page_id: int) -> Page | None:
+    def get_with_document(self, page_id: int) -> Any | None:
         """Retrieve a page with its document eagerly loaded.
 
         Args:
@@ -56,10 +65,10 @@ class PageRepository(GenericRepository[Page]):
         Returns:
             The page with document loaded, None if not found.
         """
-        stmt = select(Page).where(Page.id == page_id).options(joinedload(Page.document))
+        stmt = select(self.model_cls).where(self.model_cls.id == page_id).options(joinedload(self.model_cls.document))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_captions(self, page_id: int) -> Page | None:
+    def get_with_captions(self, page_id: int) -> Any | None:
         """Retrieve a page with its captions eagerly loaded.
 
         Args:
@@ -68,10 +77,10 @@ class PageRepository(GenericRepository[Page]):
         Returns:
             The page with captions loaded, None if not found.
         """
-        stmt = select(Page).where(Page.id == page_id).options(joinedload(Page.captions))
+        stmt = select(self.model_cls).where(self.model_cls.id == page_id).options(joinedload(self.model_cls.captions))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_image_chunks(self, page_id: int) -> Page | None:
+    def get_with_image_chunks(self, page_id: int) -> Any | None:
         """Retrieve a page with its image chunks eagerly loaded.
 
         Args:
@@ -80,10 +89,12 @@ class PageRepository(GenericRepository[Page]):
         Returns:
             The page with image chunks loaded, None if not found.
         """
-        stmt = select(Page).where(Page.id == page_id).options(joinedload(Page.image_chunks))
+        stmt = (
+            select(self.model_cls).where(self.model_cls.id == page_id).options(joinedload(self.model_cls.image_chunks))
+        )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_image_file(self, page_id: int) -> Page | None:
+    def get_with_image_file(self, page_id: int) -> Any | None:
         """Retrieve a page with its image file eagerly loaded.
 
         Args:
@@ -92,10 +103,10 @@ class PageRepository(GenericRepository[Page]):
         Returns:
             The page with image file loaded, None if not found.
         """
-        stmt = select(Page).where(Page.id == page_id).options(joinedload(Page.image_file))
+        stmt = select(self.model_cls).where(self.model_cls.id == page_id).options(joinedload(self.model_cls.image_file))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_all_with_document(self, limit: int | None = None, offset: int | None = None) -> list[Page]:
+    def get_all_with_document(self, limit: int | None = None, offset: int | None = None) -> list[Any]:
         """Retrieve all pages with their documents eagerly loaded.
 
         Args:
@@ -105,14 +116,18 @@ class PageRepository(GenericRepository[Page]):
         Returns:
             List of pages with documents loaded.
         """
-        stmt = select(Page).options(joinedload(Page.document)).order_by(Page.document_id, Page.page_num)
+        stmt = (
+            select(self.model_cls)
+            .options(joinedload(self.model_cls.document))
+            .order_by(self.model_cls.document_id, self.model_cls.page_num)
+        )
         if offset:
             stmt = stmt.offset(offset)
         if limit:
             stmt = stmt.limit(limit)
         return list(self.session.execute(stmt).scalars().unique().all())
 
-    def search_by_metadata(self, metadata_key: str, metadata_value: str) -> list[Page]:
+    def search_by_metadata(self, metadata_key: str, metadata_value: str) -> list[Any]:
         """Search pages by metadata field.
 
         Args:
@@ -122,10 +137,10 @@ class PageRepository(GenericRepository[Page]):
         Returns:
             List of matching pages.
         """
-        stmt = select(Page).where(Page.page_metadata[metadata_key].astext == metadata_value)
+        stmt = select(self.model_cls).where(self.model_cls.page_metadata[metadata_key].astext == metadata_value)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_image_path_id(self, image_path_id: int) -> Page | None:
+    def get_by_image_path_id(self, image_path_id: int) -> Any | None:
         """Retrieve a page by its image path ID.
 
         Args:
@@ -134,7 +149,7 @@ class PageRepository(GenericRepository[Page]):
         Returns:
             The page if found, None otherwise.
         """
-        stmt = select(Page).where(Page.image_path == image_path_id)
+        stmt = select(self.model_cls).where(self.model_cls.image_path == image_path_id)
         return self.session.execute(stmt).scalar_one_or_none()
 
     def count_by_document(self, document_id: int) -> int:
@@ -146,9 +161,9 @@ class PageRepository(GenericRepository[Page]):
         Returns:
             Number of pages in the document.
         """
-        return self.session.query(Page).filter(Page.document_id == document_id).count()
+        return self.session.query(self.model_cls).filter(self.model_cls.document_id == document_id).count()
 
-    def get_page_range(self, document_id: int, start_page: int, end_page: int) -> list[Page]:
+    def get_page_range(self, document_id: int, start_page: int, end_page: int) -> list[Any]:
         """Retrieve a range of pages from a document.
 
         Args:
@@ -160,8 +175,12 @@ class PageRepository(GenericRepository[Page]):
             List of pages in the specified range.
         """
         stmt = (
-            select(Page)
-            .where(Page.document_id == document_id, Page.page_num >= start_page, Page.page_num <= end_page)
-            .order_by(Page.page_num)
+            select(self.model_cls)
+            .where(
+                self.model_cls.document_id == document_id,
+                self.model_cls.page_num >= start_page,
+                self.model_cls.page_num <= end_page,
+            )
+            .order_by(self.model_cls.page_num)
         )
         return list(self.session.execute(stmt).scalars().all())
