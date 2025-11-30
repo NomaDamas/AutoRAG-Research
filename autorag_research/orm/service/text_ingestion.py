@@ -4,21 +4,14 @@ Provides service layer for ingesting text-based data including queries,
 chunks, and retrieval ground truth relations with embedding support.
 """
 
-import asyncio
-import logging
-from collections.abc import Awaitable, Callable
 from typing import Any
 
-from sqlalchemy.orm import Session, sessionmaker
-
-from autorag_research.exceptions import LengthMismatchError, SessionNotSetError
+from autorag_research.exceptions import SessionNotSetError
 from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
-
-EmbeddingFunc = Callable[[str], Awaitable[list[float]]]
-logger = logging.getLogger("AutoRAG-Research")
+from autorag_research.orm.service.base_ingestion import BaseIngestionService
 
 
-class TextDataIngestionService:
+class TextDataIngestionService(BaseIngestionService):
     """Service for text-only data ingestion operations.
 
     Provides methods for:
@@ -87,19 +80,13 @@ class TextDataIngestionService:
         ```
     """
 
-    def __init__(
-        self,
-        session_factory: sessionmaker[Session],
-        schema: Any | None = None,
-    ):
-        """Initialize the text data ingestion service.
+    def _create_uow(self) -> TextOnlyUnitOfWork:
+        """Create a new TextOnlyUnitOfWork instance.
 
-        Args:
-            session_factory: SQLAlchemy sessionmaker for database connections.
-            schema: Schema namespace from create_schema(). If None, uses default 768-dim schema.
+        Returns:
+            New TextOnlyUnitOfWork instance.
         """
-        self.session_factory = session_factory
-        self._schema = schema
+        return TextOnlyUnitOfWork(self.session_factory, self._schema)
 
     def _get_schema_classes(self) -> tuple[type, type, type]:
         """Get Query, Chunk, RetrievalRelation classes from schema.
@@ -114,14 +101,6 @@ class TextDataIngestionService:
 
         return Query, Chunk, RetrievalRelation
 
-    def _create_uow(self) -> TextOnlyUnitOfWork:
-        """Create a new TextOnlyUnitOfWork instance.
-
-        Returns:
-            New TextOnlyUnitOfWork instance.
-        """
-        return TextOnlyUnitOfWork(self.session_factory, self._schema)
-
     # ==================== Query Operations ====================
 
     def add_query(
@@ -129,7 +108,7 @@ class TextDataIngestionService:
         query_text: str,
         generation_gt: list[str] | None = None,
         qid: int | None = None,
-    ) -> Any:
+    ) -> int:
         """Add a single query to the database.
 
         Args:
@@ -138,7 +117,7 @@ class TextDataIngestionService:
             qid: Optional query ID to set explicitly.
 
         Returns:
-            The created Query entity with assigned ID.
+            The created Query ID.
         """
         Query, _, _ = self._get_schema_classes()
         with self._create_uow() as uow:
@@ -149,16 +128,16 @@ class TextDataIngestionService:
             else:
                 query = Query(query=query_text, generation_gt=generation_gt)
             uow.queries.add(query)
+            uow.flush()
+            query_id = query.id
             uow.commit()
-            # Refresh to get the ID
-            uow.session.refresh(query)
-            return query
+            return query_id
 
     def add_queries(
         self,
         queries: list[tuple[str, list[str] | None]],
         qids: list[int] | None = None,
-    ) -> list[Any]:
+    ) -> list[int]:
         """Add multiple queries to the database.
 
         Args:
@@ -167,7 +146,7 @@ class TextDataIngestionService:
             qids: Optional list of query IDs to set explicitly.
 
         Returns:
-            List of created Query entities with assigned IDs.
+            List of created Query IDs.
         """
         Query, _, _ = self._get_schema_classes()
         with self._create_uow() as uow:
@@ -181,17 +160,16 @@ class TextDataIngestionService:
                     for (query_text, gen_gt), qid in zip(queries, qids, strict=True)
                 ]
             uow.queries.add_all(query_entities)
+            uow.flush()
+            query_ids = [q.id for q in query_entities]
             uow.commit()
-            # Refresh to get IDs
-            for q in query_entities:
-                uow.session.refresh(q)
-            return query_entities
+            return query_ids
 
     def add_queries_simple(
         self,
         query_texts: list[str],
         qids: list[int] | None = None,
-    ) -> list[Any]:
+    ) -> list[int]:
         """Add multiple queries without generation ground truth.
 
         Args:
@@ -199,7 +177,7 @@ class TextDataIngestionService:
             qids: Optional list of query IDs to set explicitly.
 
         Returns:
-            List of created Query entities with assigned IDs.
+            List of created Query IDs.
         """
         Query, _, _ = self._get_schema_classes()
         with self._create_uow() as uow:
@@ -210,10 +188,10 @@ class TextDataIngestionService:
             else:
                 query_entities = [Query(id=qid, query=text) for text, qid in zip(query_texts, qids, strict=True)]
             uow.queries.add_all(query_entities)
+            uow.flush()
+            query_ids = [q.id for q in query_entities]
             uow.commit()
-            for q in query_entities:
-                uow.session.refresh(q)
-            return query_entities
+            return query_ids
 
     def get_query_by_text(self, query_text: str) -> Any | None:
         """Get a query by its text content.
@@ -246,7 +224,7 @@ class TextDataIngestionService:
         contents: str,
         parent_caption_id: int | None = None,
         chunk_id: int | None = None,
-    ) -> Any:
+    ) -> int:
         """Add a single chunk to the database.
 
         Args:
@@ -255,7 +233,7 @@ class TextDataIngestionService:
             chunk_id: Optional chunk ID to set explicitly.
 
         Returns:
-            The created Chunk entity with assigned ID.
+            The created Chunk ID.
         """
         _, Chunk, _ = self._get_schema_classes()
         with self._create_uow() as uow:
@@ -266,15 +244,16 @@ class TextDataIngestionService:
             else:
                 chunk = Chunk(contents=contents, parent_caption=parent_caption_id)
             uow.chunks.add(chunk)
+            uow.flush()
+            result_id = chunk.id
             uow.commit()
-            uow.session.refresh(chunk)
-            return chunk
+            return result_id
 
     def add_chunks(
         self,
         chunks: list[tuple[str, int | None]],
         chunk_ids: list[int] | None = None,
-    ) -> list[Any]:
+    ) -> list[int]:
         """Add multiple chunks to the database.
 
         Args:
@@ -283,7 +262,7 @@ class TextDataIngestionService:
             chunk_ids: Optional list of chunk IDs to set explicitly.
 
         Returns:
-            List of created Chunk entities with assigned IDs.
+            List of created Chunk IDs.
         """
         _, Chunk, _ = self._get_schema_classes()
         with self._create_uow() as uow:
@@ -299,16 +278,16 @@ class TextDataIngestionService:
                     for (contents, parent_caption_id), cid in zip(chunks, chunk_ids, strict=True)
                 ]
             uow.chunks.add_all(chunk_entities)
+            uow.flush()
+            result_ids = [c.id for c in chunk_entities]
             uow.commit()
-            for c in chunk_entities:
-                uow.session.refresh(c)
-            return chunk_entities
+            return result_ids
 
     def add_chunks_simple(
         self,
         contents_list: list[str],
         chunk_ids: list[int] | None = None,
-    ) -> list[Any]:
+    ) -> list[int]:
         """Add multiple standalone chunks (no parent caption).
 
         This is the "chunk-only" scenario where chunks exist without
@@ -319,7 +298,7 @@ class TextDataIngestionService:
             chunk_ids: Optional list of chunk IDs to set explicitly.
 
         Returns:
-            List of created Chunk entities with assigned IDs.
+            List of created Chunk IDs.
         """
         _, Chunk, _ = self._get_schema_classes()
         with self._create_uow() as uow:
@@ -332,10 +311,10 @@ class TextDataIngestionService:
                     Chunk(id=cid, contents=contents) for contents, cid in zip(contents_list, chunk_ids, strict=True)
                 ]
             uow.chunks.add_all(chunk_entities)
+            uow.flush()
+            result_ids = [c.id for c in chunk_entities]
             uow.commit()
-            for c in chunk_entities:
-                uow.session.refresh(c)
-            return chunk_entities
+            return result_ids
 
     def get_chunk_by_id(self, chunk_id: int) -> Any | None:
         """Get a chunk by its ID.
@@ -369,7 +348,7 @@ class TextDataIngestionService:
         chunk_id: int,
         group_index: int | None = None,
         group_order: int | None = None,
-    ) -> Any:
+    ) -> tuple[int, int, int]:
         """Add a single retrieval ground truth relation.
 
         For non-multi-hop scenarios, group_index defaults to 0 and
@@ -382,7 +361,7 @@ class TextDataIngestionService:
             group_order: Optional order within group.
 
         Returns:
-            The created RetrievalRelation entity.
+            The created RetrievalRelation PK as (query_id, group_index, group_order) tuple.
         """
         _, _, RetrievalRelation = self._get_schema_classes()
         with self._create_uow() as uow:
@@ -404,15 +383,16 @@ class TextDataIngestionService:
                 group_order=group_order,
             )
             uow.retrieval_relations.add(relation)
+            uow.flush()
+            pk = (relation.query_id, relation.group_index, relation.group_order)
             uow.commit()
-            uow.session.refresh(relation)
-            return relation
+            return pk
 
     def add_retrieval_gt_simple(
         self,
         query_id: int,
         chunk_ids: list[int],
-    ) -> list[Any]:
+    ) -> list[tuple[int, int, int]]:
         """Add multiple retrieval GTs for a query (non-multi-hop).
 
         All chunks are added to the same group (group_index=0) with
@@ -424,7 +404,7 @@ class TextDataIngestionService:
             chunk_ids: List of chunk IDs.
 
         Returns:
-            List of created RetrievalRelation entities.
+            List of created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
         """
         _, _, RetrievalRelation = self._get_schema_classes()
         with self._create_uow() as uow:
@@ -444,16 +424,16 @@ class TextDataIngestionService:
                 for i, chunk_id in enumerate(chunk_ids)
             ]
             uow.retrieval_relations.add_all(relations)
+            uow.flush()
+            pks = [(r.query_id, r.group_index, r.group_order) for r in relations]
             uow.commit()
-            for r in relations:
-                uow.session.refresh(r)
-            return relations
+            return pks
 
     def add_retrieval_gt_multihop(
         self,
         query_id: int,
         chunk_groups: list[list[int]],
-    ) -> list[Any]:
+    ) -> list[tuple[int, int, int]]:
         """Add multiple retrieval GTs for a query with multi-hop support.
 
         Each inner list represents a separate "hop" or alternative path.
@@ -470,7 +450,7 @@ class TextDataIngestionService:
                          Each inner list is a separate group.
 
         Returns:
-            List of all created RetrievalRelation entities.
+            List of all created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
         """
         _, _, RetrievalRelation = self._get_schema_classes()
         with self._create_uow() as uow:
@@ -493,10 +473,10 @@ class TextDataIngestionService:
                     all_relations.append(relation)
 
             uow.retrieval_relations.add_all(all_relations)
+            uow.flush()
+            pks = [(r.query_id, r.group_index, r.group_order) for r in all_relations]
             uow.commit()
-            for r in all_relations:
-                uow.session.refresh(r)
-            return all_relations
+            return pks
 
     def get_retrieval_gt_by_query(self, query_id: int) -> list[Any]:
         """Get all retrieval ground truth relations for a query.
@@ -512,7 +492,7 @@ class TextDataIngestionService:
 
     # ==================== Embedding Operations ====================
 
-    def set_query_embedding(self, query_id: int, embedding: list[float]) -> Any | None:
+    def set_query_embedding(self, query_id: int, embedding: list[float]) -> bool:
         """Set the embedding for a single query.
 
         Args:
@@ -520,21 +500,20 @@ class TextDataIngestionService:
             embedding: The pre-computed embedding vector.
 
         Returns:
-            The updated Query with embedding, None if not found.
+            True if the query was found and updated, False otherwise.
         """
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
             query = uow.queries.get_by_id(query_id)
             if query is None:
-                return None
+                return False
 
             query.embedding = embedding
             uow.commit()
-            uow.session.refresh(query)
-            return query
+            return True
 
-    def set_chunk_embedding(self, chunk_id: int, embedding: list[float]) -> Any | None:
+    def set_chunk_embedding(self, chunk_id: int, embedding: list[float]) -> bool:
         """Set the embedding for a single chunk.
 
         Args:
@@ -542,325 +521,18 @@ class TextDataIngestionService:
             embedding: The pre-computed embedding vector.
 
         Returns:
-            The updated Chunk with embedding, None if not found.
+            True if the chunk was found and updated, False otherwise.
         """
         with self._create_uow() as uow:
             if uow.session is None:
                 raise SessionNotSetError
             chunk = uow.chunks.get_by_id(chunk_id)
             if chunk is None:
-                return None
+                return False
 
             chunk.embedding = embedding
             uow.commit()
-            uow.session.refresh(chunk)
-            return chunk
-
-    def set_query_embeddings(
-        self,
-        query_ids: list[int],
-        embeddings: list[list[float]],
-    ) -> int:
-        """Set embeddings for multiple queries.
-
-        Args:
-            query_ids: List of query IDs to set embeddings for.
-            embeddings: List of pre-computed embedding vectors (must match query_ids length).
-
-        Returns:
-            Total number of queries successfully updated.
-
-        Raises:
-            ValueError: If query_ids and embeddings have different lengths.
-        """
-        if len(query_ids) != len(embeddings):
-            raise LengthMismatchError("query_ids", "embeddings")
-
-        total_updated = 0
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            for query_id, embedding in zip(query_ids, embeddings, strict=True):
-                query = uow.queries.get_by_id(query_id)
-                if query:
-                    query.embedding = embedding
-                    total_updated += 1
-
-            uow.commit()
-
-        return total_updated
-
-    def set_chunk_embeddings(
-        self,
-        chunk_ids: list[int],
-        embeddings: list[list[float]],
-    ) -> int:
-        """Set embeddings for multiple chunks.
-
-        Args:
-            chunk_ids: List of chunk IDs to set embeddings for.
-            embeddings: List of pre-computed embedding vectors (must match chunk_ids length).
-
-        Returns:
-            Total number of chunks successfully updated.
-
-        Raises:
-            ValueError: If chunk_ids and embeddings have different lengths.
-        """
-        if len(chunk_ids) != len(embeddings):
-            raise LengthMismatchError("chunk_ids", "embeddings")
-
-        total_updated = 0
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            for chunk_id, embedding in zip(chunk_ids, embeddings, strict=True):
-                chunk = uow.chunks.get_by_id(chunk_id)
-                if chunk:
-                    chunk.embedding = embedding
-                    total_updated += 1
-
-            uow.commit()
-
-        return total_updated
-
-    # ==================== Cleaning Operations ====================
-
-    def clean(self) -> dict[str, int]:
-        """Delete empty queries and chunks along with their associated retrieval relations.
-
-        This method should be called after data ingestion and before embedding to remove
-        any queries or chunks with empty or whitespace-only content. It also removes
-        associated retrieval relations to maintain referential integrity.
-
-        Returns:
-            Dictionary with counts of deleted queries and chunks.
-        """
-        deleted_queries = self._delete_empty_queries()
-        deleted_chunks = self._delete_empty_chunks()
-        return {
-            "deleted_queries": deleted_queries,
-            "deleted_chunks": deleted_chunks,
-        }
-
-    def _delete_empty_queries(self) -> int:
-        """Delete queries with empty content and their associated retrieval relations.
-
-        This method finds all queries where the query text is empty or whitespace-only,
-        deletes their associated retrieval relations first (to avoid FK violations),
-        then deletes the queries themselves.
-
-        Returns:
-            Total number of queries deleted.
-        """
-        total_deleted = 0
-
-        while True:
-            with self._create_uow() as uow:
-                if uow.session is None:
-                    raise SessionNotSetError
-
-                # Get batch of empty queries
-                empty_queries = uow.queries.get_queries_with_empty_content(limit=100)
-                if not empty_queries:
-                    break
-
-                # Delete retrieval relations and queries
-                for query in empty_queries:
-                    # Delete retrieval relations first (FK constraint)
-                    deleted_relations = uow.retrieval_relations.delete_by_query_id(query.id)
-                    if deleted_relations > 0:
-                        logger.info(f"Deleted {deleted_relations} retrieval relations for empty query {query.id}.")
-
-                    # Delete the query
-                    uow.queries.delete(query)
-                    total_deleted += 1
-
-                uow.commit()
-
-        if total_deleted > 0:
-            logger.warning(f"Deleted {total_deleted} queries with empty content.")
-
-        return total_deleted
-
-    def _delete_empty_chunks(self) -> int:
-        """Delete chunks with empty content and their associated retrieval relations.
-
-        This method finds all chunks where the contents is empty or whitespace-only,
-        deletes their associated retrieval relations first (to avoid FK violations),
-        then deletes the chunks themselves.
-
-        Returns:
-            Total number of chunks deleted.
-        """
-        total_deleted = 0
-
-        while True:
-            with self._create_uow() as uow:
-                if uow.session is None:
-                    raise SessionNotSetError
-
-                # Get batch of empty chunks
-                empty_chunks = uow.chunks.get_chunks_with_empty_content(limit=100)
-                if not empty_chunks:
-                    break
-
-                # Delete retrieval relations and chunks
-                for chunk in empty_chunks:
-                    # Delete retrieval relations first (FK constraint)
-                    deleted_relations = uow.retrieval_relations.delete_by_chunk_id(chunk.id)
-                    if deleted_relations > 0:
-                        logger.info(f"Deleted {deleted_relations} retrieval relations for empty chunk {chunk.id}.")
-
-                    # Delete the chunk
-                    uow.chunks.delete(chunk)
-                    total_deleted += 1
-
-                uow.commit()
-
-        if total_deleted > 0:
-            logger.warning(f"Deleted {total_deleted} chunks with empty content.")
-
-        return total_deleted
-
-    # ==================== Batch Embedding Operations ====================
-
-    def embed_all_queries(
-        self,
-        embed_func: EmbeddingFunc,
-        batch_size: int = 100,
-        max_concurrency: int = 10,
-    ) -> int:
-        """Embed all queries that don't have embeddings.
-
-        Processes queries in batches, using semaphore to limit concurrent
-        embedding calls. After each batch completes, updates the database.
-
-        Before embedding, this method identifies and deletes queries with empty
-        content along with their associated retrieval relations.
-
-        Args:
-            embed_func: Async function that takes a text string and returns embedding vector.
-            batch_size: Number of queries to process per batch before DB update.
-            max_concurrency: Maximum number of concurrent embedding calls.
-
-        Returns:
-            Total number of queries successfully embedded.
-        """
-        # First, delete queries with empty content and their retrieval relations
-        self._delete_empty_queries()
-
-        total_embedded = 0
-
-        while True:
-            # Get queries without embeddings for this batch
-            with self._create_uow() as uow:
-                queries = uow.queries.get_queries_without_embeddings(limit=batch_size)
-                if not queries:
-                    break
-                items_to_embed = [(q.id, q.query) for q in queries]
-
-            # Embed batch with semaphore
-            embeddings = asyncio.run(self._embed_batch(items_to_embed, embed_func, max_concurrency))
-
-            # Update database with embeddings
-            with self._create_uow() as uow:
-                if uow.session is None:
-                    raise SessionNotSetError
-                for (item_id, _), embedding in zip(items_to_embed, embeddings, strict=True):
-                    query = uow.queries.get_by_id(item_id)
-                    if query and embedding is not None:
-                        query.embedding = embedding
-                        total_embedded += 1
-                uow.commit()
-
-        return total_embedded
-
-    def embed_all_chunks(
-        self,
-        embed_func: EmbeddingFunc,
-        batch_size: int = 100,
-        max_concurrency: int = 10,
-    ) -> int:
-        """Embed all chunks that don't have embeddings.
-
-        Processes chunks in batches, using semaphore to limit concurrent
-        embedding calls. After each batch completes, updates the database.
-
-        Before embedding, this method identifies and deletes chunks with empty
-        content along with their associated retrieval relations.
-
-        Args:
-            embed_func: Async function that takes a text string and returns embedding vector.
-            batch_size: Number of chunks to process per batch before DB update.
-            max_concurrency: Maximum number of concurrent embedding calls.
-
-        Returns:
-            Total number of chunks successfully embedded.
-        """
-        # First, delete chunks with empty content and their retrieval relations
-        self._delete_empty_chunks()
-
-        total_embedded = 0
-
-        while True:
-            # Get chunks without embeddings for this batch
-            with self._create_uow() as uow:
-                chunks = uow.chunks.get_chunks_without_embeddings(limit=batch_size)
-                if not chunks:
-                    break
-                items_to_embed = [(c.id, c.contents) for c in chunks]
-
-            # Embed batch with semaphore
-            embeddings = asyncio.run(self._embed_batch(items_to_embed, embed_func, max_concurrency))
-
-            # Update database with embeddings
-            with self._create_uow() as uow:
-                if uow.session is None:
-                    raise SessionNotSetError
-                for (item_id, _), embedding in zip(items_to_embed, embeddings, strict=True):
-                    chunk = uow.chunks.get_by_id(item_id)
-                    if chunk and embedding is not None:
-                        chunk.embedding = embedding
-                        total_embedded += 1
-                uow.commit()
-
-        return total_embedded
-
-    @staticmethod
-    async def _embed_batch(
-        items: list[tuple[int, str]],
-        embed_func: EmbeddingFunc,
-        max_concurrency: int,
-    ) -> list[list[float] | None]:
-        """Embed a batch of items with concurrency control.
-
-        Args:
-            items: List of (id, text) tuples to embed.
-            embed_func: Async function that takes text and returns embedding.
-            max_concurrency: Maximum concurrent embedding calls.
-
-        Returns:
-            List of embeddings (or None if failed or empty content) in same order as items.
-        """
-        semaphore = asyncio.Semaphore(max_concurrency)
-
-        async def embed_with_semaphore(text: str) -> list[float] | None:
-            # Return None for empty content - do not attempt to embed
-            if not text or not text.strip():
-                logger.warning("Skipping embedding for empty content.")
-                return None
-            async with semaphore:
-                try:
-                    return await embed_func(text)
-                except Exception:
-                    logger.exception(f"Failed to embed {text}")
-                    return None
-
-        tasks = [embed_with_semaphore(text) for _, text in items]
-        return await asyncio.gather(*tasks)
+            return True
 
     # ==================== Statistics ====================
 
