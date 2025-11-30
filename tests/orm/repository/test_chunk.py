@@ -146,8 +146,6 @@ def test_count_by_caption(chunk_repository: ChunkRepository, db_session: Session
 
 
 def test_get_with_all_relations(chunk_repository: ChunkRepository, db_session: Session):
-    """Test retrieving a chunk with all relationships eagerly loaded."""
-    # Use existing seed data (chunk id=1 has all relations)
     result = chunk_repository.get_with_all_relations(1)
 
     assert result is not None
@@ -156,3 +154,27 @@ def test_get_with_all_relations(chunk_repository: ChunkRepository, db_session: S
     assert hasattr(result, "caption_chunk_relations")
     assert hasattr(result, "retrieval_relations")
     assert hasattr(result, "chunk_retrieved_results")
+
+
+def test_get_chunks_with_empty_content(chunk_repository: ChunkRepository, db_session: Session):
+    empty_chunk = Chunk(id=800001, contents="", parent_caption=None)
+    whitespace_chunk = Chunk(id=800002, contents="   ", parent_caption=None)
+    null_chunk = Chunk(id=800003, contents="        ", parent_caption=None)
+    valid_chunk = Chunk(id=800004, contents="Valid content", parent_caption=None)
+
+    db_session.add_all([empty_chunk, whitespace_chunk, null_chunk, valid_chunk])
+    db_session.commit()
+
+    results = chunk_repository.get_chunks_with_empty_content()
+
+    result_ids = [c.id for c in results]
+    assert 800001 in result_ids
+    assert 800002 in result_ids
+    assert 800003 in result_ids
+    assert 800004 not in result_ids
+
+    db_session.delete(db_session.get(Chunk, 800001))
+    db_session.delete(db_session.get(Chunk, 800002))
+    db_session.delete(db_session.get(Chunk, 800003))
+    db_session.delete(db_session.get(Chunk, 800004))
+    db_session.commit()

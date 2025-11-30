@@ -39,3 +39,10 @@ class LengthMismatchError(Exception):
 
     def __init__(self, list1_name: str, list2_name: str):
         super().__init__(f"Length mismatch between '{list1_name}' and '{list2_name}'.")
+
+
+class InvalidDatasetNameError(NameError):
+    """Raised when an invalid dataset name is provided."""
+
+    def __init__(self, dataset_name: str):
+        super().__init__(f"Invalid dataset name '{dataset_name}' provided.")

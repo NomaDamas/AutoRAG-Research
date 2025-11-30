@@ -148,3 +148,18 @@ class QueryRepository(BaseVectorRepository[Any]):
         if limit:
             stmt = stmt.limit(limit)
         return list(self.session.execute(stmt).scalars().all())
+
+    def get_queries_with_empty_content(self, limit: int | None = None) -> list[Any]:
+        """Retrieve queries that have empty or whitespace-only query text.
+
+        Args:
+            limit: Maximum number of results to return.
+
+        Returns:
+            List of queries with empty content.
+        """
+        # Use SQL TRIM to check for empty or whitespace-only content
+        stmt = select(self.model_cls).where((self.model_cls.query.is_(None)) | (func.trim(self.model_cls.query) == ""))
+        if limit:
+            stmt = stmt.limit(limit)
+        return list(self.session.execute(stmt).scalars().all())
