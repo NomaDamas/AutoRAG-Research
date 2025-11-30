@@ -599,11 +599,11 @@ class TestClean:
     ):
         empty_query = text_ingestion_service.add_query("", qid=900301)
         valid_chunk = text_ingestion_service.add_chunk("Valid chunk for relation", chunk_id=900302)
-        text_ingestion_service.add_retrieval_gt(empty_query.id, valid_chunk.id)
+        text_ingestion_service.add_retrieval_gt(empty_query, valid_chunk)
 
         valid_query = text_ingestion_service.add_query("Valid query for relation", qid=900303)
         empty_chunk = text_ingestion_service.add_chunk("", chunk_id=900304)
-        text_ingestion_service.add_retrieval_gt(valid_query.id, empty_chunk.id)
+        text_ingestion_service.add_retrieval_gt(valid_query, empty_chunk)
 
         result = text_ingestion_service.clean()
 
