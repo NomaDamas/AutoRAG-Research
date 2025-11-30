@@ -4,25 +4,31 @@ Implements document-specific CRUD operations and queries extending
 the generic repository pattern.
 """
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from autorag_research.orm.repository.base import GenericRepository
-from autorag_research.orm.schema import Document
 
 
-class DocumentRepository(GenericRepository[Document]):
+class DocumentRepository(GenericRepository):
     """Repository for Document entity with specialized queries."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, model_cls: type | None = None):
         """Initialize document repository.
 
         Args:
             session: SQLAlchemy session for database operations.
+            model_cls: The Document model class. If None, uses default schema.
         """
-        super().__init__(session, Document)
+        if model_cls is None:
+            from autorag_research.orm.schema import Document
 
-    def get_by_filename(self, filename: str) -> Document | None:
+            model_cls = Document
+        super().__init__(session, model_cls)
+
+    def get_by_filename(self, filename: str) -> Any | None:
         """Retrieve a document by its filename.
 
         Args:
@@ -31,10 +37,10 @@ class DocumentRepository(GenericRepository[Document]):
         Returns:
             The document if found, None otherwise.
         """
-        stmt = select(Document).where(Document.filename == filename)
+        stmt = select(self.model_cls).where(self.model_cls.filename == filename)
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_by_title(self, title: str) -> Document | None:
+    def get_by_title(self, title: str) -> Any | None:
         """Retrieve a document by its title.
 
         Args:
@@ -43,10 +49,10 @@ class DocumentRepository(GenericRepository[Document]):
         Returns:
             The document if found, None otherwise.
         """
-        stmt = select(Document).where(Document.title == title)
+        stmt = select(self.model_cls).where(self.model_cls.title == title)
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_by_author(self, author: str) -> list[Document]:
+    def get_by_author(self, author: str) -> list[Any]:
         """Retrieve all documents by a specific author.
 
         Args:
@@ -55,10 +61,10 @@ class DocumentRepository(GenericRepository[Document]):
         Returns:
             List of documents by the author.
         """
-        stmt = select(Document).where(Document.author == author)
+        stmt = select(self.model_cls).where(self.model_cls.author == author)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_pages(self, document_id: int) -> Document | None:
+    def get_with_pages(self, document_id: int) -> Any | None:
         """Retrieve a document with its pages eagerly loaded.
 
         Args:
@@ -67,10 +73,10 @@ class DocumentRepository(GenericRepository[Document]):
         Returns:
             The document with pages loaded, None if not found.
         """
-        stmt = select(Document).where(Document.id == document_id).options(joinedload(Document.pages))
+        stmt = select(self.model_cls).where(self.model_cls.id == document_id).options(joinedload(self.model_cls.pages))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_file(self, document_id: int) -> Document | None:
+    def get_with_file(self, document_id: int) -> Any | None:
         """Retrieve a document with its file eagerly loaded.
 
         Args:
@@ -79,10 +85,10 @@ class DocumentRepository(GenericRepository[Document]):
         Returns:
             The document with file loaded, None if not found.
         """
-        stmt = select(Document).where(Document.id == document_id).options(joinedload(Document.file))
+        stmt = select(self.model_cls).where(self.model_cls.id == document_id).options(joinedload(self.model_cls.file))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_all_with_pages(self, limit: int | None = None, offset: int | None = None) -> list[Document]:
+    def get_all_with_pages(self, limit: int | None = None, offset: int | None = None) -> list[Any]:
         """Retrieve all documents with their pages eagerly loaded.
 
         Args:
@@ -92,14 +98,14 @@ class DocumentRepository(GenericRepository[Document]):
         Returns:
             List of documents with pages loaded.
         """
-        stmt = select(Document).options(joinedload(Document.pages))
+        stmt = select(self.model_cls).options(joinedload(self.model_cls.pages))
         if offset:
             stmt = stmt.offset(offset)
         if limit:
             stmt = stmt.limit(limit)
         return list(self.session.execute(stmt).scalars().unique().all())
 
-    def search_by_metadata(self, metadata_key: str, metadata_value: str) -> list[Document]:
+    def search_by_metadata(self, metadata_key: str, metadata_value: str) -> list[Any]:
         """Search documents by metadata field.
 
         Args:
@@ -109,7 +115,7 @@ class DocumentRepository(GenericRepository[Document]):
         Returns:
             List of matching documents.
         """
-        stmt = select(Document).where(Document.doc_metadata[metadata_key].astext == metadata_value)
+        stmt = select(self.model_cls).where(self.model_cls.doc_metadata[metadata_key].astext == metadata_value)
         return list(self.session.execute(stmt).scalars().all())
 
     def count_pages(self, document_id: int) -> int:
@@ -124,7 +130,7 @@ class DocumentRepository(GenericRepository[Document]):
         document = self.get_with_pages(document_id)
         return len(document.pages) if document else 0
 
-    def get_by_filepath_id(self, filepath_id: int) -> Document | None:
+    def get_by_filepath_id(self, filepath_id: int) -> Any | None:
         """Retrieve a document by its file path ID.
 
         Args:
@@ -133,5 +139,5 @@ class DocumentRepository(GenericRepository[Document]):
         Returns:
             The document if found, None otherwise.
         """
-        stmt = select(Document).where(Document.filepath == filepath_id)
+        stmt = select(self.model_cls).where(self.model_cls.filepath == filepath_id)
         return self.session.execute(stmt).scalar_one_or_none()

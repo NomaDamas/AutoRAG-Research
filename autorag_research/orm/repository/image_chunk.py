@@ -40,18 +40,6 @@ class ImageChunkRepository(BaseVectorRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.parent_page == page_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_image_path_id(self, image_path_id: int) -> Any | None:
-        """Retrieve an image chunk by its image path ID.
-
-        Args:
-            image_path_id: The file ID for the image.
-
-        Returns:
-            The image chunk if found, None otherwise.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.image_path == image_path_id)
-        return self.session.execute(stmt).unique().scalar_one_or_none()
-
     def get_with_page(self, image_chunk_id: int) -> Any | None:
         """Retrieve an image chunk with its page eagerly loaded.
 
@@ -63,22 +51,6 @@ class ImageChunkRepository(BaseVectorRepository[Any]):
         """
         stmt = (
             select(self.model_cls).where(self.model_cls.id == image_chunk_id).options(joinedload(self.model_cls.page))
-        )
-        return self.session.execute(stmt).unique().scalar_one_or_none()
-
-    def get_with_image_file(self, image_chunk_id: int) -> Any | None:
-        """Retrieve an image chunk with its image file eagerly loaded.
-
-        Args:
-            image_chunk_id: The image chunk ID.
-
-        Returns:
-            The image chunk with image file loaded, None if not found.
-        """
-        stmt = (
-            select(self.model_cls)
-            .where(self.model_cls.id == image_chunk_id)
-            .options(joinedload(self.model_cls.image_file))
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
@@ -173,7 +145,6 @@ class ImageChunkRepository(BaseVectorRepository[Any]):
             .where(self.model_cls.id == image_chunk_id)
             .options(
                 joinedload(self.model_cls.page),
-                joinedload(self.model_cls.image_file),
                 joinedload(self.model_cls.retrieval_relations),
                 joinedload(self.model_cls.image_chunk_retrieved_results),
             )

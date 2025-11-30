@@ -15,39 +15,45 @@ class TestAddQuery:
     def test_add_query_without_generation_gt(
         self, text_ingestion_service: TextDataIngestionService, db_session: Session
     ):
-        query = text_ingestion_service.add_query("Test query without gt")
+        query_id = text_ingestion_service.add_query("Test query without gt")
 
-        assert query is not None
-        assert query.id is not None
+        assert query_id is not None
+
+        # Verify by fetching from DB
+        query = db_session.get(Query, query_id)
         assert query.query == "Test query without gt"
         assert query.generation_gt is None
 
-        db_session.delete(db_session.get(Query, query.id))
+        db_session.delete(db_session.get(Query, query_id))
         db_session.commit()
 
     def test_add_query_with_generation_gt(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
-        query = text_ingestion_service.add_query(
+        query_id = text_ingestion_service.add_query(
             "Test query with gt",
             generation_gt=["answer1", "answer2"],
         )
 
-        assert query is not None
-        assert query.id is not None
+        assert query_id is not None
+
+        # Verify by fetching from DB
+        query = db_session.get(Query, query_id)
         assert query.query == "Test query with gt"
         assert query.generation_gt == ["answer1", "answer2"]
 
-        db_session.delete(db_session.get(Query, query.id))
+        db_session.delete(db_session.get(Query, query_id))
         db_session.commit()
 
     def test_add_query_with_explicit_id(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
         unique_id = 900001
-        query = text_ingestion_service.add_query(
+        query_id = text_ingestion_service.add_query(
             "Test query with explicit id",
             qid=unique_id,
         )
 
-        assert query is not None
-        assert query.id == unique_id
+        assert query_id == unique_id
+
+        # Verify by fetching from DB
+        query = db_session.get(Query, query_id)
         assert query.query == "Test query with explicit id"
 
         db_session.delete(db_session.get(Query, unique_id))
@@ -61,17 +67,22 @@ class TestAddQueries:
             ("Query 2", None),
             ("Query 3", ["gt3a", "gt3b"]),
         ]
-        queries = text_ingestion_service.add_queries(queries_data)
+        query_ids = text_ingestion_service.add_queries(queries_data)
 
-        assert len(queries) == 3
-        assert all(q.id is not None for q in queries)
-        assert queries[0].query == "Query 1"
-        assert queries[0].generation_gt == ["gt1"]
-        assert queries[1].generation_gt is None
-        assert queries[2].generation_gt == ["gt3a", "gt3b"]
+        assert len(query_ids) == 3
+        assert all(qid is not None for qid in query_ids)
 
-        for q in queries:
-            db_session.delete(db_session.get(Query, q.id))
+        # Verify by fetching from DB
+        q1 = db_session.get(Query, query_ids[0])
+        q2 = db_session.get(Query, query_ids[1])
+        q3 = db_session.get(Query, query_ids[2])
+        assert q1.query == "Query 1"
+        assert q1.generation_gt == ["gt1"]
+        assert q2.generation_gt is None
+        assert q3.generation_gt == ["gt3a", "gt3b"]
+
+        for qid in query_ids:
+            db_session.delete(db_session.get(Query, qid))
         db_session.commit()
 
     def test_add_queries_with_explicit_ids(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
@@ -80,28 +91,32 @@ class TestAddQueries:
             ("Query B", None),
         ]
         qids = [900011, 900012]
-        queries = text_ingestion_service.add_queries(queries_data, qids=qids)
+        query_ids = text_ingestion_service.add_queries(queries_data, qids=qids)
 
-        assert len(queries) == 2
-        assert queries[0].id == 900011
-        assert queries[1].id == 900012
+        assert len(query_ids) == 2
+        assert query_ids[0] == 900011
+        assert query_ids[1] == 900012
 
-        for q in queries:
-            db_session.delete(db_session.get(Query, q.id))
+        for qid in query_ids:
+            db_session.delete(db_session.get(Query, qid))
         db_session.commit()
 
 
 class TestAddQueriesSimple:
     def test_add_queries_simple(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
         query_texts = ["Simple query 1", "Simple query 2"]
-        queries = text_ingestion_service.add_queries_simple(query_texts)
+        query_ids = text_ingestion_service.add_queries_simple(query_texts)
 
-        assert len(queries) == 2
-        assert all(q.id is not None for q in queries)
-        assert all(q.generation_gt is None for q in queries)
+        assert len(query_ids) == 2
+        assert all(qid is not None for qid in query_ids)
 
-        for q in queries:
-            db_session.delete(db_session.get(Query, q.id))
+        # Verify by fetching from DB
+        for qid in query_ids:
+            q = db_session.get(Query, qid)
+            assert q.generation_gt is None
+
+        for qid in query_ids:
+            db_session.delete(db_session.get(Query, qid))
         db_session.commit()
 
     def test_add_queries_simple_with_explicit_ids(
@@ -109,13 +124,13 @@ class TestAddQueriesSimple:
     ):
         query_texts = ["Simple Q1", "Simple Q2"]
         qids = [900021, 900022]
-        queries = text_ingestion_service.add_queries_simple(query_texts, qids=qids)
+        query_ids = text_ingestion_service.add_queries_simple(query_texts, qids=qids)
 
-        assert queries[0].id == 900021
-        assert queries[1].id == 900022
+        assert query_ids[0] == 900021
+        assert query_ids[1] == 900022
 
-        for q in queries:
-            db_session.delete(db_session.get(Query, q.id))
+        for qid in query_ids:
+            db_session.delete(db_session.get(Query, qid))
         db_session.commit()
 
 
@@ -146,31 +161,35 @@ class TestGetQuery:
 
 class TestAddChunk:
     def test_add_chunk_standalone(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
-        chunk = text_ingestion_service.add_chunk("Test chunk content")
+        chunk_id = text_ingestion_service.add_chunk("Test chunk content")
 
-        assert chunk is not None
-        assert chunk.id is not None
+        assert chunk_id is not None
+
+        # Verify by fetching from DB
+        chunk = db_session.get(Chunk, chunk_id)
         assert chunk.contents == "Test chunk content"
         assert chunk.parent_caption is None
 
-        db_session.delete(db_session.get(Chunk, chunk.id))
+        db_session.delete(db_session.get(Chunk, chunk_id))
         db_session.commit()
 
     def test_add_chunk_with_parent_caption(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
-        chunk = text_ingestion_service.add_chunk("Chunk with parent", parent_caption_id=1)
+        chunk_id = text_ingestion_service.add_chunk("Chunk with parent", parent_caption_id=1)
 
-        assert chunk is not None
+        assert chunk_id is not None
+
+        # Verify by fetching from DB
+        chunk = db_session.get(Chunk, chunk_id)
         assert chunk.parent_caption == 1
 
-        db_session.delete(db_session.get(Chunk, chunk.id))
+        db_session.delete(db_session.get(Chunk, chunk_id))
         db_session.commit()
 
     def test_add_chunk_with_explicit_id(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
         unique_id = 900031
-        chunk = text_ingestion_service.add_chunk("Chunk with explicit id", chunk_id=unique_id)
+        chunk_id = text_ingestion_service.add_chunk("Chunk with explicit id", chunk_id=unique_id)
 
-        assert chunk is not None
-        assert chunk.id == unique_id
+        assert chunk_id == unique_id
 
         db_session.delete(db_session.get(Chunk, unique_id))
         db_session.commit()
@@ -182,15 +201,19 @@ class TestAddChunks:
             ("Chunk content 1", None),
             ("Chunk content 2", 1),
         ]
-        chunks = text_ingestion_service.add_chunks(chunks_data)
+        chunk_ids = text_ingestion_service.add_chunks(chunks_data)
 
-        assert len(chunks) == 2
-        assert all(c.id is not None for c in chunks)
-        assert chunks[0].parent_caption is None
-        assert chunks[1].parent_caption == 1
+        assert len(chunk_ids) == 2
+        assert all(cid is not None for cid in chunk_ids)
 
-        for c in chunks:
-            db_session.delete(db_session.get(Chunk, c.id))
+        # Verify by fetching from DB
+        c1 = db_session.get(Chunk, chunk_ids[0])
+        c2 = db_session.get(Chunk, chunk_ids[1])
+        assert c1.parent_caption is None
+        assert c2.parent_caption == 1
+
+        for cid in chunk_ids:
+            db_session.delete(db_session.get(Chunk, cid))
         db_session.commit()
 
     def test_add_chunks_with_explicit_ids(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
@@ -198,43 +221,47 @@ class TestAddChunks:
             ("Chunk A", None),
             ("Chunk B", None),
         ]
-        chunk_ids = [900041, 900042]
-        chunks = text_ingestion_service.add_chunks(chunks_data, chunk_ids=chunk_ids)
+        explicit_ids = [900041, 900042]
+        chunk_ids = text_ingestion_service.add_chunks(chunks_data, chunk_ids=explicit_ids)
 
-        assert chunks[0].id == 900041
-        assert chunks[1].id == 900042
+        assert chunk_ids[0] == 900041
+        assert chunk_ids[1] == 900042
 
-        for c in chunks:
-            db_session.delete(db_session.get(Chunk, c.id))
+        for cid in chunk_ids:
+            db_session.delete(db_session.get(Chunk, cid))
         db_session.commit()
 
 
 class TestAddChunksSimple:
     def test_add_chunks_simple(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
         contents = ["Simple content 1", "Simple content 2", "Simple content 3"]
-        chunks = text_ingestion_service.add_chunks_simple(contents)
+        chunk_ids = text_ingestion_service.add_chunks_simple(contents)
 
-        assert len(chunks) == 3
-        assert all(c.id is not None for c in chunks)
-        assert all(c.parent_caption is None for c in chunks)
-        assert [c.contents for c in chunks] == contents
+        assert len(chunk_ids) == 3
+        assert all(cid is not None for cid in chunk_ids)
 
-        for c in chunks:
-            db_session.delete(db_session.get(Chunk, c.id))
+        # Verify by fetching from DB
+        for i, cid in enumerate(chunk_ids):
+            c = db_session.get(Chunk, cid)
+            assert c.parent_caption is None
+            assert c.contents == contents[i]
+
+        for cid in chunk_ids:
+            db_session.delete(db_session.get(Chunk, cid))
         db_session.commit()
 
     def test_add_chunks_simple_with_explicit_ids(
         self, text_ingestion_service: TextDataIngestionService, db_session: Session
     ):
         contents = ["Content X", "Content Y"]
-        chunk_ids = [900051, 900052]
-        chunks = text_ingestion_service.add_chunks_simple(contents, chunk_ids=chunk_ids)
+        explicit_ids = [900051, 900052]
+        chunk_ids = text_ingestion_service.add_chunks_simple(contents, chunk_ids=explicit_ids)
 
-        assert chunks[0].id == 900051
-        assert chunks[1].id == 900052
+        assert chunk_ids[0] == 900051
+        assert chunk_ids[1] == 900052
 
-        for c in chunks:
-            db_session.delete(db_session.get(Chunk, c.id))
+        for cid in chunk_ids:
+            db_session.delete(db_session.get(Chunk, cid))
         db_session.commit()
 
 
@@ -261,85 +288,98 @@ class TestAddRetrievalGT:
     def test_add_retrieval_gt_auto_increment(
         self, text_ingestion_service: TextDataIngestionService, db_session: Session
     ):
-        query = text_ingestion_service.add_query("Test query for retrieval gt")
-        chunk = text_ingestion_service.add_chunk("Test chunk for retrieval gt")
+        query_id = text_ingestion_service.add_query("Test query for retrieval gt")
+        chunk_id = text_ingestion_service.add_chunk("Test chunk for retrieval gt")
 
-        relation = text_ingestion_service.add_retrieval_gt(query.id, chunk.id)
+        relation_pk = text_ingestion_service.add_retrieval_gt(query_id, chunk_id)
 
-        assert relation is not None
-        assert relation.query_id == query.id
-        assert relation.chunk_id == chunk.id
-        assert relation.group_index == 0
-        assert relation.group_order == 0
+        assert relation_pk == (query_id, 0, 0)
 
-        db_session.delete(db_session.get(RetrievalRelation, (query.id, 0, 0)))
-        db_session.delete(db_session.get(Chunk, chunk.id))
-        db_session.delete(db_session.get(Query, query.id))
+        # Verify by fetching from DB
+        relation = db_session.get(RetrievalRelation, relation_pk)
+        assert relation.query_id == query_id
+        assert relation.chunk_id == chunk_id
+
+        db_session.delete(db_session.get(RetrievalRelation, relation_pk))
+        db_session.delete(db_session.get(Chunk, chunk_id))
+        db_session.delete(db_session.get(Query, query_id))
         db_session.commit()
 
     def test_add_retrieval_gt_with_explicit_group(
         self, text_ingestion_service: TextDataIngestionService, db_session: Session
     ):
-        query = text_ingestion_service.add_query("Test query explicit group")
-        chunk = text_ingestion_service.add_chunk("Test chunk explicit group")
+        query_id = text_ingestion_service.add_query("Test query explicit group")
+        chunk_id = text_ingestion_service.add_chunk("Test chunk explicit group")
 
-        relation = text_ingestion_service.add_retrieval_gt(query.id, chunk.id, group_index=5, group_order=10)
+        relation_pk = text_ingestion_service.add_retrieval_gt(query_id, chunk_id, group_index=5, group_order=10)
 
-        assert relation.group_index == 5
-        assert relation.group_order == 10
+        assert relation_pk == (query_id, 5, 10)
 
-        db_session.delete(db_session.get(RetrievalRelation, (query.id, 5, 10)))
-        db_session.delete(db_session.get(Chunk, chunk.id))
-        db_session.delete(db_session.get(Query, query.id))
+        db_session.delete(db_session.get(RetrievalRelation, relation_pk))
+        db_session.delete(db_session.get(Chunk, chunk_id))
+        db_session.delete(db_session.get(Query, query_id))
         db_session.commit()
 
 
 class TestAddRetrievalGTSimple:
     def test_add_retrieval_gt_simple(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
-        query = text_ingestion_service.add_query("Query for simple gt")
-        chunks = text_ingestion_service.add_chunks_simple(["Chunk A", "Chunk B", "Chunk C"])
+        query_id = text_ingestion_service.add_query("Query for simple gt")
+        chunk_ids = text_ingestion_service.add_chunks_simple(["Chunk A", "Chunk B", "Chunk C"])
 
-        relations = text_ingestion_service.add_retrieval_gt_simple(query.id, [c.id for c in chunks])
+        relation_pks = text_ingestion_service.add_retrieval_gt_simple(query_id, chunk_ids)
 
-        assert len(relations) == 3
-        assert all(r.group_index == 0 for r in relations)
-        assert [r.group_order for r in relations] == [0, 1, 2]
-        assert [r.chunk_id for r in relations] == [c.id for c in chunks]
+        assert len(relation_pks) == 3
+        assert all(pk[1] == 0 for pk in relation_pks)  # group_index == 0
+        assert [pk[2] for pk in relation_pks] == [0, 1, 2]  # group_order
 
-        for r in relations:
-            db_session.delete(db_session.get(RetrievalRelation, (r.query_id, r.group_index, r.group_order)))
-        for c in chunks:
-            db_session.delete(db_session.get(Chunk, c.id))
-        db_session.delete(db_session.get(Query, query.id))
+        # Verify by fetching from DB
+        for i, pk in enumerate(relation_pks):
+            r = db_session.get(RetrievalRelation, pk)
+            assert r.chunk_id == chunk_ids[i]
+
+        for pk in relation_pks:
+            db_session.delete(db_session.get(RetrievalRelation, pk))
+        for cid in chunk_ids:
+            db_session.delete(db_session.get(Chunk, cid))
+        db_session.delete(db_session.get(Query, query_id))
         db_session.commit()
 
 
 class TestAddRetrievalGTMultihop:
     def test_add_retrieval_gt_multihop(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
-        query = text_ingestion_service.add_query("Query for multihop gt")
-        chunks = text_ingestion_service.add_chunks_simple(["Hop1 Chunk1", "Hop1 Chunk2", "Hop2 Chunk1", "Hop2 Chunk2"])
+        query_id = text_ingestion_service.add_query("Query for multihop gt")
+        chunk_ids = text_ingestion_service.add_chunks_simple([
+            "Hop1 Chunk1",
+            "Hop1 Chunk2",
+            "Hop2 Chunk1",
+            "Hop2 Chunk2",
+        ])
 
         chunk_groups = [
-            [chunks[0].id, chunks[1].id],  # First hop
-            [chunks[2].id, chunks[3].id],  # Second hop
+            [chunk_ids[0], chunk_ids[1]],  # First hop
+            [chunk_ids[2], chunk_ids[3]],  # Second hop
         ]
-        relations = text_ingestion_service.add_retrieval_gt_multihop(query.id, chunk_groups)
+        relation_pks = text_ingestion_service.add_retrieval_gt_multihop(query_id, chunk_groups)
 
-        assert len(relations) == 4
+        assert len(relation_pks) == 4
 
-        hop1_relations = [r for r in relations if r.group_index == 0]
-        hop2_relations = [r for r in relations if r.group_index == 1]
+        hop1_pks = [pk for pk in relation_pks if pk[1] == 0]  # group_index == 0
+        hop2_pks = [pk for pk in relation_pks if pk[1] == 1]  # group_index == 1
 
-        assert len(hop1_relations) == 2
-        assert len(hop2_relations) == 2
-        assert [r.chunk_id for r in hop1_relations] == [chunks[0].id, chunks[1].id]
-        assert [r.chunk_id for r in hop2_relations] == [chunks[2].id, chunks[3].id]
+        assert len(hop1_pks) == 2
+        assert len(hop2_pks) == 2
 
-        for r in relations:
-            db_session.delete(db_session.get(RetrievalRelation, (r.query_id, r.group_index, r.group_order)))
-        for c in chunks:
-            db_session.delete(db_session.get(Chunk, c.id))
-        db_session.delete(db_session.get(Query, query.id))
+        # Verify by fetching from DB
+        hop1_relations = [db_session.get(RetrievalRelation, pk) for pk in hop1_pks]
+        hop2_relations = [db_session.get(RetrievalRelation, pk) for pk in hop2_pks]
+        assert [r.chunk_id for r in hop1_relations] == [chunk_ids[0], chunk_ids[1]]
+        assert [r.chunk_id for r in hop2_relations] == [chunk_ids[2], chunk_ids[3]]
+
+        for pk in relation_pks:
+            db_session.delete(db_session.get(RetrievalRelation, pk))
+        for cid in chunk_ids:
+            db_session.delete(db_session.get(Chunk, cid))
+        db_session.delete(db_session.get(Query, query_id))
         db_session.commit()
 
 
@@ -353,65 +393,71 @@ class TestGetRetrievalGT:
 
 class TestEmbedding:
     def test_set_query_embedding(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
-        query = text_ingestion_service.add_query("Query to embed for test")
+        query_id = text_ingestion_service.add_query("Query to embed for test")
         embedding = [0.1] * 768
 
-        result = text_ingestion_service.set_query_embedding(query.id, embedding)
+        result = text_ingestion_service.set_query_embedding(query_id, embedding)
 
-        assert result is not None
-        assert result.embedding is not None
-        assert len(list(result.embedding)) == 768
+        assert result is True
 
-        db_session.delete(db_session.get(Query, query.id))
+        # Verify by fetching from DB
+        query = db_session.get(Query, query_id)
+        assert query.embedding is not None
+        assert len(list(query.embedding)) == 768
+
+        db_session.delete(db_session.get(Query, query_id))
         db_session.commit()
 
     def test_set_chunk_embedding(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
-        chunk = text_ingestion_service.add_chunk("Chunk to embed for test")
+        chunk_id = text_ingestion_service.add_chunk("Chunk to embed for test")
         embedding = [0.2] * 768
 
-        result = text_ingestion_service.set_chunk_embedding(chunk.id, embedding)
+        result = text_ingestion_service.set_chunk_embedding(chunk_id, embedding)
 
-        assert result is not None
-        assert result.embedding is not None
-        assert len(list(result.embedding)) == 768
+        assert result is True
 
-        db_session.delete(db_session.get(Chunk, chunk.id))
+        # Verify by fetching from DB
+        chunk = db_session.get(Chunk, chunk_id)
+        assert chunk.embedding is not None
+        assert len(list(chunk.embedding)) == 768
+
+        db_session.delete(db_session.get(Chunk, chunk_id))
         db_session.commit()
 
     def test_set_query_embedding_not_found(self, text_ingestion_service: TextDataIngestionService):
         embedding = [0.1] * 768
         result = text_ingestion_service.set_query_embedding(999999, embedding)
 
-        assert result is None
+        assert result is False
 
     def test_set_chunk_embedding_not_found(self, text_ingestion_service: TextDataIngestionService):
         embedding = [0.1] * 768
         result = text_ingestion_service.set_chunk_embedding(999999, embedding)
 
-        assert result is None
+        assert result is False
 
     def test_set_query_embeddings_batch(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
-        queries = text_ingestion_service.add_queries_simple(["Query 1", "Query 2", "Query 3"])
+        query_ids = text_ingestion_service.add_queries_simple(["Query 1", "Query 2", "Query 3"])
         embeddings = [[0.1 * i] * 768 for i in range(1, 4)]
 
-        result = text_ingestion_service.set_query_embeddings([q.id for q in queries], embeddings)
+        result = text_ingestion_service.set_query_embeddings(query_ids, embeddings)
 
         assert result == 3
 
-        for q in queries:
-            db_session.delete(db_session.get(Query, q.id))
+        for qid in query_ids:
+            db_session.delete(db_session.get(Query, qid))
         db_session.commit()
 
     def test_set_chunk_embeddings_batch(self, text_ingestion_service: TextDataIngestionService, db_session: Session):
-        chunks = text_ingestion_service.add_chunks_simple(["Chunk 1", "Chunk 2", "Chunk 3"])
+        chunk_ids = text_ingestion_service.add_chunks_simple(["Chunk 1", "Chunk 2", "Chunk 3"])
         embeddings = [[0.2 * i] * 768 for i in range(1, 4)]
 
-        result = text_ingestion_service.set_chunk_embeddings([c.id for c in chunks], embeddings)
+        result = text_ingestion_service.set_chunk_embeddings(chunk_ids, embeddings)
 
         assert result == 3
 
-        for c in chunks:
-            db_session.delete(db_session.get(Chunk, c.id))
+        for cid in chunk_ids:
+            db_session.delete(db_session.get(Chunk, cid))
         db_session.commit()
 
     def test_set_query_embeddings_length_mismatch(self, text_ingestion_service: TextDataIngestionService):
@@ -426,30 +472,30 @@ class TestEmbedding:
         self, text_ingestion_service: TextDataIngestionService, db_session: Session
     ):
         """Test that set_query_embeddings only updates existing queries."""
-        query = text_ingestion_service.add_query("Existing query")
+        query_id = text_ingestion_service.add_query("Existing query")
         embeddings = [[0.1] * 768, [0.2] * 768]
 
         # One valid query ID and one invalid
-        result = text_ingestion_service.set_query_embeddings([query.id, 999999], embeddings)
+        result = text_ingestion_service.set_query_embeddings([query_id, 999999], embeddings)
 
         assert result == 1  # Only one query was updated
 
-        db_session.delete(db_session.get(Query, query.id))
+        db_session.delete(db_session.get(Query, query_id))
         db_session.commit()
 
     def test_set_chunk_embeddings_partial_success(
         self, text_ingestion_service: TextDataIngestionService, db_session: Session
     ):
         """Test that set_chunk_embeddings only updates existing chunks."""
-        chunk = text_ingestion_service.add_chunk("Existing chunk")
+        chunk_id = text_ingestion_service.add_chunk("Existing chunk")
         embeddings = [[0.1] * 768, [0.2] * 768]
 
         # One valid chunk ID and one invalid
-        result = text_ingestion_service.set_chunk_embeddings([chunk.id, 999999], embeddings)
+        result = text_ingestion_service.set_chunk_embeddings([chunk_id, 999999], embeddings)
 
         assert result == 1  # Only one chunk was updated
 
-        db_session.delete(db_session.get(Chunk, chunk.id))
+        db_session.delete(db_session.get(Chunk, chunk_id))
         db_session.commit()
 
 
@@ -465,7 +511,6 @@ class TestGetStatistics:
         assert stats["chunks"]["total"] >= 6
 
 
-@pytest.mark.xdist_group("embed_tests")
 class TestEmbedAllQueries:
     """Tests for embed_all_queries using only existing seed data."""
 
@@ -495,7 +540,6 @@ class TestEmbedAllQueries:
         db_session.commit()
 
 
-@pytest.mark.xdist_group("embed_tests")
 class TestEmbedAllChunks:
     """Tests for embed_all_chunks using only existing seed data."""
 

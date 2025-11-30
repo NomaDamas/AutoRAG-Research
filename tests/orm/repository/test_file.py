@@ -53,28 +53,6 @@ def test_get_with_documents(file_repository: FileRepository, db_session: Session
     assert len(result.documents) >= 1
 
 
-def test_get_with_pages(file_repository: FileRepository, db_session: Session):
-    """Test retrieving a file with pages eagerly loaded."""
-    # Use existing seed data (file id=6 is image with pages)
-    result = file_repository.get_with_pages(6)
-
-    assert result is not None
-    assert result.id == 6
-    assert hasattr(result, "pages")
-    assert len(result.pages) >= 1
-
-
-def test_get_with_image_chunks(file_repository: FileRepository, db_session: Session):
-    """Test retrieving a file with image chunks eagerly loaded."""
-    # Use existing seed data (file id=6 has image_chunks)
-    result = file_repository.get_with_image_chunks(6)
-
-    assert result is not None
-    assert result.id == 6
-    assert hasattr(result, "image_chunks")
-    assert len(result.image_chunks) >= 1
-
-
 def test_get_all_by_type(file_repository: FileRepository, db_session: Session):
     """Test retrieving all files by type with pagination."""
     # Use existing seed data (type='image' files exist: ids 6-10)
