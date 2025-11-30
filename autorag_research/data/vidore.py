@@ -101,15 +101,15 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
 
     def ingest(self, subset: Literal["train", "dev", "test"] = "test"):
         super().ingest(subset)
-        image_list = list(self.ds["image"])
-        queries = list(self.ds["query"])
-        options = ["\n".join(ast.literal_eval(opt)) for opt in list(self.ds["options"])]
+        image_list = list(self.ds["image"])  # ty: ignore[invalid-argument-type]
+        queries = list(self.ds["query"])  # ty: ignore[invalid-argument-type]
+        options = ["\n".join(ast.literal_eval(opt)) for opt in list(self.ds["options"])]  # ty: ignore[invalid-argument-type]
         queries = [
             f"Given the following query and options, select the correct option.\n\nQuery: {q}\n\nOptions: {opts}"
             for q, opts in zip(queries, options, strict=True)
         ]
 
-        answers = list(self.ds["answer"])
+        answers = list(self.ds["answer"])  # ty: ignore[invalid-argument-type]
 
         if not (len(image_list) == len(queries) == len(answers)):
             raise ValueError("Length mismatch among image_list, queries, and answers.")  # noqa: TRY003
