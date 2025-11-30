@@ -7,7 +7,7 @@ from llama_index.core.embeddings import MultiModalEmbedding
 from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
-from autorag_research.exceptions import EmbeddingNotSetError, UnsupportedDataSubsetError
+from autorag_research.exceptions import EmbeddingNotSetError, InvalidDatasetNameError, UnsupportedDataSubsetError
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 
 ViDoReDatasets = [
@@ -34,6 +34,8 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
     ):
         super().__init__(multi_modal_data_ingestion_service, embedding_model, late_interaction_embedding_model)
         self.ds = load_dataset(f"vidore/{dataset_name}")["test"]
+        if dataset_name not in ViDoReDatasets:
+            raise InvalidDatasetNameError(dataset_name)
 
     def ingest(self, subset: Literal["train", "dev", "test"] = "test"):
         if subset != "test":
