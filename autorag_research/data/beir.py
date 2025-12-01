@@ -150,9 +150,9 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
             if not gt_ids:
                 continue
             if self.dataset_name == "hotpotqa":
-                self.service.add_retrieval_gt_multihop(int_qid, [[gt_id] for gt_id in gt_ids])
+                self.service.add_retrieval_gt_multihop(int_qid, [[("chunk", gt_id)] for gt_id in gt_ids])
             else:
-                self.service.add_retrieval_gt_simple(int_qid, gt_ids)
+                self.service.add_retrieval_gt_multihop(int_qid, [[("chunk", gt_id) for gt_id in gt_ids]])
 
         self.service.clean()
 

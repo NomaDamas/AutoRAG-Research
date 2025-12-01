@@ -71,6 +71,15 @@ class BaseIngestionService(ABC):
         """
         ...
 
+    @abstractmethod
+    def _get_schema_classes(self) -> dict[str, Any]:
+        """Get schema classes from the schema namespace.
+
+        Returns:
+            Dictionary mapping class names to ORM classes.
+        """
+        ...
+
     # ==================== Embedding Operations ====================
 
     def _set_embeddings(
@@ -309,3 +318,123 @@ class BaseIngestionService(ABC):
             Total number of chunks successfully embedded.
         """
         return self._embed_entities("chunk", "single", embed_func, batch_size, max_concurrency)
+
+        # ==================== Retrieval Ground Truth Operations ====================
+
+    def add_retrieval_gt_batch(self, relations: list[dict]) -> list[tuple[int, int, int]]:
+        """Batch add retrieval ground truth relations with explicit indices.
+
+        Each relation must have exactly one of chunk_id or image_chunk_id.
+
+        Args:
+            relations: List of dicts with keys:
+                      - query_id (int) - required
+                      - chunk_id (int | None) - FK to Chunk (mutually exclusive with image_chunk_id)
+                      - image_chunk_id (int | None) - FK to ImageChunk (mutually exclusive with chunk_id)
+                      - group_index (int) - required
+                      - group_order (int) - required
+
+        Returns:
+            List of created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
+
+        Raises:
+            ValueError: If both or neither of chunk_id/image_chunk_id are provided.
+        """
+        classes = self._get_schema_classes()
+        RetrievalRelation = classes["RetrievalRelation"]
+
+        # Validate mutual exclusivity
+        for rel in relations:
+            chunk_id = rel.get("chunk_id")
+            image_chunk_id = rel.get("image_chunk_id")
+            if (chunk_id is None) == (image_chunk_id is None):
+                raise ValueError("Exactly one of chunk_id or image_chunk_id must be provided for each relation")  # noqa: TRY003
+
+        with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
+            relation_entities = [
+                RetrievalRelation(
+                    query_id=rel["query_id"],
+                    chunk_id=rel.get("chunk_id"),
+                    image_chunk_id=rel.get("image_chunk_id"),
+                    group_index=rel["group_index"],
+                    group_order=rel["group_order"],
+                )
+                for rel in relations
+            ]
+            uow.retrieval_relations.add_all(relation_entities)
+            uow.flush()
+            pks = [(r.query_id, r.group_index, r.group_order) for r in relation_entities]
+            uow.commit()
+            return pks
+
+    def add_retrieval_gt_multihop(
+        self,
+        query_id: int,
+        groups: list[list[tuple[str, int]]],
+    ) -> list[tuple[int, int, int]]:
+        """Add mixed multi-hop retrieval ground truth (text and image chunks in same chain).
+
+        Each group represents a "hop" in the retrieval chain. Items within each group
+        can be either text chunks or image chunks.
+
+        Args:
+            query_id: The query ID.
+            groups: List of groups, where each group is a list of (type, id) tuples.
+                   type: "chunk" for text chunks, "image_chunk" for image chunks.
+                   id: The chunk ID or image chunk ID.
+
+                   Example:
+                   [
+                       [("chunk", 1), ("chunk", 2)],       # First hop: text chunks
+                       [("image_chunk", 1)],               # Second hop: image chunk
+                       [("chunk", 3), ("image_chunk", 2)], # Third hop: mixed
+                   ]
+
+        Returns:
+            List of created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
+
+        Raises:
+            ValueError: If type is not "chunk" or "image_chunk".
+        """
+        classes = self._get_schema_classes()
+        RetrievalRelation = classes["RetrievalRelation"]
+
+        with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
+
+            # Get current max group index for this query
+            max_group_idx = uow.retrieval_relations.get_max_group_index(query_id)
+            start_group_idx = (max_group_idx or -1) + 1
+
+            all_relations = []
+            for group_offset, group_items in enumerate(groups):
+                group_index = start_group_idx + group_offset
+                for order, (item_type, item_id) in enumerate(group_items):
+                    if item_type == "chunk":
+                        relation = RetrievalRelation(
+                            query_id=query_id,
+                            chunk_id=item_id,
+                            image_chunk_id=None,
+                            group_index=group_index,
+                            group_order=order,
+                        )
+                    elif item_type == "image_chunk":
+                        relation = RetrievalRelation(
+                            query_id=query_id,
+                            chunk_id=None,
+                            image_chunk_id=item_id,
+                            group_index=group_index,
+                            group_order=order,
+                        )
+                    else:
+                        raise ValueError(f"Invalid item type: {item_type}. Must be 'chunk' or 'image_chunk'.")  # noqa: TRY003
+                    all_relations.append(relation)
+
+            uow.retrieval_relations.add_all(all_relations)
+            uow.flush()
+            pks = [(r.query_id, r.group_index, r.group_order) for r in all_relations]
+            uow.commit()
+            return pks

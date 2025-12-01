@@ -294,7 +294,7 @@ class TestAddRetrievalGTMultihopMixed:
             [("chunk", chunk_ids[0]), ("chunk", chunk_ids[1])],
             [("image_chunk", image_chunk_ids[0])],
         ]
-        relation_pks = multi_modal_service.add_retrieval_gt_multihop_mixed(query_ids[0], groups)
+        relation_pks = multi_modal_service.add_retrieval_gt_multihop(query_ids[0], groups)
 
         assert len(relation_pks) == 3
 
@@ -328,7 +328,7 @@ class TestAddRetrievalGTMultihopMixed:
         query_ids = multi_modal_service.add_queries([("Query for invalid type", None)])
 
         with pytest.raises(ValueError, match="Invalid item type"):
-            multi_modal_service.add_retrieval_gt_multihop_mixed(query_ids[0], [[("invalid_type", 1)]])
+            multi_modal_service.add_retrieval_gt_multihop(query_ids[0], [[("invalid_type", 1)]])
 
         db_session.delete(db_session.get(Query, query_ids[0]))
         db_session.commit()

@@ -4,16 +4,14 @@ Provides service layer for ingesting text-based data including queries,
 chunks, and retrieval ground truth relations with embedding support.
 """
 
-from typing import Any
 import logging
+from typing import Any
 
 from autorag_research.exceptions import SessionNotSetError
 from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
 from autorag_research.orm.service.base_ingestion import BaseIngestionService
 
-
 logger = logging.getLogger("AutoRAG-Research")
-
 
 
 class TextDataIngestionService(BaseIngestionService):
@@ -346,143 +344,6 @@ class TextDataIngestionService(BaseIngestionService):
             return uow.chunks.get_by_contents_exact(contents)
 
     # ==================== Retrieval GT Operations ====================
-
-    def add_retrieval_gt(
-        self,
-        query_id: int,
-        chunk_id: int,
-        group_index: int | None = None,
-        group_order: int | None = None,
-    ) -> tuple[int, int, int]:
-        """Add a single retrieval ground truth relation.
-
-        For non-multi-hop scenarios, group_index defaults to 0 and
-        group_order auto-increments based on existing relations.
-
-        Args:
-            query_id: The query ID.
-            chunk_id: The chunk ID (text chunk, not image chunk).
-            group_index: Optional group index (for multi-hop, different groups).
-            group_order: Optional order within group.
-
-        Returns:
-            The created RetrievalRelation PK as (query_id, group_index, group_order) tuple.
-        """
-        _, _, RetrievalRelation = self._get_schema_classes()
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            # If group_index not provided, default to 0 (single-hop)
-            if group_index is None:
-                group_index = 0
-
-            # If group_order not provided, auto-increment
-            if group_order is None:
-                max_order = uow.retrieval_relations.get_max_group_order(query_id, group_index)
-                group_order = (max_order or -1) + 1
-
-            relation = RetrievalRelation(
-                query_id=query_id,
-                chunk_id=chunk_id,
-                group_index=group_index,
-                group_order=group_order,
-            )
-            uow.retrieval_relations.add(relation)
-            uow.flush()
-            pk = (relation.query_id, relation.group_index, relation.group_order)
-            uow.commit()
-            return pk
-
-    def add_retrieval_gt_simple(
-        self,
-        query_id: int,
-        chunk_ids: list[int],
-    ) -> list[tuple[int, int, int]]:
-        """Add multiple retrieval GTs for a query (non-multi-hop).
-
-        All chunks are added to the same group (group_index=0) with
-        incrementing group_order values. Use this when multi-hop
-        is NOT needed.
-
-        Args:
-            query_id: The query ID.
-            chunk_ids: List of chunk IDs.
-
-        Returns:
-            List of created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
-        """
-        _, _, RetrievalRelation = self._get_schema_classes()
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            # Get current max order for group 0
-            max_order = uow.retrieval_relations.get_max_group_order(query_id, 0)
-            start_order = (max_order or -1) + 1
-
-            relations = [
-                RetrievalRelation(
-                    query_id=query_id,
-                    chunk_id=chunk_id,
-                    group_index=0,
-                    group_order=start_order + i,
-                )
-                for i, chunk_id in enumerate(chunk_ids)
-            ]
-            uow.retrieval_relations.add_all(relations)
-            uow.flush()
-            pks = [(r.query_id, r.group_index, r.group_order) for r in relations]
-            uow.commit()
-            return pks
-
-    def add_retrieval_gt_multihop(
-        self,
-        query_id: int,
-        chunk_groups: list[list[int]],
-    ) -> list[tuple[int, int, int]]:
-        """Add multiple retrieval GTs for a query with multi-hop support.
-
-        Each inner list represents a separate "hop" or alternative path.
-        Chunks in different groups have different group_index values.
-
-        For example:
-        - [[1, 2], [3, 4]] means:
-          - Group 0: chunks 1, 2 (first hop)
-          - Group 1: chunks 3, 4 (second hop)
-
-        Args:
-            query_id: The query ID.
-            chunk_groups: List of lists of chunk IDs.
-                         Each inner list is a separate group.
-
-        Returns:
-            List of all created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
-        """
-        _, _, RetrievalRelation = self._get_schema_classes()
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            # Get current max group index
-            max_group_idx = uow.retrieval_relations.get_max_group_index(query_id)
-            start_group_idx = (max_group_idx or -1) + 1
-
-            all_relations = []
-            for group_offset, chunk_ids in enumerate(chunk_groups):
-                group_index = start_group_idx + group_offset
-                for order, chunk_id in enumerate(chunk_ids):
-                    relation = RetrievalRelation(
-                        query_id=query_id,
-                        chunk_id=chunk_id,
-                        group_index=group_index,
-                        group_order=order,
-                    )
-                    all_relations.append(relation)
-
-            uow.retrieval_relations.add_all(all_relations)
-            uow.flush()
-            pks = [(r.query_id, r.group_index, r.group_order) for r in all_relations]
-            uow.commit()
-            return pks
-
     def get_retrieval_gt_by_query(self, query_id: int) -> list[Any]:
         """Get all retrieval ground truth relations for a query.
 
@@ -494,50 +355,6 @@ class TextDataIngestionService(BaseIngestionService):
         """
         with self._create_uow() as uow:
             return uow.retrieval_relations.get_by_query_id(query_id)
-
-    # ==================== Embedding Operations ====================
-
-    def set_query_embedding(self, query_id: int, embedding: list[float]) -> bool:
-        """Set the embedding for a single query.
-
-        Args:
-            query_id: The query ID to set embedding for.
-            embedding: The pre-computed embedding vector.
-
-        Returns:
-            True if the query was found and updated, False otherwise.
-        """
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            query = uow.queries.get_by_id(query_id)
-            if query is None:
-                return False
-
-            query.embedding = embedding
-            uow.commit()
-            return True
-
-    def set_chunk_embedding(self, chunk_id: int, embedding: list[float]) -> bool:
-        """Set the embedding for a single chunk.
-
-        Args:
-            chunk_id: The chunk ID to set embedding for.
-            embedding: The pre-computed embedding vector.
-
-        Returns:
-            True if the chunk was found and updated, False otherwise.
-        """
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            chunk = uow.chunks.get_by_id(chunk_id)
-            if chunk is None:
-                return False
-
-            chunk.embedding = embedding
-            uow.commit()
-            return True
 
     # ==================== Cleaning Operations ====================
 
@@ -652,7 +469,7 @@ class TextDataIngestionService(BaseIngestionService):
 
             # Count queries/chunks with embeddings
             # queries_with_emb = len(uow.queries.get_all(limit=None))  # TODO: add count method
-            chunks_with_emb = len(uow.chunks.get_chunks_with_embeddings())
+            chunks_with_emb = len(uow.chunks.get_with_embeddings())
             chunks_without_emb = len(uow.chunks.get_without_embeddings())
 
             return {
