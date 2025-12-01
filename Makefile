@@ -54,7 +54,7 @@ test: docker-up docker-wait ## Test the code with pytest
 # 테스트만 실행 (컨테이너는 유지)
 test-only: ## Run tests without managing Docker containers
 	@echo "🚀 Testing code: Running pytest"
-	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -n auto -m "not gpu and not data" --dist=loadgroup
+	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -m "not gpu and not data"
 
 .PHONY: build
 build: clean-build ## Build wheel file
