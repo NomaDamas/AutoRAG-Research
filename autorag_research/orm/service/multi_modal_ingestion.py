@@ -4,17 +4,16 @@ Provides service layer for ingesting multi-modal data including files, documents
 pages, captions, chunks, image chunks, queries, and retrieval ground truth relations.
 """
 
-import asyncio
 import logging
-from collections.abc import Awaitable, Callable
 
 from autorag_research.exceptions import LengthMismatchError, SessionNotSetError
 from autorag_research.orm.repository.multi_modal_uow import MultiModalUnitOfWork
-from autorag_research.orm.service.base_ingestion import BaseIngestionService
-
-# Type alias for image embedding function
-# Takes image bytes (content) and returns embedding vector
-ImageEmbeddingFunc = Callable[[bytes], Awaitable[list[float]]]
+from autorag_research.orm.service.base_ingestion import (
+    BaseIngestionService,
+    ImageEmbeddingFunc,
+    ImageMultiVectorEmbeddingFunc,
+    TextMultiVectorEmbeddingFunc,
+)
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -468,6 +467,40 @@ class MultiModalIngestionService(BaseIngestionService):
 
         return total_updated
 
+    def set_image_chunk_multi_vector_embeddings(
+        self,
+        image_chunk_ids: list[int],
+        embeddings: list[list[list[float]]],
+    ) -> int:
+        """Batch set multi-vector embeddings for image chunks.
+
+        Args:
+            image_chunk_ids: List of image chunk IDs.
+            embeddings: List of multi-vector embeddings (list of list of floats per image chunk).
+
+        Returns:
+            Total number of image chunks successfully updated.
+
+        Raises:
+            LengthMismatchError: If image_chunk_ids and embeddings have different lengths.
+        """
+        if len(image_chunk_ids) != len(embeddings):
+            raise LengthMismatchError("image_chunk_ids", "embeddings")
+
+        total_updated = 0
+
+        with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
+            for image_chunk_id, embedding in zip(image_chunk_ids, embeddings, strict=True):
+                image_chunk = uow.image_chunks.get_by_id(image_chunk_id)
+                if image_chunk:
+                    image_chunk.embeddings = embedding
+                    total_updated += 1
+            uow.commit()
+
+        return total_updated
+
     # ==================== Async Batch Embedding Operations ====================
 
     def embed_all_image_chunks(
@@ -478,8 +511,6 @@ class MultiModalIngestionService(BaseIngestionService):
     ) -> int:
         """Embed all image chunks that don't have embeddings.
 
-        Processes image chunks in batches with concurrent embedding calls.
-
         Args:
             embed_func: Async function that takes image bytes and returns embedding vector.
             batch_size: Number of image chunks to process per batch.
@@ -488,64 +519,43 @@ class MultiModalIngestionService(BaseIngestionService):
         Returns:
             Total number of image chunks successfully embedded.
         """
-        total_embedded = 0
+        return self._embed_entities("image_chunk", "single", embed_func, batch_size, max_concurrency)
 
-        while True:
-            with self._create_uow() as uow:
-                image_chunks = uow.image_chunks.get_image_chunks_without_embeddings(limit=batch_size)
-                if not image_chunks:
-                    break
-                # Get image content directly from each image chunk
-                items_to_embed = [(ic.id, ic.content) for ic in image_chunks]
-
-            # Filter out items without valid content
-            valid_items = [(item_id, content) for item_id, content in items_to_embed if content is not None]
-
-            if not valid_items:
-                break
-
-            embeddings = asyncio.run(self._embed_image_batch(valid_items, embed_func, max_concurrency))
-
-            with self._create_uow() as uow:
-                if uow.session is None:
-                    raise SessionNotSetError
-                for (item_id, _), embedding in zip(valid_items, embeddings, strict=True):
-                    image_chunk = uow.image_chunks.get_by_id(item_id)
-                    if image_chunk and embedding is not None:
-                        image_chunk.embedding = embedding
-                        total_embedded += 1
-                uow.commit()
-
-        return total_embedded
-
-    @staticmethod
-    async def _embed_image_batch(
-        items: list[tuple[int, bytes]],
-        embed_func: ImageEmbeddingFunc,
-        max_concurrency: int,
-    ) -> list[list[float] | None]:
-        """Embed a batch of image items with concurrency control.
+    def embed_all_queries_multi_vector(
+        self,
+        embed_func: TextMultiVectorEmbeddingFunc,
+        batch_size: int = 100,
+        max_concurrency: int = 10,
+    ) -> int:
+        """Embed all queries that don't have multi-vector embeddings.
 
         Args:
-            items: List of (id, image_content) tuples.
-            embed_func: Async function that takes image bytes and returns embedding.
-            max_concurrency: Maximum concurrent calls.
+            embed_func: Async function that takes query text and returns multi-vector embedding.
+            batch_size: Number of queries to process per batch.
+            max_concurrency: Maximum concurrent embedding calls.
 
         Returns:
-            List of embeddings (or None if failed) in same order as items.
+            Total number of queries successfully embedded.
         """
-        semaphore = asyncio.Semaphore(max_concurrency)
+        return self._embed_entities("query", "multi_vector", embed_func, batch_size, max_concurrency)
 
-        async def embed_with_semaphore(image_content: bytes) -> list[float] | None:
-            async with semaphore:
-                try:
-                    return await embed_func(image_content)
-                except Exception:
-                    logger.exception("Failed to embed image")
-                    return None
+    def embed_all_image_chunks_multi_vector(
+        self,
+        embed_func: ImageMultiVectorEmbeddingFunc,
+        batch_size: int = 100,
+        max_concurrency: int = 10,
+    ) -> int:
+        """Embed all image chunks that don't have multi-vector embeddings.
 
-        tasks = [embed_with_semaphore(content) for _, content in items]
-        return await asyncio.gather(*tasks)
+        Args:
+            embed_func: Async function that takes image bytes and returns multi-vector embedding.
+            batch_size: Number of image chunks to process per batch.
+            max_concurrency: Maximum concurrent embedding calls.
+
+        Returns:
+            Total number of image chunks successfully embedded.
+        """
+        return self._embed_entities("image_chunk", "multi_vector", embed_func, batch_size, max_concurrency)
 
     # ==================== Convenience Methods ====================
 
@@ -669,7 +679,7 @@ class MultiModalIngestionService(BaseIngestionService):
 
             # Embedding status
             chunks_with_emb = len(uow.chunks.get_chunks_with_embeddings())
-            chunks_without_emb = len(uow.chunks.get_chunks_without_embeddings())
+            chunks_without_emb = len(uow.chunks.get_without_embeddings())
             image_chunks_with_emb = len(uow.image_chunks.get_image_chunks_with_embeddings())
             image_chunks_without_emb = len(uow.image_chunks.get_image_chunks_without_embeddings())
 

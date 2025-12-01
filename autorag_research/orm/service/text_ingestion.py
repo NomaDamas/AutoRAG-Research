@@ -549,7 +549,7 @@ class TextDataIngestionService(BaseIngestionService):
             # Count queries/chunks with embeddings
             # queries_with_emb = len(uow.queries.get_all(limit=None))  # TODO: add count method
             chunks_with_emb = len(uow.chunks.get_chunks_with_embeddings())
-            chunks_without_emb = len(uow.chunks.get_chunks_without_embeddings())
+            chunks_without_emb = len(uow.chunks.get_without_embeddings())
 
             return {
                 "queries": {

@@ -8,15 +8,34 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.exceptions import LengthMismatchError, SessionNotSetError
+from autorag_research.exceptions import LengthMismatchError, RepositoryNotSupportedError, SessionNotSetError
+from autorag_research.util import run_with_concurrency_limit
 
-EmbeddingFunc = Callable[[str], Awaitable[list[float]]]
+# Type alias for embedding functions
+# Single-vector embedding functions
+ImageEmbeddingFunc = Callable[[bytes], Awaitable[list[float]]]
+TextEmbeddingFunc = Callable[[str], Awaitable[list[float]]]
+# Multi-vector embedding functions (for late interaction models like ColPali)
+ImageMultiVectorEmbeddingFunc = Callable[[bytes], Awaitable[list[list[float]]]]
+TextMultiVectorEmbeddingFunc = Callable[[str], Awaitable[list[list[float]]]]
+
+# Literal types for entity and embedding types
+EntityType = Literal["query", "chunk", "image_chunk"]
+EmbeddingType = Literal["single", "multi_vector"]
 
 logger = logging.getLogger("AutoRAG-Research")
+
+# Entity configuration for _embed_entities method
+# Maps entity_type to (repository_attr, data_attr, display_name, filter_none)
+ENTITY_CONFIG: dict[str, tuple[str, str, str, bool]] = {
+    "query": ("queries", "query", "queries", False),
+    "chunk": ("chunks", "contents", "chunks", False),
+    "image_chunk": ("image_chunks", "content", "image chunks", True),
+}
 
 
 class BaseIngestionService(ABC):
@@ -88,6 +107,40 @@ class BaseIngestionService(ABC):
 
         return total_updated
 
+    def set_query_multi_vector_embeddings(
+        self,
+        query_ids: list[int],
+        embeddings: list[list[list[float]]],
+    ) -> int:
+        """Batch set multi-vector embeddings for queries.
+
+        Args:
+            query_ids: List of query IDs.
+            embeddings: List of multi-vector embeddings (list of list of floats per query).
+
+        Returns:
+            Total number of queries successfully updated.
+
+        Raises:
+            LengthMismatchError: If query_ids and embeddings have different lengths.
+        """
+        if len(query_ids) != len(embeddings):
+            raise LengthMismatchError("query_ids", "embeddings")
+
+        total_updated = 0
+
+        with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
+            for query_id, embedding in zip(query_ids, embeddings, strict=True):
+                query = uow.queries.get_by_id(query_id)
+                if query:
+                    query.embeddings = embedding
+                    total_updated += 1
+            uow.commit()
+
+        return total_updated
+
     def set_chunk_embeddings(
         self,
         chunk_ids: list[int],
@@ -124,15 +177,101 @@ class BaseIngestionService(ABC):
 
     # ==================== Batch Embedding Operations ====================
 
+    def _embed_entities(
+        self,
+        entity_type: EntityType,
+        embedding_type: EmbeddingType,
+        embed_func: ImageEmbeddingFunc
+        | TextEmbeddingFunc
+        | ImageMultiVectorEmbeddingFunc
+        | TextMultiVectorEmbeddingFunc,
+        batch_size: int,
+        max_concurrency: int,
+    ) -> int:
+        """Generic method to embed entities (queries, chunks, or image chunks) with single or multi-vector embeddings.
+
+        Args:
+            entity_type: Type of entity to embed ("query", "chunk", or "image_chunk").
+            embedding_type: Type of embedding ("single" or "multi_vector").
+            embed_func: Async function that takes data and returns embedding.
+            batch_size: Number of entities to process per batch.
+            max_concurrency: Maximum concurrent embedding calls.
+
+        Returns:
+            Total number of entities successfully embedded.
+
+        Raises:
+            RepositoryNotSupportedError: If the required repository is not available in the UoW.
+        """
+        # Get entity configuration from dictionary
+        repo_attr, data_attr, display_name, filter_none = ENTITY_CONFIG[entity_type]
+        fetch_method_name = "get_without_embeddings" if embedding_type == "single" else "get_without_multi_embeddings"
+        is_multi_vector = embedding_type == "multi_vector"
+
+        # Determine log/error messages
+        embedding_suffix = " with multi-vector" if is_multi_vector else ""
+        is_image = entity_type == "image_chunk"
+        error_msg = f"Failed to embed {'image' if is_image else 'text'}{embedding_suffix}"
+
+        total_embedded = 0
+
+        while True:
+            # Fetch entities without embeddings
+            with self._create_uow() as uow:
+                # Check if repository exists
+                repository = getattr(uow, repo_attr, None)
+                if repository is None:
+                    raise RepositoryNotSupportedError(repo_attr, type(uow).__name__)
+
+                # Get fetch method and call it
+                fetch_method = getattr(repository, fetch_method_name)
+                entities = fetch_method(limit=batch_size)
+                if not entities:
+                    break
+
+                # Extract (id, data) pairs using data_attr
+                items_to_embed = [(e.id, getattr(e, data_attr)) for e in entities]
+
+            # Filter None content if required (for image chunks)
+            if filter_none:
+                valid_items = [(item_id, data) for item_id, data in items_to_embed if data is not None]
+                if not valid_items:
+                    break
+            else:
+                valid_items = items_to_embed
+
+            # Run embedding
+            data_list = [data for _, data in valid_items]
+            embeddings = asyncio.run(run_with_concurrency_limit(data_list, embed_func, max_concurrency, error_msg))
+
+            # Update entities with embeddings
+            with self._create_uow() as uow:
+                if uow.session is None:
+                    raise SessionNotSetError
+
+                repository = getattr(uow, repo_attr)
+                for (item_id, _), embedding in zip(valid_items, embeddings, strict=True):
+                    entity = repository.get_by_id(item_id)
+                    if entity and embedding is not None:
+                        if is_multi_vector:
+                            entity.embeddings = embedding
+                        else:
+                            entity.embedding = embedding
+                        total_embedded += 1
+                uow.commit()
+
+            logger.info(f"Embedded {total_embedded} {display_name}{embedding_suffix} so far")
+
+        logger.info(f"Total {display_name} embedded{embedding_suffix}: {total_embedded}")
+        return total_embedded
+
     def embed_all_queries(
         self,
-        embed_func: EmbeddingFunc,
+        embed_func: TextEmbeddingFunc,
         batch_size: int = 100,
         max_concurrency: int = 10,
     ) -> int:
         """Embed all queries that don't have embeddings.
-
-        Processes queries in batches with concurrent embedding calls.
 
         Args:
             embed_func: Async function that takes query text and returns embedding vector.
@@ -142,38 +281,15 @@ class BaseIngestionService(ABC):
         Returns:
             Total number of queries successfully embedded.
         """
-        total_embedded = 0
-
-        while True:
-            with self._create_uow() as uow:
-                queries = uow.queries.get_queries_without_embeddings(limit=batch_size)
-                if not queries:
-                    break
-                items_to_embed = [(q.id, q.query) for q in queries]
-
-            embeddings = asyncio.run(self._embed_text_batch(items_to_embed, embed_func, max_concurrency))
-
-            with self._create_uow() as uow:
-                if uow.session is None:
-                    raise SessionNotSetError
-                for (item_id, _), embedding in zip(items_to_embed, embeddings, strict=True):
-                    query = uow.queries.get_by_id(item_id)
-                    if query and embedding is not None:
-                        query.embedding = embedding
-                        total_embedded += 1
-                uow.commit()
-
-        return total_embedded
+        return self._embed_entities("query", "single", embed_func, batch_size, max_concurrency)
 
     def embed_all_chunks(
         self,
-        embed_func: EmbeddingFunc,
+        embed_func: TextEmbeddingFunc,
         batch_size: int = 100,
         max_concurrency: int = 10,
     ) -> int:
         """Embed all chunks that don't have embeddings.
-
-        Processes chunks in batches with concurrent embedding calls.
 
         Args:
             embed_func: Async function that takes chunk text and returns embedding vector.
@@ -183,54 +299,4 @@ class BaseIngestionService(ABC):
         Returns:
             Total number of chunks successfully embedded.
         """
-        total_embedded = 0
-
-        while True:
-            with self._create_uow() as uow:
-                chunks = uow.chunks.get_chunks_without_embeddings(limit=batch_size)
-                if not chunks:
-                    break
-                items_to_embed = [(c.id, c.contents) for c in chunks]
-
-            embeddings = asyncio.run(self._embed_text_batch(items_to_embed, embed_func, max_concurrency))
-
-            with self._create_uow() as uow:
-                if uow.session is None:
-                    raise SessionNotSetError
-                for (item_id, _), embedding in zip(items_to_embed, embeddings, strict=True):
-                    chunk = uow.chunks.get_by_id(item_id)
-                    if chunk and embedding is not None:
-                        chunk.embedding = embedding
-                        total_embedded += 1
-                uow.commit()
-
-        return total_embedded
-
-    @staticmethod
-    async def _embed_text_batch(
-        items: list[tuple[int, str]],
-        embed_func: EmbeddingFunc,
-        max_concurrency: int,
-    ) -> list[list[float] | None]:
-        """Embed a batch of text items with concurrency control.
-
-        Args:
-            items: List of (id, text) tuples.
-            embed_func: Async function that takes text and returns embedding.
-            max_concurrency: Maximum concurrent calls.
-
-        Returns:
-            List of embeddings (or None if failed) in same order as items.
-        """
-        semaphore = asyncio.Semaphore(max_concurrency)
-
-        async def embed_with_semaphore(text: str) -> list[float] | None:
-            async with semaphore:
-                try:
-                    return await embed_func(text)
-                except Exception:
-                    logger.exception(f"Failed to embed text: {text[:50]}...")
-                    return None
-
-        tasks = [embed_with_semaphore(text) for _, text in items]
-        return await asyncio.gather(*tasks)
+        return self._embed_entities("chunk", "single", embed_func, batch_size, max_concurrency)
