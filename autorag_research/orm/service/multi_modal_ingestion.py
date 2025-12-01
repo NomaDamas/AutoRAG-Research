@@ -6,13 +6,11 @@ pages, captions, chunks, image chunks, queries, and retrieval ground truth relat
 
 import logging
 
-from autorag_research.exceptions import SessionNotSetError
 from autorag_research.orm.repository.multi_modal_uow import MultiModalUnitOfWork
 from autorag_research.orm.service.base_ingestion import (
     BaseIngestionService,
     ImageEmbeddingFunc,
     ImageMultiVectorEmbeddingFunc,
-    TextMultiVectorEmbeddingFunc,
 )
 
 logger = logging.getLogger("AutoRAG-Research")
@@ -48,24 +46,11 @@ class MultiModalIngestionService(BaseIngestionService):
         with open("/path/to/image1.jpg", "rb") as f:
             image_bytes = f.read()
 
-        # Ingest image pages (convenience method)
-        # Images are stored directly in the database as BYTEA
-        results = service.ingest_image_pages(
-            document_id=1,
-            pages_data=[
-                (1, image_bytes, "image/jpeg", "Caption for page 1"),
-                (2, image_bytes, "image/jpeg", "Caption for page 2"),
-            ]
-        )
-
-        # Add mixed multi-hop retrieval ground truth
-        service.add_retrieval_gt_multihop_mixed(
-            query_id=1,
-            groups=[
-                [("chunk", 1), ("chunk", 2)],       # First hop: text chunks
-                [("image_chunk", 1)],               # Second hop: image chunk
-            ]
-        )
+        # Batch add files
+        file_ids = service.add_files([
+            {"path": "/path/to/image1.jpg", "file_type": "image"},
+            {"path": "/path/to/document1.pdf", "file_type": "raw"},
+        ])
         ```
     """
 
@@ -118,28 +103,17 @@ class MultiModalIngestionService(BaseIngestionService):
 
     # ==================== Batch Add Operations ====================
 
-    def add_files(self, files: list[tuple[str, str]]) -> list[int]:
+    def add_files(self, files: list[dict[str, str]]) -> list[int]:
         """Batch add files to the database.
 
         Args:
-            files: List of tuples (path, file_type).
+            files: List of dictionary (path, file_type).
                    file_type can be: "raw", "image", "audio", "video".
 
         Returns:
             List of created File IDs.
         """
-        classes = self._get_schema_classes()
-        File = classes["File"]
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            file_entities = [File(path=path, type=file_type) for path, file_type in files]
-            uow.files.add_all(file_entities)
-            uow.flush()
-            file_ids = [f.id for f in file_entities]
-            uow.commit()
-            return file_ids
+        return self._add(files, table_name="File", repository_property="files")
 
     def add_documents(self, documents: list[dict]) -> list[int]:
         """Batch add documents to the database.
@@ -155,27 +129,7 @@ class MultiModalIngestionService(BaseIngestionService):
         Returns:
             List of created Document IDs.
         """
-        classes = self._get_schema_classes()
-        Document = classes["Document"]
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            doc_entities = [
-                Document(
-                    filename=doc.get("filename"),
-                    title=doc.get("title"),
-                    author=doc.get("author"),
-                    filepath=doc.get("filepath_id"),
-                    doc_metadata=doc.get("metadata"),
-                )
-                for doc in documents
-            ]
-            uow.documents.add_all(doc_entities)
-            uow.flush()
-            doc_ids = [d.id for d in doc_entities]
-            uow.commit()
-            return doc_ids
+        return self._add(documents, table_name="Document", repository_property="documents")
 
     def add_pages(self, pages: list[dict]) -> list[int]:
         """Batch add pages to the database.
@@ -191,80 +145,28 @@ class MultiModalIngestionService(BaseIngestionService):
         Returns:
             List of created Page IDs.
         """
-        classes = self._get_schema_classes()
-        Page = classes["Page"]
+        return self._add(pages, table_name="Page", repository_property="pages")
 
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            page_entities = [
-                Page(
-                    document_id=page["document_id"],
-                    page_num=page["page_num"],
-                    image_content=page.get("image_content"),
-                    mimetype=page.get("mimetype"),
-                    page_metadata=page.get("metadata"),
-                )
-                for page in pages
-            ]
-            uow.pages.add_all(page_entities)
-            uow.flush()
-            page_ids = [p.id for p in page_entities]
-            uow.commit()
-            return page_ids
-
-    def add_captions(self, captions: list[tuple[int, str]]) -> list[int]:
+    def add_captions(self, captions: list[dict[str, int | str]]) -> list[int]:
         """Batch add captions to the database.
 
         Args:
-            captions: List of tuples (page_id, contents).
+            captions: List of dictionary with keys (page_id, contents).
 
         Returns:
             List of created Caption IDs.
         """
-        classes = self._get_schema_classes()
-        Caption = classes["Caption"]
+        return self._add(
+            captions,
+            table_name="Caption",
+            repository_property="captions",
+        )
 
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            caption_entities = [Caption(page_id=page_id, contents=contents) for page_id, contents in captions]
-            uow.captions.add_all(caption_entities)
-            uow.flush()
-            caption_ids = [c.id for c in caption_entities]
-            uow.commit()
-            return caption_ids
-
-    def add_chunks(self, chunks: list[tuple[str, int | None]]) -> list[int]:
-        """Batch add text chunks to the database.
-
-        Args:
-            chunks: List of tuples (contents, parent_caption_id).
-                   parent_caption_id can be None for standalone chunks.
-
-        Returns:
-            List of created Chunk IDs.
-        """
-        classes = self._get_schema_classes()
-        Chunk = classes["Chunk"]
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            chunk_entities = [
-                Chunk(contents=contents, parent_caption=parent_caption_id) for contents, parent_caption_id in chunks
-            ]
-            uow.chunks.add_all(chunk_entities)
-            uow.flush()
-            chunk_ids = [c.id for c in chunk_entities]
-            uow.commit()
-            return chunk_ids
-
-    def add_image_chunks(self, image_chunks: list[tuple[bytes, str, int | None]]) -> list[int]:
+    def add_image_chunks(self, image_chunks: list[dict[str, bytes | str | int | None]]) -> list[int]:
         """Batch add image chunks to the database.
 
         Args:
-            image_chunks: List of tuples (content, mimetype, parent_page_id).
+            image_chunks: List of dictionary (content, mimetype, parent_page_id).
                          content: Image binary data (required)
                          mimetype: Image MIME type e.g., "image/png" (required)
                          parent_page_id: FK to Page (optional)
@@ -272,44 +174,11 @@ class MultiModalIngestionService(BaseIngestionService):
         Returns:
             List of created ImageChunk IDs.
         """
-        classes = self._get_schema_classes()
-        ImageChunk = classes["ImageChunk"]
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            image_chunk_entities = [
-                ImageChunk(content=content, mimetype=mimetype, parent_page=parent_page_id)
-                for content, mimetype, parent_page_id in image_chunks
-            ]
-            uow.image_chunks.add_all(image_chunk_entities)
-            uow.flush()
-            image_chunk_ids = [ic.id for ic in image_chunk_entities]
-            uow.commit()
-            return image_chunk_ids
-
-    def add_queries(self, queries: list[tuple[str, list[str] | None]]) -> list[int]:
-        """Batch add queries to the database.
-
-        Args:
-            queries: List of tuples (query_text, generation_gt).
-                    generation_gt can be None.
-
-        Returns:
-            List of created Query IDs.
-        """
-        classes = self._get_schema_classes()
-        Query = classes["Query"]
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            query_entities = [Query(query=query_text, generation_gt=gen_gt) for query_text, gen_gt in queries]
-            uow.queries.add_all(query_entities)
-            uow.flush()
-            query_ids = [q.id for q in query_entities]
-            uow.commit()
-            return query_ids
+        return self._add(
+            image_chunks,
+            table_name="ImageChunk",
+            repository_property="image_chunks",
+        )
 
     # ==================== Embedding Operations ====================
 
@@ -371,24 +240,6 @@ class MultiModalIngestionService(BaseIngestionService):
         """
         return self._embed_entities("image_chunk", "single", embed_func, batch_size, max_concurrency)
 
-    def embed_all_queries_multi_vector(
-        self,
-        embed_func: TextMultiVectorEmbeddingFunc,
-        batch_size: int = 100,
-        max_concurrency: int = 10,
-    ) -> int:
-        """Embed all queries that don't have multi-vector embeddings.
-
-        Args:
-            embed_func: Async function that takes query text and returns multi-vector embedding.
-            batch_size: Number of queries to process per batch.
-            max_concurrency: Maximum concurrent embedding calls.
-
-        Returns:
-            Total number of queries successfully embedded.
-        """
-        return self._embed_entities("query", "multi_vector", embed_func, batch_size, max_concurrency)
-
     def embed_all_image_chunks_multi_vector(
         self,
         embed_func: ImageMultiVectorEmbeddingFunc,
@@ -406,108 +257,6 @@ class MultiModalIngestionService(BaseIngestionService):
             Total number of image chunks successfully embedded.
         """
         return self._embed_entities("image_chunk", "multi_vector", embed_func, batch_size, max_concurrency)
-
-    # ==================== Convenience Methods ====================
-
-    def ingest_image_pages(
-        self,
-        document_id: int,
-        pages_data: list[tuple[int, bytes, str, str]],
-    ) -> list[tuple[int, int, int]]:
-        """Batch ingest image pages with captions and image chunks.
-
-        Creates Page, Caption, and ImageChunk entities in a single transaction
-        for each page. Images are stored directly in the database as BYTEA.
-        This is a convenience method for common multi-modal ingestion.
-
-        Args:
-            document_id: The document ID to add pages to.
-            pages_data: List of tuples (page_num, image_content, mimetype, caption_text).
-                       - page_num: Page number
-                       - image_content: Image binary data
-                       - mimetype: Image MIME type (e.g., "image/png")
-                       - caption_text: Caption text for the page
-
-        Returns:
-            List of tuples (page_id, caption_id, image_chunk_id) for each page.
-        """
-        classes = self._get_schema_classes()
-        Page = classes["Page"]
-        Caption = classes["Caption"]
-        ImageChunk = classes["ImageChunk"]
-
-        results: list[tuple[int, int, int]] = []
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-
-            for page_num, image_content, mimetype, caption_text in pages_data:
-                # Create page with image content stored directly
-                page = Page(
-                    document_id=document_id,
-                    page_num=page_num,
-                    image_content=image_content,
-                    mimetype=mimetype,
-                )
-                uow.pages.add(page)
-                uow.flush()
-
-                # Create caption for the page
-                caption = Caption(page_id=page.id, contents=caption_text)
-                uow.captions.add(caption)
-                uow.flush()
-
-                # Create image chunk with image content stored directly
-                image_chunk = ImageChunk(
-                    content=image_content,
-                    mimetype=mimetype,
-                    parent_page=page.id,
-                )
-                uow.image_chunks.add(image_chunk)
-                uow.flush()
-
-                results.append((page.id, caption.id, image_chunk.id))
-
-            uow.commit()
-
-        return results
-
-    def get_or_create_files(
-        self,
-        files: list[tuple[str, str]],
-    ) -> list[tuple[int, bool]]:
-        """Get existing or create new files.
-
-        Args:
-            files: List of tuples (path, file_type).
-
-        Returns:
-            List of tuples (file_id, was_created) where was_created is True if
-            the file was created, False if it already existed.
-        """
-        classes = self._get_schema_classes()
-        File = classes["File"]
-
-        results: list[tuple[int, bool]] = []
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-
-            for path, file_type in files:
-                existing = uow.files.get_by_path(path)
-                if existing:
-                    results.append((existing.id, False))
-                else:
-                    new_file = File(path=path, type=file_type)
-                    uow.files.add(new_file)
-                    uow.flush()
-                    results.append((new_file.id, True))
-
-            uow.commit()
-
-        return results
 
     # ==================== Statistics ====================
 

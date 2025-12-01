@@ -6,13 +6,12 @@ query/chunk embedding operations with async batch processing.
 
 import asyncio
 import logging
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
-from sqlalchemy.orm import Session, sessionmaker
-
 from autorag_research.exceptions import LengthMismatchError, RepositoryNotSupportedError, SessionNotSetError
+from autorag_research.orm.service.base import BaseService
 from autorag_research.util import run_with_concurrency_limit
 
 # Type alias for embedding functions
@@ -38,7 +37,7 @@ ENTITY_CONFIG: dict[str, tuple[str, str, str, bool]] = {
 }
 
 
-class BaseIngestionService(ABC):
+class BaseIngestionService(BaseService, ABC):
     """Abstract base class for data ingestion services.
 
     Provides common functionality for:
@@ -49,36 +48,37 @@ class BaseIngestionService(ABC):
     - _create_uow() to return their specific UoW type
     """
 
-    def __init__(
-        self,
-        session_factory: sessionmaker[Session],
-        schema: Any | None = None,
-    ):
-        """Initialize the ingestion service.
+    def add_chunks(self, chunks: list[dict[str, str | int | None]]) -> list[int]:
+        """Batch add text chunks to the database.
 
         Args:
-            session_factory: SQLAlchemy sessionmaker for database connections.
-            schema: Schema namespace from create_schema(). If None, uses default 768-dim schema.
-        """
-        self.session_factory = session_factory
-        self._schema = schema
-
-    @abstractmethod
-    def _create_uow(self) -> Any:
-        """Create a new Unit of Work instance.
-
-        Subclasses must implement this to return their specific UoW type.
-        """
-        ...
-
-    @abstractmethod
-    def _get_schema_classes(self) -> dict[str, Any]:
-        """Get schema classes from the schema namespace.
+            chunks: List of dict (contents, parent_caption_id).
+                   parent_caption_id can be None for standalone chunks.
 
         Returns:
-            Dictionary mapping class names to ORM classes.
+            List of created Chunk IDs.
         """
-        ...
+        return self._add(
+            chunks,
+            table_name="Chunk",
+            repository_property="chunks",
+        )
+
+    def add_queries(self, queries: list[dict[str, str | list[str] | None]]) -> list[int]:
+        """Batch add queries to the database.
+
+        Args:
+            queries: List of dict (query_text, generation_gt).
+                    generation_gt can be None.
+
+        Returns:
+            List of created Query IDs.
+        """
+        return self._add(
+            queries,
+            table_name="Query",
+            repository_property="queries",
+        )
 
     # ==================== Embedding Operations ====================
 
@@ -301,6 +301,24 @@ class BaseIngestionService(ABC):
         """
         return self._embed_entities("query", "single", embed_func, batch_size, max_concurrency)
 
+    def embed_all_queries_multi_vector(
+        self,
+        embed_func: TextMultiVectorEmbeddingFunc,
+        batch_size: int = 100,
+        max_concurrency: int = 10,
+    ) -> int:
+        """Embed all queries that don't have multi-vector embeddings.
+
+        Args:
+            embed_func: Async function that takes query text and returns multi-vector embedding.
+            batch_size: Number of queries to process per batch.
+            max_concurrency: Maximum concurrent embedding calls.
+
+        Returns:
+            Total number of queries successfully embedded.
+        """
+        return self._embed_entities("query", "multi_vector", embed_func, batch_size, max_concurrency)
+
     def embed_all_chunks(
         self,
         embed_func: TextEmbeddingFunc,
@@ -319,12 +337,30 @@ class BaseIngestionService(ABC):
         """
         return self._embed_entities("chunk", "single", embed_func, batch_size, max_concurrency)
 
+    def embed_all_chunks_multi_vector(
+        self,
+        embed_func: TextMultiVectorEmbeddingFunc,
+        batch_size: int = 100,
+        max_concurrency: int = 10,
+    ) -> int:
+        """Embed all chunks that don't have multi-vector embeddings.
+
+        Args:
+            embed_func: Async function that takes chunk text and returns multi-vector embedding.
+            batch_size: Number of chunks to process per batch.
+            max_concurrency: Maximum concurrent embedding calls.
+
+        Returns:
+            Total number of chunks successfully embedded.
+        """
+        return self._embed_entities("chunk", "multi_vector", embed_func, batch_size, max_concurrency)
+
         # ==================== Retrieval Ground Truth Operations ====================
 
-    def add_retrieval_gt_batch(self, relations: list[dict]) -> list[tuple[int, int, int]]:
-        """Batch add retrieval ground truth relations with explicit indices.
+    def _insert_retrieval_relations(self, relations: list[dict]) -> list[tuple[int, int, int]]:
+        """Internal: Insert relation dicts into database.
 
-        Each relation must have exactly one of chunk_id or image_chunk_id.
+        This is the low-level insertion method used by all public APIs.
 
         Args:
             relations: List of dicts with keys:
@@ -369,72 +405,96 @@ class BaseIngestionService(ABC):
             uow.commit()
             return pks
 
-    def add_retrieval_gt_multihop(
+    # ==================== New Unified Retrieval GT API ====================
+    # Import types from retrieval_gt module for type hints
+    # These imports are done inside methods to avoid circular imports
+
+    def add_retrieval_gt(
         self,
         query_id: int,
-        groups: list[list[tuple[str, int]]],
+        gt: Any,
+        chunk_type: Literal["mixed", "text", "image"] = "mixed",
     ) -> list[tuple[int, int, int]]:
-        """Add mixed multi-hop retrieval ground truth (text and image chunks in same chain).
-
-        Each group represents a "hop" in the retrieval chain. Items within each group
-        can be either text chunks or image chunks.
+        """Add retrieval ground truth for a query.
 
         Args:
             query_id: The query ID.
-            groups: List of groups, where each group is a list of (type, id) tuples.
-                   type: "chunk" for text chunks, "image_chunk" for image chunks.
-                   id: The chunk ID or image chunk ID.
-
-                   Example:
-                   [
-                       [("chunk", 1), ("chunk", 2)],       # First hop: text chunks
-                       [("image_chunk", 1)],               # Second hop: image chunk
-                       [("chunk", 3), ("image_chunk", 2)], # Third hop: mixed
-                   ]
+            gt: Ground truth expression. Can be:
+                - Single int (for text/image mode): 42
+                - TextId/ImageId wrappers (for mixed mode): TextId(1), ImageId(2)
+                - Expressions with | (OR) and & (AND) operators
+                - Helper functions: or_all([1, 2, 3]) or and_all([1, 2, 3])
+            chunk_type: The chunk type mode:
+                - "mixed": Requires explicit TextId/ImageId wrappers
+                - "text": Plain ints are treated as text chunk IDs
+                - "image": Plain ints are treated as image chunk IDs
 
         Returns:
             List of created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
 
-        Raises:
-            ValueError: If type is not "chunk" or "image_chunk".
+        Examples:
+            from autorag_research.orm.models import TextId, ImageId, text, image, or_all, and_all
+
+            # Mixed mode (default) - requires explicit wrappers
+            service.add_retrieval_gt(query_id=1, gt=TextId(1) | TextId(2) | ImageId(3))
+
+            # Text mode - plain ints work
+            service.add_retrieval_gt(query_id=1, gt=10, chunk_type="text")
+            service.add_retrieval_gt(query_id=1, gt=or_all([1, 2, 3]), chunk_type="text")
+
+            # Image mode
+            service.add_retrieval_gt(query_id=1, gt=10, chunk_type="image")
+            service.add_retrieval_gt(query_id=1, gt=image(1) | image(2), chunk_type="image")
         """
-        classes = self._get_schema_classes()
-        RetrievalRelation = classes["RetrievalRelation"]
+        from autorag_research.orm.models.retrieval_gt import gt_to_relations, normalize_gt
 
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
+        normalized = normalize_gt(gt, chunk_type=chunk_type)
+        relations = gt_to_relations(query_id, normalized)
+        return self._insert_retrieval_relations(relations)
 
-            # Get current max group index for this query
-            max_group_idx = uow.retrieval_relations.get_max_group_index(query_id)
-            start_group_idx = (max_group_idx or -1) + 1
+    def add_retrieval_gt_batch(
+        self,
+        items: list[tuple[int, Any]],
+        chunk_type: Literal["mixed", "text", "image"] = "mixed",
+    ) -> list[tuple[int, int, int]]:
+        """Batch add retrieval ground truth for multiple queries.
 
-            all_relations = []
-            for group_offset, group_items in enumerate(groups):
-                group_index = start_group_idx + group_offset
-                for order, (item_type, item_id) in enumerate(group_items):
-                    if item_type == "chunk":
-                        relation = RetrievalRelation(
-                            query_id=query_id,
-                            chunk_id=item_id,
-                            image_chunk_id=None,
-                            group_index=group_index,
-                            group_order=order,
-                        )
-                    elif item_type == "image_chunk":
-                        relation = RetrievalRelation(
-                            query_id=query_id,
-                            chunk_id=None,
-                            image_chunk_id=item_id,
-                            group_index=group_index,
-                            group_order=order,
-                        )
-                    else:
-                        raise ValueError(f"Invalid item type: {item_type}. Must be 'chunk' or 'image_chunk'.")  # noqa: TRY003
-                    all_relations.append(relation)
+        Args:
+            items: List of (query_id, gt_expression) tuples.
+            chunk_type: The chunk type mode:
+                - "mixed": Requires explicit TextId/ImageId wrappers
+                - "text": Plain ints are treated as text chunk IDs
+                - "image": Plain ints are treated as image chunk IDs
 
-            uow.retrieval_relations.add_all(all_relations)
-            uow.flush()
-            pks = [(r.query_id, r.group_index, r.group_order) for r in all_relations]
-            uow.commit()
-            return pks
+        Returns:
+            List of created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
+
+        Examples:
+            from autorag_research.orm.models import TextId, ImageId, or_all, and_all
+
+            # Mixed mode (default)
+            service.add_retrieval_gt_batch([
+                (1, TextId(10)),
+                (2, TextId(1) | TextId(2)),
+            ])
+
+            # Text mode
+            service.add_retrieval_gt_batch([
+                (1, 10),
+                (2, or_all([20, 21, 22])),
+                (3, and_all([30, 31])),
+            ], chunk_type="text")
+
+            # Image mode
+            service.add_retrieval_gt_batch([
+                (1, 10),
+                (2, or_all([20, 21], image)),
+            ], chunk_type="image")
+        """
+        from autorag_research.orm.models.retrieval_gt import gt_to_relations, normalize_gt
+
+        all_relations = []
+        for query_id, gt in items:
+            normalized = normalize_gt(gt, chunk_type=chunk_type)
+            all_relations.extend(gt_to_relations(query_id, normalized))
+        return self._insert_retrieval_relations(all_relations)

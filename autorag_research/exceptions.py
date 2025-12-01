@@ -53,3 +53,10 @@ class RepositoryNotSupportedError(Exception):
 
     def __init__(self, repository_name: str, uow_type: str):
         super().__init__(f"Repository '{repository_name}' is not supported by '{uow_type}'.")
+
+
+class EmptyIterableError(Exception):
+    """Raised when an iterable is empty but should contain items."""
+
+    def __init__(self, iterable_name: str):
+        super().__init__(f"The iterable '{iterable_name}' is empty but should contain items.")

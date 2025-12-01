@@ -143,6 +143,8 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         self.service.add_chunks_simple(corpus_contents, corpus_ids)
 
         # Ingest qrels
+        from autorag_research.orm.models import and_all, or_all
+
         for qid, doc_dict in qrels.items():
             int_qid = int(qid)
             gt_ids = self.filter_valid_retrieval_gt_ids(doc_dict)
@@ -150,9 +152,11 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
             if not gt_ids:
                 continue
             if self.dataset_name == "hotpotqa":
-                self.service.add_retrieval_gt_multihop(int_qid, [[("chunk", gt_id)] for gt_id in gt_ids])
+                # Multi-hop: each document is a separate hop in the chain
+                self.service.add_retrieval_gt(int_qid, and_all(gt_ids), chunk_type="text")
             else:
-                self.service.add_retrieval_gt_multihop(int_qid, [[("chunk", gt_id) for gt_id in gt_ids]])
+                # Single-hop: all documents are OR alternatives (any is correct)
+                self.service.add_retrieval_gt(int_qid, or_all(gt_ids), chunk_type="text")
 
         self.service.clean()
 

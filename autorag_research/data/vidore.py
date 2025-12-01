@@ -91,17 +91,14 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
         )
 
     def ingest_qrels(self, query_pk_list: list[int], image_chunk_pk_list: list[int]) -> None:
-        qrels = [
-            {
-                "query_id": query_pk,
-                "chunk_id": None,
-                "image_chunk_id": image_chunk_pk,
-                "group_index": 0,
-                "group_order": 0,
-            }
-            for query_pk, image_chunk_pk in zip(query_pk_list, image_chunk_pk_list, strict=True)
-        ]
-        self.service.add_retrieval_gt_batch(qrels)
+        """Add retrieval ground truth for image chunks (1:1 query to image mapping)."""
+        self.service.add_retrieval_gt_batch(
+            [
+                (query_pk, image_chunk_pk)
+                for query_pk, image_chunk_pk in zip(query_pk_list, image_chunk_pk_list, strict=True)
+            ],
+            chunk_type="image",
+        )
 
     @staticmethod
     def pil_images_to_bytes(image_list: list[Image.Image]) -> list[tuple[bytes, str]]:
