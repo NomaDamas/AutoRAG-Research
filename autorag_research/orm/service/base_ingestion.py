@@ -10,7 +10,12 @@ from abc import ABC
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
-from autorag_research.exceptions import LengthMismatchError, RepositoryNotSupportedError, SessionNotSetError
+from autorag_research.exceptions import (
+    DuplicateRetrievalGTError,
+    LengthMismatchError,
+    RepositoryNotSupportedError,
+    SessionNotSetError,
+)
 from autorag_research.orm.service.base import BaseService
 from autorag_research.util import run_with_concurrency_limit
 
@@ -113,14 +118,21 @@ class BaseIngestionService(BaseService, ABC):
                 raise SessionNotSetError
 
             repository = getattr(uow, repo_attr)
-            for entity_id, embedding in zip(entity_ids, embeddings, strict=True):
-                entity = repository.get_by_id(entity_id)
-                if entity:
-                    if is_multi_vector:
-                        entity.embeddings = embedding
-                    else:
+
+            if is_multi_vector:
+                # Use repository's raw SQL method for multi-vector embeddings
+                # to bypass pgvector's array type processing issue
+                total_updated = repository.set_multi_vector_embeddings_batch(
+                    entity_ids, embeddings, vector_column="embeddings", id_column="id"
+                )
+            else:
+                # Single-vector embeddings work fine with ORM
+                for entity_id, embedding in zip(entity_ids, embeddings, strict=True):
+                    entity = repository.get_by_id(entity_id)
+                    if entity:
                         entity.embedding = embedding
-                    total_updated += 1
+                        total_updated += 1
+
             uow.commit()
 
         return total_updated
@@ -414,6 +426,7 @@ class BaseIngestionService(BaseService, ABC):
         query_id: int,
         gt: Any,
         chunk_type: Literal["mixed", "text", "image"] = "mixed",
+        upsert: bool = False,
     ) -> list[tuple[int, int, int]]:
         """Add retrieval ground truth for a query.
 
@@ -428,9 +441,14 @@ class BaseIngestionService(BaseService, ABC):
                 - "mixed": Requires explicit TextId/ImageId wrappers
                 - "text": Plain ints are treated as text chunk IDs
                 - "image": Plain ints are treated as image chunk IDs
+            upsert: If True, overwrite existing relations for the query.
+                   If False (default), raise DuplicateRetrievalGTError if relations already exist.
 
         Returns:
             List of created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
+
+        Raises:
+            DuplicateRetrievalGTError: If upsert=False and relations already exist for the query.
 
         Examples:
             from autorag_research.orm.models import TextId, ImageId, text, image, or_all, and_all
@@ -445,8 +463,23 @@ class BaseIngestionService(BaseService, ABC):
             # Image mode
             service.add_retrieval_gt(query_id=1, gt=10, chunk_type="image")
             service.add_retrieval_gt(query_id=1, gt=image(1) | image(2), chunk_type="image")
+
+            # Upsert mode - overwrite existing relations
+            service.add_retrieval_gt(query_id=1, gt=10, chunk_type="text", upsert=True)
         """
         from autorag_research.orm.models.retrieval_gt import gt_to_relations, normalize_gt
+
+        # Check for existing relations and handle upsert
+        with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
+            existing_count = uow.retrieval_relations.count_by_query(query_id)
+            if existing_count > 0:
+                if upsert:
+                    uow.retrieval_relations.delete_by_query_id(query_id)
+                    uow.commit()
+                else:
+                    raise DuplicateRetrievalGTError([query_id])
 
         normalized = normalize_gt(gt, chunk_type=chunk_type)
         relations = gt_to_relations(query_id, normalized)
@@ -456,6 +489,7 @@ class BaseIngestionService(BaseService, ABC):
         self,
         items: list[tuple[int, Any]],
         chunk_type: Literal["mixed", "text", "image"] = "mixed",
+        upsert: bool = False,
     ) -> list[tuple[int, int, int]]:
         """Batch add retrieval ground truth for multiple queries.
 
@@ -465,9 +499,14 @@ class BaseIngestionService(BaseService, ABC):
                 - "mixed": Requires explicit TextId/ImageId wrappers
                 - "text": Plain ints are treated as text chunk IDs
                 - "image": Plain ints are treated as image chunk IDs
+            upsert: If True, overwrite existing relations for the queries.
+                   If False (default), raise DuplicateRetrievalGTError if relations already exist.
 
         Returns:
             List of created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
+
+        Raises:
+            DuplicateRetrievalGTError: If upsert=False and relations already exist for any query.
 
         Examples:
             from autorag_research.orm.models import TextId, ImageId, or_all, and_all
@@ -490,8 +529,29 @@ class BaseIngestionService(BaseService, ABC):
                 (1, 10),
                 (2, or_all([20, 21], image)),
             ], chunk_type="image")
+
+            # Upsert mode - overwrite existing relations
+            service.add_retrieval_gt_batch([
+                (1, 10),
+                (2, 20),
+            ], chunk_type="text", upsert=True)
         """
         from autorag_research.orm.models.retrieval_gt import gt_to_relations, normalize_gt
+
+        query_ids = [query_id for query_id, _ in items]
+
+        # Check for existing relations and handle upsert
+        with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
+            existing_query_ids = [qid for qid in query_ids if uow.retrieval_relations.count_by_query(qid) > 0]
+            if existing_query_ids:
+                if upsert:
+                    for qid in existing_query_ids:
+                        uow.retrieval_relations.delete_by_query_id(qid)
+                    uow.commit()
+                else:
+                    raise DuplicateRetrievalGTError(existing_query_ids)
 
         all_relations = []
         for query_id, gt in items:

@@ -8,10 +8,10 @@ from contextlib import contextmanager
 from typing import Any, Generic, TypeVar
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from autorag_research.exceptions import NoSessionError
+from autorag_research.exceptions import LengthMismatchError, NoSessionError
 
 T = TypeVar("T")
 
@@ -284,6 +284,176 @@ class BaseVectorRepository(GenericRepository[T]):
 
         results = self.session.execute(stmt).all()
         return [(entity, float(dist)) for entity, dist in results]
+
+    def set_multi_vector_embedding(
+        self,
+        entity_id: int,
+        embeddings: list[list[float]],
+        vector_column: str = "embeddings",
+        id_column: str = "id",
+    ) -> bool:
+        """Set multi-vector embedding for an entity using raw SQL.
+
+        This method bypasses SQLAlchemy's type processing to properly
+        format vector arrays for VectorChord compatibility.
+
+        Args:
+            entity_id: The entity's primary key.
+            embeddings: List of embedding vectors (list of list of floats).
+            vector_column: Name of the multi-vector column (default: "embeddings").
+            id_column: Name of the primary key column (default: "id").
+
+        Returns:
+            True if update was successful, False otherwise.
+        """
+        if not embeddings:
+            return False
+
+        # Build vector array literal for PostgreSQL
+        # Format: ARRAY['[1,2,3]'::vector, '[4,5,6]'::vector]
+        vector_literals = []
+        for vec in embeddings:
+            vec_str = "[" + ",".join(str(float(x)) for x in vec) + "]"
+            vector_literals.append(f"'{vec_str}'::vector")
+
+        array_literal = f"ARRAY[{','.join(vector_literals)}]"
+
+        # Build and execute raw SQL UPDATE
+        table_name = self.model_cls.__tablename__
+        sql = text(f"UPDATE {table_name} SET {vector_column} = {array_literal} WHERE {id_column} = :entity_id")  # noqa: S608
+
+        result = self.session.execute(sql, {"entity_id": entity_id})
+        return result.rowcount > 0
+
+    def set_multi_vector_embeddings_batch(
+        self,
+        entity_ids: list[int],
+        embeddings_list: list[list[list[float]]],
+        vector_column: str = "embeddings",
+        id_column: str = "id",
+    ) -> int:
+        """Batch set multi-vector embeddings for multiple entities.
+
+        Args:
+            entity_ids: List of entity primary keys.
+            embeddings_list: List of multi-vector embeddings (one per entity).
+            vector_column: Name of the multi-vector column (default: "embeddings").
+            id_column: Name of the primary key column (default: "id").
+
+        Returns:
+            Number of entities successfully updated.
+        """
+        if len(entity_ids) != len(embeddings_list):
+            raise LengthMismatchError("entity_ids", "embeddings_list")
+
+        total_updated = 0
+        for entity_id, embeddings in zip(entity_ids, embeddings_list, strict=True):
+            if self.set_multi_vector_embedding(entity_id, embeddings, vector_column, id_column):
+                total_updated += 1
+
+        return total_updated
+
+    def maxsim_search(
+        self,
+        query_vectors: list[list[float]],
+        vector_column: str = "embeddings",
+        limit: int = 10,
+    ) -> list[tuple[T, float]]:
+        """Perform MaxSim search using VectorChord's @# operator.
+
+        MaxSim computes late interaction similarity: for each query vector,
+        find the closest document vector, compute dot product, and sum results.
+
+        Args:
+            query_vectors: List of query embedding vectors (multi-vector query).
+            vector_column: Name of the multi-vector column to search.
+            limit: Maximum number of results to return.
+
+        Returns:
+            List of tuples (entity, distance_score) ordered by similarity.
+            Lower distance scores indicate higher similarity.
+
+        Note:
+            Requires VectorChord extension and vchordrq index with vector_maxsim_ops.
+            Example index: CREATE INDEX ON table USING vchordrq (embeddings vector_maxsim_ops);
+        """
+        if not query_vectors:
+            return []
+
+        # Build query vector array literal
+        query_vec_literals = []
+        for vec in query_vectors:
+            vec_str = "[" + ",".join(str(float(x)) for x in vec) + "]"
+            query_vec_literals.append(f"'{vec_str}'::vector")
+
+        query_array = f"ARRAY[{','.join(query_vec_literals)}]"
+
+        # Build MaxSim query using @# operator
+        table_name = self.model_cls.__tablename__
+        sql = text(f"""
+            SELECT *, {vector_column} @# {query_array} AS distance
+            FROM {table_name}
+            WHERE {vector_column} IS NOT NULL
+            ORDER BY distance
+            LIMIT :limit
+        """)  # noqa: S608
+
+        results = self.session.execute(sql, {"limit": limit}).fetchall()
+
+        # Map results back to entities
+        entity_scores = []
+        for row in results:
+            # Get the entity by ID from the first column (assuming id is first)
+            entity = self.get_by_id(row[0])
+            if entity:
+                # Distance is the last column
+                entity_scores.append((entity, float(row[-1])))
+
+        return entity_scores
+
+    def maxsim_search_with_ids(
+        self,
+        query_vectors: list[list[float]],
+        vector_column: str = "embeddings",
+        id_column: str = "id",
+        limit: int = 10,
+    ) -> list[tuple[int, float]]:
+        """Perform MaxSim search and return only IDs with scores.
+
+        This is more efficient when you only need IDs and scores.
+
+        Args:
+            query_vectors: List of query embedding vectors (multi-vector query).
+            vector_column: Name of the multi-vector column to search.
+            id_column: Name of the primary key column.
+            limit: Maximum number of results to return.
+
+        Returns:
+            List of tuples (entity_id, distance_score) ordered by similarity.
+        """
+        if not query_vectors:
+            return []
+
+        # Build query vector array literal
+        query_vec_literals = []
+        for vec in query_vectors:
+            vec_str = "[" + ",".join(str(float(x)) for x in vec) + "]"
+            query_vec_literals.append(f"'{vec_str}'::vector")
+
+        query_array = f"ARRAY[{','.join(query_vec_literals)}]"
+
+        # Build MaxSim query using @# operator
+        table_name = self.model_cls.__tablename__
+        sql = text(f"""
+            SELECT {id_column}, {vector_column} @# {query_array} AS distance
+            FROM {table_name}
+            WHERE {vector_column} IS NOT NULL
+            ORDER BY distance
+            LIMIT :limit
+        """)  # noqa: S608
+
+        results = self.session.execute(sql, {"limit": limit}).fetchall()
+        return [(int(row[0]), float(row[1])) for row in results]
 
 
 class BaseEmbeddingRepository(GenericRepository[T]):

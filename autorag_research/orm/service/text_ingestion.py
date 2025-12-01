@@ -54,18 +54,26 @@ class TextDataIngestionService(BaseIngestionService):
         """
         return TextOnlyUnitOfWork(self.session_factory, self._schema)
 
-    def _get_schema_classes(self) -> tuple[type, type, type]:
+    def _get_schema_classes(self) -> dict[str, type]:
         """Get Query, Chunk, RetrievalRelation classes from schema.
 
         Returns:
             Tuple of (Query, Chunk, RetrievalRelation) model classes.
         """
         if self._schema is not None:
-            return self._schema.Query, self._schema.Chunk, self._schema.RetrievalRelation
+            return {
+                "Query": self._schema.Query,
+                "Chunk": self._schema.Chunk,
+                "RetrievalRelation": self._schema.RetrievalRelation,
+            }
         # Use default schema
         from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
 
-        return Query, Chunk, RetrievalRelation
+        return {
+            "Query": Query,
+            "Chunk": Chunk,
+            "RetrievalRelation": RetrievalRelation,
+        }
 
     # ==================== Retrieval GT Operations ====================
     def get_retrieval_gt_by_query(self, query_id: int) -> list[Any]:

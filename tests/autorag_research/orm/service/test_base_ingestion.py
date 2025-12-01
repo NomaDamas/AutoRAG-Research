@@ -1,6 +1,6 @@
 import pytest
 
-from autorag_research.exceptions import LengthMismatchError
+from autorag_research.exceptions import DuplicateRetrievalGTError, LengthMismatchError
 from autorag_research.orm.models.retrieval_gt import TextId, text
 from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
 from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
@@ -86,7 +86,8 @@ class TestBaseIngestionService:
 
     def test_set_query_multi_embeddings(self, service):
         query_ids = [1, 2]
-        multi_embeddings = [[[0.1] * 128] * 3, [[0.2] * 128] * 3]
+        # Use 768 dimensions to match schema
+        multi_embeddings = [[[0.1] * 768] * 3, [[0.2] * 768] * 3]
         updated = service.set_query_multi_embeddings(query_ids, multi_embeddings)
         assert updated == 2
 
@@ -98,7 +99,8 @@ class TestBaseIngestionService:
 
     def test_set_chunk_multi_embeddings(self, service):
         chunk_ids = [1, 2]
-        multi_embeddings = [[[0.3] * 128] * 3, [[0.4] * 128] * 3]
+        # Use 768 dimensions to match schema
+        multi_embeddings = [[[0.3] * 768] * 3, [[0.4] * 768] * 3]
         updated = service.set_chunk_multi_embeddings(chunk_ids, multi_embeddings)
         assert updated == 2
 
@@ -109,9 +111,14 @@ class TestBaseIngestionService:
             uow.commit()
 
     def test_add_retrieval_gt_text_mode(self, service):
-        pks = service.add_retrieval_gt(query_id=1, gt=text(1) | text(2), chunk_type="text")
+        # Test upsert=True overwrites existing relations
+        pks = service.add_retrieval_gt(query_id=1, gt=text(1) | text(2), chunk_type="text", upsert=True)
         assert len(pks) == 2
         assert all(pk[0] == 1 for pk in pks)
+
+        # Test upsert=False raises error when relation already exists
+        with pytest.raises(DuplicateRetrievalGTError):
+            service.add_retrieval_gt(query_id=1, gt=text(1), chunk_type="text", upsert=False)
 
         with service._create_uow() as uow:
             uow.retrieval_relations.delete_by_query_id(1)
@@ -120,9 +127,14 @@ class TestBaseIngestionService:
             uow.commit()
 
     def test_add_retrieval_gt_mixed_mode(self, service):
-        pks = service.add_retrieval_gt(query_id=2, gt=TextId(3), chunk_type="mixed")
+        # Test upsert=True overwrites existing relations
+        pks = service.add_retrieval_gt(query_id=2, gt=TextId(3), chunk_type="mixed", upsert=True)
         assert len(pks) == 1
         assert pks[0][0] == 2
+
+        # Test upsert=False raises error when relation already exists
+        with pytest.raises(DuplicateRetrievalGTError):
+            service.add_retrieval_gt(query_id=2, gt=TextId(3), chunk_type="mixed", upsert=False)
 
         with service._create_uow() as uow:
             uow.retrieval_relations.delete_by_query_id(2)
@@ -135,8 +147,13 @@ class TestBaseIngestionService:
             (3, text(4)),
             (4, text(5)),
         ]
-        pks = service.add_retrieval_gt_batch(items, chunk_type="text")
+        # Test upsert=True overwrites existing relations
+        pks = service.add_retrieval_gt_batch(items, chunk_type="text", upsert=True)
         assert len(pks) == 2
+
+        # Test upsert=False raises error when relation already exists
+        with pytest.raises(DuplicateRetrievalGTError):
+            service.add_retrieval_gt_batch(items, chunk_type="text", upsert=False)
 
         with service._create_uow() as uow:
             uow.retrieval_relations.delete_by_query_id(3)

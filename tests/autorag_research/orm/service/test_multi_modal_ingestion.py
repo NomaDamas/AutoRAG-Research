@@ -84,7 +84,7 @@ class TestMultiModalIngestionService:
 
     def test_set_image_chunk_multi_embeddings(self, service):
         image_chunk_ids = [1, 2]
-        multi_embeddings = [[[0.5] * 128] * 3, [[0.6] * 128] * 3]
+        multi_embeddings = [[[0.5] * 768] * 3, [[0.6] * 768] * 3]
         updated = service.set_image_chunk_multi_embeddings(image_chunk_ids, multi_embeddings)
         assert updated == 2
 

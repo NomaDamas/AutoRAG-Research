@@ -60,3 +60,11 @@ class EmptyIterableError(Exception):
 
     def __init__(self, iterable_name: str):
         super().__init__(f"The iterable '{iterable_name}' is empty but should contain items.")
+
+
+class DuplicateRetrievalGTError(Exception):
+    """Raised when retrieval GT already exists for a query and upsert is False."""
+
+    def __init__(self, query_ids: list[int]):
+        ids_str = ", ".join(str(qid) for qid in query_ids)
+        super().__init__(f"Retrieval GT already exists for query IDs: {ids_str}. Use upsert=True to overwrite.")

@@ -55,6 +55,7 @@ INSERT INTO caption (id, page_id, contents) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Chunks (text chunks from captions)
+-- embeddings column uses VectorChord-compatible array format: ARRAY['[...]'::vector, ...]
 INSERT INTO chunk (id, parent_caption, contents, embedding, embeddings) VALUES
 	(1, 1, 'Chunk 1-1', NULL, NULL),
 	(2, 1, 'Chunk 1-2', NULL, NULL),
@@ -65,6 +66,7 @@ INSERT INTO chunk (id, parent_caption, contents, embedding, embeddings) VALUES
 ON CONFLICT DO NOTHING;
 
 -- ImageChunks (image regions from pages)
+-- embeddings column uses VectorChord-compatible array format for multi-vector retrieval
 INSERT INTO image_chunk (id, parent_page, contents, mimetype, embedding, embeddings) VALUES
 	(1, 1, E'\\x00'::bytea, 'image/png', NULL, NULL),
 	(2, 2, E'\\x00'::bytea, 'image/png', NULL, NULL),
@@ -79,6 +81,7 @@ INSERT INTO caption_chunk_relation (caption_id, chunk_id) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Queries
+-- embeddings column uses VectorChord-compatible array format for multi-vector retrieval
 INSERT INTO query (id, contents, generation_gt, embedding, embeddings) VALUES
 	(1, 'What is Doc One about?', ARRAY['alpha'], NULL, NULL),
 	(2, 'Find details in Doc Two', ARRAY['beta'], NULL, NULL),

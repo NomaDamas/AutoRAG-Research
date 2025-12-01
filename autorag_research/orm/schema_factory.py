@@ -22,6 +22,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from autorag_research.orm.types import VectorArray
+
 
 @lru_cache(maxsize=16)
 def create_schema(embedding_dim: int = 768):
@@ -124,7 +126,7 @@ def create_schema(embedding_dim: int = 768):
         parent_caption: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("caption.id", ondelete="CASCADE"))
         contents: Mapped[str] = mapped_column(Text, nullable=False)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
-        embeddings: Mapped[list[Vector] | None] = mapped_column(ARRAY(Vector(embedding_dim)))
+        embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
 
         # Relationships
         parent_caption_obj: Mapped[Optional["Caption"]] = relationship(back_populates="chunks")
@@ -148,7 +150,7 @@ def create_schema(embedding_dim: int = 768):
         contents: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
         mimetype: Mapped[str] = mapped_column(String(255), nullable=False)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
-        embeddings: Mapped[list[Vector] | None] = mapped_column(ARRAY(Vector(embedding_dim)))
+        embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
 
         # Relationships
         page: Mapped[Optional["Page"]] = relationship(back_populates="image_chunks")
@@ -182,7 +184,7 @@ def create_schema(embedding_dim: int = 768):
         contents: Mapped[str] = mapped_column(Text, nullable=False)
         generation_gt: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=True)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
-        embeddings: Mapped[list[Vector] | None] = mapped_column(ARRAY(Vector(embedding_dim)))
+        embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
 
         # Relationships
         retrieval_relations: Mapped[list["RetrievalRelation"]] = relationship(

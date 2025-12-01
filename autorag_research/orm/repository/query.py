@@ -116,6 +116,18 @@ class QueryRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.generation_gt.is_not(None))
         return list(self.session.execute(stmt).scalars().all())
 
+    def get_queries_with_empty_content(self, limit: int = 100) -> list[Any]:
+        """Retrieve queries with empty or whitespace-only content.
+
+        Args:
+            limit: Maximum number of queries to retrieve.
+
+        Returns:
+            List of queries with empty content.
+        """
+        stmt = select(self.model_cls).where(func.trim(self.model_cls.contents) == "").limit(limit)
+        return list(self.session.execute(stmt).scalars().all())
+
     def count_by_generation_gt_size(self, size: int) -> int:
         """Count queries with a specific number of generation ground truths.
 
