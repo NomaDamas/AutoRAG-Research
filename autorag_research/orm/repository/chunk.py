@@ -6,7 +6,7 @@ the base vector repository pattern for similarity search.
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from autorag_research.orm.repository.base import BaseEmbeddingRepository, BaseVectorRepository
@@ -159,3 +159,20 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
             )
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
+
+    def get_chunks_with_empty_content(self, limit: int | None = None) -> list[Any]:
+        """Retrieve chunks that have empty or whitespace-only contents.
+
+        Args:
+            limit: Maximum number of results to return.
+
+        Returns:
+            List of chunks with empty content.
+        """
+        # Use SQL TRIM to check for empty or whitespace-only content
+        stmt = select(self.model_cls).where(
+            (self.model_cls.contents.is_(None)) | (func.trim(self.model_cls.contents) == "")
+        )
+        if limit:
+            stmt = stmt.limit(limit)
+        return list(self.session.execute(stmt).scalars().all())

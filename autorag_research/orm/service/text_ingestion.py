@@ -5,10 +5,15 @@ chunks, and retrieval ground truth relations with embedding support.
 """
 
 from typing import Any
+import logging
 
 from autorag_research.exceptions import SessionNotSetError
 from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
 from autorag_research.orm.service.base_ingestion import BaseIngestionService
+
+
+logger = logging.getLogger("AutoRAG-Research")
+
 
 
 class TextDataIngestionService(BaseIngestionService):
@@ -533,6 +538,105 @@ class TextDataIngestionService(BaseIngestionService):
             chunk.embedding = embedding
             uow.commit()
             return True
+
+    # ==================== Cleaning Operations ====================
+
+    def clean(self) -> dict[str, int]:
+        """Delete empty queries and chunks along with their associated retrieval relations.
+
+        This method should be called after data ingestion and before embedding to remove
+        any queries or chunks with empty or whitespace-only content. It also removes
+        associated retrieval relations to maintain referential integrity.
+
+        Returns:
+            Dictionary with counts of deleted queries and chunks.
+        """
+        deleted_queries = self._delete_empty_queries()
+        deleted_chunks = self._delete_empty_chunks()
+        return {
+            "deleted_queries": deleted_queries,
+            "deleted_chunks": deleted_chunks,
+        }
+
+    def _delete_empty_queries(self) -> int:
+        """Delete queries with empty content and their associated retrieval relations.
+
+        This method finds all queries where the query text is empty or whitespace-only,
+        deletes their associated retrieval relations first (to avoid FK violations),
+        then deletes the queries themselves.
+
+        Returns:
+            Total number of queries deleted.
+        """
+        total_deleted = 0
+
+        while True:
+            with self._create_uow() as uow:
+                if uow.session is None:
+                    raise SessionNotSetError
+
+                # Get batch of empty queries
+                empty_queries = uow.queries.get_queries_with_empty_content(limit=100)
+                if not empty_queries:
+                    break
+
+                # Delete retrieval relations and queries
+                for query in empty_queries:
+                    # Delete retrieval relations first (FK constraint)
+                    deleted_relations = uow.retrieval_relations.delete_by_query_id(query.id)
+                    if deleted_relations > 0:
+                        logger.info(f"Deleted {deleted_relations} retrieval relations for empty query {query.id}.")
+
+                    # Delete the query
+                    uow.queries.delete(query)
+                    total_deleted += 1
+
+                uow.commit()
+
+        if total_deleted > 0:
+            logger.warning(f"Deleted {total_deleted} queries with empty content.")
+
+        return total_deleted
+
+    def _delete_empty_chunks(self) -> int:
+        """Delete chunks with empty content and their associated retrieval relations.
+
+        This method finds all chunks where the contents is empty or whitespace-only,
+        deletes their associated retrieval relations first (to avoid FK violations),
+        then deletes the chunks themselves.
+
+        Returns:
+            Total number of chunks deleted.
+        """
+        total_deleted = 0
+
+        while True:
+            with self._create_uow() as uow:
+                if uow.session is None:
+                    raise SessionNotSetError
+
+                # Get batch of empty chunks
+                empty_chunks = uow.chunks.get_chunks_with_empty_content(limit=100)
+                if not empty_chunks:
+                    break
+
+                # Delete retrieval relations and chunks
+                for chunk in empty_chunks:
+                    # Delete retrieval relations first (FK constraint)
+                    deleted_relations = uow.retrieval_relations.delete_by_chunk_id(chunk.id)
+                    if deleted_relations > 0:
+                        logger.info(f"Deleted {deleted_relations} retrieval relations for empty chunk {chunk.id}.")
+
+                    # Delete the chunk
+                    uow.chunks.delete(chunk)
+                    total_deleted += 1
+
+                uow.commit()
+
+        if total_deleted > 0:
+            logger.warning(f"Deleted {total_deleted} chunks with empty content.")
+
+        return total_deleted
 
     # ==================== Statistics ====================
 
