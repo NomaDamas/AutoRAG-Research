@@ -110,12 +110,7 @@ class OrGroup:
         # Handle _IntWrapper (has _to_chunk_id method)
         if hasattr(other, "_to_chunk_id"):
             return OrGroup(items=(*self.items, other._to_chunk_id()))
-        return OrGroup(
-            items=(
-                self.items,
-                other,
-            )
-        )
+        return OrGroup(items=(*self.items, other))
 
     def __and__(self, other: ChunkId | OrGroup | AndChain) -> AndChain:
         """Create AND chain from OR group: (TextId(1) | TextId(2)) & TextId(3)."""
@@ -145,13 +140,9 @@ class AndChain:
             return AndChain(groups=(*self.groups, other))
         # Handle _IntWrapper (has _to_chunk_id method)
         elif hasattr(other, "_to_chunk_id"):
-            return AndChain((*self.groups, OrGroup._create(other._to_chunk_id())))
+            return AndChain(groups=(*self.groups, OrGroup._create(other._to_chunk_id())))
         else:  # ChunkId (TextId or ImageId)
-            return AndChain((*self.groups, OrGroup._create(other)))
-
-
-# Type alias for ground truth expression
-RetrievalGT = int | ChunkId | OrGroup | AndChain | "_IntWrapper"
+            return AndChain(groups=(*self.groups, OrGroup._create(other)))
 
 
 # =============================================================================
@@ -199,6 +190,9 @@ class _IntWrapper:
         """Handle reverse AND for _IntWrapper."""
         return AndChain._create(OrGroup._create(other._to_chunk_id())) & OrGroup._create(self._to_chunk_id())
 
+
+# Type alias for ground truth expression
+RetrievalGT = int | ChunkId | OrGroup | AndChain | _IntWrapper
 
 # =============================================================================
 # Factory Functions

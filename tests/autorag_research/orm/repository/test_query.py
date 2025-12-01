@@ -1,7 +1,7 @@
 import pytest
+from autorag_research.orm.repository.contents import QueryRepository
 from sqlalchemy.orm import Session
 
-from autorag_research.orm.repository.query import QueryRepository
 from autorag_research.orm.schema import Query
 
 
@@ -14,7 +14,7 @@ def test_get_by_query_text(query_repository: QueryRepository):
     result = query_repository.get_by_query_text("What is Doc One about?")
 
     assert result is not None
-    assert result.query == "What is Doc One about?"
+    assert result.contents == "What is Doc One about?"
     assert result.generation_gt == ["alpha"]
 
 
@@ -47,7 +47,7 @@ def test_search_by_query_text(query_repository: QueryRepository):
     results = query_repository.search_by_query_text("Doc", limit=10)
 
     assert len(results) >= 3
-    assert all("doc" in q.query.lower() for q in results)
+    assert all("doc" in q.contents.lower() for q in results)
 
 
 def test_get_queries_with_generation_gt(query_repository: QueryRepository):

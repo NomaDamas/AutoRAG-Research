@@ -37,7 +37,7 @@ class QueryRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         Returns:
             The query if found, None otherwise.
         """
-        stmt = select(self.model_cls).where(self.model_cls.query == query_text)
+        stmt = select(self.model_cls).where(self.model_cls.contents == query_text)
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_retrieval_relations(self, query_id: int) -> Any | None:
@@ -104,7 +104,7 @@ class QueryRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         Returns:
             List of queries containing the search text.
         """
-        stmt = select(self.model_cls).where(self.model_cls.query.ilike(f"%{search_text}%")).limit(limit)
+        stmt = select(self.model_cls).where(self.model_cls.contents.ilike(f"%{search_text}%")).limit(limit)
         return list(self.session.execute(stmt).scalars().all())
 
     def get_queries_with_generation_gt(self) -> list[Any]:

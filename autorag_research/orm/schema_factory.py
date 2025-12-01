@@ -60,7 +60,7 @@ def create_schema(embedding_dim: int = 768):
         path: Mapped[str] = mapped_column(String(255), nullable=False)
 
         # Relationships
-        documents: Mapped[list["Document"]] = relationship(foreign_keys="Document.filepath", back_populates="file")
+        documents: Mapped[list["Document"]] = relationship(foreign_keys="Document.path", back_populates="file")
 
     class Document(Base):
         """Document metadata table"""
@@ -68,14 +68,14 @@ def create_schema(embedding_dim: int = 768):
         __tablename__ = "document"
 
         id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-        filepath: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("file.id", ondelete="CASCADE"), unique=True)
+        path: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("file.id", ondelete="CASCADE"), unique=True)
         filename: Mapped[str | None] = mapped_column(Text)
         author: Mapped[str | None] = mapped_column(Text)
         title: Mapped[str | None] = mapped_column(Text)
         doc_metadata: Mapped[dict | None] = mapped_column(JSONB)
 
         # Relationships
-        file: Mapped[Optional["File"]] = relationship(foreign_keys=[filepath], back_populates="documents")
+        file: Mapped[Optional["File"]] = relationship(foreign_keys=[path], back_populates="documents")
         pages: Mapped[list["Page"]] = relationship(back_populates="document", cascade="all, delete-orphan")
 
     class Page(Base):
@@ -88,7 +88,7 @@ def create_schema(embedding_dim: int = 768):
         document_id: Mapped[int] = mapped_column(
             BigInteger, ForeignKey("document.id", ondelete="CASCADE"), nullable=False
         )
-        image_content: Mapped[bytes | None] = mapped_column(LargeBinary)
+        image_contents: Mapped[bytes | None] = mapped_column(LargeBinary)
         mimetype: Mapped[str | None] = mapped_column(String(255))
         page_metadata: Mapped[dict | None] = mapped_column(JSONB)
 
@@ -145,7 +145,7 @@ def create_schema(embedding_dim: int = 768):
 
         id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
         parent_page: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("page.id", ondelete="CASCADE"))
-        content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+        contents: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
         mimetype: Mapped[str] = mapped_column(String(255), nullable=False)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
         embeddings: Mapped[list[Vector] | None] = mapped_column(ARRAY(Vector(embedding_dim)))
@@ -179,7 +179,7 @@ def create_schema(embedding_dim: int = 768):
         __tablename__ = "query"
 
         id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-        query: Mapped[str] = mapped_column(Text, nullable=False)
+        contents: Mapped[str] = mapped_column(Text, nullable=False)
         generation_gt: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=True)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
         embeddings: Mapped[list[Vector] | None] = mapped_column(ARRAY(Vector(embedding_dim)))

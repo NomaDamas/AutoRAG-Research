@@ -33,7 +33,7 @@ class TestGetByQueryId:
         assert relations == []
 
     def test_get_by_query_id_ordered(self, retrieval_relation_repo: RetrievalRelationRepository, db_session: Session):
-        query = Query(query="Test query for ordering")
+        query = Query(contents="Test query for ordering")
         db_session.add(query)
         db_session.flush()
 
@@ -95,7 +95,7 @@ class TestGetMaxGroupIndex:
     def test_get_max_group_index_multiple_groups(
         self, retrieval_relation_repo: RetrievalRelationRepository, db_session: Session
     ):
-        query = Query(query="Test query for max group index")
+        query = Query(contents="Test query for max group index")
         db_session.add(query)
         db_session.flush()
 
@@ -126,7 +126,7 @@ class TestGetMaxGroupOrder:
     def test_get_max_group_order_multiple_orders(
         self, retrieval_relation_repo: RetrievalRelationRepository, db_session: Session
     ):
-        query = Query(query="Test query for max group order")
+        query = Query(contents="Test query for max group order")
         db_session.add(query)
         db_session.flush()
 
