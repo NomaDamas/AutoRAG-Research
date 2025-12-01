@@ -10,21 +10,25 @@ from sqlalchemy import ColumnElement, select
 from sqlalchemy.orm import Session, joinedload
 
 from autorag_research.orm.repository.base import GenericRepository
-from autorag_research.orm.schema import File
 
 
-class FileRepository(GenericRepository[File]):
+class FileRepository(GenericRepository):
     """Repository for File entity with specialized queries."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, model_cls: type | None = None):
         """Initialize file repository.
 
         Args:
             session: SQLAlchemy session for database operations.
+            model_cls: The File model class. If None, uses default schema.
         """
-        super().__init__(session, File)
+        if model_cls is None:
+            from autorag_research.orm.schema import File
 
-    def get_by_path(self, path: str) -> File | None:
+            model_cls = File
+        super().__init__(session, model_cls)
+
+    def get_by_path(self, path: str) -> Any | None:
         """Retrieve a file by its path.
 
         Args:
@@ -33,10 +37,10 @@ class FileRepository(GenericRepository[File]):
         Returns:
             The file if found, None otherwise.
         """
-        stmt = select(File).where(File.path == path)
+        stmt = select(self.model_cls).where(self.model_cls.path == path)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_type(self, file_type: str) -> list[File]:
+    def get_by_type(self, file_type: str) -> list[Any]:
         """Retrieve all files of a specific type.
 
         Args:
@@ -45,10 +49,10 @@ class FileRepository(GenericRepository[File]):
         Returns:
             List of files of the specified type.
         """
-        stmt = select(File).where(File.type == file_type)
+        stmt = select(self.model_cls).where(self.model_cls.type == file_type)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_documents(self, file_id: int) -> File | None:
+    def get_with_documents(self, file_id: int) -> Any | None:
         """Retrieve a file with its documents eagerly loaded.
 
         Args:
@@ -57,34 +61,10 @@ class FileRepository(GenericRepository[File]):
         Returns:
             The file with documents loaded, None if not found.
         """
-        stmt = select(File).where(File.id == file_id).options(joinedload(File.documents))
+        stmt = select(self.model_cls).where(self.model_cls.id == file_id).options(joinedload(self.model_cls.documents))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_pages(self, file_id: int) -> File | None:
-        """Retrieve a file with its pages eagerly loaded.
-
-        Args:
-            file_id: The file ID.
-
-        Returns:
-            The file with pages loaded, None if not found.
-        """
-        stmt = select(File).where(File.id == file_id).options(joinedload(File.pages))
-        return self.session.execute(stmt).unique().scalar_one_or_none()
-
-    def get_with_image_chunks(self, file_id: int) -> File | None:
-        """Retrieve a file with its image chunks eagerly loaded.
-
-        Args:
-            file_id: The file ID.
-
-        Returns:
-            The file with image chunks loaded, None if not found.
-        """
-        stmt = select(File).where(File.id == file_id).options(joinedload(File.image_chunks))
-        return self.session.execute(stmt).unique().scalar_one_or_none()
-
-    def get_all_by_type(self, file_type: str, limit: int | None = None, offset: int | None = None) -> list[File]:
+    def get_all_by_type(self, file_type: str, limit: int | None = None, offset: int | None = None) -> list[Any]:
         """Retrieve all files of a specific type with pagination.
 
         Args:
@@ -95,14 +75,14 @@ class FileRepository(GenericRepository[File]):
         Returns:
             List of files of the specified type.
         """
-        stmt = select(File).where(File.type == file_type)
+        stmt = select(self.model_cls).where(self.model_cls.type == file_type)
         if offset:
             stmt = stmt.offset(offset)
         if limit:
             stmt = stmt.limit(limit)
         return list(self.session.execute(stmt).scalars().all())
 
-    def search_by_path_pattern(self, pattern: str) -> list[File]:
+    def search_by_path_pattern(self, pattern: str) -> list[Any]:
         """Search files by path pattern using SQL LIKE.
 
         Args:
@@ -111,7 +91,7 @@ class FileRepository(GenericRepository[File]):
         Returns:
             List of matching files.
         """
-        stmt = select(File).where(File.path.like(pattern))
+        stmt = select(self.model_cls).where(self.model_cls.path.like(pattern))
         return list(self.session.execute(stmt).scalars().all())
 
     def count_by_type(self, file_type: str) -> int:
@@ -123,7 +103,7 @@ class FileRepository(GenericRepository[File]):
         Returns:
             Number of files of the specified type.
         """
-        return self.session.query(File).filter(File.type == file_type).count()
+        return self.session.query(self.model_cls).filter(self.model_cls.type == file_type).count()
 
     def get_all_types(self) -> list[ColumnElement[Any]]:
         """Get all unique file types in the database.
@@ -131,5 +111,5 @@ class FileRepository(GenericRepository[File]):
         Returns:
             List of unique file types.
         """
-        result = self.session.query(File.type).distinct().all()
+        result = self.session.query(self.model_cls.type).distinct().all()
         return [row[0] for row in result]
