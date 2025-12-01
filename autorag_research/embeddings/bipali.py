@@ -66,7 +66,7 @@ class BiPaliEmbeddings(MultiModalEmbedding):
 
     Supported model types:
     - "modernvbert": BiModernVBert
-    - "idefics3": BiIdefics3
+    - "smolvlm": BiIdefics3
     - "pali": BiPali
     - "qwen2": BiQwen2
     - "qwen2_5": BiQwen2_5
@@ -103,7 +103,7 @@ class BiPaliEmbeddings(MultiModalEmbedding):
         self._processor = processor_class.from_pretrained(self.model_name)
         self._model = model_class.from_pretrained(
             self.model_name,
-            torch_dtype=self.torch_dtype,
+            dtype=self.torch_dtype,
             trust_remote_code=True,
         )
         self._model.to(self.device)
