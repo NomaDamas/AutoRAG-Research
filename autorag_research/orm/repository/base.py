@@ -286,6 +286,72 @@ class BaseVectorRepository(GenericRepository[T]):
         return [(entity, float(dist)) for entity, dist in results]
 
 
+class BaseEmbeddingRepository(GenericRepository[T]):
+    """Base repository with embedding-specific operations.
+    This base class is made for schemas that have 'embedding' and 'embeddings' columns.
+    """
+
+    def __execute_with_offset_limit(self, stmt: Any, limit: int | None = None, offset: int | None = None) -> list[T]:
+        """Helper to execute a statement with optional offset and limit."""
+        if offset:
+            stmt = stmt.offset(offset)
+        if limit:
+            stmt = stmt.limit(limit)
+        return list(self.session.execute(stmt).scalars().all())
+
+    def get_without_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
+        """Retrieve entities that do not have embeddings.
+
+        Args:
+            limit: Maximum number of results to return.
+            offset: Number of results to skip.
+
+        Returns:
+            List of entities without embeddings.
+        """
+        stmt = select(self.model_cls).where(self.model_cls.embedding.is_(None))
+        return self.__execute_with_offset_limit(stmt, limit, offset)
+
+    def get_with_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
+        """Retrieve entities that have embeddings.
+
+        Args:
+            limit: Maximum number of results to return.
+            offset: Number of results to skip.
+
+        Returns:
+            List of entities with embeddings.
+        """
+        stmt = select(self.model_cls).where(self.model_cls.embedding.is_not(None))
+        return self.__execute_with_offset_limit(stmt, limit, offset)
+
+    def get_without_multi_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
+        """Retrieve entities that do not have multi-vector embeddings.
+
+        Args:
+            limit: Maximum number of results to return.
+            offset: Number of results to skip.
+
+        Returns:
+            List of entities without multi-vector embeddings.
+        """
+        stmt = select(self.model_cls).where(self.model_cls.embeddings.is_(None))
+        return self.__execute_with_offset_limit(stmt, limit, offset)
+
+    def get_with_multi_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
+        """Retrieve entities that have multi-vector embeddings.
+
+        Args:
+            limit: Maximum number of results to return.
+            offset: Number of results to skip.
+
+        Returns:
+            List of entities with multi-vector embeddings.
+        """
+        stmt = select(self.model_cls).where(self.model_cls.embeddings.is_not(None))
+        return self.__execute_with_offset_limit(stmt, limit, offset)
+
+
 def create_repository(session: Session, model_cls: type[T]) -> GenericRepository[T]:
     """Factory function to create a repository instance.
 

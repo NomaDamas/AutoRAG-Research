@@ -9,10 +9,10 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from autorag_research.orm.repository.base import BaseVectorRepository
+from autorag_research.orm.repository.base import BaseEmbeddingRepository, BaseVectorRepository
 
 
-class QueryRepository(BaseVectorRepository[Any]):
+class QueryRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
     """Repository for Query entity with relationship loading and vector search capabilities."""
 
     def __init__(self, session: Session, model_cls: type | None = None):
@@ -131,20 +131,3 @@ class QueryRepository(BaseVectorRepository[Any]):
             .where(func.array_length(self.model_cls.generation_gt, 1) == size)
         )
         return self.session.execute(stmt).scalar_one()
-
-    def get_queries_without_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[Any]:
-        """Retrieve queries that do not have embeddings.
-
-        Args:
-            limit: Maximum number of results to return.
-            offset: Number of results to skip.
-
-        Returns:
-            List of queries without embeddings.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.embedding.is_(None))
-        if offset:
-            stmt = stmt.offset(offset)
-        if limit:
-            stmt = stmt.limit(limit)
-        return list(self.session.execute(stmt).scalars().all())

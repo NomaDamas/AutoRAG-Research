@@ -46,3 +46,10 @@ class InvalidDatasetNameError(NameError):
 
     def __init__(self, dataset_name: str):
         super().__init__(f"Invalid dataset name '{dataset_name}' provided.")
+
+
+class RepositoryNotSupportedError(Exception):
+    """Raised when a repository is not supported by the current UoW."""
+
+    def __init__(self, repository_name: str, uow_type: str):
+        super().__init__(f"Repository '{repository_name}' is not supported by '{uow_type}'.")

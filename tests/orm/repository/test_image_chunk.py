@@ -39,14 +39,14 @@ def test_get_with_image_chunk_retrieved_results(image_chunk_repository: ImageChu
 
 
 def test_get_image_chunks_with_embeddings(image_chunk_repository: ImageChunkRepository):
-    results = image_chunk_repository.get_image_chunks_with_embeddings(limit=10, offset=0)
+    results = image_chunk_repository.get_with_embeddings(limit=10, offset=0)
 
     assert isinstance(results, list)
     assert all(ic.embedding is not None for ic in results)
 
 
 def test_get_image_chunks_without_embeddings(image_chunk_repository: ImageChunkRepository):
-    results = image_chunk_repository.get_image_chunks_without_embeddings(limit=10, offset=0)
+    results = image_chunk_repository.get_without_embeddings(limit=10, offset=0)
 
     assert isinstance(results, list)
     for ic in results:
