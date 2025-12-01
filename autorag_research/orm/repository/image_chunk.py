@@ -9,10 +9,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from autorag_research.orm.repository.base import BaseVectorRepository
+from autorag_research.orm.repository.base import BaseEmbeddingRepository, BaseVectorRepository
 
 
-class ImageChunkRepository(BaseVectorRepository[Any]):
+class ImageChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
     """Repository for ImageChunk entity with vector search capabilities."""
 
     def __init__(self, session: Session, model_cls: type | None = None):
@@ -85,40 +85,6 @@ class ImageChunkRepository(BaseVectorRepository[Any]):
             .options(joinedload(self.model_cls.image_chunk_retrieved_results))
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
-
-    def get_image_chunks_with_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[Any]:
-        """Retrieve image chunks that have embeddings.
-
-        Args:
-            limit: Maximum number of results to return.
-            offset: Number of results to skip.
-
-        Returns:
-            List of image chunks with embeddings.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.embedding.is_not(None))
-        if offset:
-            stmt = stmt.offset(offset)
-        if limit:
-            stmt = stmt.limit(limit)
-        return list(self.session.execute(stmt).scalars().all())
-
-    def get_image_chunks_without_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[Any]:
-        """Retrieve image chunks that do not have embeddings.
-
-        Args:
-            limit: Maximum number of results to return.
-            offset: Number of results to skip.
-
-        Returns:
-            List of image chunks without embeddings.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.embedding.is_(None))
-        if offset:
-            stmt = stmt.offset(offset)
-        if limit:
-            stmt = stmt.limit(limit)
-        return list(self.session.execute(stmt).scalars().all())
 
     def count_by_page(self, page_id: int) -> int:
         """Count the number of image chunks for a specific page.

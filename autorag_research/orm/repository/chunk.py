@@ -9,10 +9,10 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from autorag_research.orm.repository.base import BaseVectorRepository
+from autorag_research.orm.repository.base import BaseEmbeddingRepository, BaseVectorRepository
 
 
-class ChunkRepository(BaseVectorRepository[Any]):
+class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
     """Repository for Chunk entity with vector search capabilities."""
 
     def __init__(self, session: Session, model_cls: type | None = None):
@@ -126,40 +126,6 @@ class ChunkRepository(BaseVectorRepository[Any]):
             List of chunks with matching contents.
         """
         stmt = select(self.model_cls).where(self.model_cls.contents == contents)
-        return list(self.session.execute(stmt).scalars().all())
-
-    def get_chunks_with_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[Any]:
-        """Retrieve chunks that have embeddings.
-
-        Args:
-            limit: Maximum number of results to return.
-            offset: Number of results to skip.
-
-        Returns:
-            List of chunks with embeddings.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.embedding.is_not(None))
-        if offset:
-            stmt = stmt.offset(offset)
-        if limit:
-            stmt = stmt.limit(limit)
-        return list(self.session.execute(stmt).scalars().all())
-
-    def get_chunks_without_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[Any]:
-        """Retrieve chunks that do not have embeddings.
-
-        Args:
-            limit: Maximum number of results to return.
-            offset: Number of results to skip.
-
-        Returns:
-            List of chunks without embeddings.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.embedding.is_(None))
-        if offset:
-            stmt = stmt.offset(offset)
-        if limit:
-            stmt = stmt.limit(limit)
         return list(self.session.execute(stmt).scalars().all())
 
     def count_by_caption(self, caption_id: int) -> int:

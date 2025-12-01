@@ -44,6 +44,13 @@ Homepage = "https://vkehfdl1.github.io/AutoRAG-Research/"
 Repository = "https://github.com/vkehfdl1/AutoRAG-Research"
 Documentation = "https://vkehfdl1.github.io/AutoRAG-Research/"
 
+[project.optional-dependencies]
+gpu = [
+    "colpali-engine>=0.3.13",
+    "torch>=2.8.0",
+    "transformers>=4.57.1",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=7.2.0",

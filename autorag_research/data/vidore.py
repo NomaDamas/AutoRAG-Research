@@ -7,6 +7,7 @@ from llama_index.core.embeddings import MultiModalEmbedding
 from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
+from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import EmbeddingNotSetError, InvalidDatasetNameError, UnsupportedDataSubsetError
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 
@@ -30,7 +31,7 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
         multi_modal_data_ingestion_service: MultiModalIngestionService,
         dataset_name: str,
         embedding_model: MultiModalEmbedding | None = None,
-        late_interaction_embedding_model: MultiModalEmbedding | None = None,
+        late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         super().__init__(multi_modal_data_ingestion_service, embedding_model, late_interaction_embedding_model)
         self.ds = load_dataset(f"vidore/{dataset_name}")["test"]
@@ -42,27 +43,62 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
             raise UnsupportedDataSubsetError(["train", "dev"])
 
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
+        """Embed all queries and image chunks using single-vector embedding model.
+
+        Args:
+            max_concurrency: Maximum number of concurrent embedding operations.
+            batch_size: Number of items to process per batch.
+
+        Raises:
+            EmbeddingNotSetError: If embedding_model is not set.
+        """
         if self.embedding_model is None:
             raise EmbeddingNotSetError
-        raise NotImplementedError
+
+        self.service.embed_all_queries(
+            self.embedding_model.aget_query_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )
+        self.service.embed_all_image_chunks(
+            self.embedding_model.aget_image_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )
 
     def embed_all_late_interaction(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
+        """Embed all queries and image chunks using multi-vector (late interaction) embedding model.
+
+        Args:
+            max_concurrency: Maximum number of concurrent embedding operations.
+            batch_size: Number of items to process per batch.
+
+        Raises:
+            EmbeddingNotSetError: If late_interaction_embedding_model is not set.
+        """
         if self.late_interaction_embedding_model is None:
             raise EmbeddingNotSetError
-        raise NotImplementedError
+
+        self.service.embed_all_queries_multi_vector(
+            self.late_interaction_embedding_model.aget_query_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )
+        self.service.embed_all_image_chunks_multi_vector(
+            self.late_interaction_embedding_model.aget_image_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )
 
     def ingest_qrels(self, query_pk_list: list[int], image_chunk_pk_list: list[int]) -> None:
-        qrels = [
-            {
-                "query_id": query_pk,
-                "chunk_id": None,
-                "image_chunk_id": image_chunk_pk,
-                "group_index": 0,
-                "group_order": 0,
-            }
-            for query_pk, image_chunk_pk in zip(query_pk_list, image_chunk_pk_list, strict=True)
-        ]
-        self.service.add_retrieval_gt_batch(qrels)
+        """Add retrieval ground truth for image chunks (1:1 query to image mapping)."""
+        self.service.add_retrieval_gt_batch(
+            [
+                (query_pk, image_chunk_pk)
+                for query_pk, image_chunk_pk in zip(query_pk_list, image_chunk_pk_list, strict=True)
+            ],
+            chunk_type="image",
+        )
 
     @staticmethod
     def pil_images_to_bytes(image_list: list[Image.Image]) -> list[tuple[bytes, str]]:
@@ -90,7 +126,7 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
         self,
         multi_modal_data_ingestion_service: MultiModalIngestionService,
         embedding_model: MultiModalEmbedding | None = None,
-        late_interaction_embedding_model: MultiModalEmbedding | None = None,
+        late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         super().__init__(
             multi_modal_data_ingestion_service,
@@ -117,11 +153,20 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
         # Convert PIL images to bytes
         image_bytes_list = self.pil_images_to_bytes(image_list)
 
-        query_pk_list = self.service.add_queries([(query, [ans]) for query, ans in zip(queries, answers, strict=True)])
+        query_pk_list = self.service.add_queries([
+            {
+                "contents": query,
+                "generation_gt": [ans],
+            }
+            for query, ans in zip(queries, answers, strict=True)
+        ])
 
-        # Add image chunks with content and mimetype (no file path needed)
         image_chunk_pk_list = self.service.add_image_chunks([
-            (content, mimetype, None) for content, mimetype in image_bytes_list
+            {
+                "contents": content,
+                "mimetype": mimetype,
+            }
+            for content, mimetype in image_bytes_list
         ])
 
         self.ingest_qrels(query_pk_list, image_chunk_pk_list)

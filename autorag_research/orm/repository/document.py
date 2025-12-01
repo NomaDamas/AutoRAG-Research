@@ -130,14 +130,14 @@ class DocumentRepository(GenericRepository):
         document = self.get_with_pages(document_id)
         return len(document.pages) if document else 0
 
-    def get_by_filepath_id(self, filepath_id: int) -> Any | None:
+    def get_by_path_id(self, path_id: int) -> Any | None:
         """Retrieve a document by its file path ID.
 
         Args:
-            filepath_id: The file ID to search for.
+            path_id: The file ID to search for.
 
         Returns:
             The document if found, None otherwise.
         """
-        stmt = select(self.model_cls).where(self.model_cls.filepath == filepath_id)
+        stmt = select(self.model_cls).where(self.model_cls.path == path_id)
         return self.session.execute(stmt).scalar_one_or_none()

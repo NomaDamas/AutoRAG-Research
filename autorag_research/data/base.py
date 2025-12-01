@@ -4,6 +4,7 @@ from typing import Literal
 from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.embeddings import MultiModalEmbedding
 
+from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 
@@ -34,7 +35,7 @@ class MultiModalEmbeddingDataIngestor(DataIngestor, ABC):
         self,
         multi_modal_data_ingestion_service: MultiModalIngestionService,
         embedding_model: MultiModalEmbedding | None = None,
-        late_interaction_embedding_model: MultiModalEmbedding | None = None,
+        late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         super().__init__()
         self.service = multi_modal_data_ingestion_service

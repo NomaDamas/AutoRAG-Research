@@ -18,7 +18,7 @@ INSERT INTO file (id, type, path) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Documents (each points to a file)
-INSERT INTO document (id, filepath, filename, author, title, doc_metadata) VALUES
+INSERT INTO document (id, path, filename, author, title, doc_metadata) VALUES
 	(1, 1, 'doc1.pdf', 'alice', 'Doc One', '{"topic": "alpha"}'),
 	(2, 2, 'doc2.pdf', 'bob', 'Doc Two', '{"topic": "beta"}'),
 	(3, 3, 'doc3.pdf', 'carol', 'Doc Three', '{"topic": "gamma"}'),
@@ -27,7 +27,7 @@ INSERT INTO document (id, filepath, filename, author, title, doc_metadata) VALUE
 ON CONFLICT DO NOTHING;
 
 -- Pages (two pages per document)
-INSERT INTO page (id, page_num, document_id, image_content, mimetype, page_metadata) VALUES
+INSERT INTO page (id, page_num, document_id, image_contents, mimetype, page_metadata) VALUES
 	(1, 1, 1, NULL, NULL, '{"dpi": 300}'),
 	(2, 2, 1, NULL, NULL, '{"dpi": 300}'),
 	(3, 1, 2, NULL, NULL, '{"dpi": 300}'),
@@ -55,6 +55,7 @@ INSERT INTO caption (id, page_id, contents) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Chunks (text chunks from captions)
+-- embeddings column uses VectorChord-compatible array format: ARRAY['[...]'::vector, ...]
 INSERT INTO chunk (id, parent_caption, contents, embedding, embeddings) VALUES
 	(1, 1, 'Chunk 1-1', NULL, NULL),
 	(2, 1, 'Chunk 1-2', NULL, NULL),
@@ -65,7 +66,8 @@ INSERT INTO chunk (id, parent_caption, contents, embedding, embeddings) VALUES
 ON CONFLICT DO NOTHING;
 
 -- ImageChunks (image regions from pages)
-INSERT INTO image_chunk (id, parent_page, content, mimetype, embedding, embeddings) VALUES
+-- embeddings column uses VectorChord-compatible array format for multi-vector retrieval
+INSERT INTO image_chunk (id, parent_page, contents, mimetype, embedding, embeddings) VALUES
 	(1, 1, E'\\x00'::bytea, 'image/png', NULL, NULL),
 	(2, 2, E'\\x00'::bytea, 'image/png', NULL, NULL),
 	(3, 3, E'\\x00'::bytea, 'image/png', NULL, NULL),
@@ -79,7 +81,8 @@ INSERT INTO caption_chunk_relation (caption_id, chunk_id) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Queries
-INSERT INTO query (id, query, generation_gt, embedding, embeddings) VALUES
+-- embeddings column uses VectorChord-compatible array format for multi-vector retrieval
+INSERT INTO query (id, contents, generation_gt, embedding, embeddings) VALUES
 	(1, 'What is Doc One about?', ARRAY['alpha'], NULL, NULL),
 	(2, 'Find details in Doc Two', ARRAY['beta'], NULL, NULL),
 	(3, 'Summarize Doc Three', ARRAY['gamma'], NULL, NULL),

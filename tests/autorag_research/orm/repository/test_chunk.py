@@ -99,7 +99,7 @@ def test_get_by_contents_exact(chunk_repository: ChunkRepository, db_session: Se
     assert all(c.contents == "Chunk 1-1" for c in results)
 
 
-def test_get_chunks_with_embeddings(chunk_repository: ChunkRepository, db_session: Session):
+def test_get_with_embeddings(chunk_repository: ChunkRepository, db_session: Session):
     """Test retrieving chunks that have embeddings."""
     # Create test data with embedding (seed data has NULL embeddings)
     unique_id = uuid.uuid4()
@@ -109,14 +109,14 @@ def test_get_chunks_with_embeddings(chunk_repository: ChunkRepository, db_sessio
     db_session.commit()
 
     # Test retrieval
-    results = chunk_repository.get_chunks_with_embeddings(limit=10)
+    results = chunk_repository.get_with_embeddings(limit=10)
 
     assert len(results) >= 1
     assert len(results) <= 10
     assert all(c.embedding is not None for c in results)
 
     # Test with offset
-    results_offset = chunk_repository.get_chunks_with_embeddings(limit=5, offset=1)
+    results_offset = chunk_repository.get_with_embeddings(limit=5, offset=1)
     assert len(results_offset) <= 5
 
     # Cleanup
@@ -124,16 +124,16 @@ def test_get_chunks_with_embeddings(chunk_repository: ChunkRepository, db_sessio
     db_session.commit()
 
 
-def test_get_chunks_without_embeddings(chunk_repository: ChunkRepository, db_session: Session):
+def test_get_without_embeddings(chunk_repository: ChunkRepository, db_session: Session):
     """Test retrieving chunks that do not have embeddings."""
     # Use existing seed data (all chunks 1-6 have NULL embeddings)
-    results = chunk_repository.get_chunks_without_embeddings(limit=10)
+    results = chunk_repository.get_without_embeddings(limit=10)
 
     assert len(results) <= 10
     assert all(c.embedding is None for c in results)
 
     # Test with offset
-    results_offset = chunk_repository.get_chunks_without_embeddings(limit=5, offset=1)
+    results_offset = chunk_repository.get_without_embeddings(limit=5, offset=1)
     assert len(results_offset) <= 5
 
 

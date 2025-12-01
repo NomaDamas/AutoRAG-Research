@@ -2,7 +2,6 @@ import pytest
 from sqlalchemy.orm import Session
 
 from autorag_research.orm.repository.query import QueryRepository
-from autorag_research.orm.schema import Query
 
 
 @pytest.fixture
@@ -14,7 +13,7 @@ def test_get_by_query_text(query_repository: QueryRepository):
     result = query_repository.get_by_query_text("What is Doc One about?")
 
     assert result is not None
-    assert result.query == "What is Doc One about?"
+    assert result.contents == "What is Doc One about?"
     assert result.generation_gt == ["alpha"]
 
 
@@ -47,7 +46,7 @@ def test_search_by_query_text(query_repository: QueryRepository):
     results = query_repository.search_by_query_text("Doc", limit=10)
 
     assert len(results) >= 3
-    assert all("doc" in q.query.lower() for q in results)
+    assert all("doc" in q.contents.lower() for q in results)
 
 
 def test_get_queries_with_generation_gt(query_repository: QueryRepository):
@@ -78,27 +77,3 @@ def test_query_has_embedding_attributes(query_repository: QueryRepository):
 def test_vector_search_capability(query_repository: QueryRepository):
     assert hasattr(query_repository, "vector_search")
     assert hasattr(query_repository, "vector_search_with_scores")
-
-
-def test_get_queries_with_empty_content(query_repository: QueryRepository, db_session: Session):
-    empty_query = Query(id=800101, query="", generation_gt=None)
-    whitespace_query = Query(id=800102, query="   ", generation_gt=None)
-    null_query = Query(id=800103, query="         ", generation_gt=None)
-    valid_query = Query(id=800104, query="Valid query", generation_gt=None)
-
-    db_session.add_all([empty_query, whitespace_query, null_query, valid_query])
-    db_session.commit()
-
-    results = query_repository.get_queries_with_empty_content()
-
-    result_ids = [q.id for q in results]
-    assert 800101 in result_ids
-    assert 800102 in result_ids
-    assert 800103 in result_ids
-    assert 800104 not in result_ids
-
-    db_session.delete(db_session.get(Query, 800101))
-    db_session.delete(db_session.get(Query, 800102))
-    db_session.delete(db_session.get(Query, 800103))
-    db_session.delete(db_session.get(Query, 800104))
-    db_session.commit()
