@@ -187,3 +187,4 @@ class RetrievalRelationRepository(GenericRepository[Any]):
         for rel in relations:
             self.session.delete(rel)
         return count
+
