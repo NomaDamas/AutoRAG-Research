@@ -134,13 +134,25 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         logger.info(f"Ingesting {len(queries)} queries from BEIR dataset '{self.dataset_name}'...")
         qids = [int(x) for x in list(queries.keys())]
         query_contents = list(queries.values())
-        self.service.add_queries_simple(query_contents, qids)
+        self.service.add_queries([
+            {
+                "id": qid,
+                "contents": query,
+            }
+            for qid, query in zip(qids, query_contents, strict=True)
+        ])
 
         # Ingest Corpus (concat title and text which is conventional in BeIR and Pyserini)
         logger.info(f"Ingesting {len(corpus)} corpus documents from BEIR dataset '{self.dataset_name}'...")
         corpus_ids = [int(x) for x in list(corpus.keys())]
         corpus_contents = [(doc.get("title", "") + " " + doc["text"]).strip() for doc in corpus.values()]
-        self.service.add_chunks_simple(corpus_contents, corpus_ids)
+        self.service.add_chunks([
+            {
+                "id": cid,
+                "contents": content,
+            }
+            for cid, content in zip(corpus_ids, corpus_contents, strict=True)
+        ])
 
         # Ingest qrels
         from autorag_research.orm.models import and_all, or_all

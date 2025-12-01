@@ -153,11 +153,20 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
         # Convert PIL images to bytes
         image_bytes_list = self.pil_images_to_bytes(image_list)
 
-        query_pk_list = self.service.add_queries([(query, [ans]) for query, ans in zip(queries, answers, strict=True)])
+        query_pk_list = self.service.add_queries([
+            {
+                "contents": query,
+                "generation_gt": [ans],
+            }
+            for query, ans in zip(queries, answers, strict=True)
+        ])
 
-        # Add image chunks with content and mimetype (no file path needed)
         image_chunk_pk_list = self.service.add_image_chunks([
-            (content, mimetype, None) for content, mimetype in image_bytes_list
+            {
+                "contents": content,
+                "mimetype": mimetype,
+            }
+            for content, mimetype in image_bytes_list
         ])
 
         self.ingest_qrels(query_pk_list, image_chunk_pk_list)
