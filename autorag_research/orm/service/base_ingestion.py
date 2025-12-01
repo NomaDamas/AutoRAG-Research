@@ -73,6 +73,49 @@ class BaseIngestionService(ABC):
 
     # ==================== Embedding Operations ====================
 
+    def _set_embeddings(
+        self,
+        entity_ids: list[int],
+        embeddings: list,
+        repo_attr: str,
+        is_multi_vector: bool,
+    ) -> int:
+        """Generic helper to set embeddings for entities.
+
+        Args:
+            entity_ids: List of entity IDs.
+            embeddings: List of embeddings (single or multi-vector).
+            repo_attr: Repository attribute name (e.g., "queries", "chunks", "image_chunks").
+            is_multi_vector: Whether to set embeddings (multi) or embedding (single).
+
+        Returns:
+            Number of entities successfully updated.
+
+        Raises:
+            LengthMismatchError: If entity_ids and embeddings have different lengths.
+        """
+        if len(entity_ids) != len(embeddings):
+            raise LengthMismatchError("entity_ids", "embeddings")
+
+        total_updated = 0
+
+        with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
+
+            repository = getattr(uow, repo_attr)
+            for entity_id, embedding in zip(entity_ids, embeddings, strict=True):
+                entity = repository.get_by_id(entity_id)
+                if entity:
+                    if is_multi_vector:
+                        entity.embeddings = embedding
+                    else:
+                        entity.embedding = embedding
+                    total_updated += 1
+            uow.commit()
+
+        return total_updated
+
     def set_query_embeddings(
         self,
         query_ids: list[int],
@@ -90,24 +133,9 @@ class BaseIngestionService(ABC):
         Raises:
             LengthMismatchError: If query_ids and embeddings have different lengths.
         """
-        if len(query_ids) != len(embeddings):
-            raise LengthMismatchError("query_ids", "embeddings")
+        return self._set_embeddings(query_ids, embeddings, "queries", is_multi_vector=False)
 
-        total_updated = 0
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            for query_id, embedding in zip(query_ids, embeddings, strict=True):
-                query = uow.queries.get_by_id(query_id)
-                if query:
-                    query.embedding = embedding
-                    total_updated += 1
-            uow.commit()
-
-        return total_updated
-
-    def set_query_multi_vector_embeddings(
+    def set_query_multi_embeddings(
         self,
         query_ids: list[int],
         embeddings: list[list[list[float]]],
@@ -124,22 +152,7 @@ class BaseIngestionService(ABC):
         Raises:
             LengthMismatchError: If query_ids and embeddings have different lengths.
         """
-        if len(query_ids) != len(embeddings):
-            raise LengthMismatchError("query_ids", "embeddings")
-
-        total_updated = 0
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            for query_id, embedding in zip(query_ids, embeddings, strict=True):
-                query = uow.queries.get_by_id(query_id)
-                if query:
-                    query.embeddings = embedding
-                    total_updated += 1
-            uow.commit()
-
-        return total_updated
+        return self._set_embeddings(query_ids, embeddings, "queries", is_multi_vector=True)
 
     def set_chunk_embeddings(
         self,
@@ -158,22 +171,25 @@ class BaseIngestionService(ABC):
         Raises:
             LengthMismatchError: If chunk_ids and embeddings have different lengths.
         """
-        if len(chunk_ids) != len(embeddings):
-            raise LengthMismatchError("chunk_ids", "embeddings")
+        return self._set_embeddings(chunk_ids, embeddings, "chunks", is_multi_vector=False)
 
-        total_updated = 0
+    def set_chunk_multi_embeddings(
+        self,
+        chunk_ids: list[int],
+        embeddings: list[list[list[float]]],
+    ) -> int:
+        """Batch set multi-vector embeddings for chunks.
 
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            for chunk_id, embedding in zip(chunk_ids, embeddings, strict=True):
-                chunk = uow.chunks.get_by_id(chunk_id)
-                if chunk:
-                    chunk.embedding = embedding
-                    total_updated += 1
-            uow.commit()
+        Args:
+            chunk_ids: List of chunk IDs.
+            embeddings: List of multi-vector embeddings (list of list of floats per chunk).
+        Returns:
+            Total number of chunks successfully updated.
 
-        return total_updated
+        Raises:
+            LengthMismatchError: If chunk_ids and embeddings have different lengths.
+        """
+        return self._set_embeddings(chunk_ids, embeddings, "chunks", is_multi_vector=True)
 
     # ==================== Batch Embedding Operations ====================
 
@@ -244,21 +260,14 @@ class BaseIngestionService(ABC):
             data_list = [data for _, data in valid_items]
             embeddings = asyncio.run(run_with_concurrency_limit(data_list, embed_func, max_concurrency, error_msg))
 
-            # Update entities with embeddings
-            with self._create_uow() as uow:
-                if uow.session is None:
-                    raise SessionNotSetError
-
-                repository = getattr(uow, repo_attr)
-                for (item_id, _), embedding in zip(valid_items, embeddings, strict=True):
-                    entity = repository.get_by_id(item_id)
-                    if entity and embedding is not None:
-                        if is_multi_vector:
-                            entity.embeddings = embedding
-                        else:
-                            entity.embedding = embedding
-                        total_embedded += 1
-                uow.commit()
+            # Filter out None embeddings and update entities
+            valid_updates = [
+                (item_id, emb) for (item_id, _), emb in zip(valid_items, embeddings, strict=True) if emb is not None
+            ]
+            if valid_updates:
+                ids_to_update = [item_id for item_id, _ in valid_updates]
+                embeddings_to_update = [emb for _, emb in valid_updates]
+                total_embedded += self._set_embeddings(ids_to_update, embeddings_to_update, repo_attr, is_multi_vector)
 
             logger.info(f"Embedded {total_embedded} {display_name}{embedding_suffix} so far")
 

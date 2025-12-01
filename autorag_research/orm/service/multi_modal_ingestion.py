@@ -6,7 +6,7 @@ pages, captions, chunks, image chunks, queries, and retrieval ground truth relat
 
 import logging
 
-from autorag_research.exceptions import LengthMismatchError, SessionNotSetError
+from autorag_research.exceptions import SessionNotSetError
 from autorag_research.orm.repository.multi_modal_uow import MultiModalUnitOfWork
 from autorag_research.orm.service.base_ingestion import (
     BaseIngestionService,
@@ -450,24 +450,9 @@ class MultiModalIngestionService(BaseIngestionService):
         Raises:
             LengthMismatchError: If image_chunk_ids and embeddings have different lengths.
         """
-        if len(image_chunk_ids) != len(embeddings):
-            raise LengthMismatchError("image_chunk_ids", "embeddings")
+        return self._set_embeddings(image_chunk_ids, embeddings, "image_chunks", is_multi_vector=False)
 
-        total_updated = 0
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            for image_chunk_id, embedding in zip(image_chunk_ids, embeddings, strict=True):
-                image_chunk = uow.image_chunks.get_by_id(image_chunk_id)
-                if image_chunk:
-                    image_chunk.embedding = embedding
-                    total_updated += 1
-            uow.commit()
-
-        return total_updated
-
-    def set_image_chunk_multi_vector_embeddings(
+    def set_image_chunk_multi_embeddings(
         self,
         image_chunk_ids: list[int],
         embeddings: list[list[list[float]]],
@@ -484,22 +469,7 @@ class MultiModalIngestionService(BaseIngestionService):
         Raises:
             LengthMismatchError: If image_chunk_ids and embeddings have different lengths.
         """
-        if len(image_chunk_ids) != len(embeddings):
-            raise LengthMismatchError("image_chunk_ids", "embeddings")
-
-        total_updated = 0
-
-        with self._create_uow() as uow:
-            if uow.session is None:
-                raise SessionNotSetError
-            for image_chunk_id, embedding in zip(image_chunk_ids, embeddings, strict=True):
-                image_chunk = uow.image_chunks.get_by_id(image_chunk_id)
-                if image_chunk:
-                    image_chunk.embeddings = embedding
-                    total_updated += 1
-            uow.commit()
-
-        return total_updated
+        return self._set_embeddings(image_chunk_ids, embeddings, "image_chunks", is_multi_vector=True)
 
     # ==================== Async Batch Embedding Operations ====================
 
@@ -678,10 +648,10 @@ class MultiModalIngestionService(BaseIngestionService):
             total_retrieval_relations = uow.retrieval_relations.count()
 
             # Embedding status
-            chunks_with_emb = len(uow.chunks.get_chunks_with_embeddings())
+            chunks_with_emb = len(uow.chunks.get_with_embeddings())
             chunks_without_emb = len(uow.chunks.get_without_embeddings())
-            image_chunks_with_emb = len(uow.image_chunks.get_image_chunks_with_embeddings())
-            image_chunks_without_emb = len(uow.image_chunks.get_image_chunks_without_embeddings())
+            image_chunks_with_emb = len(uow.image_chunks.get_with_embeddings())
+            image_chunks_without_emb = len(uow.image_chunks.get_without_embeddings())
 
             return {
                 "files": total_files,
