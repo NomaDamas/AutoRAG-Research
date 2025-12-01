@@ -1,13 +1,20 @@
+import asyncio
 import functools
 import itertools
-from collections.abc import Callable, Iterable
-from typing import Any
+import logging
+from collections.abc import Awaitable, Callable, Iterable
+from typing import Any, TypeVar
 
 import numpy as np
 import pandas as pd
 import tiktoken
 from pydantic import BaseModel as BM
 from pydantic.v1 import BaseModel
+
+logger = logging.getLogger("AutoRAG-Research")
+
+T = TypeVar("T")
+R = TypeVar("R")
 
 
 def to_list(item: Any) -> Any:
@@ -95,3 +102,52 @@ def unpack_and_run(target_list: list[list[Any]], func: Callable, *args: tuple, *
     result = [list(itertools.islice(iterator, length)) for length in lengths]
 
     return result
+
+
+async def run_with_concurrency_limit(
+    items: Iterable[T],
+    async_func: Callable[[T], Awaitable[R]],
+    max_concurrency: int,
+    error_message: str = "Task failed",
+) -> list[R | None]:
+    """Run async function on items with concurrency limit using semaphore.
+
+    A generic utility for running async operations with controlled concurrency.
+    Each item is processed by the async function, with at most `max_concurrency`
+    operations running simultaneously.
+
+    Args:
+        items: Iterable of items to process.
+        async_func: Async function that takes an item and returns a result.
+        max_concurrency: Maximum number of concurrent operations.
+        error_message: Message to log when an operation fails.
+
+    Returns:
+        List of results (or None if failed) in same order as items.
+
+    Example:
+        ```python
+        async def embed_text(text: str) -> list[float]:
+            return await some_api_call(text)
+
+        texts = ["hello", "world", "test"]
+        embeddings = await run_with_concurrency_limit(
+            texts,
+            embed_text,
+            max_concurrency=5,
+            error_message="Failed to embed text",
+        )
+        ```
+    """
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def process_with_semaphore(item: T) -> R | None:
+        async with semaphore:
+            try:
+                return await async_func(item)
+            except Exception:
+                logger.exception(error_message)
+                return None
+
+    tasks = [process_with_semaphore(item) for item in items]
+    return await asyncio.gather(*tasks)
