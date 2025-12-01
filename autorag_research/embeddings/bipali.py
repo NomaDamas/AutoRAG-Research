@@ -6,11 +6,13 @@ import asyncio
 from typing import Any, ClassVar
 
 import torch
+from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
 from llama_index.core.base.embeddings.base import Embedding
 from llama_index.core.embeddings import MultiModalEmbedding
 from llama_index.core.schema import ImageType
 from PIL import Image
 from pydantic import Field, PrivateAttr
+from transformers import PreTrainedModel
 
 # Model type registry: maps model_type to (model_class, processor_class)
 MODEL_REGISTRY: dict[str, tuple[str, str]] = {
@@ -22,7 +24,7 @@ MODEL_REGISTRY: dict[str, tuple[str, str]] = {
 }
 
 
-def _load_model_classes(model_type: str) -> tuple[type, type]:
+def _load_model_classes(model_type: str) -> tuple[PreTrainedModel, BaseVisualRetrieverProcessor]:
     """Dynamically load model and processor classes from colpali_engine."""
     if model_type not in MODEL_REGISTRY:
         raise ValueError(f"Unknown model_type '{model_type}'. Supported: {list(MODEL_REGISTRY.keys())}")  # noqa: TRY003
@@ -100,7 +102,7 @@ class BiPaliEmbeddings(MultiModalEmbedding):
         """Load the model and processor based on model_type."""
         model_class, processor_class = _load_model_classes(self.model_type)
 
-        self._processor = processor_class.from_pretrained(self.model_name)
+        self._processor = processor_class.from_pretrained(self.model_name)  # ty: ignore
         self._model = model_class.from_pretrained(
             self.model_name,
             dtype=self.torch_dtype,

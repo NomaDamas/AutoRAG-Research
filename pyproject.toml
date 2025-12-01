@@ -47,6 +47,8 @@ Documentation = "https://vkehfdl1.github.io/AutoRAG-Research/"
 [project.optional-dependencies]
 gpu = [
     "colpali-engine>=0.3.13",
+    "torch>=2.8.0",
+    "transformers>=4.57.1",
 ]
 
 [dependency-groups]

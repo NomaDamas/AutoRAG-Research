@@ -268,6 +268,8 @@ dependencies = [
 [package.optional-dependencies]
 gpu = [
     { name = "colpali-engine" },
+    { name = "torch" },
+    { name = "transformers" },
 ]
 
 [package.dev-dependencies]
@@ -310,6 +312,8 @@ requires-dist = [
     { name = "sacrebleu", specifier = ">=2.5.1" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
     { name = "tiktoken", specifier = ">=0.12.0" },
+    { name = "torch", marker = "extra == 'gpu'", specifier = ">=2.8.0" },
+    { name = "transformers", marker = "extra == 'gpu'", specifier = ">=4.57.1" },
 ]
 provides-extras = ["gpu"]
 

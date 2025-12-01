@@ -5,10 +5,10 @@ CRUD operations and transaction management with SQLAlchemy.
 """
 
 from contextlib import contextmanager
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import select, text
+from sqlalchemy import CursorResult, select, text
 from sqlalchemy.orm import Session
 
 from autorag_research.exceptions import LengthMismatchError, NoSessionError
@@ -322,7 +322,7 @@ class BaseVectorRepository(GenericRepository[T]):
         table_name = self.model_cls.__tablename__
         sql = text(f"UPDATE {table_name} SET {vector_column} = {array_literal} WHERE {id_column} = :entity_id")  # noqa: S608
 
-        result = self.session.execute(sql, {"entity_id": entity_id})
+        result = cast(CursorResult[Any], self.session.execute(sql, {"entity_id": entity_id}))
         return result.rowcount > 0
 
     def set_multi_vector_embeddings_batch(

@@ -109,7 +109,7 @@ class OrGroup:
             return OrGroup(items=self.items + other.items)
         # Handle _IntWrapper (has _to_chunk_id method)
         if hasattr(other, "_to_chunk_id"):
-            return OrGroup(items=(*self.items, other._to_chunk_id()))
+            return OrGroup(items=(*self.items, other._to_chunk_id()))  # ty: ignore
         return OrGroup(items=(*self.items, other))
 
     def __and__(self, other: ChunkId | OrGroup | AndChain) -> AndChain:
@@ -135,12 +135,12 @@ class AndChain:
     def __and__(self, other: ChunkId | OrGroup | AndChain) -> AndChain:
         """Extend AND chain: (A & B) & C."""
         if isinstance(other, AndChain):
-            return AndChain(groups=(*self.groups, other.groups))
+            return AndChain(groups=(*self.groups, other.groups))  # ty: ignore
         elif isinstance(other, OrGroup):
             return AndChain(groups=(*self.groups, other))
         # Handle _IntWrapper (has _to_chunk_id method)
         elif hasattr(other, "_to_chunk_id"):
-            return AndChain(groups=(*self.groups, OrGroup._create(other._to_chunk_id())))
+            return AndChain(groups=(*self.groups, OrGroup._create(other._to_chunk_id())))  # ty: ignore
         else:  # ChunkId (TextId or ImageId)
             return AndChain(groups=(*self.groups, OrGroup._create(other)))
 
