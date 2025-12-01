@@ -133,7 +133,7 @@ def dump_file(source_database):
         dump_path = Path(f.name)
 
     # Run pg_dump using the shell script
-    script_path = Path(__file__).parent.parent.parent / "scripts" / "dump_postgres.sh"
+    script_path = Path(__file__).parent.parent.parent.parent / "scripts" / "dump_postgres.sh"
 
     subprocess.run(  # noqa: S603
         [
