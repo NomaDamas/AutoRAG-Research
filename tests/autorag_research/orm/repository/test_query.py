@@ -13,7 +13,7 @@ def test_get_by_query_text(query_repository: QueryRepository):
     result = query_repository.get_by_query_text("What is Doc One about?")
 
     assert result is not None
-    assert result.query == "What is Doc One about?"
+    assert result.contents == "What is Doc One about?"
     assert result.generation_gt == ["alpha"]
 
 
@@ -46,7 +46,7 @@ def test_search_by_query_text(query_repository: QueryRepository):
     results = query_repository.search_by_query_text("Doc", limit=10)
 
     assert len(results) >= 3
-    assert all("doc" in q.query.lower() for q in results)
+    assert all("doc" in q.contents.lower() for q in results)
 
 
 def test_get_queries_with_generation_gt(query_repository: QueryRepository):
@@ -75,7 +75,5 @@ def test_query_has_embedding_attributes(query_repository: QueryRepository):
 
 
 def test_vector_search_capability(query_repository: QueryRepository):
-    """Test that QueryRepository inherits vector search methods from BaseVectorRepository."""
-    # Verify the repository has vector search methods
     assert hasattr(query_repository, "vector_search")
     assert hasattr(query_repository, "vector_search_with_scores")

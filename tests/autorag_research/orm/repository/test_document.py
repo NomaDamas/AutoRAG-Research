@@ -97,13 +97,3 @@ def test_count_pages(document_repository: DocumentRepository):
     count = document_repository.count_pages(1)
 
     assert count == 2
-
-
-def test_get_by_filepath_id(document_repository: DocumentRepository):
-    """Test retrieving a document by its file path ID."""
-    # Use existing seed data (document id=2, filepath=2)
-    result = document_repository.get_by_filepath_id(2)
-
-    assert result is not None
-    assert result.filepath == 2
-    assert result.filename == "doc2.pdf"

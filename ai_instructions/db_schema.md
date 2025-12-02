@@ -1,6 +1,6 @@
 Table Document {
   id bigserial [pk]
-  filepath bigint [ref: - File.id]
+  path bigint [ref: - File.id]
   filename text
   author text
   title text
@@ -11,7 +11,8 @@ Table Page {
   id bigserial [pk]
   page_num int [not null]
   document_id bigint [ref: > Document.id, not null]
-  image_path bigint [ref: - File.id]
+  image_contents bytea
+  mimetype varchar(255)
   page_metadata jsonb
 
   indexes {
@@ -42,7 +43,8 @@ Table Chunk {
 Table ImageChunk {
   id bigserial [pk]
   parent_page bigint [ref: > Page.id]
-  image_path bigint [ref: - File.id, not null]
+  contents bytea [not null]
+  mimetype varchar(255) [not null]
   embedding vector(768)
   embeddings vector[](768)
 }
@@ -54,7 +56,7 @@ Table CaptionChunkRelation {
 
 Table Query {
   id bigserial [pk]
-  query text [not null]
+  contents text [not null]
   generation_gt text[]
   embedding vector(768)
   embeddings vector

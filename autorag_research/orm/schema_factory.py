@@ -14,12 +14,15 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from autorag_research.orm.types import VectorArray
 
 
 @lru_cache(maxsize=16)
@@ -59,11 +62,7 @@ def create_schema(embedding_dim: int = 768):
         path: Mapped[str] = mapped_column(String(255), nullable=False)
 
         # Relationships
-        documents: Mapped[list["Document"]] = relationship(foreign_keys="Document.filepath", back_populates="file")
-        pages: Mapped[list["Page"]] = relationship(foreign_keys="Page.image_path", back_populates="image_file")
-        image_chunks: Mapped[list["ImageChunk"]] = relationship(
-            foreign_keys="ImageChunk.image_path", back_populates="image_file"
-        )
+        documents: Mapped[list["Document"]] = relationship(foreign_keys="Document.path", back_populates="file")
 
     class Document(Base):
         """Document metadata table"""
@@ -71,14 +70,14 @@ def create_schema(embedding_dim: int = 768):
         __tablename__ = "document"
 
         id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-        filepath: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("file.id", ondelete="CASCADE"), unique=True)
+        path: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("file.id", ondelete="CASCADE"), unique=True)
         filename: Mapped[str | None] = mapped_column(Text)
         author: Mapped[str | None] = mapped_column(Text)
         title: Mapped[str | None] = mapped_column(Text)
         doc_metadata: Mapped[dict | None] = mapped_column(JSONB)
 
         # Relationships
-        file: Mapped[Optional["File"]] = relationship(foreign_keys=[filepath], back_populates="documents")
+        file: Mapped[Optional["File"]] = relationship(foreign_keys=[path], back_populates="documents")
         pages: Mapped[list["Page"]] = relationship(back_populates="document", cascade="all, delete-orphan")
 
     class Page(Base):
@@ -91,16 +90,14 @@ def create_schema(embedding_dim: int = 768):
         document_id: Mapped[int] = mapped_column(
             BigInteger, ForeignKey("document.id", ondelete="CASCADE"), nullable=False
         )
-        image_path: Mapped[int | None] = mapped_column(
-            BigInteger, ForeignKey("file.id", ondelete="SET NULL"), unique=True
-        )
+        image_contents: Mapped[bytes | None] = mapped_column(LargeBinary)
+        mimetype: Mapped[str | None] = mapped_column(String(255))
         page_metadata: Mapped[dict | None] = mapped_column(JSONB)
 
         __table_args__ = (UniqueConstraint("document_id", "page_num", name="uq_document_page"),)
 
         # Relationships
         document: Mapped["Document"] = relationship(back_populates="pages")
-        image_file: Mapped[Optional["File"]] = relationship(foreign_keys=[image_path], back_populates="pages")
         captions: Mapped[list["Caption"]] = relationship(back_populates="page", cascade="all, delete-orphan")
         image_chunks: Mapped[list["ImageChunk"]] = relationship(back_populates="page", cascade="all, delete-orphan")
 
@@ -129,7 +126,7 @@ def create_schema(embedding_dim: int = 768):
         parent_caption: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("caption.id", ondelete="CASCADE"))
         contents: Mapped[str] = mapped_column(Text, nullable=False)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
-        embeddings: Mapped[list[Vector] | None] = mapped_column(ARRAY(Vector(embedding_dim)))
+        embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
 
         # Relationships
         parent_caption_obj: Mapped[Optional["Caption"]] = relationship(back_populates="chunks")
@@ -150,15 +147,13 @@ def create_schema(embedding_dim: int = 768):
 
         id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
         parent_page: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("page.id", ondelete="CASCADE"))
-        image_path: Mapped[int] = mapped_column(
-            BigInteger, ForeignKey("file.id", ondelete="CASCADE"), nullable=False, unique=True
-        )
+        contents: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+        mimetype: Mapped[str] = mapped_column(String(255), nullable=False)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
-        embeddings: Mapped[list[Vector] | None] = mapped_column(ARRAY(Vector(embedding_dim)))
+        embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
 
         # Relationships
         page: Mapped[Optional["Page"]] = relationship(back_populates="image_chunks")
-        image_file: Mapped["File"] = relationship(foreign_keys=[image_path], back_populates="image_chunks")
         retrieval_relations: Mapped[list["RetrievalRelation"]] = relationship(
             back_populates="image_chunk", cascade="all, delete-orphan"
         )
@@ -186,10 +181,10 @@ def create_schema(embedding_dim: int = 768):
         __tablename__ = "query"
 
         id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-        query: Mapped[str] = mapped_column(Text, nullable=False)
+        contents: Mapped[str] = mapped_column(Text, nullable=False)
         generation_gt: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=True)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
-        embeddings: Mapped[list[Vector] | None] = mapped_column(ARRAY(Vector(embedding_dim)))
+        embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
 
         # Relationships
         retrieval_relations: Mapped[list["RetrievalRelation"]] = relationship(

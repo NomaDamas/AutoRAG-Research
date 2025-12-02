@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS file (
 -- Document
 CREATE TABLE IF NOT EXISTS document (
 	id BIGSERIAL PRIMARY KEY,
-	filepath BIGINT REFERENCES file(id),
+	path BIGINT REFERENCES file(id),
 	filename TEXT,
 	author TEXT,
 	title TEXT,
@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS page (
 	id BIGSERIAL PRIMARY KEY,
 	page_num INT NOT NULL,
 	document_id BIGINT NOT NULL REFERENCES document(id),
-	image_path BIGINT REFERENCES file(id),
+	image_contents BYTEA,
+	mimetype VARCHAR(255),
 	page_metadata JSONB,
 	CONSTRAINT uq_page_per_doc UNIQUE (document_id, page_num)
 );
@@ -55,21 +56,24 @@ CREATE TABLE IF NOT EXISTS caption (
 );
 
 -- Chunk
+-- embeddings column supports VectorChord's MaxSim operator (@#) for late interaction models
 CREATE TABLE IF NOT EXISTS chunk (
 	id BIGSERIAL PRIMARY KEY,
 	parent_caption BIGINT REFERENCES caption(id),
 	contents TEXT NOT NULL,
 	embedding VECTOR(768),
-	embeddings VECTOR(768)[]
+	embeddings VECTOR(768)[]  -- Multi-vector for ColBERT/ColPali style retrieval
 );
 
 -- ImageChunk
+-- embeddings column supports VectorChord's MaxSim operator (@#) for late interaction models
 CREATE TABLE IF NOT EXISTS image_chunk (
 	id BIGSERIAL PRIMARY KEY,
 	parent_page BIGINT REFERENCES page(id),
-	image_path BIGINT NOT NULL REFERENCES file(id),
+	contents BYTEA NOT NULL,
+	mimetype VARCHAR(255) NOT NULL,
 	embedding VECTOR(768),
-	embeddings VECTOR(768)[]
+	embeddings VECTOR(768)[]  -- Multi-vector for ColPali style image retrieval
 );
 
 -- CaptionChunkRelation
@@ -80,12 +84,13 @@ CREATE TABLE IF NOT EXISTS caption_chunk_relation (
 );
 
 -- Query
+-- embeddings column supports VectorChord's MaxSim operator (@#) for late interaction models
 CREATE TABLE IF NOT EXISTS query (
 	id BIGSERIAL PRIMARY KEY,
-	query TEXT NOT NULL,
+	contents TEXT NOT NULL,
 	generation_gt TEXT[],
 	embedding VECTOR(768),
-	embeddings VECTOR(768)[]
+	embeddings VECTOR(768)[]  -- Multi-vector for ColBERT/ColPali style retrieval
 );
 
 -- RetrievalRelation
