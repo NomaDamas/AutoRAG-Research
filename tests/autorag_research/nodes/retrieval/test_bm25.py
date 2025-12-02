@@ -58,4 +58,5 @@ def test_bm25_private_multiple_queries(bm25_private):
 def test_bm25_private_empty_queries(bm25_private):
     results = bm25_private.run([], top_k=5)
 
+    # Pyserini returns an empty list for empty queries
     assert results == []
