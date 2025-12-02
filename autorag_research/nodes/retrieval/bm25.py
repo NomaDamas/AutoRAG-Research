@@ -9,6 +9,7 @@ from pathlib import Path
 
 from pyserini.search.lucene import LuceneSearcher
 
+from autorag_research.exceptions import MissingRequiredParameterError
 from autorag_research.nodes import BaseModule
 
 
@@ -47,8 +48,7 @@ class BM25Module(BaseModule):
             ValueError: If neither index_name nor index_path is provided
         """
         if index_name is None and index_path is None:
-            msg = "Either index_name or index_path must be provided"
-            raise ValueError(msg)
+            raise MissingRequiredParameterError(["index_name", "index_path"])
 
         if index_name:
             # Use pre-built index

@@ -68,3 +68,11 @@ class DuplicateRetrievalGTError(Exception):
     def __init__(self, query_ids: list[int]):
         ids_str = ", ".join(str(qid) for qid in query_ids)
         super().__init__(f"Retrieval GT already exists for query IDs: {ids_str}. Use upsert=True to overwrite.")
+
+
+class MissingRequiredParameterError(Exception):
+    """Raised when required parameters are missing."""
+
+    def __init__(self, param_names: list[str]):
+        params_str = ", ".join(f"'{p}'" for p in param_names)
+        super().__init__(f"At least one of the following parameters must be provided: {params_str}.")
