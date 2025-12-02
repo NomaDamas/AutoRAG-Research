@@ -269,7 +269,6 @@ dependencies = [
     { name = "aiohttp" },
     { name = "beir" },
     { name = "bert-score" },
-    { name = "colpali-engine" },
     { name = "datasets" },
     { name = "evaluate" },
     { name = "llama-index" },
@@ -281,8 +280,6 @@ dependencies = [
     { name = "platformdirs" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
-    { name = "pyserini", version = "1.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "pyserini", version = "1.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "rouge-score" },
     { name = "sacrebleu" },
     { name = "sqlalchemy" },
@@ -290,10 +287,21 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "colpali-engine" },
+    { name = "pyserini", version = "1.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pyserini", version = "1.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "torch" },
+    { name = "transformers" },
+]
 gpu = [
     { name = "colpali-engine" },
     { name = "torch" },
     { name = "transformers" },
+]
+search = [
+    { name = "pyserini", version = "1.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pyserini", version = "1.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [package.dev-dependencies]
@@ -320,7 +328,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.2" },
     { name = "beir", specifier = ">=2.2.0" },
     { name = "bert-score", specifier = ">=0.3.13" },
-    { name = "colpali-engine", specifier = ">=0.3.13" },
+    { name = "colpali-engine", marker = "extra == 'all'", specifier = ">=0.3.13" },
     { name = "colpali-engine", marker = "extra == 'gpu'", specifier = ">=0.3.13" },
     { name = "datasets", specifier = ">=4.4.1" },
     { name = "evaluate", specifier = ">=0.4.6" },
@@ -333,15 +341,18 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.5.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.12" },
     { name = "pydantic", specifier = ">=2.12.4" },
-    { name = "pyserini", specifier = ">=1.2.0" },
+    { name = "pyserini", marker = "extra == 'all'", specifier = ">=1.2.0" },
+    { name = "pyserini", marker = "extra == 'search'", specifier = ">=1.2.0" },
     { name = "rouge-score", specifier = ">=0.1.2" },
     { name = "sacrebleu", specifier = ">=2.5.1" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
     { name = "tiktoken", specifier = ">=0.12.0" },
+    { name = "torch", marker = "extra == 'all'", specifier = ">=2.8.0" },
     { name = "torch", marker = "extra == 'gpu'", specifier = ">=2.8.0" },
+    { name = "transformers", marker = "extra == 'all'", specifier = ">=4.57.1" },
     { name = "transformers", marker = "extra == 'gpu'", specifier = ">=4.57.1" },
 ]
-provides-extras = ["gpu"]
+provides-extras = ["gpu", "search", "all"]
 
 [package.metadata.requires-dev]
 dev = [
