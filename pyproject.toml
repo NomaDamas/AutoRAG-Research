@@ -22,6 +22,7 @@ dependencies = [
     "aiohttp>=3.13.2",
     "beir>=2.2.0",
     "bert-score>=0.3.13",
+    "colpali-engine>=0.3.13",
     "datasets>=4.4.1",
     "evaluate>=0.4.6",
     "llama-index>=0.12.52",
