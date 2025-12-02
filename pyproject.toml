@@ -33,6 +33,7 @@ dependencies = [
     "platformdirs>=4.5.0",
     "psycopg[binary]>=3.2.12",
     "pydantic>=2.12.4",
+    "pyserini>=1.2.0",
     "rouge-score>=0.1.2",
     "sacrebleu>=2.5.1",
     "sqlalchemy>=2.0.44",
