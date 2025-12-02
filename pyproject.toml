@@ -22,7 +22,6 @@ dependencies = [
     "aiohttp>=3.13.2",
     "beir>=2.2.0",
     "bert-score>=0.3.13",
-    "colpali-engine>=0.3.13",
     "datasets>=4.4.1",
     "evaluate>=0.4.6",
     "llama-index>=0.12.52",
@@ -34,7 +33,6 @@ dependencies = [
     "platformdirs>=4.5.0",
     "psycopg[binary]>=3.2.12",
     "pydantic>=2.12.4",
-    "pyserini>=1.2.0",
     "rouge-score>=0.1.2",
     "sacrebleu>=2.5.1",
     "sqlalchemy>=2.0.44",
@@ -51,6 +49,15 @@ gpu = [
     "colpali-engine>=0.3.13",
     "torch>=2.8.0",
     "transformers>=4.57.1",
+]
+search = [
+    "pyserini>=1.2.0",
+]
+all = [
+    "colpali-engine>=0.3.13",
+    "torch>=2.8.0",
+    "transformers>=4.57.1",
+    "pyserini>=1.2.0",
 ]
 
 [dependency-groups]
