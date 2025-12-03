@@ -64,6 +64,9 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: Set JVM_PATH for pyjnius
+        run: echo "JVM_PATH=$JAVA_HOME/lib/server/libjvm.so" >> $GITHUB_ENV
+
       - name: Set up the environment
         uses: ./.github/actions/setup-python-env
         with:
