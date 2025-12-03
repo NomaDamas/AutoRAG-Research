@@ -1,11 +1,9 @@
-from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.pipelines.retrieval.bm25 import BM25RetrievalPipeline
-
-TEST_INDEX_PATH = Path(__file__).parent.parent.parent.parent / "resources" / "bm25_test_index"
 
 SEED_METRIC_ID = 1
 
@@ -27,20 +25,40 @@ class TestBM25RetrievalPipeline:
             session.close()
 
     @pytest.fixture
-    def pipeline(self, session_factory, cleanup_pipeline_results):
-        pipeline = BM25RetrievalPipeline(
-            session_factory=session_factory,
-            name="test_bm25_pipeline",
-            index_path=str(TEST_INDEX_PATH),
-        )
-        cleanup_pipeline_results.append(pipeline.pipeline_id)
-        return pipeline
+    def mock_bm25_module(self):
+        def mock_run(queries: list[str], top_k: int) -> list[list[dict]]:
+            results = []
+            for _ in queries:
+                results.append([{"doc_id": i + 1, "score": 0.9 - i * 0.1} for i in range(top_k)])
+            return results
 
-    def test_run(self, pipeline):
-        result = pipeline.run(
-            metric_id=SEED_METRIC_ID,
-            top_k=3,
-        )
+        mock = MagicMock()
+        mock.run = mock_run
+        return mock
+
+    @pytest.fixture
+    def pipeline(self, session_factory, cleanup_pipeline_results, mock_bm25_module):
+        with patch(
+            "autorag_research.pipelines.retrieval.bm25.BM25Module",
+            return_value=mock_bm25_module,
+        ):
+            pipeline = BM25RetrievalPipeline(
+                session_factory=session_factory,
+                name="test_bm25_pipeline",
+                index_path="/fake/index/path",
+            )
+            cleanup_pipeline_results.append(pipeline.pipeline_id)
+            yield pipeline
+
+    def test_run(self, pipeline, mock_bm25_module):
+        with patch(
+            "autorag_research.pipelines.retrieval.bm25.BM25Module",
+            return_value=mock_bm25_module,
+        ):
+            result = pipeline.run(
+                metric_id=SEED_METRIC_ID,
+                top_k=3,
+            )
 
         assert "pipeline_id" in result
         assert "metric_id" in result
