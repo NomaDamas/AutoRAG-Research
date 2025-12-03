@@ -234,6 +234,7 @@ def create_schema(embedding_dim: int = 768):
         __tablename__ = "pipeline"
 
         id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+        name: Mapped[str] = mapped_column(String(255), nullable=False)
         config: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
         # Relationships

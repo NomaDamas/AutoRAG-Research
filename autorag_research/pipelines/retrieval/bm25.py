@@ -29,6 +29,7 @@ class BM25RetrievalPipeline:
         # Initialize pipeline with index path
         pipeline = BM25RetrievalPipeline(
             session_factory=session_factory,
+            name="bm25_baseline",
             index_path="/path/to/lucene/index",
         )
 
@@ -43,6 +44,7 @@ class BM25RetrievalPipeline:
     def __init__(
         self,
         session_factory: sessionmaker[Session],
+        name: str,
         index_path: str,
         k1: float = 0.9,
         b: float = 0.4,
@@ -53,6 +55,7 @@ class BM25RetrievalPipeline:
 
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
+            name: Name for this pipeline.
             index_path: Path to the Lucene index directory.
             k1: BM25 k1 parameter (controls term frequency saturation).
             b: BM25 b parameter (controls length normalization).
@@ -60,6 +63,7 @@ class BM25RetrievalPipeline:
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """
         self.session_factory = session_factory
+        self.name = name
         self.index_path = index_path
         self.k1 = k1
         self.b = b
@@ -68,6 +72,18 @@ class BM25RetrievalPipeline:
 
         # Initialize service
         self._service = RetrievalPipelineService(session_factory, schema)
+
+        # Create pipeline in DB
+        self.pipeline_id = self._service.create_pipeline(
+            name=name,
+            config={
+                "type": "bm25",
+                "index_path": self.index_path,
+                "k1": self.k1,
+                "b": self.b,
+                "language": self.language,
+            },
+        )
 
     def run(
         self,
@@ -103,14 +119,7 @@ class BM25RetrievalPipeline:
         # Run pipeline with BM25 retrieval function
         return self._service.run(
             retrieval_func=bm25.run,
-            pipeline_config={
-                "type": "bm25",
-                "index_path": self.index_path,
-                "top_k": top_k,
-                "k1": self.k1,
-                "b": self.b,
-                "language": self.language,
-            },
+            pipeline_id=self.pipeline_id,
             metric_id=metric_id,
             top_k=top_k,
             batch_size=batch_size,

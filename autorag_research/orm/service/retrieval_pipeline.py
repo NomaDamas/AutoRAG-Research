@@ -29,7 +29,7 @@ class RetrievalPipelineService:
     """Service for running retrieval pipelines.
 
     This service handles the common workflow for all retrieval pipelines:
-    1. Create a new pipeline instance
+    1. Create a pipeline instance
     2. Fetch queries from database
     3. Run retrieval using the provided retrieval function
     4. Store results in ChunkRetrievedResult table
@@ -48,10 +48,16 @@ class RetrievalPipelineService:
         # Create service
         service = RetrievalPipelineService(session_factory)
 
+        # Create pipeline
+        pipeline_id = service.create_pipeline(
+            name="bm25_baseline",
+            config={"type": "bm25", "index_path": "/path/to/index"},
+        )
+
         # Run pipeline with BM25 retrieval function
         results = service.run(
             retrieval_func=bm25.run,
-            pipeline_config={"type": "bm25", "index_path": "/path/to/index"},
+            pipeline_id=pipeline_id,
             metric_id=1,
             top_k=10,
         )
@@ -115,10 +121,28 @@ class RetrievalPipelineService:
         classes = self._get_schema_classes()
         return ChunkRetrievedResultRepository(session, classes["ChunkRetrievedResult"])
 
+    def create_pipeline(self, name: str, config: dict) -> int:
+        """Create a new pipeline in the database.
+
+        Args:
+            name: Name for this pipeline.
+            config: Configuration dictionary for the pipeline.
+
+        Returns:
+            The pipeline ID.
+        """
+        with self._session_scope() as session:
+            pipeline_repo = self._get_pipeline_repo(session)
+            classes = self._get_schema_classes()
+            pipeline = classes["Pipeline"](name=name, config=config)
+            pipeline_repo.add(pipeline)
+            session.flush()
+            return pipeline.id
+
     def run(
         self,
         retrieval_func: RetrievalFunc,
-        pipeline_config: dict[str, Any],
+        pipeline_id: int,
         metric_id: int,
         top_k: int = 10,
         batch_size: int = 100,
@@ -129,7 +153,7 @@ class RetrievalPipelineService:
             retrieval_func: Function that performs retrieval.
                 Signature: (queries: list[str], top_k: int) -> list[list[dict]]
                 Each result dict must have 'doc_id' (int) and 'score' keys.
-            pipeline_config: Configuration dictionary for the pipeline.
+            pipeline_id: ID of the pipeline.
             metric_id: ID of the metric to use.
             top_k: Number of top documents to retrieve per query.
             batch_size: Number of queries to process in each batch.
@@ -141,9 +165,6 @@ class RetrievalPipelineService:
             - total_queries: Number of queries processed
             - total_results: Number of results stored
         """
-        # Create new pipeline
-        pipeline_id = self._create_pipeline(config=pipeline_config)
-
         # Process queries in batches
         total_queries = 0
         total_results = 0
@@ -195,16 +216,6 @@ class RetrievalPipelineService:
             "total_queries": total_queries,
             "total_results": total_results,
         }
-
-    def _create_pipeline(self, config: dict) -> int:
-        """Create a new pipeline."""
-        with self._session_scope() as session:
-            pipeline_repo = self._get_pipeline_repo(session)
-            classes = self._get_schema_classes()
-            pipeline = classes["Pipeline"](config=config)
-            pipeline_repo.add(pipeline)
-            session.flush()
-            return pipeline.id
 
     def delete_pipeline_results(self, pipeline_id: int) -> int:
         """Delete all retrieval results for a specific pipeline."""
