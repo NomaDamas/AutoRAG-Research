@@ -1,0 +1,124 @@
+"""BM25 Retrieval Pipeline for AutoRAG-Research.
+
+This pipeline uses RetrievalPipelineService with BM25Module for retrieval.
+"""
+
+from typing import Any
+
+from sqlalchemy.orm import Session, sessionmaker
+
+from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
+
+
+class BM25RetrievalPipeline:
+    """Pipeline for running BM25 retrieval.
+
+    This pipeline wraps RetrievalPipelineService with BM25Module,
+    providing a convenient interface for BM25-based retrieval.
+
+    Example:
+        ```python
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from autorag_research.pipelines.retrieval.bm25 import BM25RetrievalPipeline
+
+        engine = create_engine("postgresql://user:pass@localhost/dbname")
+        session_factory = sessionmaker(bind=engine)
+
+        # Initialize pipeline with index path
+        pipeline = BM25RetrievalPipeline(
+            session_factory=session_factory,
+            index_path="/path/to/lucene/index",
+        )
+
+        # Run pipeline
+        results = pipeline.run(
+            pipeline_name="bm25_baseline",
+            top_k=10,
+        )
+        ```
+    """
+
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        index_path: str,
+        k1: float = 0.9,
+        b: float = 0.4,
+        language: str = "en",
+        schema: Any | None = None,
+    ):
+        """Initialize BM25 retrieval pipeline.
+
+        Args:
+            session_factory: SQLAlchemy sessionmaker for database connections.
+            index_path: Path to the Lucene index directory.
+            k1: BM25 k1 parameter (controls term frequency saturation).
+            b: BM25 b parameter (controls length normalization).
+            language: Language for analyzer ('en', 'ko', 'zh', 'ja', etc.).
+            schema: Schema namespace from create_schema(). If None, uses default schema.
+        """
+        self.session_factory = session_factory
+        self.index_path = index_path
+        self.k1 = k1
+        self.b = b
+        self.language = language
+        self._schema = schema
+
+        # Initialize service
+        self._service = RetrievalPipelineService(session_factory, schema)
+
+    def run(
+        self,
+        pipeline_name: str,
+        metric_name: str = "bm25",
+        top_k: int = 10,
+        batch_size: int = 100,
+        doc_id_to_chunk_id: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
+        """Run BM25 retrieval pipeline.
+
+        Args:
+            pipeline_name: Name for this pipeline run.
+            metric_name: Name for the metric (default: "bm25").
+            top_k: Number of top documents to retrieve per query.
+            batch_size: Number of queries to process in each batch.
+            doc_id_to_chunk_id: Optional mapping from document IDs to chunk IDs.
+                If not provided, assumes doc_id equals chunk_id (as integer).
+
+        Returns:
+            Dictionary with pipeline execution statistics:
+            - pipeline_id: The pipeline ID
+            - metric_id: The metric ID
+            - total_queries: Number of queries processed
+            - total_results: Number of results stored
+        """
+        # Lazy import to avoid Java dependency at import time
+        from autorag_research.nodes.retrieval.bm25 import BM25Module
+
+        # Initialize BM25 module
+        bm25 = BM25Module(
+            index_path=self.index_path,
+            k1=self.k1,
+            b=self.b,
+            language=self.language,
+        )
+
+        # Run pipeline with BM25 retrieval function
+        return self._service.run(
+            retrieval_func=bm25.run,
+            pipeline_name=pipeline_name,
+            pipeline_config={
+                "type": "bm25",
+                "index_path": self.index_path,
+                "top_k": top_k,
+                "k1": self.k1,
+                "b": self.b,
+                "language": self.language,
+            },
+            metric_name=metric_name,
+            top_k=top_k,
+            batch_size=batch_size,
+            doc_id_to_chunk_id=doc_id_to_chunk_id,
+        )
