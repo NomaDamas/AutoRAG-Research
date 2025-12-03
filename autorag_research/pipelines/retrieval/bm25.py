@@ -75,7 +75,6 @@ class BM25RetrievalPipeline:
         metric_name: str = "bm25",
         top_k: int = 10,
         batch_size: int = 100,
-        doc_id_to_chunk_id: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         """Run BM25 retrieval pipeline.
 
@@ -84,8 +83,6 @@ class BM25RetrievalPipeline:
             metric_name: Name for the metric (default: "bm25").
             top_k: Number of top documents to retrieve per query.
             batch_size: Number of queries to process in each batch.
-            doc_id_to_chunk_id: Optional mapping from document IDs to chunk IDs.
-                If not provided, assumes doc_id equals chunk_id (as integer).
 
         Returns:
             Dictionary with pipeline execution statistics:
@@ -120,5 +117,4 @@ class BM25RetrievalPipeline:
             metric_name=metric_name,
             top_k=top_k,
             batch_size=batch_size,
-            doc_id_to_chunk_id=doc_id_to_chunk_id,
         )

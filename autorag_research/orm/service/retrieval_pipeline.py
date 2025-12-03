@@ -32,8 +32,7 @@ class RetrievalPipelineService:
     This service handles the common workflow for all retrieval pipelines:
     1. Fetch queries from database
     2. Run retrieval using the provided retrieval function
-    3. Map doc_ids to chunk_ids
-    4. Store results in ChunkRetrievedResult table
+    3. Store results in ChunkRetrievedResult table
 
     The actual retrieval logic is provided as a function parameter,
     making this service reusable for BM25, dense retrieval, hybrid, etc.
@@ -130,21 +129,18 @@ class RetrievalPipelineService:
         metric_name: str = "retrieval",
         top_k: int = 10,
         batch_size: int = 100,
-        doc_id_to_chunk_id: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         """Run retrieval pipeline.
 
         Args:
             retrieval_func: Function that performs retrieval.
                 Signature: (queries: list[str], top_k: int) -> list[list[dict]]
-                Each result dict must have 'doc_id' and 'score' keys.
+                Each result dict must have 'doc_id' (int) and 'score' keys.
             pipeline_name: Name for this pipeline run.
             pipeline_config: Configuration dictionary for the pipeline.
             metric_name: Name for the metric (default: "retrieval").
             top_k: Number of top documents to retrieve per query.
             batch_size: Number of queries to process in each batch.
-            doc_id_to_chunk_id: Optional mapping from document IDs to chunk IDs.
-                If not provided, assumes doc_id equals chunk_id (as integer).
 
         Returns:
             Dictionary with pipeline execution statistics:
@@ -183,23 +179,9 @@ class RetrievalPipelineService:
                 # Process and store results
                 for query_id, query_results in zip(query_ids, results, strict=True):
                     for result in query_results:
-                        doc_id = result["doc_id"]
+                        chunk_id = result["doc_id"]
                         score = result["score"]
 
-                        # Map doc_id to chunk_id
-                        if doc_id_to_chunk_id is not None:
-                            chunk_id = doc_id_to_chunk_id.get(doc_id)
-                            if chunk_id is None:
-                                logger.warning(f"doc_id {doc_id} not found in mapping, skipping")
-                                continue
-                        else:
-                            try:
-                                chunk_id = int(doc_id)
-                            except ValueError:
-                                logger.warning(f"Cannot convert doc_id {doc_id} to int, skipping")
-                                continue
-
-                        # Create result record
                         result_repo.add(
                             classes["ChunkRetrievedResult"](
                                 query_id=query_id,
