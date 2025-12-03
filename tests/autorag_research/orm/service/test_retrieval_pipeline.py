@@ -1,13 +1,8 @@
 import pytest
 
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
-from autorag_research.orm.repository.pipeline import PipelineRepository
-from autorag_research.orm.schema import Pipeline
 from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
 
-SEED_PIPELINE_NAME = "baseline"
-SEED_PIPELINE_ID = 1
-SEED_METRIC_NAME = "retrieval@k"
 SEED_METRIC_ID = 1
 
 
@@ -33,52 +28,59 @@ class TestRetrievalPipelineService:
         return retrieval_func
 
     @pytest.fixture
-    def cleanup_chunk_retrieved_results(self, session_factory):
-        yield
+    def cleanup_pipeline_results(self, service):
+        created_pipeline_ids = []
 
-        session = session_factory()
-        try:
-            result_repo = ChunkRetrievedResultRepository(session)
-            result_repo.delete_by_pipeline(SEED_PIPELINE_ID)
-            session.commit()
-        finally:
-            session.close()
+        yield created_pipeline_ids
 
-    def test_get_or_create_pipeline_returns_existing(self, service):
-        pipeline_id = service._get_or_create_pipeline(name=SEED_PIPELINE_NAME, config={"k": 5})
+        for pipeline_id in created_pipeline_ids:
+            service.delete_pipeline_results(pipeline_id)
 
-        assert pipeline_id == SEED_PIPELINE_ID
-
-    def test_get_or_create_metric_returns_existing(self, service):
-        metric_id = service._get_or_create_metric(name=SEED_METRIC_NAME, metric_type="retrieval")
-
-        assert metric_id == SEED_METRIC_ID
-
-    def test_run_pipeline_with_mock_retrieval(self, service, mock_retrieval_func, cleanup_chunk_retrieved_results):
+    def test_run_pipeline_creates_new_pipeline(self, service, mock_retrieval_func, cleanup_pipeline_results):
         result = service.run(
             retrieval_func=mock_retrieval_func,
-            pipeline_name=SEED_PIPELINE_NAME,
             pipeline_config={"type": "bm25", "index": "test"},
-            metric_name=SEED_METRIC_NAME,
+            metric_id=SEED_METRIC_ID,
             top_k=3,
             batch_size=10,
         )
+
+        cleanup_pipeline_results.append(result["pipeline_id"])
 
         assert "pipeline_id" in result
         assert "metric_id" in result
         assert "total_queries" in result
         assert "total_results" in result
-        assert result["pipeline_id"] == SEED_PIPELINE_ID
         assert result["metric_id"] == SEED_METRIC_ID
         assert result["total_queries"] == 5
         assert result["total_results"] == 15
 
-    def test_delete_pipeline_results(self, service, mock_retrieval_func, cleanup_chunk_retrieved_results):
+    def test_run_pipeline_creates_different_pipeline_each_time(
+        self, service, mock_retrieval_func, cleanup_pipeline_results
+    ):
+        result1 = service.run(
+            retrieval_func=mock_retrieval_func,
+            pipeline_config={"type": "bm25"},
+            metric_id=SEED_METRIC_ID,
+            top_k=2,
+        )
+        cleanup_pipeline_results.append(result1["pipeline_id"])
+
+        result2 = service.run(
+            retrieval_func=mock_retrieval_func,
+            pipeline_config={"type": "bm25"},
+            metric_id=SEED_METRIC_ID,
+            top_k=2,
+        )
+        cleanup_pipeline_results.append(result2["pipeline_id"])
+
+        assert result1["pipeline_id"] != result2["pipeline_id"]
+
+    def test_delete_pipeline_results(self, service, mock_retrieval_func, cleanup_pipeline_results):
         result = service.run(
             retrieval_func=mock_retrieval_func,
-            pipeline_name=SEED_PIPELINE_NAME,
             pipeline_config={"type": "test"},
-            metric_name=SEED_METRIC_NAME,
+            metric_id=SEED_METRIC_ID,
             top_k=2,
         )
 
@@ -98,22 +100,23 @@ class TestRetrievalPipelineService:
             results_after = result_repo.get_by_pipeline(pipeline_id)
             assert len(results_after) == 0
 
-    def test_run_pipeline_empty_results(self, service, cleanup_chunk_retrieved_results):
+    def test_run_pipeline_empty_results(self, service, cleanup_pipeline_results):
         def empty_retrieval_func(queries: list[str], top_k: int) -> list[list[dict]]:
             return [[] for _ in queries]
 
         result = service.run(
             retrieval_func=empty_retrieval_func,
-            pipeline_name=SEED_PIPELINE_NAME,
             pipeline_config={"type": "test"},
-            metric_name=SEED_METRIC_NAME,
+            metric_id=SEED_METRIC_ID,
             top_k=10,
         )
+
+        cleanup_pipeline_results.append(result["pipeline_id"])
 
         assert result["total_queries"] == 5
         assert result["total_results"] == 0
 
-    def test_run_pipeline_batch_processing(self, service, cleanup_chunk_retrieved_results):
+    def test_run_pipeline_batch_processing(self, service, cleanup_pipeline_results):
         batch_counts = []
 
         def batch_tracking_retrieval(queries: list[str], top_k: int) -> list[list[dict]]:
@@ -122,24 +125,14 @@ class TestRetrievalPipelineService:
 
         result = service.run(
             retrieval_func=batch_tracking_retrieval,
-            pipeline_name=SEED_PIPELINE_NAME,
             pipeline_config={"type": "test"},
-            metric_name=SEED_METRIC_NAME,
+            metric_id=SEED_METRIC_ID,
             top_k=1,
             batch_size=2,
         )
 
+        cleanup_pipeline_results.append(result["pipeline_id"])
+
         assert result["total_queries"] == 5
         assert sum(batch_counts) == 5
         assert all(count <= 2 for count in batch_counts)
-
-    def test_session_scope_rollback_on_error(self, service):
-        with pytest.raises(ValueError), service._session_scope() as session:
-            pipeline_repo = PipelineRepository(session)
-            pipeline_repo.add(Pipeline(name="rollback_test", config={}))
-            raise ValueError("Test error")  # noqa: TRY003
-
-        with service._session_scope() as session:
-            pipeline_repo = PipelineRepository(session)
-            pipeline = pipeline_repo.get_by_name("rollback_test")
-            assert pipeline is None

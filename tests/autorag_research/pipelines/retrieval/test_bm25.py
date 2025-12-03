@@ -7,19 +7,21 @@ from autorag_research.pipelines.retrieval.bm25 import BM25RetrievalPipeline
 
 TEST_INDEX_PATH = Path(__file__).parent.parent.parent.parent / "resources" / "bm25_test_index"
 
-SEED_PIPELINE_NAME = "baseline"
-SEED_METRIC_NAME = "retrieval@k"
+SEED_METRIC_ID = 1
 
 
 class TestBM25RetrievalPipeline:
     @pytest.fixture
-    def cleanup_chunk_retrieved_results(self, session_factory):
-        yield
+    def cleanup_pipeline_results(self, session_factory):
+        created_pipeline_ids = []
+
+        yield created_pipeline_ids
 
         session = session_factory()
         try:
             result_repo = ChunkRetrievedResultRepository(session)
-            result_repo.delete_by_pipeline(1)
+            for pipeline_id in created_pipeline_ids:
+                result_repo.delete_by_pipeline(pipeline_id)
             session.commit()
         finally:
             session.close()
@@ -31,41 +33,43 @@ class TestBM25RetrievalPipeline:
             index_path=str(TEST_INDEX_PATH),
         )
 
-    def test_run_returns_correct_result_structure(self, pipeline_with_private_index, cleanup_chunk_retrieved_results):
+    def test_run_returns_correct_result_structure(self, pipeline_with_private_index, cleanup_pipeline_results):
         result = pipeline_with_private_index.run(
-            pipeline_name=SEED_PIPELINE_NAME,
-            metric_name=SEED_METRIC_NAME,
+            metric_id=SEED_METRIC_ID,
             top_k=3,
         )
+
+        cleanup_pipeline_results.append(result["pipeline_id"])
 
         assert "pipeline_id" in result
         assert "metric_id" in result
         assert "total_queries" in result
         assert "total_results" in result
-        assert result["pipeline_id"] == 1
-        assert result["metric_id"] == 1
+        assert result["metric_id"] == SEED_METRIC_ID
         assert result["total_queries"] == 5
         assert result["total_results"] == 15
 
-    def test_run_with_batch_size(self, pipeline_with_private_index, cleanup_chunk_retrieved_results):
+    def test_run_with_batch_size(self, pipeline_with_private_index, cleanup_pipeline_results):
         result = pipeline_with_private_index.run(
-            pipeline_name=SEED_PIPELINE_NAME,
-            metric_name=SEED_METRIC_NAME,
+            metric_id=SEED_METRIC_ID,
             top_k=2,
             batch_size=2,
         )
+
+        cleanup_pipeline_results.append(result["pipeline_id"])
 
         assert result["total_queries"] == 5
         assert result["total_results"] == 10
 
     def test_run_stores_retrieval_results_in_db(
-        self, pipeline_with_private_index, session_factory, cleanup_chunk_retrieved_results
+        self, pipeline_with_private_index, session_factory, cleanup_pipeline_results
     ):
         result = pipeline_with_private_index.run(
-            pipeline_name=SEED_PIPELINE_NAME,
-            metric_name=SEED_METRIC_NAME,
+            metric_id=SEED_METRIC_ID,
             top_k=3,
         )
+
+        cleanup_pipeline_results.append(result["pipeline_id"])
 
         session = session_factory()
         try:
@@ -79,7 +83,7 @@ class TestBM25RetrievalPipeline:
         finally:
             session.close()
 
-    def test_run_with_custom_bm25_parameters(self, session_factory, cleanup_chunk_retrieved_results):
+    def test_run_with_custom_bm25_parameters(self, session_factory, cleanup_pipeline_results):
         pipeline = BM25RetrievalPipeline(
             session_factory=session_factory,
             index_path=str(TEST_INDEX_PATH),
@@ -88,10 +92,10 @@ class TestBM25RetrievalPipeline:
         )
 
         result = pipeline.run(
-            pipeline_name=SEED_PIPELINE_NAME,
-            metric_name=SEED_METRIC_NAME,
+            metric_id=SEED_METRIC_ID,
             top_k=3,
         )
 
-        assert result["pipeline_id"] == 1
+        cleanup_pipeline_results.append(result["pipeline_id"])
+
         assert result["total_results"] == 15

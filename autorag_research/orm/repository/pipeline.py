@@ -22,18 +22,6 @@ class PipelineRepository(GenericRepository[Pipeline]):
         """
         super().__init__(session, Pipeline)
 
-    def get_by_name(self, name: str) -> Pipeline | None:
-        """Retrieve a pipeline by its name.
-
-        Args:
-            name: The pipeline name to search for.
-
-        Returns:
-            The pipeline if found, None otherwise.
-        """
-        stmt = select(Pipeline).where(Pipeline.name == name)
-        return self.session.execute(stmt).unique().scalar_one_or_none()
-
     def get_with_executor_results(self, pipeline_id: int) -> Pipeline | None:
         """Retrieve a pipeline with its executor results eagerly loaded.
 
@@ -98,36 +86,6 @@ class PipelineRepository(GenericRepository[Pipeline]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def search_by_name(self, search_text: str, limit: int = 10) -> list[Pipeline]:
-        """Search pipelines containing the specified text in their name.
-
-        Args:
-            search_text: Text to search for in pipeline names.
-            limit: Maximum number of results to return.
-
-        Returns:
-            List of pipelines containing the search text.
-        """
-        stmt = select(Pipeline).where(Pipeline.name.ilike(f"%{search_text}%")).limit(limit)
-        return list(self.session.execute(stmt).scalars().all())
-
-    def get_all_ordered_by_name(self, limit: int | None = None, offset: int | None = None) -> list[Pipeline]:
-        """Retrieve all pipelines ordered by name.
-
-        Args:
-            limit: Maximum number of results to return.
-            offset: Number of results to skip.
-
-        Returns:
-            List of all pipelines ordered by name.
-        """
-        stmt = select(Pipeline).order_by(Pipeline.name)
-        if offset:
-            stmt = stmt.offset(offset)
-        if limit:
-            stmt = stmt.limit(limit)
-        return list(self.session.execute(stmt).scalars().all())
-
     def get_by_config_key(self, key: str, value: str | int | float | bool) -> list[Pipeline]:
         """Retrieve pipelines with a specific config key-value pair.
 
@@ -143,14 +101,3 @@ class PipelineRepository(GenericRepository[Pipeline]):
         """
         stmt = select(Pipeline).where(Pipeline.config[key].as_string() == str(value))
         return list(self.session.execute(stmt).scalars().all())
-
-    def exists_by_name(self, name: str) -> bool:
-        """Check if a pipeline exists with the given name.
-
-        Args:
-            name: The pipeline name to check.
-
-        Returns:
-            True if pipeline exists, False otherwise.
-        """
-        return self.get_by_name(name) is not None

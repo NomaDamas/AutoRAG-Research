@@ -14,7 +14,6 @@ from typing import Any
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
-from autorag_research.orm.repository.metric import MetricRepository
 from autorag_research.orm.repository.pipeline import PipelineRepository
 from autorag_research.orm.repository.query import QueryRepository
 
@@ -30,9 +29,10 @@ class RetrievalPipelineService:
     """Service for running retrieval pipelines.
 
     This service handles the common workflow for all retrieval pipelines:
-    1. Fetch queries from database
-    2. Run retrieval using the provided retrieval function
-    3. Store results in ChunkRetrievedResult table
+    1. Create a new pipeline instance
+    2. Fetch queries from database
+    3. Run retrieval using the provided retrieval function
+    4. Store results in ChunkRetrievedResult table
 
     The actual retrieval logic is provided as a function parameter,
     making this service reusable for BM25, dense retrieval, hybrid, etc.
@@ -51,8 +51,8 @@ class RetrievalPipelineService:
         # Run pipeline with BM25 retrieval function
         results = service.run(
             retrieval_func=bm25.run,
-            pipeline_name="bm25_baseline",
             pipeline_config={"type": "bm25", "index_path": "/path/to/index"},
+            metric_id=1,
             top_k=10,
         )
         ```
@@ -78,15 +78,13 @@ class RetrievalPipelineService:
             return {
                 "Query": self._schema.Query,
                 "Pipeline": self._schema.Pipeline,
-                "Metric": self._schema.Metric,
                 "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
             }
-        from autorag_research.orm.schema import ChunkRetrievedResult, Metric, Pipeline, Query
+        from autorag_research.orm.schema import ChunkRetrievedResult, Pipeline, Query
 
         return {
             "Query": Query,
             "Pipeline": Pipeline,
-            "Metric": Metric,
             "ChunkRetrievedResult": ChunkRetrievedResult,
         }
 
@@ -112,10 +110,6 @@ class RetrievalPipelineService:
         """Get Pipeline repository for the given session."""
         return PipelineRepository(session)
 
-    def _get_metric_repo(self, session: Session) -> MetricRepository:
-        """Get Metric repository for the given session."""
-        return MetricRepository(session)
-
     def _get_chunk_retrieved_result_repo(self, session: Session) -> ChunkRetrievedResultRepository:
         """Get ChunkRetrievedResult repository for the given session."""
         classes = self._get_schema_classes()
@@ -124,9 +118,8 @@ class RetrievalPipelineService:
     def run(
         self,
         retrieval_func: RetrievalFunc,
-        pipeline_name: str,
         pipeline_config: dict[str, Any],
-        metric_name: str = "retrieval",
+        metric_id: int,
         top_k: int = 10,
         batch_size: int = 100,
     ) -> dict[str, Any]:
@@ -136,9 +129,8 @@ class RetrievalPipelineService:
             retrieval_func: Function that performs retrieval.
                 Signature: (queries: list[str], top_k: int) -> list[list[dict]]
                 Each result dict must have 'doc_id' (int) and 'score' keys.
-            pipeline_name: Name for this pipeline run.
             pipeline_config: Configuration dictionary for the pipeline.
-            metric_name: Name for the metric (default: "retrieval").
+            metric_id: ID of the metric to use.
             top_k: Number of top documents to retrieve per query.
             batch_size: Number of queries to process in each batch.
 
@@ -149,9 +141,8 @@ class RetrievalPipelineService:
             - total_queries: Number of queries processed
             - total_results: Number of results stored
         """
-        # Create or get pipeline and metric
-        pipeline_id = self._get_or_create_pipeline(name=pipeline_name, config=pipeline_config)
-        metric_id = self._get_or_create_metric(name=metric_name, metric_type="retrieval")
+        # Create new pipeline
+        pipeline_id = self._create_pipeline(config=pipeline_config)
 
         # Process queries in batches
         total_queries = 0
@@ -205,33 +196,15 @@ class RetrievalPipelineService:
             "total_results": total_results,
         }
 
-    def _get_or_create_pipeline(self, name: str, config: dict) -> int:
-        """Get existing pipeline by name or create a new one."""
+    def _create_pipeline(self, config: dict) -> int:
+        """Create a new pipeline."""
         with self._session_scope() as session:
             pipeline_repo = self._get_pipeline_repo(session)
-            existing = pipeline_repo.get_by_name(name)
-            if existing:
-                return existing.id
-
             classes = self._get_schema_classes()
-            pipeline = classes["Pipeline"](name=name, config=config)
+            pipeline = classes["Pipeline"](config=config)
             pipeline_repo.add(pipeline)
             session.flush()
             return pipeline.id
-
-    def _get_or_create_metric(self, name: str, metric_type: str) -> int:
-        """Get existing metric by name and type or create a new one."""
-        with self._session_scope() as session:
-            metric_repo = self._get_metric_repo(session)
-            existing = metric_repo.get_by_name_and_type(name, metric_type)
-            if existing:
-                return existing.id
-
-            classes = self._get_schema_classes()
-            metric = classes["Metric"](name=name, type=metric_type)
-            metric_repo.add(metric)
-            session.flush()
-            return metric.id
 
     def delete_pipeline_results(self, pipeline_id: int) -> int:
         """Delete all retrieval results for a specific pipeline."""

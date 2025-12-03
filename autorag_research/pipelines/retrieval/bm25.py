@@ -34,7 +34,7 @@ class BM25RetrievalPipeline:
 
         # Run pipeline
         results = pipeline.run(
-            pipeline_name="bm25_baseline",
+            metric_id=1,
             top_k=10,
         )
         ```
@@ -71,16 +71,14 @@ class BM25RetrievalPipeline:
 
     def run(
         self,
-        pipeline_name: str,
-        metric_name: str = "bm25",
+        metric_id: int,
         top_k: int = 10,
         batch_size: int = 100,
     ) -> dict[str, Any]:
         """Run BM25 retrieval pipeline.
 
         Args:
-            pipeline_name: Name for this pipeline run.
-            metric_name: Name for the metric (default: "bm25").
+            metric_id: ID of the metric to use.
             top_k: Number of top documents to retrieve per query.
             batch_size: Number of queries to process in each batch.
 
@@ -105,7 +103,6 @@ class BM25RetrievalPipeline:
         # Run pipeline with BM25 retrieval function
         return self._service.run(
             retrieval_func=bm25.run,
-            pipeline_name=pipeline_name,
             pipeline_config={
                 "type": "bm25",
                 "index_path": self.index_path,
@@ -114,7 +111,7 @@ class BM25RetrievalPipeline:
                 "b": self.b,
                 "language": self.language,
             },
-            metric_name=metric_name,
+            metric_id=metric_id,
             top_k=top_k,
             batch_size=batch_size,
         )
