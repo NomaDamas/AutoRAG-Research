@@ -217,6 +217,20 @@ class RetrievalPipelineService:
             "total_results": total_results,
         }
 
+    def get_pipeline_config(self, pipeline_id: int) -> dict | None:
+        """Get pipeline configuration by ID.
+
+        Args:
+            pipeline_id: ID of the pipeline.
+
+        Returns:
+            Pipeline config dict if found, None otherwise.
+        """
+        with self._session_scope() as session:
+            pipeline_repo = self._get_pipeline_repo(session)
+            pipeline = pipeline_repo.get_by_id(pipeline_id)
+            return pipeline.config if pipeline else None
+
     def delete_pipeline_results(self, pipeline_id: int) -> int:
         """Delete all retrieval results for a specific pipeline."""
         with self._session_scope() as session:
