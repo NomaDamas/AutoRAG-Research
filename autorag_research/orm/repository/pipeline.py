@@ -86,6 +86,51 @@ class PipelineRepository(GenericRepository[Pipeline]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
+    def get_by_name(self, name: str) -> Pipeline | None:
+        """Retrieve a pipeline by name.
+
+        Args:
+            name: The pipeline name.
+
+        Returns:
+            The pipeline if found, None otherwise.
+        """
+        stmt = select(Pipeline).where(Pipeline.name == name)
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def search_by_name(self, name_pattern: str) -> list[Pipeline]:
+        """Search pipelines by name pattern (case-insensitive).
+
+        Args:
+            name_pattern: The name pattern to search for (supports SQL LIKE wildcards).
+
+        Returns:
+            List of pipelines matching the pattern.
+        """
+        stmt = select(Pipeline).where(Pipeline.name.ilike(f"%{name_pattern}%"))
+        return list(self.session.execute(stmt).scalars().all())
+
+    def get_all_ordered_by_name(self) -> list[Pipeline]:
+        """Retrieve all pipelines ordered by name.
+
+        Returns:
+            List of all pipelines ordered alphabetically by name.
+        """
+        stmt = select(Pipeline).order_by(Pipeline.name)
+        return list(self.session.execute(stmt).scalars().all())
+
+    def exists_by_name(self, name: str) -> bool:
+        """Check if a pipeline with the given name exists.
+
+        Args:
+            name: The pipeline name to check.
+
+        Returns:
+            True if pipeline exists, False otherwise.
+        """
+        stmt = select(Pipeline.id).where(Pipeline.name == name).limit(1)
+        return self.session.execute(stmt).scalar_one_or_none() is not None
+
     def get_by_config_key(self, key: str, value: str | int | float | bool) -> list[Pipeline]:
         """Retrieve pipelines with a specific config key-value pair.
 
