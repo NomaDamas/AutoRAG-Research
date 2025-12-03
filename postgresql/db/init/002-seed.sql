@@ -151,5 +151,7 @@ SELECT setval(pg_get_serial_sequence('caption','id'), (SELECT COALESCE(MAX(id), 
 SELECT setval(pg_get_serial_sequence('chunk','id'), (SELECT COALESCE(MAX(id), 1) FROM chunk), true);
 SELECT setval(pg_get_serial_sequence('image_chunk','id'), (SELECT COALESCE(MAX(id), 1) FROM image_chunk), true);
 SELECT setval(pg_get_serial_sequence('query','id'), (SELECT COALESCE(MAX(id), 1) FROM query), true);
+SELECT setval(pg_get_serial_sequence('pipeline','id'), (SELECT COALESCE(MAX(id), 1) FROM pipeline), true);
+SELECT setval(pg_get_serial_sequence('metric','id'), (SELECT COALESCE(MAX(id), 1) FROM metric), true);
 
 COMMIT;
