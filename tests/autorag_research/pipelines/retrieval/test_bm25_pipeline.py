@@ -37,22 +37,18 @@ class TestBM25RetrievalPipeline:
         return mock
 
     @pytest.fixture
-    def pipeline(self, session_factory, cleanup_pipeline_results, mock_bm25_module):
-        with patch(
-            "autorag_research.pipelines.retrieval.bm25.BM25Module",
-            return_value=mock_bm25_module,
-        ):
-            pipeline = BM25RetrievalPipeline(
-                session_factory=session_factory,
-                name="test_bm25_pipeline",
-                index_path="/fake/index/path",
-            )
-            cleanup_pipeline_results.append(pipeline.pipeline_id)
-            yield pipeline
+    def pipeline(self, session_factory, cleanup_pipeline_results):
+        pipeline = BM25RetrievalPipeline(
+            session_factory=session_factory,
+            name="test_bm25_pipeline",
+            index_path="/fake/index/path",
+        )
+        cleanup_pipeline_results.append(pipeline.pipeline_id)
+        return pipeline
 
     def test_run(self, pipeline, mock_bm25_module):
         with patch(
-            "autorag_research.pipelines.retrieval.bm25.BM25Module",
+            "autorag_research.nodes.retrieval.bm25.BM25Module",
             return_value=mock_bm25_module,
         ):
             result = pipeline.run(
