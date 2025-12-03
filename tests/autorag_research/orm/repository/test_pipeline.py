@@ -41,6 +41,39 @@ def test_get_with_all_relations(pipeline_repository: PipelineRepository):
     assert hasattr(result, "image_chunk_retrieved_results")
 
 
+def test_get_by_name(pipeline_repository: PipelineRepository):
+    result = pipeline_repository.get_by_name("baseline")
+
+    assert result is not None
+    assert result.name == "baseline"
+
+
+def test_get_by_name_not_found(pipeline_repository: PipelineRepository):
+    result = pipeline_repository.get_by_name("nonexistent_pipeline")
+
+    assert result is None
+
+
+def test_search_by_name(pipeline_repository: PipelineRepository):
+    results = pipeline_repository.search_by_name("base")
+
+    assert len(results) >= 1
+    assert any(p.name == "baseline" for p in results)
+
+
+def test_get_all_ordered_by_name(pipeline_repository: PipelineRepository):
+    results = pipeline_repository.get_all_ordered_by_name()
+
+    assert len(results) >= 2
+    names = [p.name for p in results]
+    assert names == sorted(names)
+
+
+def test_exists_by_name(pipeline_repository: PipelineRepository):
+    assert pipeline_repository.exists_by_name("baseline") is True
+    assert pipeline_repository.exists_by_name("nonexistent_pipeline") is False
+
+
 def test_get_by_config_key(pipeline_repository: PipelineRepository):
     results = pipeline_repository.get_by_config_key("k", 5)
 
