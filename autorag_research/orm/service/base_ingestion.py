@@ -423,7 +423,7 @@ class BaseIngestionService(BaseService, ABC):
 
     def add_retrieval_gt(
         self,
-        query_id: int,
+        query_id: int | str,
         gt: Any,
         chunk_type: Literal["mixed", "text", "image"] = "mixed",
         upsert: bool = False,

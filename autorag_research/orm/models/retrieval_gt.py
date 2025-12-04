@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 class TextId:
     """Text chunk ID wrapper for mixed modality operations."""
 
-    id: int
+    id: int | str
 
     def __or__(self, other: TextId | ImageId | OrGroup) -> OrGroup:
         """Create OR group: TextId(1) | TextId(2)."""
@@ -68,7 +68,7 @@ class TextId:
 class ImageId:
     """Image chunk ID wrapper for mixed modality operations."""
 
-    id: int
+    id: int | str
 
     def __or__(self, other: TextId | ImageId | OrGroup) -> OrGroup:
         """Create OR group: ImageId(1) | ImageId(2)."""
@@ -159,7 +159,7 @@ class _IntWrapper:
     system and do not affect any other code.
     """
 
-    def __init__(self, value: int, chunk_type: str):
+    def __init__(self, value: int | str, chunk_type: str):
         self.value = value
         self.chunk_type = chunk_type
 
@@ -199,7 +199,7 @@ RetrievalGT = int | ChunkId | OrGroup | AndChain | _IntWrapper
 # =============================================================================
 
 
-def text(_id: int) -> _IntWrapper:
+def text(_id: int | str) -> _IntWrapper:
     """Wrap int for text-only mode with | and & support.
 
     Args:
@@ -216,7 +216,7 @@ def text(_id: int) -> _IntWrapper:
     return _IntWrapper(_id, "text")
 
 
-def image(_id: int) -> _IntWrapper:
+def image(_id: int | str) -> _IntWrapper:
     """Wrap int for image-only mode with | and & support.
 
     Args:
@@ -237,7 +237,7 @@ def image(_id: int) -> _IntWrapper:
 # =============================================================================
 
 
-def or_all(ids: list[int], wrapper_fn: Callable[[int], _IntWrapper] = text) -> OrGroup | _IntWrapper:
+def or_all(ids: list[int | str], wrapper_fn: Callable[[int | str], _IntWrapper] = text) -> OrGroup | _IntWrapper:
     """Build OR expression from list: [1, 2, 3] -> wrapper(1) | wrapper(2) | wrapper(3).
 
     Use this when you have a dynamic list of IDs (e.g., in a for loop with varying lengths).
@@ -264,7 +264,7 @@ def or_all(ids: list[int], wrapper_fn: Callable[[int], _IntWrapper] = text) -> O
     return reduce(operator.or_, [wrapper_fn(_id) for _id in ids])
 
 
-def and_all(ids: list[int], wrapper_fn: Callable[[int], _IntWrapper] = text) -> AndChain | _IntWrapper:
+def and_all(ids: list[int| str], wrapper_fn: Callable[[int | str], _IntWrapper] = text) -> AndChain | _IntWrapper:
     """Build AND chain from list: [1, 2, 3] -> wrapper(1) & wrapper(2) & wrapper(3).
 
     Use this for multi-hop retrieval where each ID represents a sequential hop.
@@ -363,7 +363,7 @@ def normalize_gt(gt: RetrievalGT, chunk_type: str = "mixed") -> AndChain:
         return AndChain(groups=(OrGroup(items=(chunk_id,)),))
 
     # Auto-wrap int to ChunkId
-    if isinstance(gt, int):
+    if type(gt) is int or type(gt) is str:
         if chunk_type == "text":
             gt = TextId(gt)
         elif chunk_type == "image":
@@ -385,7 +385,7 @@ def normalize_gt(gt: RetrievalGT, chunk_type: str = "mixed") -> AndChain:
         raise TypeError
 
 
-def gt_to_relations(query_id: int, gt: AndChain) -> list[dict]:
+def gt_to_relations(query_id: int | str, gt: AndChain) -> list[dict]:
     """Convert AndChain to list of relation dicts for DB insertion.
 
     Args:

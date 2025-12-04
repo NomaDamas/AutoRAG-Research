@@ -24,8 +24,17 @@ DATASET_TYPES = {
 }
 
 
-def create_session_factory_and_schema(db_name: str, embedding_dim: int):
-    """Create session factory and schema for a given embedding dimension.
+def create_session_factory_and_schema(
+    db_name: str,
+    embedding_dim: int,
+    primary_key_type: Literal["bigint", "string"] = "bigint"
+):
+    """Create session factory and schema for a given embedding dimension and primary key type.
+
+    Args:
+        db_name: Name of the database
+        embedding_dim: Dimension of embeddings
+        primary_key_type: Type of primary keys ('bigint' or 'string')
 
     Returns:
         Tuple of (session_factory, schema)
@@ -35,7 +44,7 @@ def create_session_factory_and_schema(db_name: str, embedding_dim: int):
     pwd = os.getenv("POSTGRES_PASSWORD", "postgres")
     port = int(os.getenv("POSTGRES_PORT", "5432"))
 
-    schema = create_schema(embedding_dim)
+    schema = create_schema(embedding_dim, primary_key_type)
 
     create_database(host, user, pwd, db_name, port=port)
     install_vector_extensions(host, user, pwd, db_name, port=port)
@@ -87,6 +96,7 @@ def dump_database(db_name: str, output_path: str) -> None:
 @click.option("--max-concurrency", type=int, default=16, help="Max concurrent embedding calls")
 @click.option("--api-base", type=str, required=True, help="Embedding API base URL")
 @click.option("--dump-path", type=str, default=None, help="Path to dump the database after ingestion")
+@click.option("--primary-key-type", type=click.Choice(["bigint", "string", "auto"]), default="auto", help="Primary key type (auto=detect from data)")
 def main(
     dataset_type: str,
     dataset_name: str,
@@ -96,6 +106,7 @@ def main(
     max_concurrency: int,
     api_base: str,
     dump_path: str | None,
+    primary_key_type: Literal["bigint", "string", "auto"],
 ):
     embedding_model = OpenAILikeEmbedding(
         api_base=api_base,
@@ -107,8 +118,17 @@ def main(
     embedding_dim = health_check_embedding(embedding_model)
     click.echo(f"Embedding model is healthy. Dimension: {embedding_dim}")
 
+    # Detect or use specified primary key type
+    if primary_key_type == "auto":
+        click.echo("Auto-detecting primary key type from dataset...")
+        detected_pkey_type = detect_primary_key_type(dataset_type, dataset_name, subset)
+        click.echo(f"Detected primary key type: {detected_pkey_type}")
+    else:
+        detected_pkey_type = primary_key_type
+        click.echo(f"Using specified primary key type: {detected_pkey_type}")
+
     db_name = f"{dataset_name}_{embedding_model_name}"
-    session_factory, schema = create_session_factory_and_schema(db_name, embedding_dim)
+    session_factory, schema = create_session_factory_and_schema(db_name, embedding_dim, detected_pkey_type)
     service = TextDataIngestionService(session_factory, schema)
 
     ingestor_class = DATASET_TYPES[dataset_type]
