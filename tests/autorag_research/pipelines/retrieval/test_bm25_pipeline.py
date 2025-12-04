@@ -46,7 +46,7 @@ class TestBM25RetrievalPipeline:
 
     def test_run(self, pipeline, mock_bm25_module):
         with patch(
-            "autorag_research.pipelines.retrieval.bm25.BM25Module",
+            "autorag_research.nodes.retrieval.bm25.BM25Module",
             return_value=mock_bm25_module,
         ):
             result = pipeline.run(top_k=3)
