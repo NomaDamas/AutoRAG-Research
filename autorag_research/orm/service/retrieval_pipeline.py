@@ -8,14 +8,13 @@ Provides service layer for running retrieval pipelines:
 
 import logging
 from collections.abc import Callable
-from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
-from autorag_research.orm.repository.pipeline import PipelineRepository
-from autorag_research.orm.repository.query import QueryRepository
+from autorag_research.orm.repository.retrieval_uow import RetrievalSchemaProtocol, RetrievalUnitOfWork
+
+__all__ = ["RetrievalFunc", "RetrievalPipelineService"]
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -46,7 +45,7 @@ class RetrievalPipelineService:
         bm25 = BM25Module(index_path="/path/to/index")
 
         # Create service
-        service = RetrievalPipelineService(session_factory)
+        service = RetrievalPipelineService(session_factory, schema)
 
         # Create pipeline
         pipeline_id = service.create_pipeline(
@@ -67,7 +66,7 @@ class RetrievalPipelineService:
     def __init__(
         self,
         session_factory: sessionmaker[Session],
-        schema: Any | None = None,
+        schema: RetrievalSchemaProtocol | None = None,
     ):
         """Initialize retrieval pipeline service.
 
@@ -76,50 +75,19 @@ class RetrievalPipelineService:
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """
         self.session_factory = session_factory
-        self._schema = schema
+        self._schema: RetrievalSchemaProtocol = self._resolve_schema(schema)
 
-    def _get_schema_classes(self) -> dict[str, type]:
-        """Get schema classes from the schema namespace."""
-        if self._schema is not None:
-            return {
-                "Query": self._schema.Query,
-                "Pipeline": self._schema.Pipeline,
-                "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
-            }
-        from autorag_research.orm.schema import ChunkRetrievedResult, Pipeline, Query
+    def _resolve_schema(self, schema: RetrievalSchemaProtocol | None) -> RetrievalSchemaProtocol:
+        """Resolve schema, using default if not provided."""
+        if schema is not None:
+            return schema
+        from autorag_research.orm import schema as default_schema
 
-        return {
-            "Query": Query,
-            "Pipeline": Pipeline,
-            "ChunkRetrievedResult": ChunkRetrievedResult,
-        }
+        return default_schema  # type: ignore[return-value]
 
-    @contextmanager
-    def _session_scope(self):
-        """Provide a transactional scope around a series of operations."""
-        session = self.session_factory()
-        try:
-            yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
-
-    def _get_query_repo(self, session: Session) -> QueryRepository:
-        """Get Query repository for the given session."""
-        classes = self._get_schema_classes()
-        return QueryRepository(session, classes["Query"])
-
-    def _get_pipeline_repo(self, session: Session) -> PipelineRepository:
-        """Get Pipeline repository for the given session."""
-        return PipelineRepository(session)
-
-    def _get_chunk_retrieved_result_repo(self, session: Session) -> ChunkRetrievedResultRepository:
-        """Get ChunkRetrievedResult repository for the given session."""
-        classes = self._get_schema_classes()
-        return ChunkRetrievedResultRepository(session, classes["ChunkRetrievedResult"])
+    def _create_uow(self) -> RetrievalUnitOfWork:
+        """Create a new RetrievalUnitOfWork instance."""
+        return RetrievalUnitOfWork(self.session_factory, self._schema)
 
     def create_pipeline(self, name: str, config: dict) -> int:
         """Create a new pipeline in the database.
@@ -131,13 +99,13 @@ class RetrievalPipelineService:
         Returns:
             The pipeline ID.
         """
-        with self._session_scope() as session:
-            pipeline_repo = self._get_pipeline_repo(session)
-            classes = self._get_schema_classes()
-            pipeline = classes["Pipeline"](name=name, config=config)
-            pipeline_repo.add(pipeline)
-            session.flush()
-            return pipeline.id
+        with self._create_uow() as uow:
+            pipeline = self._schema.Pipeline(name=name, config=config)
+            uow.pipelines.add(pipeline)
+            uow.flush()
+            pipeline_id = pipeline.id
+            uow.commit()
+            return pipeline_id
 
     def run(
         self,
@@ -169,15 +137,11 @@ class RetrievalPipelineService:
         total_queries = 0
         total_results = 0
         offset = 0
-        classes = self._get_schema_classes()
 
         while True:
-            with self._session_scope() as session:
-                query_repo = self._get_query_repo(session)
-                result_repo = self._get_chunk_retrieved_result_repo(session)
-
+            with self._create_uow() as uow:
                 # Fetch batch of queries
-                queries = query_repo.get_all(limit=batch_size, offset=offset)
+                queries = uow.queries.get_all(limit=batch_size, offset=offset)
                 if not queries:
                     break
 
@@ -194,8 +158,8 @@ class RetrievalPipelineService:
                         chunk_id = result["doc_id"]
                         score = result["score"]
 
-                        result_repo.add(
-                            classes["ChunkRetrievedResult"](
+                        uow.chunk_results.add(
+                            self._schema.ChunkRetrievedResult(
                                 query_id=query_id,
                                 pipeline_id=pipeline_id,
                                 metric_id=metric_id,
@@ -207,6 +171,7 @@ class RetrievalPipelineService:
 
                 total_queries += len(queries)
                 offset += batch_size
+                uow.commit()
 
                 logger.info(f"Processed {total_queries} queries, stored {total_results} results")
 
@@ -226,13 +191,20 @@ class RetrievalPipelineService:
         Returns:
             Pipeline config dict if found, None otherwise.
         """
-        with self._session_scope() as session:
-            pipeline_repo = self._get_pipeline_repo(session)
-            pipeline = pipeline_repo.get_by_id(pipeline_id)
+        with self._create_uow() as uow:
+            pipeline = uow.pipelines.get_by_id(pipeline_id)
             return pipeline.config if pipeline else None
 
     def delete_pipeline_results(self, pipeline_id: int) -> int:
-        """Delete all retrieval results for a specific pipeline."""
-        with self._session_scope() as session:
-            result_repo = self._get_chunk_retrieved_result_repo(session)
-            return result_repo.delete_by_pipeline(pipeline_id)
+        """Delete all retrieval results for a specific pipeline.
+
+        Args:
+            pipeline_id: ID of the pipeline.
+
+        Returns:
+            Number of deleted records.
+        """
+        with self._create_uow() as uow:
+            deleted_count = uow.chunk_results.delete_by_pipeline(pipeline_id)
+            uow.commit()
+            return deleted_count

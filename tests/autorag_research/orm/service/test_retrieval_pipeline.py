@@ -1,6 +1,5 @@
 import pytest
 
-from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
 
 SEED_METRIC_ID = 1
@@ -63,16 +62,16 @@ class TestRetrievalPipelineService:
             top_k=2,
         )
 
-        with service._session_scope() as session:
-            result_repo = ChunkRetrievedResultRepository(session)
-            results_before = result_repo.get_by_pipeline(pipeline_id)
+        # Use UoW to verify results before deletion
+        with service._create_uow() as uow:
+            results_before = uow.chunk_results.get_by_pipeline(pipeline_id)
             assert len(results_before) > 0
 
         deleted_count = service.delete_pipeline_results(pipeline_id)
 
         assert deleted_count == 10
 
-        with service._session_scope() as session:
-            result_repo = ChunkRetrievedResultRepository(session)
-            results_after = result_repo.get_by_pipeline(pipeline_id)
+        # Use UoW to verify results after deletion
+        with service._create_uow() as uow:
+            results_after = uow.chunk_results.get_by_pipeline(pipeline_id)
             assert len(results_after) == 0
