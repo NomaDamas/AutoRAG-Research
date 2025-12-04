@@ -148,21 +148,21 @@ class RetrievalPipelineService:
                 # Run retrieval
                 results = retrieval_func(query_texts, top_k)
 
-                # Process and store results
+                # Collect all results for batch insert
+                batch_results = []
                 for query_id, query_results in zip(query_ids, results, strict=True):
                     for result in query_results:
-                        chunk_id = result["doc_id"]
-                        score = result["score"]
+                        batch_results.append({
+                            "query_id": query_id,
+                            "pipeline_id": pipeline_id,
+                            "chunk_id": result["doc_id"],
+                            "rel_score": result["score"],
+                        })
 
-                        uow.chunk_results.add(
-                            self._schema.ChunkRetrievedResult(
-                                query_id=query_id,
-                                pipeline_id=pipeline_id,
-                                chunk_id=chunk_id,
-                                rel_score=score,
-                            )
-                        )
-                        total_results += 1
+                # Batch insert all results at once
+                if batch_results:
+                    uow.chunk_results.bulk_insert(batch_results)
+                    total_results += len(batch_results)
 
                 total_queries += len(queries)
                 offset += batch_size
