@@ -1,3 +1,4 @@
+from abc import ABC
 import ast
 import io
 from typing import Literal
@@ -29,7 +30,7 @@ ViDoReDatasets = [
 ]
 
 
-class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
+class ViDoReIngestor(MultiModalEmbeddingDataIngestor, ABC):
     def __init__(
         self,
         dataset_name: str,
@@ -40,10 +41,6 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
         self.ds = load_dataset(f"vidore/{dataset_name}")["test"]
         if dataset_name not in ViDoReDatasets:
             raise InvalidDatasetNameError(dataset_name)
-
-    def ingest(self, subset: Literal["train", "dev", "test"] = "test"):
-        if subset != "test":
-            raise UnsupportedDataSubsetError(["train", "dev"])
 
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
         """Embed all queries and image chunks using single-vector embedding model.
@@ -141,6 +138,9 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
             embedding_model,
             late_interaction_embedding_model,
         )
+
+    def detect_primary_key_type(self) -> Literal['bigint'] | Literal['string']:
+        return "bigint"
 
     def ingest(self, subset: Literal["train", "dev", "test"] = "test"):
         super().ingest(subset)
