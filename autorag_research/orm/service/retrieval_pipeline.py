@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.orm.repository.retrieval_uow import RetrievalSchemaProtocol, RetrievalUnitOfWork
+from autorag_research.orm.repository.retrieval_uow import RetrievalUnitOfWork
 
 __all__ = ["RetrievalFunc", "RetrievalPipelineService"]
 
@@ -65,7 +65,7 @@ class RetrievalPipelineService:
     def __init__(
         self,
         session_factory: sessionmaker[Session],
-        schema: RetrievalSchemaProtocol | None = None,
+        schema: Any | None = None,
     ):
         """Initialize retrieval pipeline service.
 
@@ -74,9 +74,9 @@ class RetrievalPipelineService:
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """
         self.session_factory = session_factory
-        self._schema: RetrievalSchemaProtocol = self._resolve_schema(schema)
+        self._schema: Any = self._resolve_schema(schema)
 
-    def _resolve_schema(self, schema: RetrievalSchemaProtocol | None) -> RetrievalSchemaProtocol:
+    def _resolve_schema(self, schema: Any | None) -> Any:
         """Resolve schema, using default if not provided."""
         if schema is not None:
             return schema
@@ -88,7 +88,7 @@ class RetrievalPipelineService:
         """Create a new RetrievalUnitOfWork instance."""
         return RetrievalUnitOfWork(self.session_factory, self._schema)
 
-    def create_pipeline(self, name: str, config: dict) -> int:
+    def save_pipeline(self, name: str, config: dict) -> int:
         """Create a new pipeline in the database.
 
         Args:

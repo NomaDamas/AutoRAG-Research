@@ -24,7 +24,7 @@ class TestRetrievalPipelineService:
         return retrieval_func
 
     def test_run_pipeline(self, service, mock_retrieval_func):
-        pipeline_id = service.create_pipeline(
+        pipeline_id = service.save_pipeline(
             name="test_pipeline",
             config={"type": "test"},
         )
@@ -45,7 +45,7 @@ class TestRetrievalPipelineService:
         service.delete_pipeline_results(pipeline_id)
 
     def test_delete_pipeline_results(self, service, mock_retrieval_func):
-        pipeline_id = service.create_pipeline(
+        pipeline_id = service.save_pipeline(
             name="test_delete_pipeline",
             config={"type": "test"},
         )

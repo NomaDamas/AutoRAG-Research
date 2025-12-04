@@ -7,7 +7,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.orm.repository.retrieval_uow import RetrievalSchemaProtocol
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
 
@@ -47,7 +46,7 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
         k1: float = 0.9,
         b: float = 0.4,
         language: str = "en",
-        schema: RetrievalSchemaProtocol | None = None,
+        schema: Any | None = None,
     ):
         """Initialize BM25 retrieval pipeline.
 

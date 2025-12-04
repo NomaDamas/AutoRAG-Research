@@ -8,7 +8,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.orm.repository.retrieval_uow import RetrievalSchemaProtocol
 from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
 
 
@@ -29,7 +28,7 @@ class BaseRetrievalPipeline(ABC):
         self,
         session_factory: sessionmaker[Session],
         name: str,
-        schema: RetrievalSchemaProtocol | None = None,
+        schema: Any | None = None,
     ):
         """Initialize retrieval pipeline.
 
@@ -46,7 +45,7 @@ class BaseRetrievalPipeline(ABC):
         self._service = RetrievalPipelineService(session_factory, schema)
 
         # Create pipeline in DB
-        self.pipeline_id = self._service.create_pipeline(
+        self.pipeline_id = self._service.save_pipeline(
             name=name,
             config=self._get_pipeline_config(),
         )
