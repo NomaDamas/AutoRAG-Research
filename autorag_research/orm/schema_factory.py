@@ -11,7 +11,6 @@ from typing import Literal
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
-    CheckConstraint,
     Float,
     ForeignKey,
     Integer,
@@ -297,16 +296,7 @@ def create_schema(
 
 
         # Relationships
-        executor_results: Mapped[list["ExecutorResult"]] = relationship(
-            back_populates="metric", cascade="all, delete-orphan"
-        )
         evaluation_results: Mapped[list["EvaluationResult"]] = relationship(
-            back_populates="metric", cascade="all, delete-orphan"
-        )
-        image_chunk_retrieved_results: Mapped[list["ImageChunkRetrievedResult"]] = relationship(
-            back_populates="metric", cascade="all, delete-orphan"
-        )
-        chunk_retrieved_results: Mapped[list["ChunkRetrievedResult"]] = relationship(
             back_populates="metric", cascade="all, delete-orphan"
         )
         summaries: Mapped[list["Summary"]] = relationship(back_populates="metric", cascade="all, delete-orphan")
