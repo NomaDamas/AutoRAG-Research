@@ -100,7 +100,7 @@ class BM25Module(BaseModule):
                     content = hit.contents
 
                 result = {
-                    "doc_id": hit.docid,
+                    "doc_id": int(hit.docid),
                     "score": hit.score,
                     "content": content,
                 }

@@ -4,25 +4,31 @@ Implements metric-specific CRUD operations and relationship queries
 for managing evaluation metrics and their results.
 """
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from autorag_research.orm.repository.base import GenericRepository
-from autorag_research.orm.schema import Metric
 
 
-class MetricRepository(GenericRepository[Metric]):
+class MetricRepository(GenericRepository[Any]):
     """Repository for Metric entity with relationship loading capabilities."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, model_cls: type | None = None):
         """Initialize metric repository.
 
         Args:
             session: SQLAlchemy session for database operations.
+            model_cls: The Metric model class to use. If None, uses default schema.
         """
-        super().__init__(session, Metric)
+        if model_cls is None:
+            from autorag_research.orm.schema import Metric
 
-    def get_by_name(self, name: str) -> Metric | None:
+            model_cls = Metric
+        super().__init__(session, model_cls)
+
+    def get_by_name(self, name: str) -> Any | None:
         """Retrieve a metric by its name.
 
         Args:
@@ -31,10 +37,10 @@ class MetricRepository(GenericRepository[Metric]):
         Returns:
             The metric if found, None otherwise.
         """
-        stmt = select(Metric).where(Metric.name == name)
+        stmt = select(self.model_cls).where(self.model_cls.name == name)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_name_and_type(self, name: str, metric_type: str) -> Metric | None:
+    def get_by_name_and_type(self, name: str, metric_type: str) -> Any | None:
         """Retrieve a metric by its name and type.
 
         Args:
@@ -44,10 +50,10 @@ class MetricRepository(GenericRepository[Metric]):
         Returns:
             The metric if found, None otherwise.
         """
-        stmt = select(Metric).where(Metric.name == name, Metric.type == metric_type)
+        stmt = select(self.model_cls).where(self.model_cls.name == name, self.model_cls.type == metric_type)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_type(self, metric_type: str) -> list[Metric]:
+    def get_by_type(self, metric_type: str) -> list[Any]:
         """Retrieve all metrics of a specific type.
 
         Args:
@@ -56,10 +62,10 @@ class MetricRepository(GenericRepository[Metric]):
         Returns:
             List of metrics of the specified type.
         """
-        stmt = select(Metric).where(Metric.type == metric_type).order_by(Metric.name)
+        stmt = select(self.model_cls).where(self.model_cls.type == metric_type).order_by(self.model_cls.name)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_summaries(self, metric_id: int) -> Metric | None:
+    def get_with_summaries(self, metric_id: int) -> Any | None:
         """Retrieve a metric with its summaries eagerly loaded.
 
         Args:
@@ -68,29 +74,28 @@ class MetricRepository(GenericRepository[Metric]):
         Returns:
             The metric with summaries loaded, None if not found.
         """
-        stmt = select(Metric).where(Metric.id == metric_id).options(joinedload(Metric.summaries))
+        stmt = (
+            select(self.model_cls).where(self.model_cls.id == metric_id).options(joinedload(self.model_cls.summaries))
+        )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_retrieved_results(self, metric_id: int) -> Metric | None:
-        """Retrieve a metric with its retrieved results eagerly loaded.
+    def get_with_retrieved_results(self, metric_id: int) -> Any | None:
+        """Retrieve a metric with its image chunk retrieved results eagerly loaded.
 
         Args:
             metric_id: The metric ID.
 
         Returns:
-            The metric with chunk and image chunk retrieved results loaded, None if not found.
+            The metric with image chunk retrieved results loaded, None if not found.
         """
         stmt = (
-            select(Metric)
-            .where(Metric.id == metric_id)
-            .options(
-                joinedload(Metric.chunk_retrieved_results),
-                joinedload(Metric.image_chunk_retrieved_results),
-            )
+            select(self.model_cls)
+            .where(self.model_cls.id == metric_id)
+            .options(joinedload(self.model_cls.image_chunk_retrieved_results))
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_all_relations(self, metric_id: int) -> Metric | None:
+    def get_with_all_relations(self, metric_id: int) -> Any | None:
         """Retrieve a metric with all relations eagerly loaded.
 
         Args:
@@ -100,17 +105,16 @@ class MetricRepository(GenericRepository[Metric]):
             The metric with all relations loaded, None if not found.
         """
         stmt = (
-            select(Metric)
-            .where(Metric.id == metric_id)
+            select(self.model_cls)
+            .where(self.model_cls.id == metric_id)
             .options(
-                joinedload(Metric.summaries),
-                joinedload(Metric.chunk_retrieved_results),
-                joinedload(Metric.image_chunk_retrieved_results),
+                joinedload(self.model_cls.summaries),
+                joinedload(self.model_cls.image_chunk_retrieved_results),
             )
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def search_by_name(self, search_text: str, limit: int = 10) -> list[Metric]:
+    def search_by_name(self, search_text: str, limit: int = 10) -> list[Any]:
         """Search metrics containing the specified text in their name.
 
         Args:
@@ -120,10 +124,10 @@ class MetricRepository(GenericRepository[Metric]):
         Returns:
             List of metrics containing the search text.
         """
-        stmt = select(Metric).where(Metric.name.ilike(f"%{search_text}%")).limit(limit)
+        stmt = select(self.model_cls).where(self.model_cls.name.ilike(f"%{search_text}%")).limit(limit)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_all_retrieval_metrics(self) -> list[Metric]:
+    def get_all_retrieval_metrics(self) -> list[Any]:
         """Retrieve all retrieval metrics.
 
         Returns:
@@ -131,7 +135,7 @@ class MetricRepository(GenericRepository[Metric]):
         """
         return self.get_by_type("retrieval")
 
-    def get_all_generation_metrics(self) -> list[Metric]:
+    def get_all_generation_metrics(self) -> list[Any]:
         """Retrieve all generation metrics.
 
         Returns:

@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import pytest
@@ -5,6 +6,8 @@ import pytest
 from autorag_research.nodes.retrieval.bm25 import BM25Module
 
 TEST_INDEX_PATH = Path(__file__).parent.parent.parent.parent / "resources" / "bm25_test_index"
+
+pytestmark = pytest.mark.skipif(not shutil.which("java"), reason="Java not available")
 
 
 @pytest.fixture

@@ -132,9 +132,9 @@ INSERT INTO image_chunk_retrieved_result (query_id, pipeline_id, metric_id, imag
 	(4, 2, 1, 2, 0.7)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO chunk_retrieved_result (query_id, pipeline_id, metric_id, chunk_id, rel_score) VALUES
-	(1, 1, 1, 1, 0.85),
-	(2, 2, 1, 3, 0.4)
+INSERT INTO chunk_retrieved_result (query_id, pipeline_id, chunk_id, rel_score) VALUES
+	(1, 1, 1, 0.85),
+	(2, 2, 3, 0.4)
 ON CONFLICT DO NOTHING;
 
 -- Summary
@@ -151,5 +151,7 @@ SELECT setval(pg_get_serial_sequence('caption','id'), (SELECT COALESCE(MAX(id), 
 SELECT setval(pg_get_serial_sequence('chunk','id'), (SELECT COALESCE(MAX(id), 1) FROM chunk), true);
 SELECT setval(pg_get_serial_sequence('image_chunk','id'), (SELECT COALESCE(MAX(id), 1) FROM image_chunk), true);
 SELECT setval(pg_get_serial_sequence('query','id'), (SELECT COALESCE(MAX(id), 1) FROM query), true);
+SELECT setval(pg_get_serial_sequence('pipeline','id'), (SELECT COALESCE(MAX(id), 1) FROM pipeline), true);
+SELECT setval(pg_get_serial_sequence('metric','id'), (SELECT COALESCE(MAX(id), 1) FROM metric), true);
 
 COMMIT;

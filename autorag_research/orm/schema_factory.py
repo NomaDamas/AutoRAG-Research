@@ -268,9 +268,6 @@ def create_schema(embedding_dim: int = 768):
         image_chunk_retrieved_results: Mapped[list["ImageChunkRetrievedResult"]] = relationship(
             back_populates="metric", cascade="all, delete-orphan"
         )
-        chunk_retrieved_results: Mapped[list["ChunkRetrievedResult"]] = relationship(
-            back_populates="metric", cascade="all, delete-orphan"
-        )
         summaries: Mapped[list["Summary"]] = relationship(back_populates="metric", cascade="all, delete-orphan")
 
     class ExecutorResult(Base):
@@ -350,9 +347,6 @@ def create_schema(embedding_dim: int = 768):
         pipeline_id: Mapped[int] = mapped_column(
             BigInteger, ForeignKey("pipeline.id", ondelete="CASCADE"), nullable=False, primary_key=True
         )
-        metric_id: Mapped[int] = mapped_column(
-            BigInteger, ForeignKey("metric.id", ondelete="CASCADE"), nullable=False, primary_key=True
-        )
         chunk_id: Mapped[int] = mapped_column(
             BigInteger, ForeignKey("chunk.id", ondelete="CASCADE"), nullable=False, primary_key=True
         )
@@ -361,7 +355,6 @@ def create_schema(embedding_dim: int = 768):
         # Relationships
         query_obj: Mapped["Query"] = relationship(back_populates="chunk_retrieved_results")
         pipeline: Mapped["Pipeline"] = relationship(back_populates="chunk_retrieved_results")
-        metric: Mapped["Metric"] = relationship(back_populates="chunk_retrieved_results")
         chunk: Mapped["Chunk"] = relationship(back_populates="chunk_retrieved_results")
 
     class Summary(Base):

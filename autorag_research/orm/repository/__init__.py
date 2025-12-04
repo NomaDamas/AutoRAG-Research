@@ -10,6 +10,7 @@ from autorag_research.orm.repository.base import (
 )
 from autorag_research.orm.repository.caption import CaptionRepository
 from autorag_research.orm.repository.chunk import ChunkRepository
+from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.orm.repository.document import DocumentRepository
 from autorag_research.orm.repository.executor_result import ExecutorResultRepository
 from autorag_research.orm.repository.file import FileRepository
@@ -25,6 +26,7 @@ __all__ = [
     "BaseVectorRepository",
     "CaptionRepository",
     "ChunkRepository",
+    "ChunkRetrievedResultRepository",
     "DocumentRepository",
     "ExecutorResultRepository",
     "FileRepository",
