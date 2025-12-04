@@ -8,7 +8,12 @@ from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.exceptions import EmbeddingNotSetError, InvalidDatasetNameError, ServiceNotSetError, UnsupportedDataSubsetError
+from autorag_research.exceptions import (
+    EmbeddingNotSetError,
+    InvalidDatasetNameError,
+    ServiceNotSetError,
+    UnsupportedDataSubsetError,
+)
 
 ViDoReDatasets = [
     "arxivqa_test_subsampled",  # options

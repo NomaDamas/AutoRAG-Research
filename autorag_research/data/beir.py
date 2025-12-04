@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any, Literal
+from typing import Literal
 
 from beir.datasets.data_loader import GenericDataLoader
 from beir.util import download_and_unzip
@@ -14,9 +14,7 @@ logger = logging.getLogger("AutoRAG-Research")
 
 
 class BEIRIngestor(TextEmbeddingDataIngestor):
-    def __init__(
-        self, embedding_model: BaseEmbedding, dataset_name: str
-    ):
+    def __init__(self, embedding_model: BaseEmbedding, dataset_name: str):
         super().__init__(embedding_model)
         self.dataset_name = dataset_name
         url = f"https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{self.dataset_name}.zip"
