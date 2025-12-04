@@ -11,6 +11,7 @@ from typing import Literal
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     Float,
     ForeignKey,
     Integer,
@@ -193,6 +194,9 @@ def create_schema(
 
         # Relationships
         page: Mapped["Page"] = relationship(back_populates="image_chunks")
+        retrieval_relations: Mapped[list["RetrievalRelation"]] = relationship(
+            back_populates="image_chunk", cascade="all, delete-orphan"
+        )
         image_chunk_retrieved_results: Mapped[list["ImageChunkRetrievedResult"]] = relationship(
             back_populates="image_chunk", cascade="all, delete-orphan"
         )
@@ -212,16 +216,16 @@ def create_schema(
         )
 
     class Query(Base):
-        """Query table for retrieval queries"""
+        """Query table for retrieval and generation evaluation"""
 
         __tablename__ = "query"
 
 
         id: Mapped[int | str] = make_pk_column()
         contents: Mapped[str] = mapped_column(Text, nullable=False)
-        generation_gt: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+        generation_gt: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
-        embeddings: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
+        embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
 
 
         # Relationships
@@ -242,7 +246,7 @@ def create_schema(
         )
 
     class RetrievalRelation(Base):
-        """Relation between queries and chunks with scores"""
+        """Retrieval ground truth relation table"""
 
         __tablename__ = "retrieval_relation"
 
@@ -253,13 +257,20 @@ def create_schema(
         chunk_id: Mapped[int | str | None] = make_fk_column("chunk", nullable=True)
         image_chunk_id: Mapped[int | str | None] = make_fk_column("image_chunk", nullable=True)
 
+        __table_args__ = (
+            CheckConstraint(
+                "(chunk_id IS NOT NULL AND image_chunk_id IS NULL) OR (chunk_id IS NULL AND image_chunk_id IS NOT NULL)",
+                name="check_one_chunk_type",
+            ),
+        )
 
         # Relationships
         query_obj: Mapped["Query"] = relationship(back_populates="retrieval_relations")
-        chunk: Mapped["Chunk"] = relationship(foreign_keys=[chunk_id], back_populates="retrieval_relations")
+        chunk: Mapped["Chunk | None"] = relationship(foreign_keys=[chunk_id], back_populates="retrieval_relations")
+        image_chunk: Mapped["ImageChunk | None"] = relationship(back_populates="retrieval_relations")
 
     class Pipeline(Base):
-        """Pipeline table for processing pipelines"""
+        """Pipeline configuration table"""
 
         __tablename__ = "pipeline"
 
@@ -387,7 +398,7 @@ def create_schema(
         metric: Mapped["Metric"] = relationship(back_populates="summaries")
 
     class Schema:
-        """Namespace containing all ORM classes for a specific embedding dimension and PK type."""
+        """Namespace containing all ORM classes for a specific embedding dimension."""
         pass
 
     # Attach all classes to Schema namespace
