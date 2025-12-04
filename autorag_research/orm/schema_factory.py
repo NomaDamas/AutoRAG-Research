@@ -61,34 +61,19 @@ def create_schema(
         pass
 
     # Helper functions for primary and foreign keys
-    if primary_key_type == "string":
-        def make_pk_column():
-            """Create a string primary key column (user must provide unique values)"""
-            return mapped_column(String(255), primary_key=True, nullable=False)
+    def make_pk_column():
+        """Create a primary key column based on primary_key_type."""
+        return mapped_column(BigInteger if primary_key_type == "bigint" else String(255), primary_key=True, autoincrement=True)
 
-        def make_fk_column(ref_table: str, ref_column: str = "id", nullable: bool = False, primary_key: bool = False, **kwargs):
-            """Create a string foreign key column"""
-            return mapped_column(
-                String(255),
-                ForeignKey(f"{ref_table}.{ref_column}", ondelete="CASCADE"),
-                nullable=nullable,
-                primary_key=primary_key,
-                **kwargs
-            )
-    else:
-        def make_pk_column():
-            """Create a bigint primary key column with auto-increment"""
-            return mapped_column(BigInteger, primary_key=True, autoincrement=True)
-
-        def make_fk_column(ref_table: str, ref_column: str = "id", nullable: bool = False, primary_key: bool = False, **kwargs):
-            """Create a bigint foreign key column"""
-            return mapped_column(
-                BigInteger,
-                ForeignKey(f"{ref_table}.{ref_column}", ondelete="CASCADE"),
-                nullable=nullable,
-                primary_key=primary_key,
-                **kwargs
-            )
+    def make_fk_column(ref_table: str, ref_column: str = "id", nullable: bool = False, primary_key: bool = False, **kwargs):
+        """Create a foreign key column based on primary_key_type."""
+        return mapped_column(
+            BigInteger if primary_key_type == "bigint" else String(255),
+            ForeignKey(f"{ref_table}.{ref_column}", ondelete="CASCADE"),
+            nullable=nullable,
+            primary_key=primary_key,
+            **kwargs
+        )
 
     class File(Base):
         """File storage table for various file types"""
