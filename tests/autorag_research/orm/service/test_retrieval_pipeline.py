@@ -23,13 +23,13 @@ class TestRetrievalPipelineService:
 
         return retrieval_func
 
-    def test_run(self, service, mock_retrieval_func):
+    def test_run_pipeline(self, service, mock_retrieval_func):
         pipeline_id = service.create_pipeline(
             name="test_pipeline",
             config={"type": "test"},
         )
 
-        result = service.run(
+        result = service.run_pipeline(
             retrieval_func=mock_retrieval_func,
             pipeline_id=pipeline_id,
             top_k=2,
@@ -50,7 +50,7 @@ class TestRetrievalPipelineService:
             config={"type": "test"},
         )
 
-        service.run(
+        service.run_pipeline(
             retrieval_func=mock_retrieval_func,
             pipeline_id=pipeline_id,
             top_k=2,

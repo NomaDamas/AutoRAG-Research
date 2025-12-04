@@ -54,7 +54,7 @@ class RetrievalPipelineService:
         )
 
         # Run pipeline with BM25 retrieval function
-        results = service.run(
+        results = service.run_pipeline(
             retrieval_func=bm25.run,
             pipeline_id=pipeline_id,
             top_k=10,
@@ -106,14 +106,14 @@ class RetrievalPipelineService:
             uow.commit()
             return pipeline_id
 
-    def run(
+    def run_pipeline(
         self,
         retrieval_func: RetrievalFunc,
         pipeline_id: int,
         top_k: int = 10,
         batch_size: int = 100,
     ) -> dict[str, Any]:
-        """Run retrieval pipeline.
+        """Run retrieval pipeline for all queries.
 
         Args:
             retrieval_func: Function that performs retrieval.
