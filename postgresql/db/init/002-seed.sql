@@ -132,9 +132,9 @@ INSERT INTO image_chunk_retrieved_result (query_id, pipeline_id, metric_id, imag
 	(4, 2, 1, 2, 0.7)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO chunk_retrieved_result (query_id, pipeline_id, metric_id, chunk_id, rel_score) VALUES
-	(1, 1, 1, 1, 0.85),
-	(2, 2, 1, 3, 0.4)
+INSERT INTO chunk_retrieved_result (query_id, pipeline_id, chunk_id, rel_score) VALUES
+	(1, 1, 1, 0.85),
+	(2, 2, 3, 0.4)
 ON CONFLICT DO NOTHING;
 
 -- Summary

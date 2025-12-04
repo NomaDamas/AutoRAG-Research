@@ -57,7 +57,6 @@ class RetrievalPipelineService:
         results = service.run(
             retrieval_func=bm25.run,
             pipeline_id=pipeline_id,
-            metric_id=1,
             top_k=10,
         )
         ```
@@ -111,7 +110,6 @@ class RetrievalPipelineService:
         self,
         retrieval_func: RetrievalFunc,
         pipeline_id: int,
-        metric_id: int,
         top_k: int = 10,
         batch_size: int = 100,
     ) -> dict[str, Any]:
@@ -122,14 +120,12 @@ class RetrievalPipelineService:
                 Signature: (queries: list[str], top_k: int) -> list[list[dict]]
                 Each result dict must have 'doc_id' (int) and 'score' keys.
             pipeline_id: ID of the pipeline.
-            metric_id: ID of the metric to use.
             top_k: Number of top documents to retrieve per query.
             batch_size: Number of queries to process in each batch.
 
         Returns:
             Dictionary with pipeline execution statistics:
             - pipeline_id: The pipeline ID
-            - metric_id: The metric ID
             - total_queries: Number of queries processed
             - total_results: Number of results stored
         """
@@ -162,7 +158,6 @@ class RetrievalPipelineService:
                             self._schema.ChunkRetrievedResult(
                                 query_id=query_id,
                                 pipeline_id=pipeline_id,
-                                metric_id=metric_id,
                                 chunk_id=chunk_id,
                                 rel_score=score,
                             )
@@ -177,7 +172,6 @@ class RetrievalPipelineService:
 
         return {
             "pipeline_id": pipeline_id,
-            "metric_id": metric_id,
             "total_queries": total_queries,
             "total_results": total_results,
         }

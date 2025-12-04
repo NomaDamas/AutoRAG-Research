@@ -2,8 +2,6 @@ import pytest
 
 from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
 
-SEED_METRIC_ID = 1
-
 
 class TestRetrievalPipelineService:
     @pytest.fixture
@@ -34,16 +32,13 @@ class TestRetrievalPipelineService:
         result = service.run(
             retrieval_func=mock_retrieval_func,
             pipeline_id=pipeline_id,
-            metric_id=SEED_METRIC_ID,
             top_k=2,
         )
 
         assert "pipeline_id" in result
-        assert "metric_id" in result
         assert "total_queries" in result
         assert "total_results" in result
         assert result["pipeline_id"] == pipeline_id
-        assert result["metric_id"] == SEED_METRIC_ID
         assert result["total_queries"] == 5
         assert result["total_results"] == 10
 
@@ -58,7 +53,6 @@ class TestRetrievalPipelineService:
         service.run(
             retrieval_func=mock_retrieval_func,
             pipeline_id=pipeline_id,
-            metric_id=SEED_METRIC_ID,
             top_k=2,
         )
 

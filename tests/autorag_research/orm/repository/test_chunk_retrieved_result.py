@@ -11,7 +11,7 @@ def chunk_retrieved_result_repository(db_session: Session) -> ChunkRetrievedResu
 
 
 def test_get_by_query_and_pipeline(chunk_retrieved_result_repository: ChunkRetrievedResultRepository):
-    # Seed data: (query_id=1, pipeline_id=1, metric_id=1, chunk_id=1, rel_score=0.85)
+    # Seed data: (query_id=1, pipeline_id=1, chunk_id=1, rel_score=0.85)
     results = chunk_retrieved_result_repository.get_by_query_and_pipeline(1, 1)
 
     assert len(results) >= 1
@@ -25,9 +25,9 @@ def test_get_by_query_and_pipeline_returns_ordered_by_score(
 ):
     # Add multiple results with different scores
     results_to_add = [
-        ChunkRetrievedResult(query_id=3, pipeline_id=1, metric_id=1, chunk_id=1, rel_score=0.5),
-        ChunkRetrievedResult(query_id=3, pipeline_id=1, metric_id=1, chunk_id=2, rel_score=0.9),
-        ChunkRetrievedResult(query_id=3, pipeline_id=1, metric_id=1, chunk_id=3, rel_score=0.7),
+        ChunkRetrievedResult(query_id=3, pipeline_id=1, chunk_id=1, rel_score=0.5),
+        ChunkRetrievedResult(query_id=3, pipeline_id=1, chunk_id=2, rel_score=0.9),
+        ChunkRetrievedResult(query_id=3, pipeline_id=1, chunk_id=3, rel_score=0.7),
     ]
     db_session.add_all(results_to_add)
     db_session.flush()
@@ -70,8 +70,8 @@ def test_get_by_query(chunk_retrieved_result_repository: ChunkRetrievedResultRep
 def test_delete_by_pipeline(chunk_retrieved_result_repository: ChunkRetrievedResultRepository, db_session: Session):
     # Add test data to delete
     test_results = [
-        ChunkRetrievedResult(query_id=4, pipeline_id=1, metric_id=1, chunk_id=1, rel_score=0.6),
-        ChunkRetrievedResult(query_id=4, pipeline_id=1, metric_id=1, chunk_id=2, rel_score=0.7),
+        ChunkRetrievedResult(query_id=4, pipeline_id=1, chunk_id=1, rel_score=0.6),
+        ChunkRetrievedResult(query_id=4, pipeline_id=1, chunk_id=2, rel_score=0.7),
     ]
     db_session.add_all(test_results)
     db_session.flush()
@@ -92,7 +92,7 @@ def test_delete_by_query_and_pipeline(
     db_session: Session,
 ):
     # Add test data to delete
-    test_result = ChunkRetrievedResult(query_id=5, pipeline_id=2, metric_id=1, chunk_id=1, rel_score=0.8)
+    test_result = ChunkRetrievedResult(query_id=5, pipeline_id=2, chunk_id=1, rel_score=0.8)
     db_session.add(test_result)
     db_session.flush()
 
@@ -113,9 +113,9 @@ def test_delete_by_query_and_pipeline_returns_zero_for_nonexistent(
 
 def test_bulk_insert(chunk_retrieved_result_repository: ChunkRetrievedResultRepository, db_session: Session):
     results_to_insert = [
-        {"query_id": 4, "pipeline_id": 2, "metric_id": 2, "chunk_id": 1, "rel_score": 0.75},
-        {"query_id": 4, "pipeline_id": 2, "metric_id": 2, "chunk_id": 2, "rel_score": 0.65},
-        {"query_id": 4, "pipeline_id": 2, "metric_id": 2, "chunk_id": 3, "rel_score": 0.55},
+        {"query_id": 4, "pipeline_id": 2, "chunk_id": 1, "rel_score": 0.75},
+        {"query_id": 4, "pipeline_id": 2, "chunk_id": 2, "rel_score": 0.65},
+        {"query_id": 4, "pipeline_id": 2, "chunk_id": 3, "rel_score": 0.55},
     ]
 
     inserted_count = chunk_retrieved_result_repository.bulk_insert(results_to_insert)
@@ -125,7 +125,6 @@ def test_bulk_insert(chunk_retrieved_result_repository: ChunkRetrievedResultRepo
 
     results = chunk_retrieved_result_repository.get_by_query_and_pipeline(4, 2)
     assert len(results) == 3
-    assert all(r.metric_id == 2 for r in results)
 
     # Cleanup
     chunk_retrieved_result_repository.delete_by_query_and_pipeline(4, 2)

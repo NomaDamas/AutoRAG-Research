@@ -108,7 +108,6 @@ class ChunkRetrievedResultRepository(GenericRepository[Any]):
             results: List of dictionaries containing:
                 - query_id: int
                 - pipeline_id: int
-                - metric_id: int
                 - chunk_id: int
                 - rel_score: float (optional)
 
