@@ -264,7 +264,7 @@ def or_all(ids: list[int | str], wrapper_fn: Callable[[int | str], _IntWrapper] 
     return reduce(operator.or_, [wrapper_fn(_id) for _id in ids])
 
 
-def and_all(ids: list[int| str], wrapper_fn: Callable[[int | str], _IntWrapper] = text) -> AndChain | _IntWrapper:
+def and_all(ids: list[int | str], wrapper_fn: Callable[[int | str], _IntWrapper] = text) -> AndChain | _IntWrapper:
     """Build AND chain from list: [1, 2, 3] -> wrapper(1) & wrapper(2) & wrapper(3).
 
     Use this for multi-hop retrieval where each ID represents a sequential hop.

@@ -1,6 +1,6 @@
-from abc import ABC
 import ast
 import io
+from abc import ABC
 from typing import Literal
 
 from datasets import load_dataset
@@ -13,7 +13,6 @@ from autorag_research.exceptions import (
     EmbeddingNotSetError,
     InvalidDatasetNameError,
     ServiceNotSetError,
-    UnsupportedDataSubsetError,
 )
 
 ViDoReDatasets = [
@@ -139,7 +138,7 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
             late_interaction_embedding_model,
         )
 
-    def detect_primary_key_type(self) -> Literal['bigint'] | Literal['string']:
+    def detect_primary_key_type(self) -> Literal["bigint"] | Literal["string"]:
         return "bigint"
 
     def ingest(self, subset: Literal["train", "dev", "test"] = "test"):
