@@ -5,8 +5,6 @@ import pytest
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.pipelines.retrieval.bm25 import BM25RetrievalPipeline
 
-SEED_METRIC_ID = 1
-
 
 class TestBM25RetrievalPipeline:
     @pytest.fixture
@@ -48,19 +46,14 @@ class TestBM25RetrievalPipeline:
 
     def test_run(self, pipeline, mock_bm25_module):
         with patch(
-            "autorag_research.nodes.retrieval.bm25.BM25Module",
+            "autorag_research.pipelines.retrieval.bm25.BM25Module",
             return_value=mock_bm25_module,
         ):
-            result = pipeline.run(
-                metric_id=SEED_METRIC_ID,
-                top_k=3,
-            )
+            result = pipeline.run(top_k=3)
 
         assert "pipeline_id" in result
-        assert "metric_id" in result
         assert "total_queries" in result
         assert "total_results" in result
         assert result["pipeline_id"] == pipeline.pipeline_id
-        assert result["metric_id"] == SEED_METRIC_ID
         assert result["total_queries"] == 5
         assert result["total_results"] == 15
