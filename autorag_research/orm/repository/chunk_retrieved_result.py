@@ -6,7 +6,7 @@ from various retrieval pipelines like BM25, dense retrieval, etc.
 
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.orm import Session
 
 from autorag_research.orm.repository.base import GenericRepository
@@ -82,7 +82,7 @@ class ChunkRetrievedResultRepository(GenericRepository[Any]):
             Number of deleted records.
         """
         stmt = delete(self.model_cls).where(self.model_cls.pipeline_id == pipeline_id)
-        result = self.session.execute(stmt)
+        result: CursorResult[Any] = self.session.execute(stmt)
         return result.rowcount
 
     def delete_by_query_and_pipeline(self, query_id: int, pipeline_id: int) -> int:
@@ -98,7 +98,7 @@ class ChunkRetrievedResultRepository(GenericRepository[Any]):
         stmt = delete(self.model_cls).where(
             self.model_cls.query_id == query_id, self.model_cls.pipeline_id == pipeline_id
         )
-        result = self.session.execute(stmt)
+        result: CursorResult[Any] = self.session.execute(stmt)
         return result.rowcount
 
     def bulk_insert(self, results: list[dict]) -> int:
