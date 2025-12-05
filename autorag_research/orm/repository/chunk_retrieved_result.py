@@ -83,7 +83,7 @@ class ChunkRetrievedResultRepository(GenericRepository[Any]):
         """
         stmt = delete(self.model_cls).where(self.model_cls.pipeline_id == pipeline_id)
         result = self.session.execute(stmt)
-        return result.rowcount
+        return result.rowcount  # ty: ignore
 
     def delete_by_query_and_pipeline(self, query_id: int, pipeline_id: int) -> int:
         """Delete all chunk retrieved results for a specific query and pipeline.
@@ -99,7 +99,7 @@ class ChunkRetrievedResultRepository(GenericRepository[Any]):
             self.model_cls.query_id == query_id, self.model_cls.pipeline_id == pipeline_id
         )
         result = self.session.execute(stmt)
-        return result.rowcount
+        return result.rowcount  # ty: ignore
 
     def bulk_insert(self, results: list[dict]) -> int:
         """Bulk insert chunk retrieved results.
