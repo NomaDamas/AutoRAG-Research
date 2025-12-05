@@ -5,6 +5,7 @@ embedding dimensions and primary key types. Supports multiple dimensions
 and key types in a single process.
 """
 
+import uuid
 from functools import lru_cache
 from typing import Literal
 
@@ -60,9 +61,18 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
     # Helper functions for primary and foreign keys
     def make_pk_column():
         """Create a primary key column based on primary_key_type."""
-        return mapped_column(
-            BigInteger if primary_key_type == "bigint" else String(255), primary_key=True, autoincrement=True
-        )
+        if primary_key_type == "string":
+            return mapped_column(
+                String(255),
+                primary_key=True,
+                default=lambda: str(uuid.uuid4()),
+            )
+        else:
+            return mapped_column(
+                BigInteger,
+                primary_key=True,
+                autoincrement=True,
+            )
 
     def make_fk_column(
         ref_table: str, ref_column: str = "id", nullable: bool = False, primary_key: bool = False, **kwargs
