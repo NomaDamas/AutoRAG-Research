@@ -39,19 +39,11 @@ def test_get_with_summaries(metric_repository: MetricRepository):
     assert hasattr(result, "summaries")
 
 
-def test_get_with_retrieved_results(metric_repository: MetricRepository):
-    result = metric_repository.get_with_retrieved_results(1)
-
-    assert result is not None
-    assert hasattr(result, "image_chunk_retrieved_results")
-
-
 def test_get_with_all_relations(metric_repository: MetricRepository):
     result = metric_repository.get_with_all_relations(1)
 
     assert result is not None
     assert hasattr(result, "summaries")
-    assert hasattr(result, "image_chunk_retrieved_results")
 
 
 def test_search_by_name(metric_repository: MetricRepository):
