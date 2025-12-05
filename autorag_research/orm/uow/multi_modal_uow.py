@@ -6,9 +6,8 @@ including File, Document, Page, Caption, Chunk, ImageChunk, Query, and Retrieval
 
 from typing import Any
 
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
-from autorag_research.exceptions import SessionNotSetError
 from autorag_research.orm.repository.caption import CaptionRepository
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.document import DocumentRepository
@@ -17,9 +16,10 @@ from autorag_research.orm.repository.image_chunk import ImageChunkRepository
 from autorag_research.orm.repository.page import PageRepository
 from autorag_research.orm.repository.query import QueryRepository
 from autorag_research.orm.repository.retrieval_relation import RetrievalRelationRepository
+from autorag_research.orm.uow.base import BaseUnitOfWork
 
 
-class MultiModalUnitOfWork:
+class MultiModalUnitOfWork(BaseUnitOfWork):
     """Multi-modal Unit of Work for managing comprehensive data ingestion transactions.
 
     This UoW includes all entity repositories needed for multi-modal RAG data:
@@ -43,16 +43,14 @@ class MultiModalUnitOfWork:
         ```
     """
 
-    def __init__(self, session_factory: sessionmaker[Session], schema: Any | None = None):
+    def __init__(self, session_factory: sessionmaker, schema: Any | None = None):
         """Initialize Multi-modal Unit of Work with a session factory.
 
         Args:
             session_factory: SQLAlchemy sessionmaker instance.
             schema: Schema namespace from create_schema(). If None, uses default 768-dim schema.
         """
-        self.session_factory = session_factory
-        self._schema = schema
-        self.session: Session | None = None
+        super().__init__(session_factory, schema)
 
         # Lazy-initialized repositories
         self._file_repo: FileRepository | None = None
@@ -81,7 +79,7 @@ class MultiModalUnitOfWork:
                 "Query": self._schema.Query,
                 "RetrievalRelation": self._schema.RetrievalRelation,
             }
-        # Use default schema
+
         from autorag_research.orm.schema import (
             Caption,
             Chunk,
@@ -104,30 +102,8 @@ class MultiModalUnitOfWork:
             "RetrievalRelation": RetrievalRelation,
         }
 
-    def __enter__(self) -> "MultiModalUnitOfWork":
-        """Enter the context manager and create a new session.
-
-        Returns:
-            Self for method chaining.
-        """
-        self.session = self.session_factory()
-        return self
-
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Exit the context manager and clean up session.
-
-        Automatically rolls back if an exception occurred.
-
-        Args:
-            exc_type: Exception type if an error occurred.
-            exc_val: Exception value if an error occurred.
-            exc_tb: Exception traceback if an error occurred.
-        """
-        if exc_type is not None:
-            self.rollback()
-        if self.session:
-            self.session.close()
-        # Reset repository references
+    def _reset_repositories(self) -> None:
+        """Reset all repository references to None."""
         self._file_repo = None
         self._document_repo = None
         self._page_repo = None
@@ -147,12 +123,11 @@ class MultiModalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._file_repo is None:
-            classes = self._get_schema_classes()
-            self._file_repo = FileRepository(self.session, classes["File"])
-        return self._file_repo
+        return self._get_repository(
+            "_file_repo",
+            FileRepository,
+            lambda: self._get_schema_classes()["File"],
+        )
 
     @property
     def documents(self) -> DocumentRepository:
@@ -164,12 +139,11 @@ class MultiModalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._document_repo is None:
-            classes = self._get_schema_classes()
-            self._document_repo = DocumentRepository(self.session, classes["Document"])
-        return self._document_repo
+        return self._get_repository(
+            "_document_repo",
+            DocumentRepository,
+            lambda: self._get_schema_classes()["Document"],
+        )
 
     @property
     def pages(self) -> PageRepository:
@@ -181,12 +155,11 @@ class MultiModalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._page_repo is None:
-            classes = self._get_schema_classes()
-            self._page_repo = PageRepository(self.session, classes["Page"])
-        return self._page_repo
+        return self._get_repository(
+            "_page_repo",
+            PageRepository,
+            lambda: self._get_schema_classes()["Page"],
+        )
 
     @property
     def captions(self) -> CaptionRepository:
@@ -198,12 +171,11 @@ class MultiModalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._caption_repo is None:
-            classes = self._get_schema_classes()
-            self._caption_repo = CaptionRepository(self.session, classes["Caption"])
-        return self._caption_repo
+        return self._get_repository(
+            "_caption_repo",
+            CaptionRepository,
+            lambda: self._get_schema_classes()["Caption"],
+        )
 
     @property
     def chunks(self) -> ChunkRepository:
@@ -215,12 +187,11 @@ class MultiModalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._chunk_repo is None:
-            classes = self._get_schema_classes()
-            self._chunk_repo = ChunkRepository(self.session, classes["Chunk"])
-        return self._chunk_repo
+        return self._get_repository(
+            "_chunk_repo",
+            ChunkRepository,
+            lambda: self._get_schema_classes()["Chunk"],
+        )
 
     @property
     def image_chunks(self) -> ImageChunkRepository:
@@ -232,12 +203,11 @@ class MultiModalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._image_chunk_repo is None:
-            classes = self._get_schema_classes()
-            self._image_chunk_repo = ImageChunkRepository(self.session, classes["ImageChunk"])
-        return self._image_chunk_repo
+        return self._get_repository(
+            "_image_chunk_repo",
+            ImageChunkRepository,
+            lambda: self._get_schema_classes()["ImageChunk"],
+        )
 
     @property
     def queries(self) -> QueryRepository:
@@ -249,12 +219,11 @@ class MultiModalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._query_repo is None:
-            classes = self._get_schema_classes()
-            self._query_repo = QueryRepository(self.session, classes["Query"])
-        return self._query_repo
+        return self._get_repository(
+            "_query_repo",
+            QueryRepository,
+            lambda: self._get_schema_classes()["Query"],
+        )
 
     @property
     def retrieval_relations(self) -> RetrievalRelationRepository:
@@ -266,24 +235,8 @@ class MultiModalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._retrieval_relation_repo is None:
-            classes = self._get_schema_classes()
-            self._retrieval_relation_repo = RetrievalRelationRepository(self.session, classes["RetrievalRelation"])
-        return self._retrieval_relation_repo
-
-    def commit(self) -> None:
-        """Commit the current transaction."""
-        if self.session:
-            self.session.commit()
-
-    def rollback(self) -> None:
-        """Rollback the current transaction."""
-        if self.session:
-            self.session.rollback()
-
-    def flush(self) -> None:
-        """Flush pending changes without committing."""
-        if self.session:
-            self.session.flush()
+        return self._get_repository(
+            "_retrieval_relation_repo",
+            RetrievalRelationRepository,
+            lambda: self._get_schema_classes()["RetrievalRelation"],
+        )

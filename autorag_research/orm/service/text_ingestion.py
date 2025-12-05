@@ -8,8 +8,8 @@ import logging
 from typing import Any
 
 from autorag_research.exceptions import SessionNotSetError
-from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
 from autorag_research.orm.service.base_ingestion import BaseIngestionService
+from autorag_research.orm.uow.text_uow import TextOnlyUnitOfWork
 
 logger = logging.getLogger("AutoRAG-Research")
 

@@ -9,18 +9,18 @@ Provides atomic transaction management for retrieval operations including:
 
 from typing import Any
 
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
-from autorag_research.exceptions import SessionNotSetError
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.orm.repository.image_chunk import ImageChunkRepository
 from autorag_research.orm.repository.metric import MetricRepository
 from autorag_research.orm.repository.pipeline import PipelineRepository
 from autorag_research.orm.repository.query import QueryRepository
+from autorag_research.orm.uow.base import BaseUnitOfWork
 
 
-class RetrievalUnitOfWork:
+class RetrievalUnitOfWork(BaseUnitOfWork):
     """Unit of Work for retrieval pipeline operations.
 
     Manages transactions across multiple repositories needed for retrieval:
@@ -33,16 +33,14 @@ class RetrievalUnitOfWork:
     Note: ImageChunkRetrievedResult can be added later for multi-modal retrieval.
     """
 
-    def __init__(self, session_factory: sessionmaker[Session], schema: Any | None = None):
+    def __init__(self, session_factory: sessionmaker, schema: Any | None = None):
         """Initialize RetrievalUnitOfWork with session factory and schema.
 
         Args:
             session_factory: SQLAlchemy sessionmaker instance.
             schema: Schema namespace from create_schema(). If None, uses default 768-dim schema.
         """
-        self.session_factory = session_factory
-        self._schema = schema
-        self.session: Session | None = None
+        super().__init__(session_factory, schema)
 
         # Lazy-initialized repositories
         self._query_repo: QueryRepository | None = None
@@ -67,7 +65,7 @@ class RetrievalUnitOfWork:
                 "Metric": self._schema.Metric,
                 "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
             }
-        # Use default schema
+
         from autorag_research.orm.schema import (
             Chunk,
             ChunkRetrievedResult,
@@ -86,30 +84,8 @@ class RetrievalUnitOfWork:
             "ChunkRetrievedResult": ChunkRetrievedResult,
         }
 
-    def __enter__(self) -> "RetrievalUnitOfWork":
-        """Enter the context manager and create a new session.
-
-        Returns:
-            Self for method chaining.
-        """
-        self.session = self.session_factory()
-        return self
-
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Exit the context manager and clean up session.
-
-        Automatically rolls back if an exception occurred.
-
-        Args:
-            exc_type: Exception type if an error occurred.
-            exc_val: Exception value if an error occurred.
-            exc_tb: Exception traceback if an error occurred.
-        """
-        if exc_type is not None:
-            self.rollback()
-        if self.session:
-            self.session.close()
-        # Reset repository references
+    def _reset_repositories(self) -> None:
+        """Reset all repository references to None."""
         self._query_repo = None
         self._chunk_repo = None
         self._image_chunk_repo = None
@@ -127,12 +103,11 @@ class RetrievalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._query_repo is None:
-            classes = self._get_schema_classes()
-            self._query_repo = QueryRepository(self.session, classes["Query"])
-        return self._query_repo
+        return self._get_repository(
+            "_query_repo",
+            QueryRepository,
+            lambda: self._get_schema_classes()["Query"],
+        )
 
     @property
     def chunks(self) -> ChunkRepository:
@@ -144,12 +119,11 @@ class RetrievalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._chunk_repo is None:
-            classes = self._get_schema_classes()
-            self._chunk_repo = ChunkRepository(self.session, classes["Chunk"])
-        return self._chunk_repo
+        return self._get_repository(
+            "_chunk_repo",
+            ChunkRepository,
+            lambda: self._get_schema_classes()["Chunk"],
+        )
 
     @property
     def image_chunks(self) -> ImageChunkRepository:
@@ -161,12 +135,11 @@ class RetrievalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._image_chunk_repo is None:
-            classes = self._get_schema_classes()
-            self._image_chunk_repo = ImageChunkRepository(self.session, classes["ImageChunk"])
-        return self._image_chunk_repo
+        return self._get_repository(
+            "_image_chunk_repo",
+            ImageChunkRepository,
+            lambda: self._get_schema_classes()["ImageChunk"],
+        )
 
     @property
     def pipelines(self) -> PipelineRepository:
@@ -178,12 +151,11 @@ class RetrievalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._pipeline_repo is None:
-            classes = self._get_schema_classes()
-            self._pipeline_repo = PipelineRepository(self.session, classes["Pipeline"])
-        return self._pipeline_repo
+        return self._get_repository(
+            "_pipeline_repo",
+            PipelineRepository,
+            lambda: self._get_schema_classes()["Pipeline"],
+        )
 
     @property
     def metrics(self) -> MetricRepository:
@@ -195,12 +167,11 @@ class RetrievalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._metric_repo is None:
-            classes = self._get_schema_classes()
-            self._metric_repo = MetricRepository(self.session, classes["Metric"])
-        return self._metric_repo
+        return self._get_repository(
+            "_metric_repo",
+            MetricRepository,
+            lambda: self._get_schema_classes()["Metric"],
+        )
 
     @property
     def chunk_results(self) -> ChunkRetrievedResultRepository:
@@ -212,24 +183,8 @@ class RetrievalUnitOfWork:
         Raises:
             SessionNotSetError: If session is not initialized.
         """
-        if self.session is None:
-            raise SessionNotSetError
-        if self._chunk_result_repo is None:
-            classes = self._get_schema_classes()
-            self._chunk_result_repo = ChunkRetrievedResultRepository(self.session, classes["ChunkRetrievedResult"])
-        return self._chunk_result_repo
-
-    def commit(self) -> None:
-        """Commit the current transaction."""
-        if self.session:
-            self.session.commit()
-
-    def rollback(self) -> None:
-        """Rollback the current transaction."""
-        if self.session:
-            self.session.rollback()
-
-    def flush(self) -> None:
-        """Flush pending changes without committing."""
-        if self.session:
-            self.session.flush()
+        return self._get_repository(
+            "_chunk_result_repo",
+            ChunkRetrievedResultRepository,
+            lambda: self._get_schema_classes()["ChunkRetrievedResult"],
+        )

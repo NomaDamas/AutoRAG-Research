@@ -1,8 +1,8 @@
 import pytest
 
-from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
 from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
 from autorag_research.orm.service.base import BaseService
+from autorag_research.orm.uow.text_uow import TextOnlyUnitOfWork
 
 
 class ConcreteTestService(BaseService):
