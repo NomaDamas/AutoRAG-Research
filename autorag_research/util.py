@@ -3,7 +3,7 @@ import functools
 import itertools
 import logging
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import numpy as np
 import pandas as pd
@@ -153,21 +153,21 @@ async def run_with_concurrency_limit(
     return await asyncio.gather(*tasks)
 
 
-def to_async_func(sync_func: Callable[..., R]) -> Callable[..., Awaitable[R]]:
+def to_async_func(func: Callable[..., R]) -> Callable[..., Awaitable[R]]:
     """Convert a synchronous function to an asynchronous function.
 
     Args:
-        sync_func: The synchronous function to convert.
+        func: The synchronous function to convert.
 
     Returns:
         An asynchronous function that runs the synchronous function in a thread.
     """
 
-    if asyncio.iscoroutinefunction(sync_func):
-        return sync_func  # Already async, return as is
+    if asyncio.iscoroutinefunction(func):
+        return cast(Callable[..., Awaitable[R]], func)  # Already async
 
-    @functools.wraps(sync_func)
+    @functools.wraps(func)
     async def async_func(*args: tuple, **kwargs: Any) -> R:
-        return await asyncio.to_thread(sync_func, *args, **kwargs)
+        return await asyncio.to_thread(func, *args, **kwargs)
 
     return async_func

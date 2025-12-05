@@ -11,6 +11,7 @@ import logging
 from collections import defaultdict
 from typing import Any
 
+from autorag_research.exceptions import SchemaNotFoundError
 from autorag_research.orm.service.base_evaluation import BaseEvaluationService
 from autorag_research.orm.uow.evaluation_uow import RetrievalEvaluationUnitOfWork
 from autorag_research.schema import MetricInput
@@ -222,6 +223,8 @@ class RetrievalEvaluationService(BaseEvaluationService):
         """
         classes = self._get_schema_classes()
         eval_result_cls = classes.get("EvaluationResult")
+        if eval_result_cls is None:
+            raise SchemaNotFoundError("EvaluationResult")
 
         with self._create_uow() as uow:
             entities = [

@@ -15,6 +15,7 @@ from typing import Any, TypeVar
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from autorag_research.exceptions import SchemaNotFoundError
 from autorag_research.orm.service.base import BaseService
 from autorag_research.util import to_async_func
 
@@ -127,6 +128,8 @@ class BaseEvaluationService(BaseService, ABC):
         """
         classes = self._get_schema_classes()
         metric_cls = classes.get("Metric")
+        if metric_cls is None:
+            raise SchemaNotFoundError("Metric")
 
         with self._create_uow() as uow:
             existing = uow.metrics.get_by_name_and_type(name, metric_type)
