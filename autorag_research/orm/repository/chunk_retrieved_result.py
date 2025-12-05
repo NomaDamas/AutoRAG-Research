@@ -12,31 +12,22 @@ from sqlalchemy.orm import Session
 from autorag_research.orm.repository.base import GenericRepository
 
 
-class ChunkRetrievedResultRepository(GenericRepository[Any]):
-    """Repository for ChunkRetrievedResult entity."""
+class BaseRetrievedResultRepository(GenericRepository[Any]):
+    """Base repository for retrieved result entities.
 
-    def __init__(self, session: Session, model_cls: type | None = None):
-        """Initialize chunk retrieved result repository.
-
-        Args:
-            session: SQLAlchemy session for database operations.
-            model_cls: The ChunkRetrievedResult model class to use. If None, uses default schema.
-        """
-        if model_cls is None:
-            from autorag_research.orm.schema import ChunkRetrievedResult
-
-            model_cls = ChunkRetrievedResult
-        super().__init__(session, model_cls)
+    Provides common CRUD operations for chunk and image chunk retrieval results.
+    Subclasses should override __init__ to provide the appropriate model class.
+    """
 
     def get_by_query_and_pipeline(self, query_id: int, pipeline_id: int) -> list[Any]:
-        """Retrieve all chunk retrieved results for a specific query and pipeline.
+        """Retrieve all retrieved results for a specific query and pipeline.
 
         Args:
             query_id: The query ID.
             pipeline_id: The pipeline ID.
 
         Returns:
-            List of ChunkRetrievedResult entities ordered by relevance score descending.
+            List of retrieved result entities ordered by relevance score descending.
         """
         stmt = (
             select(self.model_cls)
@@ -46,14 +37,14 @@ class ChunkRetrievedResultRepository(GenericRepository[Any]):
         return list(self.session.execute(stmt).scalars().all())
 
     def get_by_pipeline(self, pipeline_id: int, limit: int | None = None) -> list[Any]:
-        """Retrieve all chunk retrieved results for a specific pipeline.
+        """Retrieve all retrieved results for a specific pipeline.
 
         Args:
             pipeline_id: The pipeline ID.
             limit: Maximum number of results to return.
 
         Returns:
-            List of ChunkRetrievedResult entities.
+            List of retrieved result entities.
         """
         stmt = select(self.model_cls).where(self.model_cls.pipeline_id == pipeline_id)
         if limit:
@@ -61,19 +52,19 @@ class ChunkRetrievedResultRepository(GenericRepository[Any]):
         return list(self.session.execute(stmt).scalars().all())
 
     def get_by_query(self, query_id: int) -> list[Any]:
-        """Retrieve all chunk retrieved results for a specific query.
+        """Retrieve all retrieved results for a specific query.
 
         Args:
             query_id: The query ID.
 
         Returns:
-            List of ChunkRetrievedResult entities.
+            List of retrieved result entities.
         """
         stmt = select(self.model_cls).where(self.model_cls.query_id == query_id)
         return list(self.session.execute(stmt).scalars().all())
 
     def delete_by_pipeline(self, pipeline_id: int) -> int:
-        """Delete all chunk retrieved results for a specific pipeline.
+        """Delete all retrieved results for a specific pipeline.
 
         Args:
             pipeline_id: The pipeline ID.
@@ -86,7 +77,7 @@ class ChunkRetrievedResultRepository(GenericRepository[Any]):
         return result.rowcount  # ty: ignore
 
     def delete_by_query_and_pipeline(self, query_id: int, pipeline_id: int) -> int:
-        """Delete all chunk retrieved results for a specific query and pipeline.
+        """Delete all retrieved results for a specific query and pipeline.
 
         Args:
             query_id: The query ID.
@@ -102,14 +93,10 @@ class ChunkRetrievedResultRepository(GenericRepository[Any]):
         return result.rowcount  # ty: ignore
 
     def bulk_insert(self, results: list[dict]) -> int:
-        """Bulk insert chunk retrieved results.
+        """Bulk insert retrieved results.
 
         Args:
-            results: List of dictionaries containing:
-                - query_id: int
-                - pipeline_id: int
-                - chunk_id: int
-                - rel_score: float (optional)
+            results: List of dictionaries containing result data.
 
         Returns:
             Number of inserted records.
@@ -117,3 +104,20 @@ class ChunkRetrievedResultRepository(GenericRepository[Any]):
         entities = [self.model_cls(**r) for r in results]
         self.session.add_all(entities)
         return len(entities)
+
+
+class ChunkRetrievedResultRepository(BaseRetrievedResultRepository):
+    """Repository for ChunkRetrievedResult entity."""
+
+    def __init__(self, session: Session, model_cls: type | None = None):
+        """Initialize chunk retrieved result repository.
+
+        Args:
+            session: SQLAlchemy session for database operations.
+            model_cls: The ChunkRetrievedResult model class to use. If None, uses default schema.
+        """
+        if model_cls is None:
+            from autorag_research.orm.schema import ChunkRetrievedResult
+
+            model_cls = ChunkRetrievedResult
+        super().__init__(session, model_cls)
