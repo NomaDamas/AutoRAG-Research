@@ -6,12 +6,22 @@ Provides atomic transaction management for retrieval evaluation including:
 - RetrievalRelation for ground truth
 - ChunkRetrievedResult and ImageChunkRetrievedResult for retrieval outputs
 - EvaluationResult for storing evaluation scores
+
+Generation Unit of Work for managing generation pipeline transactions.
+
+Provides atomic transaction management for generation operations including:
+- Query fetching
+- Pipeline configuration
+- Executor results (generation outputs)
+- Evaluation results (metric scores)
+- Metric definitions
 """
 
 from typing import Any
 
 from sqlalchemy.orm import sessionmaker
 
+from autorag_research.orm.repository import ExecutorResultRepository
 from autorag_research.orm.repository.chunk_retrieved_result import (
     ChunkRetrievedResultRepository,
 )
@@ -216,4 +226,151 @@ class RetrievalEvaluationUnitOfWork(BaseUnitOfWork):
             "_evaluation_result_repo",
             EvaluatorResultRepository,
             lambda: self._get_schema_classes()["EvaluationResult"],
+        )
+
+
+class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
+    """Unit of Work for generation pipeline operations.
+
+    Manages transactions across multiple repositories needed for generation:
+    - Query: For fetching evaluation queries
+    - Pipeline: For configuration and tracking
+    - ExecutorResult: For storing generation outputs
+    - EvaluationResult: For storing metric evaluation scores
+    - Metric: For metric definitions
+    """
+
+    def __init__(self, session_factory: sessionmaker, schema: Any | None = None):
+        """Initialize GenerationUnitOfWork with session factory and schema.
+
+        Args:
+            session_factory: SQLAlchemy sessionmaker instance.
+            schema: Schema namespace from create_schema(). If None, uses default 768-dim schema.
+        """
+        super().__init__(session_factory, schema)
+
+        # Lazy-initialized repositories
+        self._query_repo: QueryRepository | None = None
+        self._pipeline_repo: PipelineRepository | None = None
+        self._executor_result_repo: ExecutorResultRepository | None = None
+        self._evaluator_result_repo: EvaluatorResultRepository | None = None
+        self._metric_repo: MetricRepository | None = None
+
+    def _get_schema_classes(self) -> dict[str, type]:
+        """Get all model classes from schema.
+
+        Returns:
+            Dictionary mapping class names to model classes.
+        """
+        if self._schema is not None:
+            return {
+                "Query": self._schema.Query,
+                "Pipeline": self._schema.Pipeline,
+                "ExecutorResult": self._schema.ExecutorResult,
+                "EvaluationResult": self._schema.EvaluationResult,
+                "Metric": self._schema.Metric,
+            }
+
+        from autorag_research.orm.schema import (
+            EvaluationResult,
+            ExecutorResult,
+            Metric,
+            Pipeline,
+            Query,
+        )
+
+        return {
+            "Query": Query,
+            "Pipeline": Pipeline,
+            "ExecutorResult": ExecutorResult,
+            "EvaluationResult": EvaluationResult,
+            "Metric": Metric,
+        }
+
+    def _reset_repositories(self) -> None:
+        """Reset all repository references to None."""
+        self._query_repo = None
+        self._pipeline_repo = None
+        self._executor_result_repo = None
+        self._evaluator_result_repo = None
+        self._metric_repo = None
+
+    @property
+    def queries(self) -> QueryRepository:
+        """Get the Query repository.
+
+        Returns:
+            QueryRepository instance.
+
+        Raises:
+            SessionNotSetError: If session is not initialized.
+        """
+        return self._get_repository(
+            "_query_repo",
+            QueryRepository,
+            lambda: self._get_schema_classes()["Query"],
+        )
+
+    @property
+    def pipelines(self) -> PipelineRepository:
+        """Get the Pipeline repository.
+
+        Returns:
+            PipelineRepository instance.
+
+        Raises:
+            SessionNotSetError: If session is not initialized.
+        """
+        return self._get_repository(
+            "_pipeline_repo",
+            PipelineRepository,
+            lambda: self._get_schema_classes()["Pipeline"],
+        )
+
+    @property
+    def executor_results(self) -> ExecutorResultRepository:
+        """Get the ExecutorResult repository.
+
+        Returns:
+            ExecutorResultRepository instance.
+
+        Raises:
+            SessionNotSetError: If session is not initialized.
+        """
+        return self._get_repository(
+            "_executor_result_repo",
+            ExecutorResultRepository,
+            lambda: self._get_schema_classes()["ExecutorResult"],
+        )
+
+    @property
+    def evaluation_results(self) -> EvaluatorResultRepository:
+        """Get the EvaluationResult repository.
+
+        Returns:
+            EvaluatorResultRepository instance.
+
+        Raises:
+            SessionNotSetError: If session is not initialized.
+        """
+        return self._get_repository(
+            "_evaluator_result_repo",
+            EvaluatorResultRepository,
+            lambda: self._get_schema_classes()["EvaluationResult"],
+        )
+
+    @property
+    def metrics(self) -> MetricRepository:
+        """Get the Metric repository.
+
+        Returns:
+            MetricRepository instance.
+
+        Raises:
+            SessionNotSetError: If session is not initialized.
+        """
+        return self._get_repository(
+            "_metric_repo",
+            MetricRepository,
+            lambda: self._get_schema_classes()["Metric"],
         )
