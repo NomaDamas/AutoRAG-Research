@@ -155,3 +155,18 @@ class TestRunWithConcurrencyLimit:
 
         assert results == [10, 20, 30]
         assert mock_func.call_count == 3
+
+
+def mock_func(x: int) -> int:
+    return x * 2
+
+
+@pytest.mark.asyncio
+async def test_to_async_func():
+    """Test that to_async_func correctly converts a sync function to async."""
+    from autorag_research.util import to_async_func
+
+    async_func = to_async_func(mock_func)
+
+    result = await async_func(5)
+    assert result == 10

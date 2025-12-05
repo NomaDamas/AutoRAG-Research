@@ -151,3 +151,23 @@ async def run_with_concurrency_limit(
 
     tasks = [process_with_semaphore(item) for item in items]
     return await asyncio.gather(*tasks)
+
+
+def to_async_func(sync_func: Callable[..., R]) -> Callable[..., Awaitable[R]]:
+    """Convert a synchronous function to an asynchronous function.
+
+    Args:
+        sync_func: The synchronous function to convert.
+
+    Returns:
+        An asynchronous function that runs the synchronous function in a thread.
+    """
+
+    if asyncio.iscoroutinefunction(sync_func):
+        return sync_func  # Already async, return as is
+
+    @functools.wraps(sync_func)
+    async def async_func(*args: tuple, **kwargs: Any) -> R:
+        return await asyncio.to_thread(sync_func, *args, **kwargs)
+
+    return async_func
