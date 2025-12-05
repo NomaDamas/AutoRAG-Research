@@ -20,7 +20,7 @@ from autorag_research.orm.repository.page import PageRepository
 from autorag_research.orm.repository.pipeline import PipelineRepository
 from autorag_research.orm.repository.query import QueryRepository
 from autorag_research.orm.repository.summary import SummaryRepository
-from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
+from autorag_research.orm.uow.text_uow import TextOnlyUnitOfWork
 
 __all__ = [
     "BaseVectorRepository",

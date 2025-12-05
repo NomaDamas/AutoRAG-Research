@@ -6,12 +6,12 @@ pages, captions, chunks, image chunks, queries, and retrieval ground truth relat
 
 import logging
 
-from autorag_research.orm.repository.multi_modal_uow import MultiModalUnitOfWork
 from autorag_research.orm.service.base_ingestion import (
     BaseIngestionService,
     ImageEmbeddingFunc,
     ImageMultiVectorEmbeddingFunc,
 )
+from autorag_research.orm.uow.multi_modal_uow import MultiModalUnitOfWork
 
 logger = logging.getLogger("AutoRAG-Research")
 

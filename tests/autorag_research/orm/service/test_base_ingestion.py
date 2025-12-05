@@ -2,9 +2,9 @@ import pytest
 
 from autorag_research.exceptions import DuplicateRetrievalGTError, LengthMismatchError
 from autorag_research.orm.models.retrieval_gt import TextId, text
-from autorag_research.orm.repository.text_uow import TextOnlyUnitOfWork
 from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
 from autorag_research.orm.service.base_ingestion import BaseIngestionService
+from autorag_research.orm.uow.text_uow import TextOnlyUnitOfWork
 
 
 class ConcreteTestIngestionService(BaseIngestionService):

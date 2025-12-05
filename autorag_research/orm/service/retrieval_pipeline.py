@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.orm.repository.retrieval_uow import RetrievalUnitOfWork
+from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
 
 __all__ = ["RetrievalFunc", "RetrievalPipelineService"]
 
