@@ -4,25 +4,31 @@ Implements evaluator result-specific CRUD operations and relationship queries
 for managing query-pipeline-metric evaluation results.
 """
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from autorag_research.orm.repository.base import GenericRepository
-from autorag_research.orm.schema import EvaluationResult
 
 
-class EvaluatorResultRepository(GenericRepository[EvaluationResult]):
+class EvaluatorResultRepository(GenericRepository[Any]):
     """Repository for EvaluationResult entity with composite key support."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, model_cls: type | None = None):
         """Initialize evaluator result repository.
 
         Args:
             session: SQLAlchemy session for database operations.
+            model_cls: The EvaluationResult model class to use. If None, uses default schema.
         """
-        super().__init__(session, EvaluationResult)
+        if model_cls is None:
+            from autorag_research.orm.schema import EvaluationResult
 
-    def get_by_composite_key(self, query_id: int, pipeline_id: int, metric_id: int) -> EvaluationResult | None:
+            model_cls = EvaluationResult
+        super().__init__(session, model_cls)
+
+    def get_by_composite_key(self, query_id: int, pipeline_id: int, metric_id: int) -> Any | None:
         """Retrieve an evaluation result by its composite primary key.
 
         Args:
@@ -33,14 +39,14 @@ class EvaluatorResultRepository(GenericRepository[EvaluationResult]):
         Returns:
             The evaluation result if found, None otherwise.
         """
-        stmt = select(EvaluationResult).where(
-            EvaluationResult.query_id == query_id,
-            EvaluationResult.pipeline_id == pipeline_id,
-            EvaluationResult.metric_id == metric_id,
+        stmt = select(self.model_cls).where(
+            self.model_cls.query_id == query_id,
+            self.model_cls.pipeline_id == pipeline_id,
+            self.model_cls.metric_id == metric_id,
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_query_id(self, query_id: int) -> list[EvaluationResult]:
+    def get_by_query_id(self, query_id: int) -> list[Any]:
         """Retrieve all evaluation results for a specific query.
 
         Args:
@@ -49,10 +55,10 @@ class EvaluatorResultRepository(GenericRepository[EvaluationResult]):
         Returns:
             List of evaluation results for the query.
         """
-        stmt = select(EvaluationResult).where(EvaluationResult.query_id == query_id)
+        stmt = select(self.model_cls).where(self.model_cls.query_id == query_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_pipeline_id(self, pipeline_id: int) -> list[EvaluationResult]:
+    def get_by_pipeline_id(self, pipeline_id: int) -> list[Any]:
         """Retrieve all evaluation results for a specific pipeline.
 
         Args:
@@ -61,10 +67,10 @@ class EvaluatorResultRepository(GenericRepository[EvaluationResult]):
         Returns:
             List of evaluation results for the pipeline.
         """
-        stmt = select(EvaluationResult).where(EvaluationResult.pipeline_id == pipeline_id)
+        stmt = select(self.model_cls).where(self.model_cls.pipeline_id == pipeline_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_metric_id(self, metric_id: int) -> list[EvaluationResult]:
+    def get_by_metric_id(self, metric_id: int) -> list[Any]:
         """Retrieve all evaluation results for a specific metric.
 
         Args:
@@ -73,10 +79,10 @@ class EvaluatorResultRepository(GenericRepository[EvaluationResult]):
         Returns:
             List of evaluation results for the metric.
         """
-        stmt = select(EvaluationResult).where(EvaluationResult.metric_id == metric_id)
+        stmt = select(self.model_cls).where(self.model_cls.metric_id == metric_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_query_and_pipeline(self, query_id: int, pipeline_id: int) -> list[EvaluationResult]:
+    def get_by_query_and_pipeline(self, query_id: int, pipeline_id: int) -> list[Any]:
         """Retrieve all evaluation results for a specific query and pipeline.
 
         Args:
@@ -86,13 +92,13 @@ class EvaluatorResultRepository(GenericRepository[EvaluationResult]):
         Returns:
             List of evaluation results for the query-pipeline combination.
         """
-        stmt = select(EvaluationResult).where(
-            EvaluationResult.query_id == query_id,
-            EvaluationResult.pipeline_id == pipeline_id,
+        stmt = select(self.model_cls).where(
+            self.model_cls.query_id == query_id,
+            self.model_cls.pipeline_id == pipeline_id,
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_all_relations(self, query_id: int, pipeline_id: int, metric_id: int) -> EvaluationResult | None:
+    def get_with_all_relations(self, query_id: int, pipeline_id: int, metric_id: int) -> Any | None:
         """Retrieve an evaluation result with all relations eagerly loaded.
 
         Args:
@@ -104,23 +110,21 @@ class EvaluatorResultRepository(GenericRepository[EvaluationResult]):
             The evaluation result with all relations loaded, None if not found.
         """
         stmt = (
-            select(EvaluationResult)
+            select(self.model_cls)
             .where(
-                EvaluationResult.query_id == query_id,
-                EvaluationResult.pipeline_id == pipeline_id,
-                EvaluationResult.metric_id == metric_id,
+                self.model_cls.query_id == query_id,
+                self.model_cls.pipeline_id == pipeline_id,
+                self.model_cls.metric_id == metric_id,
             )
             .options(
-                joinedload(EvaluationResult.query_obj),
-                joinedload(EvaluationResult.pipeline),
-                joinedload(EvaluationResult.metric),
+                joinedload(self.model_cls.query_obj),
+                joinedload(self.model_cls.pipeline),
+                joinedload(self.model_cls.metric),
             )
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_with_non_null_metric_result(
-        self, query_id: int, pipeline_id: int, metric_id: int
-    ) -> EvaluationResult | None:
+    def get_with_non_null_metric_result(self, query_id: int, pipeline_id: int, metric_id: int) -> Any | None:
         """Retrieve evaluation result with non-null metric result.
 
         Args:
@@ -131,15 +135,15 @@ class EvaluatorResultRepository(GenericRepository[EvaluationResult]):
         Returns:
             The evaluation result if it has a metric result, None otherwise.
         """
-        stmt = select(EvaluationResult).where(
-            EvaluationResult.query_id == query_id,
-            EvaluationResult.pipeline_id == pipeline_id,
-            EvaluationResult.metric_id == metric_id,
-            EvaluationResult.metric_result.is_not(None),
+        stmt = select(self.model_cls).where(
+            self.model_cls.query_id == query_id,
+            self.model_cls.pipeline_id == pipeline_id,
+            self.model_cls.metric_id == metric_id,
+            self.model_cls.metric_result.is_not(None),
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_metric_result_range(self, metric_id: int, min_score: float, max_score: float) -> list[EvaluationResult]:
+    def get_by_metric_result_range(self, metric_id: int, min_score: float, max_score: float) -> list[Any]:
         """Retrieve evaluation results within a metric result range.
 
         Args:
@@ -150,14 +154,14 @@ class EvaluatorResultRepository(GenericRepository[EvaluationResult]):
         Returns:
             List of evaluation results within the specified range.
         """
-        stmt = select(EvaluationResult).where(
-            EvaluationResult.metric_id == metric_id,
-            EvaluationResult.metric_result >= min_score,
-            EvaluationResult.metric_result <= max_score,
+        stmt = select(self.model_cls).where(
+            self.model_cls.metric_id == metric_id,
+            self.model_cls.metric_result >= min_score,
+            self.model_cls.metric_result <= max_score,
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_pipeline_and_metric(self, pipeline_id: int, metric_id: int) -> list[EvaluationResult]:
+    def get_by_pipeline_and_metric(self, pipeline_id: int, metric_id: int) -> list[Any]:
         """Retrieve all evaluation results for a specific pipeline and metric.
 
         Args:
@@ -167,9 +171,9 @@ class EvaluatorResultRepository(GenericRepository[EvaluationResult]):
         Returns:
             List of evaluation results for the pipeline-metric combination.
         """
-        stmt = select(EvaluationResult).where(
-            EvaluationResult.pipeline_id == pipeline_id,
-            EvaluationResult.metric_id == metric_id,
+        stmt = select(self.model_cls).where(
+            self.model_cls.pipeline_id == pipeline_id,
+            self.model_cls.metric_id == metric_id,
         )
         return list(self.session.execute(stmt).scalars().all())
 
