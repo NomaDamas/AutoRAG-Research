@@ -2,6 +2,7 @@ import pytest
 
 from autorag_research.orm.uow import (
     MultiModalUnitOfWork,
+    RetrievalEvaluationUnitOfWork,
     RetrievalUnitOfWork,
     TextOnlyUnitOfWork,
 )
@@ -12,8 +13,8 @@ from autorag_research.orm.uow import (
         TextOnlyUnitOfWork,
         MultiModalUnitOfWork,
         RetrievalUnitOfWork,
-    ],
-    ids=["TextOnly", "MultiModal", "Retrieval"],
+        RetrievalEvaluationUnitOfWork,
+    ]
 )
 def uow_class(request):
     return request.param

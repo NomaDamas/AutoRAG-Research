@@ -25,7 +25,7 @@ from autorag_research.orm.repository.retrieval_relation import (
 from autorag_research.orm.uow.base import BaseUnitOfWork
 
 
-class EvaluationUnitOfWork(BaseUnitOfWork):
+class RetrievalEvaluationUnitOfWork(BaseUnitOfWork):
     """Unit of Work for retrieval evaluation operations.
 
     Manages transactions across multiple repositories needed for evaluation:
@@ -39,7 +39,7 @@ class EvaluationUnitOfWork(BaseUnitOfWork):
 
     Example:
         ```python
-        with EvaluationUnitOfWork(session_factory) as uow:
+        with RetrievalEvaluationUnitOfWork(session_factory) as uow:
             # Fetch queries and ground truth
             queries = uow.queries.get_all()
             gt_relations = uow.retrieval_relations.get_by_query_id(query_id)
@@ -63,7 +63,7 @@ class EvaluationUnitOfWork(BaseUnitOfWork):
     """
 
     def __init__(self, session_factory: sessionmaker, schema: Any | None = None):
-        """Initialize EvaluationUnitOfWork with session factory and schema.
+        """Initialize RetrievalEvaluationUnitOfWork with session factory and schema.
 
         Args:
             session_factory: SQLAlchemy sessionmaker instance.
