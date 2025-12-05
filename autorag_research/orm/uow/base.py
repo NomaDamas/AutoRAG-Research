@@ -4,6 +4,7 @@ Provides abstract base class with common UoW patterns to reduce duplication
 across TextOnlyUnitOfWork, MultiModalUnitOfWork, and RetrievalUnitOfWork.
 """
 
+import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
@@ -129,3 +130,35 @@ class BaseUnitOfWork(ABC):
         """Flush pending changes without committing."""
         if self.session:
             self.session.flush()
+
+    def available_repositories(self) -> list[str]:
+        """Get list of available repository names in this UnitOfWork.
+
+        Auto-detects repositories by finding all property methods in the class
+        (excluding private methods and base class methods).
+
+        Returns:
+            List of repository property names (e.g., ['queries', 'chunks', 'pipelines']).
+
+        Example:
+            ```python
+            with TextOnlyUnitOfWork(session_factory) as uow:
+                repos = uow.available_repositories()
+                print(f"Available: {repos}")  # ['queries', 'chunks', 'retrieval_relations']
+            ```
+        """
+        repositories = []
+        for name, obj in inspect.getmembers(type(self)):
+            if isinstance(obj, property) and not name.startswith("_"):
+                repositories.append(name)
+        return sorted(repositories)
+
+    def __repr__(self) -> str:
+        """String representation showing available repositories.
+
+        Returns:
+            String representation of the UnitOfWork.
+        """
+        repos = self.available_repositories()
+        repo_list = ", ".join(repos)
+        return f"{self.__class__.__name__}(repositories=[{repo_list}])"
