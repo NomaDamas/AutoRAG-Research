@@ -7,8 +7,12 @@ from autorag_research.exceptions import SessionNotSetError
 
 
 class BaseService(ABC):
-    """
-    Abstract base class for all service implementations.
+    """Abstract base class for all service implementations.
+
+    Provides common patterns for all services:
+    - Session factory and schema management
+    - Abstract methods for UoW creation and schema class retrieval
+    - Helper method for adding objects to database
     """
 
     def __init__(
@@ -16,7 +20,7 @@ class BaseService(ABC):
         session_factory: sessionmaker[Session],
         schema: Any | None = None,
     ):
-        """Initialize the ingestion service.
+        """Initialize the service.
 
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
