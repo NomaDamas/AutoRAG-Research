@@ -1,12 +1,12 @@
 import pytest
 
-from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
+from autorag_research.orm.service.retrieval_pipeline import TextRetrievalPipelineService
 
 
-class TestRetrievalPipelineService:
+class TestTextRetrievalPipelineService:
     @pytest.fixture
     def service(self, session_factory):
-        return RetrievalPipelineService(session_factory)
+        return TextRetrievalPipelineService(session_factory)
 
     @pytest.fixture
     def mock_retrieval_func(self):

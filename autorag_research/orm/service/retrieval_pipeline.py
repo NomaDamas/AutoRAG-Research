@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
 
-__all__ = ["RetrievalFunc", "RetrievalPipelineService"]
+__all__ = ["RetrievalFunc", "TextRetrievalPipelineService"]
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -24,7 +24,7 @@ logger = logging.getLogger("AutoRAG-Research")
 RetrievalFunc = Callable[[list[str], int], list[list[dict[str, Any]]]]
 
 
-class RetrievalPipelineService:
+class TextRetrievalPipelineService:
     """Service for running retrieval pipelines.
 
     This service handles the common workflow for all retrieval pipelines:
@@ -38,14 +38,14 @@ class RetrievalPipelineService:
 
     Example:
         ```python
-        from autorag_research.orm.service import RetrievalPipelineService
+        from autorag_research.orm.service import TextRetrievalPipelineService
         from autorag_research.nodes.retrieval.bm25 import BM25Module
 
         # Initialize BM25 module
         bm25 = BM25Module(index_path="/path/to/index")
 
         # Create service
-        service = RetrievalPipelineService(session_factory, schema)
+        service = TextRetrievalPipelineService(session_factory, schema)
 
         # Create pipeline
         pipeline_id = service.create_pipeline(

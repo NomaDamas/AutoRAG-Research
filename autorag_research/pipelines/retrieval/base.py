@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
+from autorag_research.orm.service.retrieval_pipeline import TextRetrievalPipelineService
 
 
 class BaseRetrievalPipeline(ABC):
@@ -42,7 +42,7 @@ class BaseRetrievalPipeline(ABC):
         self._schema = schema
 
         # Initialize service
-        self._service = RetrievalPipelineService(session_factory, schema)
+        self._service = TextRetrievalPipelineService(session_factory, schema)
 
         # Create pipeline in DB
         self.pipeline_id = self._service.save_pipeline(
