@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
+from typing_extensions import Self
 
 from autorag_research.exceptions import SessionNotSetError
 
@@ -46,7 +47,7 @@ class BaseUnitOfWork(ABC):
         """
         ...
 
-    def __enter__(self) -> "BaseUnitOfWork":
+    def __enter__(self) -> Self:
         """Enter the context manager and create a new session.
 
         Returns:
@@ -69,6 +70,7 @@ class BaseUnitOfWork(ABC):
             self.rollback()
         if self.session:
             self.session.close()
+            self.session = None
         self._reset_repositories()
 
     @abstractmethod

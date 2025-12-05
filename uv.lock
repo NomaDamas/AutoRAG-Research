@@ -284,6 +284,7 @@ dependencies = [
     { name = "sacrebleu" },
     { name = "sqlalchemy" },
     { name = "tiktoken" },
+    { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
@@ -351,6 +352,7 @@ requires-dist = [
     { name = "torch", marker = "extra == 'gpu'", specifier = ">=2.8.0" },
     { name = "transformers", marker = "extra == 'all'", specifier = ">=4.57.1" },
     { name = "transformers", marker = "extra == 'gpu'", specifier = ">=4.57.1" },
+    { name = "typing-extensions", specifier = ">=4.15.0" },
 ]
 provides-extras = ["gpu", "search", "all"]
 
