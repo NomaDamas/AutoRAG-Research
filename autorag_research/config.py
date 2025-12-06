@@ -158,7 +158,7 @@ class BaseMetricConfig(ABC):
         Returns:
             The metric name string.
         """
-        return self.get_metric_func().__name__
+        return self.get_metric_func().__name__  # ty: ignore
 
     @abstractmethod
     def get_metric_func(self) -> Callable:
