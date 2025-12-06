@@ -55,6 +55,13 @@ class RepositoryNotSupportedError(Exception):
         super().__init__(f"Repository '{repository_name}' is not supported by '{uow_type}'.")
 
 
+class SchemaNotFoundError(Exception):
+    """Raised when a schema is not found."""
+
+    def __init__(self, schema_name: str):
+        super().__init__(f"Schema '{schema_name}' not found.")
+
+
 class EmptyIterableError(Exception):
     """Raised when an iterable is empty but should contain items."""
 

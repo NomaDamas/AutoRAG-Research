@@ -143,3 +143,26 @@ class QueryRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
             .where(func.array_length(self.model_cls.generation_gt, 1) == size)
         )
         return self.session.execute(stmt).scalar_one()
+
+    def get_all_ids(self, limit: int, offset: int = 0) -> list[int]:
+        """Get all query IDs with pagination.
+
+        Args:
+            limit: Maximum number of query IDs to return.
+            offset: Number of query IDs to skip.
+
+        Returns:
+            List of query IDs ordered by ID.
+        """
+        stmt = select(self.model_cls.id).order_by(self.model_cls.id).limit(limit).offset(offset)
+        return list(self.session.execute(stmt).scalars().all())
+
+    def count_all(self) -> int:
+        """Count total number of queries.
+
+        Returns:
+            Total count of queries.
+        """
+        stmt = select(func.count()).select_from(self.model_cls)
+        result = self.session.execute(stmt).scalar()
+        return result or 0
