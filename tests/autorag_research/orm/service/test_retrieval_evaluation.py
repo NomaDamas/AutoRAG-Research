@@ -299,3 +299,46 @@ class TestRetrievalEvaluationService:
                 uow.evaluation_results.delete_by_composite_key(query_id=i, pipeline_id=1, metric_id=new_metric_id)
             uow.metrics.delete_by_id(new_metric_id)
             uow.commit()
+
+    def test_has_results_for_queries_all_have_results(self, service):
+        # Seed: query 1, pipeline 1 has ChunkRetrievedResult
+        # Seed: query 3, pipeline 1 has ImageChunkRetrievedResult
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[1]) is True
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[3]) is True
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[1, 3]) is True
+
+    def test_has_results_for_queries_missing_results(self, service):
+        # Seed: query 2, 4, 5 have no results for pipeline 1
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[2]) is False
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[1, 2]) is False
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[4, 5]) is False
+
+    def test_verify_pipeline_completion_incomplete(self, service):
+        # Seed: pipeline 1 has results only for query 1 (chunk) and query 3 (image_chunk)
+        # Missing: queries 2, 4, 5
+        assert service.verify_pipeline_completion(pipeline_id=1) is False
+
+    def test_verify_pipeline_completion_complete(self, service):
+        # Add retrieval results for all queries to make pipeline complete
+        with service._create_uow() as uow:
+            schema_classes = service._get_schema_classes()
+            chunk_result_cls = schema_classes["ChunkRetrievedResult"]
+
+            # Add results for queries 2, 4, 5 (query 1 and 3 already have results)
+            new_results = [
+                chunk_result_cls(query_id=2, pipeline_id=1, chunk_id=3, rel_score=0.7),
+                chunk_result_cls(query_id=4, pipeline_id=1, chunk_id=4, rel_score=0.6),
+                chunk_result_cls(query_id=5, pipeline_id=1, chunk_id=5, rel_score=0.5),
+            ]
+            for result in new_results:
+                uow.chunk_results.add(result)
+            uow.commit()
+
+        assert service.verify_pipeline_completion(pipeline_id=1) is True
+
+        # Cleanup
+        with service._create_uow() as uow:
+            uow.chunk_results.delete_by_composite_key(query_id=2, pipeline_id=1, chunk_id=3)
+            uow.chunk_results.delete_by_composite_key(query_id=4, pipeline_id=1, chunk_id=4)
+            uow.chunk_results.delete_by_composite_key(query_id=5, pipeline_id=1, chunk_id=5)
+            uow.commit()
