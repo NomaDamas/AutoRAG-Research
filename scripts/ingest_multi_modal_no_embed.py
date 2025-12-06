@@ -22,8 +22,15 @@ DATASET_TYPES = {
 }
 
 
-def create_session_factory_and_schema(db_name: str, embedding_dim: int):
-    """Create session factory and schema for a given embedding dimension.
+def create_session_factory_and_schema(
+    db_name: str, embedding_dim: int, primary_key_type: Literal["bigint", "string"] = "bigint"
+):
+    """Create session factory and schema for a given embedding dimension and primary key type.
+
+    Args:
+        db_name: Name of the database
+        embedding_dim: Dimension of embeddings
+        primary_key_type: Type of primary keys ('bigint' or 'string')
 
     Returns:
         Tuple of (session_factory, schema)
@@ -33,7 +40,7 @@ def create_session_factory_and_schema(db_name: str, embedding_dim: int):
     pwd = os.getenv("POSTGRES_PASSWORD", "postgres")
     port = int(os.getenv("POSTGRES_PORT", "5432"))
 
-    schema = create_schema(embedding_dim)
+    schema = create_schema(embedding_dim, primary_key_type)
 
     create_database(host, user, pwd, db_name, port=port)
     install_vector_extensions(host, user, pwd, db_name, port=port)
@@ -83,12 +90,21 @@ def main(
     dump_path: str | None,
     embedding_dim: int = 768,
 ):
+    # Create ingestor first to detect primary key type
+    ingestor_class = DATASET_TYPES[dataset_type]
+    ingestor = ingestor_class()
+
+    # Auto-detect primary key type from the ingestor
+    click.echo("Auto-detecting primary key type from dataset...")
+    detected_pkey_type = ingestor.detect_primary_key_type()
+    click.echo(f"Detected primary key type: {detected_pkey_type}")
+
     db_name = f"{dataset_type}_no-embed"
-    session_factory, schema = create_session_factory_and_schema(db_name, embedding_dim)
+    session_factory, schema = create_session_factory_and_schema(db_name, embedding_dim, detected_pkey_type)
     service = MultiModalIngestionService(session_factory, schema)
 
-    ingestor_class = DATASET_TYPES[dataset_type]
-    ingestor = ingestor_class(service)
+    # Set service to the ingestor
+    ingestor.set_service(service)
 
     click.echo(f"Ingesting {dataset_type} ({subset})...")
     ingestor.ingest(subset)

@@ -1,5 +1,6 @@
 import ast
 import io
+from abc import ABC
 from typing import Literal
 
 from datasets import load_dataset
@@ -8,8 +9,11 @@ from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.exceptions import EmbeddingNotSetError, InvalidDatasetNameError, UnsupportedDataSubsetError
-from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
+from autorag_research.exceptions import (
+    EmbeddingNotSetError,
+    InvalidDatasetNameError,
+    ServiceNotSetError,
+)
 
 ViDoReDatasets = [
     "arxivqa_test_subsampled",  # options
@@ -25,22 +29,17 @@ ViDoReDatasets = [
 ]
 
 
-class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
+class ViDoReIngestor(MultiModalEmbeddingDataIngestor, ABC):
     def __init__(
         self,
-        multi_modal_data_ingestion_service: MultiModalIngestionService,
         dataset_name: str,
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
-        super().__init__(multi_modal_data_ingestion_service, embedding_model, late_interaction_embedding_model)
+        super().__init__(embedding_model, late_interaction_embedding_model)
         self.ds = load_dataset(f"vidore/{dataset_name}")["test"]
         if dataset_name not in ViDoReDatasets:
             raise InvalidDatasetNameError(dataset_name)
-
-    def ingest(self, subset: Literal["train", "dev", "test"] = "test"):
-        if subset != "test":
-            raise UnsupportedDataSubsetError(["train", "dev"])
 
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
         """Embed all queries and image chunks using single-vector embedding model.
@@ -54,6 +53,8 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
         """
         if self.embedding_model is None:
             raise EmbeddingNotSetError
+        if self.service is None:
+            raise ServiceNotSetError
 
         self.service.embed_all_queries(
             self.embedding_model.aget_query_embedding,
@@ -78,6 +79,8 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
         """
         if self.late_interaction_embedding_model is None:
             raise EmbeddingNotSetError
+        if self.service is None:
+            raise ServiceNotSetError
 
         self.service.embed_all_queries_multi_vector(
             self.late_interaction_embedding_model.aget_query_embedding,
@@ -92,6 +95,8 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
 
     def ingest_qrels(self, query_pk_list: list[int], image_chunk_pk_list: list[int]) -> None:
         """Add retrieval ground truth for image chunks (1:1 query to image mapping)."""
+        if self.service is None:
+            raise ServiceNotSetError
         self.service.add_retrieval_gt_batch(
             [
                 (query_pk, image_chunk_pk)
@@ -124,19 +129,22 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
 class ViDoReArxivQAIngestor(ViDoReIngestor):
     def __init__(
         self,
-        multi_modal_data_ingestion_service: MultiModalIngestionService,
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         super().__init__(
-            multi_modal_data_ingestion_service,
             "arxivqa_test_subsampled",
             embedding_model,
             late_interaction_embedding_model,
         )
 
+    def detect_primary_key_type(self) -> Literal["bigint"] | Literal["string"]:
+        return "bigint"
+
     def ingest(self, subset: Literal["train", "dev", "test"] = "test"):
         super().ingest(subset)
+        if self.service is None:
+            raise ServiceNotSetError
         image_list = list(self.ds["image"])  # ty: ignore[invalid-argument-type]
         queries = list(self.ds["query"])  # ty: ignore[invalid-argument-type]
         options = ["\n".join(ast.literal_eval(opt)) for opt in list(self.ds["options"])]  # ty: ignore[invalid-argument-type]

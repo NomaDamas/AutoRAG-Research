@@ -79,22 +79,6 @@ class MetricRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_retrieved_results(self, metric_id: int) -> Any | None:
-        """Retrieve a metric with its image chunk retrieved results eagerly loaded.
-
-        Args:
-            metric_id: The metric ID.
-
-        Returns:
-            The metric with image chunk retrieved results loaded, None if not found.
-        """
-        stmt = (
-            select(self.model_cls)
-            .where(self.model_cls.id == metric_id)
-            .options(joinedload(self.model_cls.image_chunk_retrieved_results))
-        )
-        return self.session.execute(stmt).unique().scalar_one_or_none()
-
     def get_with_all_relations(self, metric_id: int) -> Any | None:
         """Retrieve a metric with all relations eagerly loaded.
 
@@ -109,7 +93,6 @@ class MetricRepository(GenericRepository[Any]):
             .where(self.model_cls.id == metric_id)
             .options(
                 joinedload(self.model_cls.summaries),
-                joinedload(self.model_cls.image_chunk_retrieved_results),
             )
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()

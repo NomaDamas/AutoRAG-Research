@@ -65,7 +65,7 @@ class EmptyIterableError(Exception):
 class DuplicateRetrievalGTError(Exception):
     """Raised when retrieval GT already exists for a query and upsert is False."""
 
-    def __init__(self, query_ids: list[int]):
+    def __init__(self, query_ids: list[int | str]):
         ids_str = ", ".join(str(qid) for qid in query_ids)
         super().__init__(f"Retrieval GT already exists for query IDs: {ids_str}. Use upsert=True to overwrite.")
 
@@ -76,3 +76,10 @@ class MissingRequiredParameterError(Exception):
     def __init__(self, param_names: list[str]):
         params_str = ", ".join(f"'{p}'" for p in param_names)
         super().__init__(f"At least one of the following parameters must be provided: {params_str}.")
+
+
+class ServiceNotSetError(Exception):
+    """Raised when the service is not set."""
+
+    def __init__(self):
+        super().__init__("Service is not set.")

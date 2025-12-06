@@ -24,8 +24,15 @@ DATASET_TYPES = {
 }
 
 
-def create_session_factory_and_schema(db_name: str, embedding_dim: int):
-    """Create session factory and schema for a given embedding dimension.
+def create_session_factory_and_schema(
+    db_name: str, embedding_dim: int, primary_key_type: Literal["bigint", "string"] = "bigint"
+):
+    """Create session factory and schema for a given embedding dimension and primary key type.
+
+    Args:
+        db_name: Name of the database
+        embedding_dim: Dimension of embeddings
+        primary_key_type: Type of primary keys ('bigint' or 'string')
 
     Returns:
         Tuple of (session_factory, schema)
@@ -35,7 +42,7 @@ def create_session_factory_and_schema(db_name: str, embedding_dim: int):
     pwd = os.getenv("POSTGRES_PASSWORD", "postgres")
     port = int(os.getenv("POSTGRES_PORT", "5432"))
 
-    schema = create_schema(embedding_dim)
+    schema = create_schema(embedding_dim, primary_key_type)
 
     create_database(host, user, pwd, db_name, port=port)
     install_vector_extensions(host, user, pwd, db_name, port=port)
@@ -107,12 +114,21 @@ def main(
     embedding_dim = health_check_embedding(embedding_model)
     click.echo(f"Embedding model is healthy. Dimension: {embedding_dim}")
 
+    # Create ingestor first to detect primary key type
+    ingestor_class = DATASET_TYPES[dataset_type]
+    ingestor = ingestor_class(embedding_model, dataset_name)
+
+    # Auto-detect primary key type from the ingestor
+    click.echo("Auto-detecting primary key type from dataset...")
+    detected_pkey_type = ingestor.detect_primary_key_type()
+    click.echo(f"Detected primary key type: {detected_pkey_type}")
+
     db_name = f"{dataset_name}_{embedding_model_name}"
-    session_factory, schema = create_session_factory_and_schema(db_name, embedding_dim)
+    session_factory, schema = create_session_factory_and_schema(db_name, embedding_dim, detected_pkey_type)
     service = TextDataIngestionService(session_factory, schema)
 
-    ingestor_class = DATASET_TYPES[dataset_type]
-    ingestor = ingestor_class(service, embedding_model, dataset_name)
+    # Set service to the ingestor
+    ingestor.set_service(service)
 
     click.echo(f"Ingesting {dataset_type}/{dataset_name} ({subset})...")
     ingestor.ingest(subset)
