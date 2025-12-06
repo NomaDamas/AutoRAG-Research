@@ -90,3 +90,57 @@ class ServiceNotSetError(Exception):
 
     def __init__(self):
         super().__init__("Service is not set.")
+
+
+class NoQueryInDBError(Exception):
+    """Raised when there are no queries in the database."""
+
+    def __init__(self):
+        super().__init__("No queries found in the database.")
+
+
+# Executor exceptions
+
+
+class ExecutorError(Exception):
+    """Base exception for Executor errors."""
+
+    pass
+
+
+class PipelineExecutionError(ExecutorError):
+    """Raised when a pipeline fails to execute."""
+
+    def __init__(self, pipeline_name: str, reason: str):
+        super().__init__(f"Pipeline '{pipeline_name}' failed: {reason}")
+        self.pipeline_name = pipeline_name
+        self.reason = reason
+
+
+class PipelineVerificationError(ExecutorError):
+    """Raised when pipeline results fail verification."""
+
+    def __init__(self, pipeline_name: str, expected: int, actual: int):
+        super().__init__(f"Pipeline '{pipeline_name}' verification failed: expected {expected} results, got {actual}")
+        self.pipeline_name = pipeline_name
+        self.expected = expected
+        self.actual = actual
+
+
+class MaxRetriesExceededError(ExecutorError):
+    """Raised when max retries are exceeded."""
+
+    def __init__(self, pipeline_name: str, max_retries: int):
+        super().__init__(f"Pipeline '{pipeline_name}' failed after {max_retries} retries")
+        self.pipeline_name = pipeline_name
+        self.max_retries = max_retries
+
+
+class EvaluationError(ExecutorError):
+    """Raised when evaluation fails."""
+
+    def __init__(self, metric_name: str, pipeline_id: int, reason: str):
+        super().__init__(f"Evaluation failed for metric '{metric_name}' on pipeline {pipeline_id}: {reason}")
+        self.metric_name = metric_name
+        self.pipeline_id = pipeline_id
+        self.reason = reason

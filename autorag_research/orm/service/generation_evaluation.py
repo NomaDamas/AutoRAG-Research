@@ -29,7 +29,7 @@ class GenerationEvaluationService(BaseEvaluationService):
     4. Store results in EvaluationResult table
 
     The service uses MetricInput to pass data to metric functions, which should
-    accept MetricInput and return a float score.
+    accept list[MetricInput] and return list[float | None].
 
     Example:
         ```python
@@ -43,12 +43,8 @@ class GenerationEvaluationService(BaseEvaluationService):
 
         # Set metric and evaluate
         service.set_metric(metric_id=metric_id, metric_func=bleu_score)
-        count = service.evaluate(
-            pipeline_id=1,
-            batch_size=100,
-            max_concurrent=10,
-        )
-        print(f"Evaluated {count} queries")
+        count, avg = service.evaluate(pipeline_id=1, batch_size=100)
+        print(f"Evaluated {count} queries, average={avg}")
         ```
     """
 
@@ -160,3 +156,23 @@ class GenerationEvaluationService(BaseEvaluationService):
             generated_texts=execution_result.get("generated_text"),
             generation_gt=execution_result.get("generation_gt"),
         )
+
+    def _has_results_for_queries(self, pipeline_id: int, query_ids: list[int]) -> bool:
+        """Check if all given query IDs have generation results for the pipeline.
+
+        Checks ExecutorResult table for this pipeline.
+
+        Args:
+            pipeline_id: The pipeline ID.
+            query_ids: List of query IDs to check.
+
+        Returns:
+            True if all query IDs have results, False otherwise.
+        """
+        with self._create_uow() as uow:
+            for query_id in query_ids:
+                result = uow.executor_results.get_by_composite_key(query_id, pipeline_id)
+                if result is None:
+                    return False
+
+            return True

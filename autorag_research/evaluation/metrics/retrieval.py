@@ -1,6 +1,9 @@
 import itertools
 import math
+from collections.abc import Callable
+from dataclasses import dataclass
 
+from autorag_research.config import BaseRetrievalMetricConfig
 from autorag_research.evaluation.metrics.util import metric
 from autorag_research.schema import MetricInput
 
@@ -149,3 +152,58 @@ def retrieval_map(metric_input: MetricInput) -> float:
         ap_list.append(sum(precision_list) / len(precision_list) if precision_list else 0.0)
 
     return sum(ap_list) / len(gt_sets) if ap_list else 0.0
+
+
+# Metric Configurations
+@dataclass
+class RecallConfig(BaseRetrievalMetricConfig):
+    """Configuration for retrieval recall metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return retrieval_recall
+
+
+@dataclass
+class PrecisionConfig(BaseRetrievalMetricConfig):
+    """Configuration for retrieval precision metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return retrieval_precision
+
+
+@dataclass
+class F1Config(BaseRetrievalMetricConfig):
+    """Configuration for retrieval F1 metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return retrieval_f1
+
+
+@dataclass
+class NDCGConfig(BaseRetrievalMetricConfig):
+    """Configuration for retrieval NDCG metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return retrieval_ndcg
+
+
+@dataclass
+class MRRConfig(BaseRetrievalMetricConfig):
+    """Configuration for retrieval MRR metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return retrieval_mrr
+
+
+@dataclass
+class MAPConfig(BaseRetrievalMetricConfig):
+    """Configuration for retrieval MAP metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return retrieval_map

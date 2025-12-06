@@ -79,7 +79,7 @@ class RetrievalEvaluationService(BaseEvaluationService):
     4. Store results in EvaluationResult table
 
     The service uses MetricInput to pass data to metric functions, which should
-    accept MetricInput and return a float score.
+    accept list[MetricInput] and return list[float | None].
 
     Example:
         ```python
@@ -94,12 +94,8 @@ class RetrievalEvaluationService(BaseEvaluationService):
 
         # Set metric and evaluate
         service.set_metric(metric_id=metric_id, metric_func=retrieval_recall)
-        count = service.evaluate(
-            pipeline_id=1,
-            batch_size=100,
-            max_concurrent=10,
-        )
-        print(f"Evaluated {count} queries")
+        count, avg = service.evaluate(pipeline_id=1, batch_size=100)
+        print(f"Evaluated {count} queries, average={avg}")
 
         # Evaluate another metric
         metric_id_2 = service.get_or_create_metric("precision@10", "retrieval")
@@ -243,3 +239,28 @@ class RetrievalEvaluationService(BaseEvaluationService):
             retrieved_ids=execution_result.get("retrieved_ids"),
             retrieval_gt=execution_result.get("retrieval_gt"),
         )
+
+    def _has_results_for_queries(self, pipeline_id: int, query_ids: list[int]) -> bool:
+        """Check if all given query IDs have retrieval results for the pipeline.
+
+        Checks both ChunkRetrievedResult and ImageChunkRetrievedResult tables.
+
+        Args:
+            pipeline_id: The pipeline ID.
+            query_ids: List of query IDs to check.
+
+        Returns:
+            True if all query IDs have results, False otherwise.
+        """
+        with self._create_uow() as uow:
+            chunk_results = uow.chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
+            image_chunk_results = uow.image_chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
+            composite_dicts = {qid: [] for qid in query_ids}
+            for r in chunk_results:
+                if r.query_id is not None:
+                    composite_dicts[r.query_id].append(r.chunk_id)
+            for r in image_chunk_results:
+                if r.query_id is not None:
+                    composite_dicts[r.query_id].append(r.image_chunk_id)
+
+            return all(composite_dicts[query_id] for query_id in query_ids)

@@ -1,4 +1,6 @@
 import os
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 import evaluate
@@ -9,6 +11,7 @@ from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
 
+from autorag_research.config import BaseGenerationMetricConfig
 from autorag_research.evaluation.metrics.util import calculate_cosine_similarity, metric_loop
 from autorag_research.schema import MetricInput
 from autorag_research.util import convert_inputs_to_list, truncate_texts, unpack_and_run
@@ -229,3 +232,151 @@ def bert_score(
     del evaluator
 
     return df.groupby(level=0)["bert_score"].max().tolist()
+
+
+# Metric Configurations
+@dataclass
+class BleuConfig(BaseGenerationMetricConfig):
+    """Configuration for BLEU metric.
+
+    Attributes:
+        tokenize: The tokenizer to use. If None, defaults to language-specific tokenizers.
+        smooth_method: The smoothing method ('floor', 'add-k', 'exp' or 'none').
+        smooth_value: The smoothing value for 'floor' and 'add-k' methods.
+        max_ngram_order: Maximum n-gram order when computing precisions.
+        effective_order: Stop including n-gram orders for which precision is 0.
+    """
+
+    tokenize: str | None = None
+    smooth_method: str = "exp"
+    smooth_value: float | None = None
+    max_ngram_order: int = 4
+    effective_order: bool = True
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return bleu
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "tokenize": self.tokenize,
+            "smooth_method": self.smooth_method,
+            "smooth_value": self.smooth_value,
+            "max_ngram_order": self.max_ngram_order,
+            "effective_order": self.effective_order,
+        }
+
+
+@dataclass
+class MeteorConfig(BaseGenerationMetricConfig):
+    """Configuration for METEOR metric.
+
+    Attributes:
+        alpha: Parameter for controlling relative weights of precision and recall.
+        beta: Parameter for controlling shape of penalty as a function of fragmentation.
+        gamma: Relative weight assigned to fragmentation penalty.
+    """
+
+    alpha: float = 0.9
+    beta: float = 3.0
+    gamma: float = 0.5
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return meteor
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "alpha": self.alpha,
+            "beta": self.beta,
+            "gamma": self.gamma,
+        }
+
+
+@dataclass
+class RougeConfig(BaseGenerationMetricConfig):
+    """Configuration for ROUGE metric.
+
+    Attributes:
+        rouge_type: Rouge type to use ('rouge1', 'rouge2', 'rougeL', 'rougeLSum').
+        use_stemmer: Whether to use Porter stemmer for word suffix stripping.
+        split_summaries: Whether to add newlines between sentences for rougeLsum.
+    """
+
+    rouge_type: str = "rougeL"
+    use_stemmer: bool = False
+    split_summaries: bool = False
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return f"rouge_{self.rouge_type}"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return rouge
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "rouge_type": self.rouge_type,
+            "use_stemmer": self.use_stemmer,
+            "split_summaries": self.split_summaries,
+        }
+
+
+@dataclass
+class SemScoreConfig(BaseGenerationMetricConfig):
+    """Configuration for SemScore (semantic similarity) metric.
+
+    Attributes:
+        embedding_model: Embedding model to use for computing cosine similarity.
+        truncate_length: Maximum length of texts to embed.
+    """
+
+    embedding_model: BaseEmbedding
+    truncate_length: int = 4096
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return sem_score
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "embedding_model": self.embedding_model,
+            "truncate_length": self.truncate_length,
+        }
+
+
+@dataclass
+class BertScoreConfig(BaseGenerationMetricConfig):
+    """Configuration for BERTScore metric.
+
+    Attributes:
+        lang: Language code for the text.
+        batch: Batch size for processing.
+        n_threads: Number of threads to use.
+    """
+
+    lang: str = "en"
+    batch: int = 128
+    n_threads: int | None = None
+
+    def __post_init__(self) -> None:
+        """Set default n_threads if not provided."""
+        if self.n_threads is None:
+            self.n_threads = os.cpu_count()
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return bert_score
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "lang": self.lang,
+            "batch": self.batch,
+            "n_threads": self.n_threads,
+        }

@@ -94,6 +94,25 @@ class BaseRetrievedResultRepository(GenericRepository[Any]):
         result = self.session.execute(stmt)
         return result.rowcount  # ty: ignore
 
+    def delete_by_composite_key(self, query_id: int, pipeline_id: int, chunk_id: int) -> int:
+        """Delete a retrieved result by its composite key.
+
+        Args:
+            query_id: The query ID.
+            pipeline_id: The pipeline ID.
+            chunk_id: The chunk ID.
+
+        Returns:
+            Number of deleted records.
+        """
+        stmt = delete(self.model_cls).where(
+            self.model_cls.query_id == query_id,
+            self.model_cls.pipeline_id == pipeline_id,
+            self.model_cls.chunk_id == chunk_id,
+        )
+        result = self.session.execute(stmt)
+        return result.rowcount  # ty: ignore
+
     def bulk_insert(self, results: list[dict]) -> int:
         """Bulk insert retrieved results.
 

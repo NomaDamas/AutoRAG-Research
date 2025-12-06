@@ -17,7 +17,6 @@ class TestGenerationEvaluationService:
 
         assert service.metric_id == 2
         assert service.metric_func == dummy_metric
-        assert service._async_metric_func is not None
 
     def test_get_metric_existing(self, service):
         metric = service.get_metric("bleu", "generation")
@@ -129,4 +128,52 @@ class TestGenerationEvaluationService:
             for i in range(1, 6):
                 uow.evaluation_results.delete_by_composite_key(query_id=i, pipeline_id=1, metric_id=new_metric_id)
             uow.metrics.delete_by_id(new_metric_id)
+            uow.commit()
+
+    def test_has_results_for_queries_all_have_results(self, service):
+        # Seed: query 1 and 2 have ExecutorResult for pipeline 1
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[1]) is True
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[2]) is True
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[1, 2]) is True
+
+    def test_has_results_for_queries_missing_results(self, service):
+        # Seed: query 3, 4, 5 have no ExecutorResult for pipeline 1
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[3]) is False
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[1, 3]) is False
+        assert service._has_results_for_queries(pipeline_id=1, query_ids=[3, 4, 5]) is False
+
+    def test_verify_pipeline_completion_incomplete(self, service):
+        # Seed: pipeline 1 has ExecutorResult only for query 1 and 2
+        # Missing: queries 3, 4, 5
+        assert service.verify_pipeline_completion(pipeline_id=1) is False
+
+    def test_verify_pipeline_completion_complete(self, service):
+        # Add executor results for all queries to make pipeline complete
+        with service._create_uow() as uow:
+            schema_classes = service._get_schema_classes()
+            executor_result_cls = schema_classes["ExecutorResult"]
+
+            # Add results for queries 3, 4, 5 (query 1 and 2 already have results)
+            new_results = [
+                executor_result_cls(
+                    query_id=3, pipeline_id=1, generation_result="gen3", token_usage=100, execution_time=1000
+                ),
+                executor_result_cls(
+                    query_id=4, pipeline_id=1, generation_result="gen4", token_usage=100, execution_time=1000
+                ),
+                executor_result_cls(
+                    query_id=5, pipeline_id=1, generation_result="gen5", token_usage=100, execution_time=1000
+                ),
+            ]
+            for result in new_results:
+                uow.executor_results.add(result)
+            uow.commit()
+
+        assert service.verify_pipeline_completion(pipeline_id=1) is True
+
+        # Cleanup
+        with service._create_uow() as uow:
+            uow.executor_results.delete_by_composite_key(query_id=3, pipeline_id=1)
+            uow.executor_results.delete_by_composite_key(query_id=4, pipeline_id=1)
+            uow.executor_results.delete_by_composite_key(query_id=5, pipeline_id=1)
             uow.commit()
