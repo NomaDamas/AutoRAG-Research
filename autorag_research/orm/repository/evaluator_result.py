@@ -177,6 +177,26 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
+    def get_by_pipeline_metric_and_queries(self, pipeline_id: int, metric_id: int, query_ids: list[int]) -> list[Any]:
+        """Retrieve evaluation results filtered by pipeline, metric, and query IDs.
+
+        Args:
+            pipeline_id: The pipeline ID.
+            metric_id: The metric ID.
+            query_ids: List of query IDs to filter by.
+
+        Returns:
+            List of evaluation results matching the pipeline, metric, and any of the query IDs.
+        """
+        if not query_ids:
+            return []
+        stmt = select(self.model_cls).where(
+            self.model_cls.pipeline_id == pipeline_id,
+            self.model_cls.metric_id == metric_id,
+            self.model_cls.query_id.in_(query_ids),
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
     def delete_by_composite_key(self, query_id: int, pipeline_id: int, metric_id: int) -> bool:
         """Delete an evaluation result by its composite primary key.
 

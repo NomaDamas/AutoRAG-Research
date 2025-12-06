@@ -198,8 +198,10 @@ class RetrievalEvaluationService(BaseEvaluationService):
             List of query IDs that need evaluation (don't have results yet).
         """
         with self._create_uow() as uow:
-            # Get existing evaluation results for this pipeline and metric
-            existing_results = uow.evaluation_results.get_by_pipeline_and_metric(pipeline_id, metric_id)
+            # Get existing evaluation results filtered by pipeline, metric, AND query_ids
+            existing_results = uow.evaluation_results.get_by_pipeline_metric_and_queries(
+                pipeline_id, metric_id, query_ids
+            )
             existing_query_ids = {r.query_id for r in existing_results}
 
             # Return query IDs that don't have results
