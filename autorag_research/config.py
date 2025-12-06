@@ -114,6 +114,15 @@ class BaseRetrievalPipelineConfig(BasePipelineConfig, ABC):
         return {"top_k": self.top_k, "batch_size": self.batch_size}
 
 
+class BaseGenerationPipelineConfig(BasePipelineConfig, ABC):
+    """Base configuration for generation pipelines.
+
+    This class sets the pipeline_type to GENERATION by default.
+    """
+
+    pipeline_type: PipelineType = field(default=PipelineType.GENERATION, init=False)
+
+
 @dataclass
 class BaseMetricConfig(ABC):
     """Base configuration for all metrics.
@@ -139,14 +148,15 @@ class BaseMetricConfig(ABC):
         ```
     """
 
-    @abstractmethod
+    metric_type: MetricType = field(init=False)
+
     def get_metric_name(self) -> str:
         """Return the metric name for database storage.
 
         Returns:
             The metric name string.
         """
-        ...
+        return self.get_metric_func().__name__
 
     @abstractmethod
     def get_metric_func(self) -> Callable:
@@ -166,6 +176,26 @@ class BaseMetricConfig(ABC):
             Dictionary of keyword arguments for the metric function.
         """
         return {}
+
+
+@dataclass
+class BaseRetrievalMetricConfig(BaseMetricConfig, ABC):
+    """Base configuration for retrieval metrics.
+
+    This class sets the metric_type to RETRIEVAL by default.
+    """
+
+    metric_type: MetricType = field(default=MetricType.RETRIEVAL, init=False)
+
+
+@dataclass
+class BaseGenerationMetricConfig(BaseMetricConfig, ABC):
+    """Base configuration for generation metrics.
+
+    This class sets the metric_type to GENERATION by default.
+    """
+
+    metric_type: MetricType = field(default=MetricType.GENERATION, init=False)
 
 
 @dataclass
