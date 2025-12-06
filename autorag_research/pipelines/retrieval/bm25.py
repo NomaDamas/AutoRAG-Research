@@ -3,11 +3,57 @@
 This pipeline uses RetrievalPipelineService with BM25Module for retrieval.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+
+
+@dataclass(kw_only=True)
+class BM25PipelineConfig(BaseRetrievalPipelineConfig):
+    """Configuration for BM25 retrieval pipeline.
+
+    Attributes:
+        name: Unique name for this pipeline instance.
+        index_path: Path to the Lucene index directory.
+        k1: BM25 k1 parameter (controls term frequency saturation).
+        b: BM25 b parameter (controls length normalization).
+        language: Language for analyzer ('en', 'ko', 'zh', 'ja', etc.).
+        top_k: Number of results to retrieve per query.
+        batch_size: Number of queries to process in each batch.
+
+    Example:
+        ```python
+        config = BM25PipelineConfig(
+            name="bm25_baseline",
+            index_path="/path/to/lucene/index",
+            k1=0.9,
+            b=0.4,
+            top_k=10,
+        )
+        ```
+    """
+
+    index_path: str
+    k1: float = 0.9
+    b: float = 0.4
+    language: str = "en"
+
+    def get_pipeline_class(self) -> type["BM25RetrievalPipeline"]:
+        """Return the BM25RetrievalPipeline class."""
+        return BM25RetrievalPipeline
+
+    def get_pipeline_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for BM25RetrievalPipeline constructor."""
+        return {
+            "index_path": self.index_path,
+            "k1": self.k1,
+            "b": self.b,
+            "language": self.language,
+        }
 
 
 class BM25RetrievalPipeline(BaseRetrievalPipeline):
