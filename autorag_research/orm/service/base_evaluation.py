@@ -15,7 +15,7 @@ from typing import Any, TypeVar
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.exceptions import SchemaNotFoundError
+from autorag_research.exceptions import NoQueryInDBError, SchemaNotFoundError
 from autorag_research.orm.service.base import BaseService
 from autorag_research.util import to_async_func
 
@@ -301,7 +301,7 @@ class BaseEvaluationService(BaseService, ABC):
         pipeline_id: int,
         batch_size: int = 100,
         max_concurrent: int = 10,
-    ) -> int:
+    ) -> tuple[int, float | None]:
         """Run the full evaluation pipeline for the current metric.
 
         This method uses Generator-based pagination to process query IDs:
@@ -317,7 +317,8 @@ class BaseEvaluationService(BaseService, ABC):
             max_concurrent: Maximum concurrent metric computations.
 
         Returns:
-            Number of queries evaluated.
+            Tuple of (queries_evaluated, average_score).
+            average_score is None if no queries were evaluated.
 
         Raises:
             ValueError: If metric is not set.
@@ -328,7 +329,7 @@ class BaseEvaluationService(BaseService, ABC):
         total_count = self._count_total_query_ids()
         if total_count == 0:
             logger.info("No queries found for evaluation")
-            return 0
+            return (0, None)
 
         logger.info(
             f"Starting evaluation for pipeline_id={pipeline_id}, "
@@ -336,6 +337,7 @@ class BaseEvaluationService(BaseService, ABC):
         )
 
         total_evaluated = 0
+        all_scores: list[float] = []
 
         for batch_num, batch_query_ids in enumerate(self._iter_query_id_batches(batch_size)):
             # Filter to missing query IDs for this batch
@@ -364,18 +366,22 @@ class BaseEvaluationService(BaseService, ABC):
             # Filter successful results
             valid_results = [(query_id, score) for query_id, score in results if score is not None]
 
-            # Save results
+            # Save results and collect scores for average
             if valid_results:
                 self._save_evaluation_results(pipeline_id, self._metric_id, valid_results)
                 total_evaluated += len(valid_results)
+                all_scores.extend(score for _, score in valid_results)
 
             logger.info(f"Batch {batch_num}: Evaluated {len(valid_results)}/{len(items)} queries")
 
+        # Calculate average
+        average = sum(all_scores) / len(all_scores) if all_scores else None
+
         logger.info(
             f"Evaluation complete: {total_evaluated} queries evaluated for "
-            f"pipeline_id={pipeline_id}, metric_id={self._metric_id}"
+            f"pipeline_id={pipeline_id}, metric_id={self._metric_id}, average={average}"
         )
-        return total_evaluated
+        return (total_evaluated, average)
 
     def is_evaluation_complete(
         self,
@@ -405,3 +411,44 @@ class BaseEvaluationService(BaseService, ABC):
                 return False
 
         return True
+
+    def verify_pipeline_completion(self, pipeline_id: int, batch_size: int = 100) -> bool:
+        """Verify all queries have execution results for the pipeline.
+
+        Iterates through query IDs in batches and checks each batch has results.
+        Returns False immediately when any query is missing results.
+
+        Args:
+            pipeline_id: The pipeline ID to verify.
+            batch_size: Number of queries to check per batch.
+
+        Returns:
+            True if all queries have results, False otherwise.
+
+        Raises:
+            NoQueryInDBError: If no queries exist in the database.
+        """
+        total_queries = self._count_total_query_ids()
+
+        if total_queries == 0:
+            raise NoQueryInDBError
+
+        for batch_query_ids in self._iter_query_id_batches(batch_size):
+            if not self._has_results_for_queries(pipeline_id, batch_query_ids):
+                return False
+
+        logger.debug(f"Pipeline {pipeline_id} verified: all {total_queries} queries have results")
+        return True
+
+    @abstractmethod
+    def _has_results_for_queries(self, pipeline_id: int, query_ids: list[int]) -> bool:
+        """Check if all given query IDs have execution results for the pipeline.
+
+        Args:
+            pipeline_id: The pipeline ID.
+            query_ids: List of query IDs to check.
+
+        Returns:
+            True if all query IDs have results, False otherwise.
+        """
+        ...

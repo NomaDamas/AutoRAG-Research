@@ -231,3 +231,25 @@ class RetrievalEvaluationService(BaseEvaluationService):
             retrieved_ids=execution_result.get("retrieved_ids"),
             retrieval_gt=execution_result.get("retrieval_gt"),
         )
+
+    def _has_results_for_queries(self, pipeline_id: int, query_ids: list[int]) -> bool:
+        """Check if all given query IDs have retrieval results for the pipeline.
+
+        Checks both ChunkRetrievedResult and ImageChunkRetrievedResult tables.
+
+        Args:
+            pipeline_id: The pipeline ID.
+            query_ids: List of query IDs to check.
+
+        Returns:
+            True if all query IDs have results, False otherwise.
+        """
+        with self._create_uow() as uow:
+            for query_id in query_ids:
+                chunk_results = uow.chunk_results.get_by_query_and_pipeline(query_id, pipeline_id)
+                image_chunk_results = uow.image_chunk_results.get_by_query_and_pipeline(query_id, pipeline_id)
+
+                if not chunk_results and not image_chunk_results:
+                    return False
+
+            return True
