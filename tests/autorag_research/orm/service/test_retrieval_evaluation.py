@@ -159,7 +159,6 @@ class TestRetrievalEvaluationService:
 
         assert service.metric_id == 1
         assert service.metric_func == dummy_metric
-        assert service._async_metric_func is not None
 
     def test_get_metric_existing(self, service):
         # Seed data: metric id=1 name='retrieval@k' type='retrieval'

@@ -96,6 +96,7 @@ class BasePipelineConfig(ABC):
         ...
 
 
+@dataclass
 class BaseRetrievalPipelineConfig(BasePipelineConfig, ABC):
     """Base configuration for retrieval pipelines.
 
@@ -114,6 +115,7 @@ class BaseRetrievalPipelineConfig(BasePipelineConfig, ABC):
         return {"top_k": self.top_k, "batch_size": self.batch_size}
 
 
+@dataclass
 class BaseGenerationPipelineConfig(BasePipelineConfig, ABC):
     """Base configuration for generation pipelines.
 
@@ -207,7 +209,6 @@ class ExecutorConfig:
         metrics: List of metric configurations to evaluate.
         max_retries: Maximum number of retry attempts for failed pipelines.
         eval_batch_size: Batch size for metric evaluation.
-        max_concurrent_evals: Maximum concurrent metric evaluations.
 
     Example:
         ```python
@@ -228,4 +229,3 @@ class ExecutorConfig:
     metrics: list[BaseMetricConfig]
     max_retries: int = 3
     eval_batch_size: int = 100
-    max_concurrent_evals: int = 10

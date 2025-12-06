@@ -79,7 +79,7 @@ class RetrievalEvaluationService(BaseEvaluationService):
     4. Store results in EvaluationResult table
 
     The service uses MetricInput to pass data to metric functions, which should
-    accept MetricInput and return a float score.
+    accept list[MetricInput] and return list[float | None].
 
     Example:
         ```python
@@ -94,12 +94,8 @@ class RetrievalEvaluationService(BaseEvaluationService):
 
         # Set metric and evaluate
         service.set_metric(metric_id=metric_id, metric_func=retrieval_recall)
-        count = service.evaluate(
-            pipeline_id=1,
-            batch_size=100,
-            max_concurrent=10,
-        )
-        print(f"Evaluated {count} queries")
+        count, avg = service.evaluate(pipeline_id=1, batch_size=100)
+        print(f"Evaluated {count} queries, average={avg}")
 
         # Evaluate another metric
         metric_id_2 = service.get_or_create_metric("precision@10", "retrieval")

@@ -29,7 +29,7 @@ class GenerationEvaluationService(BaseEvaluationService):
     4. Store results in EvaluationResult table
 
     The service uses MetricInput to pass data to metric functions, which should
-    accept MetricInput and return a float score.
+    accept list[MetricInput] and return list[float | None].
 
     Example:
         ```python
@@ -43,12 +43,8 @@ class GenerationEvaluationService(BaseEvaluationService):
 
         # Set metric and evaluate
         service.set_metric(metric_id=metric_id, metric_func=bleu_score)
-        count = service.evaluate(
-            pipeline_id=1,
-            batch_size=100,
-            max_concurrent=10,
-        )
-        print(f"Evaluated {count} queries")
+        count, avg = service.evaluate(pipeline_id=1, batch_size=100)
+        print(f"Evaluated {count} queries, average={avg}")
         ```
     """
 

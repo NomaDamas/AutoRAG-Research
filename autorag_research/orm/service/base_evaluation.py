@@ -2,22 +2,21 @@
 
 Provides abstract base class for evaluation services with:
 - Metric management (get, create, set)
-- Async batch execution with semaphore control
+- Batch metric computation
 - Pipeline for fetching, computing, and saving evaluation results
 - Generator-based pagination to avoid loading all query IDs at once
 """
 
-import asyncio
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Callable, Generator
 from typing import Any, TypeVar
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.exceptions import NoQueryInDBError, SchemaNotFoundError
 from autorag_research.orm.service.base import BaseService
-from autorag_research.util import to_async_func
+from autorag_research.schema import MetricInput
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -25,9 +24,8 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 # Type alias for metric function
-# Can be sync: (T) -> float
-# Or async: (T) -> Awaitable[float]
-MetricFunc = Callable[[Any], float | Awaitable[float]]
+# Accepts list[MetricInput] and returns list[float | None]
+MetricFunc = Callable[[list[MetricInput]], list[float | None]]
 
 
 class BaseEvaluationService(BaseService, ABC):
@@ -36,14 +34,12 @@ class BaseEvaluationService(BaseService, ABC):
     Provides common patterns for evaluation workflows:
     1. Fetch execution results in batches using Generator (abstract)
     2. Filter missing query IDs that need evaluation (abstract)
-    3. Compute metrics with async batch execution (base)
+    3. Compute metrics with batch processing (base)
     4. Save evaluation results (abstract)
 
     The service supports:
     - Setting and changing metric functions dynamically
-    - Automatic sync to async function conversion
     - Batch processing with configurable batch size
-    - Concurrent execution with semaphore control
     - Generator-based pagination to minimize memory usage and transaction issues
 
     Example:
@@ -52,11 +48,11 @@ class BaseEvaluationService(BaseService, ABC):
 
         # Set metric and evaluate
         service.set_metric(metric_id=1, metric_func=my_metric_func)
-        service.evaluate(pipeline_id=1, batch_size=100, max_concurrent=10)
+        service.evaluate(pipeline_id=1, batch_size=100)
 
         # Change metric and evaluate again
         service.set_metric(metric_id=2, metric_func=another_metric_func)
-        service.evaluate(pipeline_id=1, batch_size=100, max_concurrent=10)
+        service.evaluate(pipeline_id=1, batch_size=100)
         ```
     """
 
@@ -74,7 +70,6 @@ class BaseEvaluationService(BaseService, ABC):
         super().__init__(session_factory, schema)
         self._metric_id: int | None = None
         self._metric_func: MetricFunc | None = None
-        self._async_metric_func: Callable[[Any], Awaitable[float]] | None = None
 
     @property
     def metric_id(self) -> int | None:
@@ -89,17 +84,12 @@ class BaseEvaluationService(BaseService, ABC):
     def set_metric(self, metric_id: int, metric_func: MetricFunc) -> None:
         """Set the metric ID and function for evaluation.
 
-        The metric function can be sync or async. If sync, it will be
-        automatically wrapped to be async-compatible.
-
         Args:
             metric_id: The ID of the metric in the database.
-            metric_func: Function that takes an item and returns a metric score.
-                Can be sync (item -> float) or async (item -> Awaitable[float]).
+            metric_func: Function that takes list[MetricInput] and returns list[float | None].
         """
         self._metric_id = metric_id
         self._metric_func = metric_func
-        self._async_metric_func = to_async_func(metric_func)
 
     def get_metric(self, metric_name: str, metric_type: str | None = None) -> Any | None:
         """Get metric by name and optionally type.
@@ -215,7 +205,7 @@ class BaseEvaluationService(BaseService, ABC):
         ...
 
     @abstractmethod
-    def _prepare_metric_input(self, pipeline_id: int, query_id: int, execution_result: Any) -> Any:
+    def _prepare_metric_input(self, pipeline_id: int, query_id: int, execution_result: Any) -> MetricInput:
         """Prepare input data for metric computation.
 
         Args:
@@ -224,7 +214,7 @@ class BaseEvaluationService(BaseService, ABC):
             execution_result: The execution result data.
 
         Returns:
-            Prepared input for the metric function.
+            MetricInput instance ready for metric function.
         """
         ...
 
@@ -258,49 +248,34 @@ class BaseEvaluationService(BaseService, ABC):
                 f"Saved {len(results)} evaluation results for pipeline_id={pipeline_id}, metric_id={metric_id}"
             )
 
-    async def _compute_metrics_batch(
+    def _compute_metrics_batch(
         self,
-        items: list[tuple[int, Any]],
-        max_concurrent: int,
+        query_ids: list[int],
+        metric_inputs: list[MetricInput],
     ) -> list[tuple[int, float | None]]:
-        """Compute metrics for a batch of items with concurrency control.
+        """Compute metrics for a batch of items.
 
         Args:
-            items: List of (query_id, metric_input) tuples.
-            max_concurrent: Maximum concurrent metric computations.
+            query_ids: List of query IDs corresponding to metric inputs.
+            metric_inputs: List of MetricInput instances.
 
         Returns:
             List of (query_id, metric_score) tuples. Score is None if computation failed.
         """
-        if self._async_metric_func is None:
+        if self._metric_func is None:
             raise ValueError("Metric function not set. Call set_metric() first.")  # noqa: TRY003
 
-        async_func = self._async_metric_func
-
-        async def compute_single(item: tuple[int, Any]) -> tuple[int, float | None]:
-            query_id, metric_input = item
-            try:
-                score = await async_func(metric_input)
-            except Exception:
-                logger.exception(f"Failed to compute metric for query_id={query_id}")
-                return (query_id, None)
-            else:
-                return (query_id, score)
-
-        semaphore = asyncio.Semaphore(max_concurrent)
-
-        async def compute_with_semaphore(item: tuple[int, Any]) -> tuple[int, float | None]:
-            async with semaphore:
-                return await compute_single(item)
-
-        tasks = [compute_with_semaphore(item) for item in items]
-        return await asyncio.gather(*tasks)
+        try:
+            scores = self._metric_func(metric_inputs)
+            return list(zip(query_ids, scores, strict=True))
+        except Exception:
+            logger.exception("Failed to compute metrics for batch")
+            return [(query_id, None) for query_id in query_ids]
 
     def evaluate(
         self,
         pipeline_id: int,
         batch_size: int = 100,
-        max_concurrent: int = 10,
     ) -> tuple[int, float | None]:
         """Run the full evaluation pipeline for the current metric.
 
@@ -308,13 +283,12 @@ class BaseEvaluationService(BaseService, ABC):
         1. Iterates through query ID batches using limit/offset
         2. Filters to only those missing evaluation results
         3. Fetches execution results for the batch
-        4. Computes metrics with concurrency control
+        4. Computes metrics in batch
         5. Saves results to database
 
         Args:
             pipeline_id: The pipeline ID to evaluate.
             batch_size: Number of queries to process per batch.
-            max_concurrent: Maximum concurrent metric computations.
 
         Returns:
             Tuple of (queries_evaluated, average_score).
@@ -323,13 +297,13 @@ class BaseEvaluationService(BaseService, ABC):
         Raises:
             ValueError: If metric is not set.
         """
-        if self._metric_id is None or self._async_metric_func is None:
+        if self._metric_id is None or self._metric_func is None:
             raise ValueError("Metric not set. Call set_metric() first.")  # noqa: TRY003
 
         total_count = self._count_total_query_ids()
         if total_count == 0:
-            logger.info("No queries found for evaluation")
-            return (0, None)
+            logger.exception("No queries found for evaluation")
+            raise NoQueryInDBError
 
         logger.info(
             f"Starting evaluation for pipeline_id={pipeline_id}, "
@@ -351,17 +325,19 @@ class BaseEvaluationService(BaseService, ABC):
             execution_results = self._get_execution_results(pipeline_id, missing_query_ids)
 
             # Prepare metric inputs
-            items: list[tuple[int, Any]] = []
+            query_ids: list[int] = []
+            metric_inputs: list[MetricInput] = []
             for query_id in missing_query_ids:
                 if query_id in execution_results:
                     metric_input = self._prepare_metric_input(pipeline_id, query_id, execution_results[query_id])
-                    items.append((query_id, metric_input))
+                    query_ids.append(query_id)
+                    metric_inputs.append(metric_input)
 
-            if not items:
+            if not metric_inputs:
                 continue
 
-            # Compute metrics
-            results = asyncio.run(self._compute_metrics_batch(items, max_concurrent))
+            # Compute metrics in batch
+            results = self._compute_metrics_batch(query_ids, metric_inputs)
 
             # Filter successful results
             valid_results = [(query_id, score) for query_id, score in results if score is not None]
@@ -372,7 +348,7 @@ class BaseEvaluationService(BaseService, ABC):
                 total_evaluated += len(valid_results)
                 all_scores.extend(score for _, score in valid_results)
 
-            logger.info(f"Batch {batch_num}: Evaluated {len(valid_results)}/{len(items)} queries")
+            logger.info(f"Batch {batch_num}: Evaluated {len(valid_results)}/{len(metric_inputs)} queries")
 
         # Calculate average
         average = sum(all_scores) / len(all_scores) if all_scores else None
@@ -381,7 +357,7 @@ class BaseEvaluationService(BaseService, ABC):
             f"Evaluation complete: {total_evaluated} queries evaluated for "
             f"pipeline_id={pipeline_id}, metric_id={self._metric_id}, average={average}"
         )
-        return (total_evaluated, average)
+        return total_evaluated, average
 
     def is_evaluation_complete(
         self,

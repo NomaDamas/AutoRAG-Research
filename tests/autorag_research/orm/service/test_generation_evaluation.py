@@ -17,7 +17,6 @@ class TestGenerationEvaluationService:
 
         assert service.metric_id == 2
         assert service.metric_func == dummy_metric
-        assert service._async_metric_func is not None
 
     def test_get_metric_existing(self, service):
         metric = service.get_metric("bleu", "generation")
