@@ -4,25 +4,31 @@ Implements executor result-specific CRUD operations and relationship queries
 for managing query-pipeline execution results.
 """
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from autorag_research.orm.repository.base import GenericRepository
-from autorag_research.orm.schema import ExecutorResult
 
 
-class ExecutorResultRepository(GenericRepository[ExecutorResult]):
+class ExecutorResultRepository(GenericRepository[Any]):
     """Repository for ExecutorResult entity with composite key support."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, model_cls: type | None = None):
         """Initialize executor result repository.
 
         Args:
             session: SQLAlchemy session for database operations.
+            model_cls: The ExecutorResult model class to use. If None, uses default schema.
         """
-        super().__init__(session, ExecutorResult)
+        if model_cls is None:
+            from autorag_research.orm.schema import ExecutorResult
 
-    def get_by_composite_key(self, query_id: int, pipeline_id: int) -> ExecutorResult | None:
+            model_cls = ExecutorResult
+        super().__init__(session, model_cls)
+
+    def get_by_composite_key(self, query_id: int, pipeline_id: int) -> Any | None:
         """Retrieve an executor result by its composite primary key.
 
         Args:
@@ -32,13 +38,32 @@ class ExecutorResultRepository(GenericRepository[ExecutorResult]):
         Returns:
             The executor result if found, None otherwise.
         """
-        stmt = select(ExecutorResult).where(
-            ExecutorResult.query_id == query_id,
-            ExecutorResult.pipeline_id == pipeline_id,
+        stmt = select(self.model_cls).where(
+            self.model_cls.query_id == query_id,
+            self.model_cls.pipeline_id == pipeline_id,
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_query_id(self, query_id: int) -> list[ExecutorResult]:
+    def get_by_queries_and_pipeline(self, query_ids: list[int], pipeline_id: int) -> list[Any]:
+        """Retrieve executor results for multiple queries under a specific pipeline.
+
+        Args:
+            query_ids: List of query IDs.
+            pipeline_id: The pipeline ID.
+        Returns:
+            List of executor results matching the criteria.
+        """
+        stmt = (
+            select(self.model_cls)
+            .where(
+                self.model_cls.query_id.in_(query_ids),
+                self.model_cls.pipeline_id == pipeline_id,
+            )
+            .order_by(self.model_cls.query_id.asc())
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
+    def get_by_query_id(self, query_id: int) -> list[Any]:
         """Retrieve all executor results for a specific query.
 
         Args:
@@ -47,10 +72,10 @@ class ExecutorResultRepository(GenericRepository[ExecutorResult]):
         Returns:
             List of executor results for the query.
         """
-        stmt = select(ExecutorResult).where(ExecutorResult.query_id == query_id)
+        stmt = select(self.model_cls).where(self.model_cls.query_id == query_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_pipeline_id(self, pipeline_id: int) -> list[ExecutorResult]:
+    def get_by_pipeline_id(self, pipeline_id: int) -> list[Any]:
         """Retrieve all executor results for a specific pipeline.
 
         Args:
@@ -59,10 +84,10 @@ class ExecutorResultRepository(GenericRepository[ExecutorResult]):
         Returns:
             List of executor results for the pipeline.
         """
-        stmt = select(ExecutorResult).where(ExecutorResult.pipeline_id == pipeline_id)
+        stmt = select(self.model_cls).where(self.model_cls.pipeline_id == pipeline_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_all_relations(self, query_id: int, pipeline_id: int) -> ExecutorResult | None:
+    def get_with_all_relations(self, query_id: int, pipeline_id: int) -> Any | None:
         """Retrieve an executor result with all relations eagerly loaded.
 
         Args:
@@ -73,19 +98,19 @@ class ExecutorResultRepository(GenericRepository[ExecutorResult]):
             The executor result with all relations loaded, None if not found.
         """
         stmt = (
-            select(ExecutorResult)
+            select(self.model_cls)
             .where(
-                ExecutorResult.query_id == query_id,
-                ExecutorResult.pipeline_id == pipeline_id,
+                self.model_cls.query_id == query_id,
+                self.model_cls.pipeline_id == pipeline_id,
             )
             .options(
-                joinedload(ExecutorResult.query_obj),
-                joinedload(ExecutorResult.pipeline),
+                joinedload(self.model_cls.query_obj),
+                joinedload(self.model_cls.pipeline),
             )
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_execution_time_range(self, pipeline_id: int, min_time: int, max_time: int) -> list[ExecutorResult]:
+    def get_by_execution_time_range(self, pipeline_id: int, min_time: int, max_time: int) -> list[Any]:
         """Retrieve executor results within an execution time range.
 
         Args:
@@ -96,10 +121,10 @@ class ExecutorResultRepository(GenericRepository[ExecutorResult]):
         Returns:
             List of executor results within the specified range.
         """
-        stmt = select(ExecutorResult).where(
-            ExecutorResult.pipeline_id == pipeline_id,
-            ExecutorResult.execution_time >= min_time,
-            ExecutorResult.execution_time <= max_time,
+        stmt = select(self.model_cls).where(
+            self.model_cls.pipeline_id == pipeline_id,
+            self.model_cls.execution_time >= min_time,
+            self.model_cls.execution_time <= max_time,
         )
         return list(self.session.execute(stmt).scalars().all())
 

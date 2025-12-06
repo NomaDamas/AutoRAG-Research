@@ -11,7 +11,6 @@ import logging
 from collections import defaultdict
 from typing import Any
 
-from autorag_research.exceptions import SchemaNotFoundError
 from autorag_research.orm.service.base_evaluation import BaseEvaluationService
 from autorag_research.orm.uow.evaluation_uow import RetrievalEvaluationUnitOfWork
 from autorag_research.schema import MetricInput
@@ -222,33 +221,3 @@ class RetrievalEvaluationService(BaseEvaluationService):
             retrieved_ids=execution_result.get("retrieved_ids"),
             retrieval_gt=execution_result.get("retrieval_gt"),
         )
-
-    def _save_evaluation_results(self, pipeline_id: int, metric_id: int, results: list[tuple[int, float]]) -> None:
-        """Save computed evaluation results to the database.
-
-        Args:
-            pipeline_id: The pipeline ID.
-            metric_id: The metric ID.
-            results: List of (query_id, metric_score) tuples.
-        """
-        classes = self._get_schema_classes()
-        eval_result_cls = classes.get("EvaluationResult")
-        if eval_result_cls is None:
-            raise SchemaNotFoundError("EvaluationResult")
-
-        with self._create_uow() as uow:
-            entities = [
-                eval_result_cls(
-                    query_id=query_id,
-                    pipeline_id=pipeline_id,
-                    metric_id=metric_id,
-                    metric_result=score,
-                )
-                for query_id, score in results
-            ]
-            uow.evaluation_results.add_all(entities)
-            uow.commit()
-
-            logger.debug(
-                f"Saved {len(results)} evaluation results for pipeline_id={pipeline_id}, metric_id={metric_id}"
-            )
