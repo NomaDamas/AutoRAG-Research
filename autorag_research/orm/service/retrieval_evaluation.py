@@ -253,11 +253,14 @@ class RetrievalEvaluationService(BaseEvaluationService):
             True if all query IDs have results, False otherwise.
         """
         with self._create_uow() as uow:
-            for query_id in query_ids:
-                chunk_results = uow.chunk_results.get_by_query_and_pipeline(query_id, pipeline_id)
-                image_chunk_results = uow.image_chunk_results.get_by_query_and_pipeline(query_id, pipeline_id)
+            chunk_results = uow.chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
+            image_chunk_results = uow.image_chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
+            composite_dicts = {qid: [] for qid in query_ids}
+            for r in chunk_results:
+                if r.query_id is not None:
+                    composite_dicts[r.query_id].append(r.chunk_id)
+            for r in image_chunk_results:
+                if r.query_id is not None:
+                    composite_dicts[r.query_id].append(r.image_chunk_id)
 
-                if not chunk_results and not image_chunk_results:
-                    return False
-
-            return True
+            return all(composite_dicts[query_id] for query_id in query_ids)
