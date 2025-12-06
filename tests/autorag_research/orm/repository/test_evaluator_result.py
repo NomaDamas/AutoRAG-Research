@@ -83,6 +83,29 @@ def test_get_by_pipeline_and_metric(evaluator_result_repository: EvaluatorResult
     assert all(r.pipeline_id == 1 and r.metric_id == 1 for r in results)
 
 
+def test_get_by_pipeline_metric_and_queries(evaluator_result_repository: EvaluatorResultRepository):
+    # Test with existing query_ids
+    results = evaluator_result_repository.get_by_pipeline_metric_and_queries(1, 1, [1, 2])
+
+    assert len(results) >= 1
+    assert all(r.pipeline_id == 1 and r.metric_id == 1 for r in results)
+    assert all(r.query_id in [1, 2] for r in results)
+
+
+def test_get_by_pipeline_metric_and_queries_empty_list(evaluator_result_repository: EvaluatorResultRepository):
+    # Test with empty query_ids list
+    results = evaluator_result_repository.get_by_pipeline_metric_and_queries(1, 1, [])
+
+    assert results == []
+
+
+def test_get_by_pipeline_metric_and_queries_nonexistent(evaluator_result_repository: EvaluatorResultRepository):
+    # Test with non-existent query_ids
+    results = evaluator_result_repository.get_by_pipeline_metric_and_queries(1, 1, [999, 998])
+
+    assert results == []
+
+
 def test_exists_by_composite_key(evaluator_result_repository: EvaluatorResultRepository):
     exists = evaluator_result_repository.exists_by_composite_key(1, 1, 1)
 

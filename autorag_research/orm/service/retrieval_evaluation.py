@@ -161,10 +161,18 @@ class RetrievalEvaluationService(BaseEvaluationService):
         with self._create_uow() as uow:
             result: dict[int, dict[str, Any]] = {}
 
+            # Fetch all chunk results at once (already sorted by query_id asc, rel_score desc)
+            chunk_results = uow.chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
+
+            # Group chunk results by query_id
+            chunk_results_by_query: dict[int, list[Any]] = {qid: [] for qid in query_ids}
+            for r in chunk_results:
+                if r.query_id in chunk_results_by_query:
+                    chunk_results_by_query[r.query_id].append(r)
+
             for query_id in query_ids:
-                # Get retrieval results ordered by rel_score descending
-                chunk_results = uow.chunk_results.get_by_query_and_pipeline(query_id, pipeline_id)
-                retrieved_ids = [str(r.chunk_id) for r in chunk_results]
+                # Get retrieval results (already ordered by rel_score descending)
+                retrieved_ids = [str(r.chunk_id) for r in chunk_results_by_query[query_id]]
 
                 # Get ground truth as 2D list (AND/OR structure)
                 gt_relations = uow.retrieval_relations.get_by_query_id(query_id)
@@ -189,8 +197,10 @@ class RetrievalEvaluationService(BaseEvaluationService):
             List of query IDs that need evaluation (don't have results yet).
         """
         with self._create_uow() as uow:
-            # Get existing evaluation results for this pipeline and metric
-            existing_results = uow.evaluation_results.get_by_pipeline_and_metric(pipeline_id, metric_id)
+            # Get existing evaluation results filtered by pipeline, metric, AND query_ids
+            existing_results = uow.evaluation_results.get_by_pipeline_metric_and_queries(
+                pipeline_id, metric_id, query_ids
+            )
             existing_query_ids = {r.query_id for r in existing_results}
 
             # Return query IDs that don't have results
