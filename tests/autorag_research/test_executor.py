@@ -52,7 +52,7 @@ class TestExecutorWithRealDB:
 
             # Delete pipelines
             for pipeline_id in created_pipeline_ids:
-                pipeline_repo.delete(pipeline_id)
+                pipeline_repo.delete_by_id(pipeline_id)
             session.commit()
         finally:
             session.close()
