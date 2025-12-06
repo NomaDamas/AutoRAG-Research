@@ -19,20 +19,22 @@ class BaseRetrievedResultRepository(GenericRepository[Any]):
     Subclasses should override __init__ to provide the appropriate model class.
     """
 
-    def get_by_query_and_pipeline(self, query_id: int, pipeline_id: int) -> list[Any]:
-        """Retrieve all retrieved results for a specific query and pipeline.
+    def get_by_query_and_pipeline(self, query_ids: list[int], pipeline_id: int) -> list[Any]:
+        """Retrieve all chunk retrieved results for the specified query IDs and pipeline.
 
         Args:
-            query_id: The query ID.
+            query_ids: List of query IDs to retrieve results for.
             pipeline_id: The pipeline ID.
 
         Returns:
-            List of retrieved result entities ordered by relevance score descending.
+            List of retrieved result entities matching any of the query IDs and the pipeline.
         """
+        if not query_ids:
+            return []
         stmt = (
             select(self.model_cls)
-            .where(self.model_cls.query_id == query_id, self.model_cls.pipeline_id == pipeline_id)
-            .order_by(self.model_cls.rel_score.desc())
+            .where(self.model_cls.query_id.in_(query_ids), self.model_cls.pipeline_id == pipeline_id)
+            .order_by(self.model_cls.query_id.asc(), self.model_cls.rel_score.desc())
         )
         return list(self.session.execute(stmt).scalars().all())
 

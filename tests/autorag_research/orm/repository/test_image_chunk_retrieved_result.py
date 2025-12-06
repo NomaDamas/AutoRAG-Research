@@ -19,7 +19,7 @@ def test_get_by_query_and_pipeline(
     db_session.add(test_result)
     db_session.flush()
 
-    results = image_chunk_retrieved_result_repository.get_by_query_and_pipeline(1, 1)
+    results = image_chunk_retrieved_result_repository.get_by_query_and_pipeline([1], 1)
 
     assert len(results) >= 1
     assert all(r.query_id == 1 and r.pipeline_id == 1 for r in results)
@@ -42,7 +42,7 @@ def test_get_by_query_and_pipeline_returns_ordered_by_score(
     db_session.add_all(results_to_add)
     db_session.flush()
 
-    results = image_chunk_retrieved_result_repository.get_by_query_and_pipeline(1, 1)
+    results = image_chunk_retrieved_result_repository.get_by_query_and_pipeline([1], 1)
 
     assert len(results) == 3
     assert results[0].rel_score == 0.9
@@ -69,9 +69,10 @@ def test_bulk_insert(
 
     assert inserted_count == 2
 
-    results = image_chunk_retrieved_result_repository.get_by_query_and_pipeline(4, 2)
-    assert len(results) == 2
+    results = image_chunk_retrieved_result_repository.get_by_query_and_pipeline([2, 4], 2)
+    assert len(results) == 3
 
     # Cleanup
     image_chunk_retrieved_result_repository.delete_by_query_and_pipeline(4, 2)
+    image_chunk_retrieved_result_repository.delete_by_query_and_pipeline(2, 2)
     db_session.commit()

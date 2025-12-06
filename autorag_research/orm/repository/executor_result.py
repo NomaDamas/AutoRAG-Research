@@ -44,6 +44,25 @@ class ExecutorResultRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
+    def get_by_queries_and_pipeline(self, query_ids: list[int], pipeline_id: int) -> list[Any]:
+        """Retrieve executor results for multiple queries under a specific pipeline.
+
+        Args:
+            query_ids: List of query IDs.
+            pipeline_id: The pipeline ID.
+        Returns:
+            List of executor results matching the criteria.
+        """
+        stmt = (
+            select(self.model_cls)
+            .where(
+                self.model_cls.query_id.in_(query_ids),
+                self.model_cls.pipeline_id == pipeline_id,
+            )
+            .order_by(self.model_cls.query_id.asc())
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
     def get_by_query_id(self, query_id: int) -> list[Any]:
         """Retrieve all executor results for a specific query.
 

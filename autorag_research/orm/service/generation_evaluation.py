@@ -105,16 +105,18 @@ class GenerationEvaluationService(BaseEvaluationService):
         with self._create_uow() as uow:
             result: dict[int, dict[str, Any]] = {}
 
-            for query_id in query_ids:
-                executor_result = uow.executor_results.get_by_composite_key(query_id, pipeline_id)
-                if executor_result is None:
-                    continue
+            chunk_results = uow.executor_results.get_by_queries_and_pipeline(query_ids, pipeline_id)
+            generated_texts: dict[int, str] = {elem.query_id: elem.generation_result for elem in chunk_results}
 
+            for query_id in query_ids:
                 query = uow.queries.get_by_id(query_id)
                 generation_gt = query.generation_gt if query else None
+                generated_text = generated_texts.get(query_id)
+                if generated_text is None or generation_gt is None:
+                    continue
 
                 result[query_id] = {
-                    "generated_text": executor_result.generation_result,
+                    "generated_text": generated_text,
                     "generation_gt": generation_gt,
                 }
 
@@ -132,7 +134,9 @@ class GenerationEvaluationService(BaseEvaluationService):
             List of query IDs that need evaluation (don't have results yet).
         """
         with self._create_uow() as uow:
-            existing_results = uow.evaluation_results.get_by_pipeline_and_metric(pipeline_id, metric_id)
+            existing_results = uow.evaluation_results.get_by_pipeline_metric_and_queries(
+                pipeline_id, metric_id, query_ids
+            )
             existing_query_ids = {r.query_id for r in existing_results}
 
             return [qid for qid in query_ids if qid not in existing_query_ids]

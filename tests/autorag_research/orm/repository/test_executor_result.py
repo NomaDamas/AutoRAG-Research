@@ -18,6 +18,14 @@ def test_get_by_composite_key(executor_result_repository: ExecutorResultReposito
     assert result.pipeline_id == 1
 
 
+def test_get_by_queries_and_pipeline(executor_result_repository: ExecutorResultRepository):
+    results = executor_result_repository.get_by_queries_and_pipeline([1, 2], 1)
+
+    assert len(results) == 2
+    assert all(r.pipeline_id == 1 for r in results)
+    assert {r.query_id for r in results}.issuperset({1, 2})
+
+
 def test_get_by_query_id(executor_result_repository: ExecutorResultRepository):
     results = executor_result_repository.get_by_query_id(1)
 

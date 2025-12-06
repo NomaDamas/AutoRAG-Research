@@ -12,9 +12,10 @@ def chunk_retrieved_result_repository(db_session: Session) -> ChunkRetrievedResu
 
 def test_get_by_query_and_pipeline(chunk_retrieved_result_repository: ChunkRetrievedResultRepository):
     # Seed data: (query_id=1, pipeline_id=1, chunk_id=1, rel_score=0.85)
-    results = chunk_retrieved_result_repository.get_by_query_and_pipeline(1, 1)
+    # Plus, (2, 2, 3, 0.4)
+    results = chunk_retrieved_result_repository.get_by_query_and_pipeline([1, 2], 1)
 
-    assert len(results) >= 1
+    assert len(results) == 1
     assert all(r.query_id == 1 and r.pipeline_id == 1 for r in results)
     assert results[0].rel_score == 0.85
 
@@ -32,7 +33,7 @@ def test_get_by_query_and_pipeline_returns_ordered_by_score(
     db_session.add_all(results_to_add)
     db_session.flush()
 
-    results = chunk_retrieved_result_repository.get_by_query_and_pipeline(3, 1)
+    results = chunk_retrieved_result_repository.get_by_query_and_pipeline([3], 1)
 
     assert len(results) == 3
     assert results[0].rel_score == 0.9
@@ -100,7 +101,7 @@ def test_delete_by_query_and_pipeline(
     db_session.flush()
 
     assert deleted_count == 1
-    assert len(chunk_retrieved_result_repository.get_by_query_and_pipeline(5, 2)) == 0
+    assert len(chunk_retrieved_result_repository.get_by_query_and_pipeline([5], 2)) == 0
 
 
 def test_delete_by_query_and_pipeline_returns_zero_for_nonexistent(
@@ -123,7 +124,7 @@ def test_bulk_insert(chunk_retrieved_result_repository: ChunkRetrievedResultRepo
 
     assert inserted_count == 3
 
-    results = chunk_retrieved_result_repository.get_by_query_and_pipeline(4, 2)
+    results = chunk_retrieved_result_repository.get_by_query_and_pipeline([4], 2)
     assert len(results) == 3
 
     # Cleanup
