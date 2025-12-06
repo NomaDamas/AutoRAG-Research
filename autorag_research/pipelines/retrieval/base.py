@@ -9,9 +9,10 @@ from typing import Any
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
+from autorag_research.pipelines.base import BasePipeline
 
 
-class BaseRetrievalPipeline(ABC):
+class BaseRetrievalPipeline(BasePipeline, ABC):
     """Abstract base class for all retrieval pipelines.
 
     This class provides common functionality for retrieval pipelines:
@@ -37,9 +38,7 @@ class BaseRetrievalPipeline(ABC):
             name: Name for this pipeline.
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """
-        self.session_factory = session_factory
-        self.name = name
-        self._schema = schema
+        super().__init__(session_factory, name, schema)
 
         # Initialize service
         self._service = RetrievalPipelineService(session_factory, schema)
@@ -49,15 +48,6 @@ class BaseRetrievalPipeline(ABC):
             name=name,
             config=self._get_pipeline_config(),
         )
-
-    @abstractmethod
-    def _get_pipeline_config(self) -> dict[str, Any]:
-        """Return the pipeline configuration dictionary.
-
-        Returns:
-            Configuration dict to store in the pipeline table.
-        """
-        pass
 
     @abstractmethod
     def _get_retrieval_func(self) -> Any:
