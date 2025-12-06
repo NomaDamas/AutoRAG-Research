@@ -172,16 +172,26 @@ class RetrievalEvaluationService(BaseEvaluationService):
         with self._create_uow() as uow:
             result: dict[int, dict[str, Any]] = {}
 
-            for query_id in query_ids:
-                # Get chunk retrieval results ordered by rel_score descending
-                chunk_results = uow.chunk_results.get_by_query_and_pipeline(query_id, pipeline_id)
-                chunk_ids = [(r.rel_score or 0.0, f"chunk_{r.chunk_id}") for r in chunk_results]
+            chunk_results = uow.chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
+            image_chunk_results = uow.image_chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
 
-                # Get image chunk retrieval results ordered by rel_score descending
-                image_chunk_results = uow.image_chunk_results.get_by_query_and_pipeline(query_id, pipeline_id)
+            # Group chunk results by query_id
+            chunk_results_by_query: dict[int, list[Any]] = {qid: [] for qid in query_ids}
+            for r in chunk_results:
+                if r.query_id in chunk_results_by_query:
+                    chunk_results_by_query[r.query_id].append(r)
+
+            image_chunk_results_by_query: dict[int, list[Any]] = {qid: [] for qid in query_ids}
+            for r in image_chunk_results:
+                if r.query_id in image_chunk_results_by_query:
+                    image_chunk_results_by_query[r.query_id].append(r)
+
+            for query_id in query_ids:
+                chunk_results = chunk_results_by_query[query_id]
+                chunk_ids = [(r.rel_score or 0.0, f"chunk_{r.chunk_id}") for r in chunk_results]
+                image_chunk_results = image_chunk_results_by_query[query_id]
                 image_chunk_ids = [(r.rel_score or 0.0, f"image_chunk_{r.image_chunk_id}") for r in image_chunk_results]
 
-                # Merge and sort by rel_score descending
                 all_results = chunk_ids + image_chunk_ids
                 all_results.sort(key=lambda x: x[0], reverse=True)
                 retrieved_ids = [prefixed_id for _, prefixed_id in all_results]
@@ -209,8 +219,10 @@ class RetrievalEvaluationService(BaseEvaluationService):
             List of query IDs that need evaluation (don't have results yet).
         """
         with self._create_uow() as uow:
-            # Get existing evaluation results for this pipeline and metric
-            existing_results = uow.evaluation_results.get_by_pipeline_and_metric(pipeline_id, metric_id)
+            # Get existing evaluation results filtered by pipeline, metric, AND query_ids
+            existing_results = uow.evaluation_results.get_by_pipeline_metric_and_queries(
+                pipeline_id, metric_id, query_ids
+            )
             existing_query_ids = {r.query_id for r in existing_results}
 
             # Return query IDs that don't have results
