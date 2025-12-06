@@ -26,6 +26,9 @@ from autorag_research.orm.repository.chunk_retrieved_result import (
     ChunkRetrievedResultRepository,
 )
 from autorag_research.orm.repository.evaluator_result import EvaluatorResultRepository
+from autorag_research.orm.repository.image_chunk_retrieved_result import (
+    ImageChunkRetrievedResultRepository,
+)
 from autorag_research.orm.repository.metric import MetricRepository
 from autorag_research.orm.repository.pipeline import PipelineRepository
 from autorag_research.orm.repository.query import QueryRepository
@@ -87,6 +90,7 @@ class RetrievalEvaluationUnitOfWork(BaseUnitOfWork):
         self._metric_repo: MetricRepository | None = None
         self._retrieval_relation_repo: RetrievalRelationRepository | None = None
         self._chunk_result_repo: ChunkRetrievedResultRepository | None = None
+        self._image_chunk_result_repo: ImageChunkRetrievedResultRepository | None = None
         self._evaluation_result_repo: EvaluatorResultRepository | None = None
 
     def _get_schema_classes(self) -> dict[str, type]:
@@ -102,12 +106,14 @@ class RetrievalEvaluationUnitOfWork(BaseUnitOfWork):
                 "Metric": self._schema.Metric,
                 "RetrievalRelation": self._schema.RetrievalRelation,
                 "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
+                "ImageChunkRetrievedResult": self._schema.ImageChunkRetrievedResult,
                 "EvaluationResult": self._schema.EvaluationResult,
             }
 
         from autorag_research.orm.schema import (
             ChunkRetrievedResult,
             EvaluationResult,
+            ImageChunkRetrievedResult,
             Metric,
             Pipeline,
             Query,
@@ -120,6 +126,7 @@ class RetrievalEvaluationUnitOfWork(BaseUnitOfWork):
             "Metric": Metric,
             "RetrievalRelation": RetrievalRelation,
             "ChunkRetrievedResult": ChunkRetrievedResult,
+            "ImageChunkRetrievedResult": ImageChunkRetrievedResult,
             "EvaluationResult": EvaluationResult,
         }
 
@@ -130,6 +137,7 @@ class RetrievalEvaluationUnitOfWork(BaseUnitOfWork):
         self._metric_repo = None
         self._retrieval_relation_repo = None
         self._chunk_result_repo = None
+        self._image_chunk_result_repo = None
         self._evaluation_result_repo = None
 
     @property
@@ -210,6 +218,22 @@ class RetrievalEvaluationUnitOfWork(BaseUnitOfWork):
             "_chunk_result_repo",
             ChunkRetrievedResultRepository,
             lambda: self._get_schema_classes()["ChunkRetrievedResult"],
+        )
+
+    @property
+    def image_chunk_results(self) -> ImageChunkRetrievedResultRepository:
+        """Get the ImageChunkRetrievedResult repository.
+
+        Returns:
+            ImageChunkRetrievedResultRepository instance.
+
+        Raises:
+            SessionNotSetError: If session is not initialized.
+        """
+        return self._get_repository(
+            "_image_chunk_result_repo",
+            ImageChunkRetrievedResultRepository,
+            lambda: self._get_schema_classes()["ImageChunkRetrievedResult"],
         )
 
     @property

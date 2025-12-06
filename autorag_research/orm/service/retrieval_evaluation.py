@@ -27,37 +27,44 @@ def build_retrieval_gt_from_relations(relations: list[Any]) -> list[list[str]]:
     - Same group_index = OR condition (items in same inner list)
     - Different group_index = AND condition (items in different inner lists)
     - Items within each group are ordered by group_order
+    - IDs are prefixed with 'chunk_' or 'image_chunk_' to distinguish types
 
     Args:
-        relations: List of RetrievalRelation entities with group_index, group_order, chunk_id.
+        relations: List of RetrievalRelation entities with group_index, group_order,
+                   chunk_id (optional), and image_chunk_id (optional).
 
     Returns:
-        2D list of chunk IDs: list[list[str]]
+        2D list of prefixed IDs: list[list[str]]
         - Outer list: AND conditions (all groups must be satisfied)
         - Inner list: OR conditions (any item in group satisfies)
+        - IDs are prefixed: 'chunk_{id}' or 'image_chunk_{id}'
 
     Example:
         Relations with:
             (group_index=0, group_order=0, chunk_id=1)
-            (group_index=0, group_order=1, chunk_id=2)
+            (group_index=0, group_order=1, image_chunk_id=2)
             (group_index=1, group_order=0, chunk_id=3)
-        Returns: [["1", "2"], ["3"]]
-        Meaning: (chunk_1 OR chunk_2) AND chunk_3
+        Returns: [["chunk_1", "image_chunk_2"], ["chunk_3"]]
+        Meaning: (chunk_1 OR image_chunk_2) AND chunk_3
     """
-    # Group by group_index, storing (group_order, chunk_id) tuples
+    # Group by group_index, storing (group_order, prefixed_id) tuples
     grouped: dict[int, list[tuple[int, str]]] = defaultdict(list)
 
     for rel in relations:
         if rel.chunk_id is not None:
-            grouped[rel.group_index].append((rel.group_order, str(rel.chunk_id)))
+            prefixed_id = f"chunk_{rel.chunk_id}"
+            grouped[rel.group_index].append((rel.group_order, prefixed_id))
+        elif rel.image_chunk_id is not None:
+            prefixed_id = f"image_chunk_{rel.image_chunk_id}"
+            grouped[rel.group_index].append((rel.group_order, prefixed_id))
 
-    # Sort each group by group_order, then extract chunk_ids
+    # Sort each group by group_order, then extract prefixed_ids
     result: list[list[str]] = []
     for group_index in sorted(grouped.keys()):
         items = grouped[group_index]
-        # Sort by group_order and extract chunk_ids
-        sorted_chunk_ids = [chunk_id for _, chunk_id in sorted(items, key=lambda x: x[0])]
-        result.append(sorted_chunk_ids)
+        # Sort by group_order and extract prefixed_ids
+        sorted_ids = [prefixed_id for _, prefixed_id in sorted(items, key=lambda x: x[0])]
+        result.append(sorted_ids)
 
     return result
 
@@ -122,12 +129,14 @@ class RetrievalEvaluationService(BaseEvaluationService):
                 "Metric": self._schema.Metric,
                 "RetrievalRelation": self._schema.RetrievalRelation,
                 "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
+                "ImageChunkRetrievedResult": self._schema.ImageChunkRetrievedResult,
                 "EvaluationResult": self._schema.EvaluationResult,
             }
 
         from autorag_research.orm.schema import (
             ChunkRetrievedResult,
             EvaluationResult,
+            ImageChunkRetrievedResult,
             Metric,
             Pipeline,
             Query,
@@ -140,14 +149,15 @@ class RetrievalEvaluationService(BaseEvaluationService):
             "Metric": Metric,
             "RetrievalRelation": RetrievalRelation,
             "ChunkRetrievedResult": ChunkRetrievedResult,
+            "ImageChunkRetrievedResult": ImageChunkRetrievedResult,
             "EvaluationResult": EvaluationResult,
         }
 
     def _get_execution_results(self, pipeline_id: int, query_ids: list[int]) -> dict[int, dict[str, Any]]:
         """Fetch execution results for given query IDs.
 
-        Fetches both retrieval results (ChunkRetrievedResult) and ground truth
-        (RetrievalRelation) for each query.
+        Fetches both retrieval results (ChunkRetrievedResult and ImageChunkRetrievedResult)
+        and ground truth (RetrievalRelation) for each query.
 
         Args:
             pipeline_id: The pipeline ID.
@@ -155,14 +165,15 @@ class RetrievalEvaluationService(BaseEvaluationService):
 
         Returns:
             Dictionary mapping query_id to dict with:
-                - 'retrieved_ids': list of retrieved chunk IDs (ordered by rel_score desc)
-                - 'retrieval_gt': 2D list of ground truth chunk IDs (grouped by AND/OR conditions)
+                - 'retrieved_ids': list of prefixed retrieved IDs (ordered by rel_score desc)
+                  Format: 'chunk_{id}' or 'image_chunk_{id}'
+                - 'retrieval_gt': 2D list of prefixed ground truth IDs (grouped by AND/OR conditions)
         """
         with self._create_uow() as uow:
             result: dict[int, dict[str, Any]] = {}
 
-            # Fetch all chunk results at once (already sorted by query_id asc, rel_score desc)
             chunk_results = uow.chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
+            image_chunk_results = uow.image_chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
 
             # Group chunk results by query_id
             chunk_results_by_query: dict[int, list[Any]] = {qid: [] for qid in query_ids}
@@ -170,11 +181,22 @@ class RetrievalEvaluationService(BaseEvaluationService):
                 if r.query_id in chunk_results_by_query:
                     chunk_results_by_query[r.query_id].append(r)
 
-            for query_id in query_ids:
-                # Get retrieval results (already ordered by rel_score descending)
-                retrieved_ids = [str(r.chunk_id) for r in chunk_results_by_query[query_id]]
+            image_chunk_results_by_query: dict[int, list[Any]] = {qid: [] for qid in query_ids}
+            for r in image_chunk_results:
+                if r.query_id in image_chunk_results_by_query:
+                    image_chunk_results_by_query[r.query_id].append(r)
 
-                # Get ground truth as 2D list (AND/OR structure)
+            for query_id in query_ids:
+                chunk_results = chunk_results_by_query[query_id]
+                chunk_ids = [(r.rel_score or 0.0, f"chunk_{r.chunk_id}") for r in chunk_results]
+                image_chunk_results = image_chunk_results_by_query[query_id]
+                image_chunk_ids = [(r.rel_score or 0.0, f"image_chunk_{r.image_chunk_id}") for r in image_chunk_results]
+
+                all_results = chunk_ids + image_chunk_ids
+                all_results.sort(key=lambda x: x[0], reverse=True)
+                retrieved_ids = [prefixed_id for _, prefixed_id in all_results]
+
+                # Get ground truth as 2D list (AND/OR structure) with prefixes
                 gt_relations = uow.retrieval_relations.get_by_query_id(query_id)
                 retrieval_gt = build_retrieval_gt_from_relations(gt_relations)
 

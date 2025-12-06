@@ -141,10 +141,9 @@ CREATE TABLE IF NOT EXISTS evaluation_result (
 CREATE TABLE IF NOT EXISTS image_chunk_retrieved_result (
 	query_id BIGINT NOT NULL REFERENCES query(id),
 	pipeline_id BIGINT NOT NULL REFERENCES pipeline(id),
-	metric_id BIGINT NOT NULL REFERENCES metric(id),
 	image_chunk_id BIGINT NOT NULL REFERENCES image_chunk(id),
     rel_score FLOAT,
-	PRIMARY KEY (query_id, pipeline_id, metric_id, image_chunk_id)
+	PRIMARY KEY (query_id, pipeline_id, image_chunk_id)
 );
 
 -- ChunkRetrievedResult
