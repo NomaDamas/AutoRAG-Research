@@ -25,6 +25,20 @@ jobs:
         github.event.issue.author_association == 'OWNER'
       )
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: tensorchord/vchord-postgres:pg18-v1.0.0
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     permissions:
       contents: read
       pull-requests: read
