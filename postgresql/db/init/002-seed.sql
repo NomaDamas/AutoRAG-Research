@@ -82,12 +82,12 @@ ON CONFLICT DO NOTHING;
 
 -- Queries
 -- embeddings column uses VectorChord-compatible array format for multi-vector retrieval
-INSERT INTO query (id, contents, generation_gt, embedding, embeddings) VALUES
-	(1, 'What is Doc One about?', ARRAY['alpha'], NULL, NULL),
-	(2, 'Find details in Doc Two', ARRAY['beta'], NULL, NULL),
-	(3, 'Summarize Doc Three', ARRAY['gamma'], NULL, NULL),
-	(4, 'Topics in Doc Four', ARRAY['delta'], NULL, NULL),
-	(5, 'Explain Doc Five', ARRAY['epsilon'], NULL, NULL)
+INSERT INTO query (id, contents, query_to_llm, generation_gt, embedding, embeddings) VALUES
+	(1, 'What is Doc One about?', NULL, ARRAY['alpha'], NULL, NULL),
+	(2, 'Find details in Doc Two', NULL, ARRAY['beta'], NULL, NULL),
+	(3, 'Summarize Doc Three',  'Three Three', ARRAY['gamma'], NULL, NULL),
+	(4, 'Topics in Doc Four', 'Doc Four Four',ARRAY['delta'], NULL, NULL),
+	(5, 'Explain Doc Five', 'Doc Five Five', ARRAY['epsilon'], NULL, NULL)
 ON CONFLICT DO NOTHING;
 
 -- Retrieval relations (exactly one of chunk_id, image_chunk_id)
