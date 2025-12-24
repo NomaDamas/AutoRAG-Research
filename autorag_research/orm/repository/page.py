@@ -28,7 +28,7 @@ class PageRepository(GenericRepository):
             model_cls = Page
         super().__init__(session, model_cls)
 
-    def get_by_document_id(self, document_id: int) -> list[Any]:
+    def get_by_document_id(self, document_id: int | str) -> list[Any]:
         """Retrieve all pages for a specific document.
 
         Args:
@@ -40,7 +40,7 @@ class PageRepository(GenericRepository):
         stmt = select(self.model_cls).where(self.model_cls.document_id == document_id).order_by(self.model_cls.page_num)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_document_and_page_num(self, document_id: int, page_num: int) -> Any | None:
+    def get_by_document_and_page_num(self, document_id: int | str, page_num: int) -> Any | None:
         """Retrieve a specific page by document ID and page number.
 
         Args:
@@ -56,7 +56,7 @@ class PageRepository(GenericRepository):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_document(self, page_id: int) -> Any | None:
+    def get_with_document(self, page_id: int | str) -> Any | None:
         """Retrieve a page with its document eagerly loaded.
 
         Args:
@@ -68,7 +68,7 @@ class PageRepository(GenericRepository):
         stmt = select(self.model_cls).where(self.model_cls.id == page_id).options(joinedload(self.model_cls.document))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_captions(self, page_id: int) -> Any | None:
+    def get_with_captions(self, page_id: int | str) -> Any | None:
         """Retrieve a page with its captions eagerly loaded.
 
         Args:
@@ -80,7 +80,7 @@ class PageRepository(GenericRepository):
         stmt = select(self.model_cls).where(self.model_cls.id == page_id).options(joinedload(self.model_cls.captions))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_image_chunks(self, page_id: int) -> Any | None:
+    def get_with_image_chunks(self, page_id: int | str) -> Any | None:
         """Retrieve a page with its image chunks eagerly loaded.
 
         Args:
@@ -128,7 +128,7 @@ class PageRepository(GenericRepository):
         stmt = select(self.model_cls).where(self.model_cls.page_metadata[metadata_key].astext == metadata_value)
         return list(self.session.execute(stmt).scalars().all())
 
-    def count_by_document(self, document_id: int) -> int:
+    def count_by_document(self, document_id: int | str) -> int:
         """Count the number of pages in a document.
 
         Args:
@@ -139,7 +139,7 @@ class PageRepository(GenericRepository):
         """
         return self.session.query(self.model_cls).filter(self.model_cls.document_id == document_id).count()
 
-    def get_page_range(self, document_id: int, start_page: int, end_page: int) -> list[Any]:
+    def get_page_range(self, document_id: int | str, start_page: int, end_page: int) -> list[Any]:
         """Retrieve a range of pages from a document.
 
         Args:
