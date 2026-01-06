@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch",
+      "Bash(make test)",
+      "Bash(make check)",
+      "Bash(uv sync)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)"
+    ],
+    "ask": [
+      "Bash(make clean-docker)",
+      "Bash(rm:*)"
+    ],
+    "deny": [
+      "Bash(uv publish)"
+    ]
+  }
+}
