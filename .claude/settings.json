@@ -11,14 +11,17 @@
       "Bash(git branch)",
       "Bash(find:*)",
       "Bash(cat:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(uv run pytest)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)"
+    ],
+    "deny": [
+      "Bash(uv publish)"
     ],
     "ask": [
       "Bash(make clean-docker)",
       "Bash(rm:*)"
-    ],
-    "deny": [
-      "Bash(uv publish)"
     ]
   }
 }
