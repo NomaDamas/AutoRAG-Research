@@ -10,7 +10,8 @@ This document defines the workflow for implementing a new Dataset Ingestor in **
 2. **Schema Architect:** Maps raw data to internal DB schema.
 3. **Implementation Specialist:** Writes production code.
 4. **Test Writer:** Creates unit tests.
-5. **QA Guardian:** Enforces linting, typing, and project rules.
+
+During implementation, the implementation specialist will call the qa guardian to check the code quality.
 
 ## Workflow Steps
 
@@ -37,12 +38,6 @@ This document defines the workflow for implementing a new Dataset Ingestor in **
 * **Agent:** Test Writer
 * **Input:** Ingestor Source Code.
 * **Output:** `tests/autorag_research/data/test_[dataset_name]_ingestor.py` (Commit this file).
-
-### Phase 5: QA & Finalization
-
-* **Agent:** QA Guardian
-* **Input:** Ingestor Code, Test Code, `CLAUDE.md`.
-* **Output:** Refined code passing `make check` and ready for PR.
 
 ## Definition of Done
 

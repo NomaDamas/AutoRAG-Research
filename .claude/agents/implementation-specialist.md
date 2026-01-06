@@ -68,9 +68,11 @@ from datasets import load_dataset
 
 3. **Line Length**: Maximum 120 characters
 
-4. **NO Documentation**: Do not add docstrings or create markdown files. The code should be self-documenting through clear naming and type hints.
+4. Call 'qa-guardian' agent to verify adherence to code quality standards before finalizing.
 
-5. **Modularity**: Break complex logic into small, focused private methods
+5. **NO Documentation**: Do not add docstrings or create markdown files. The code should be self-documenting through clear naming and type hints.
+
+6. **Modularity**: Break complex logic into small, focused private methods
 
 ## Constraints You Must Follow
 

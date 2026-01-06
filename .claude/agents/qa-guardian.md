@@ -17,7 +17,7 @@ You will receive:
 
 ## Tools & Commands
 - Use `make check` to run all static analysis tools (ruff, ty, deptry)
-- Individual tools: `ruff` (linting/formatting), `ty` (type checking), `deptry` (dependency issues)
+- AVOID USE OTHER COMMANDS EXCEPT `make check`
 
 ## Quality Assurance Protocol
 

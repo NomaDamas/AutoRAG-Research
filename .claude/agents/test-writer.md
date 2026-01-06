@@ -33,6 +33,11 @@ You are an expert Python test engineer specializing in writing comprehensive, ma
 - Mock external dependencies at the boundary (API clients, external services)
 - Use `unittest.mock` or `pytest-mock` for mocking
 
+### PostgreSQL DB for tests
+If you want to run whole test codes, use `make test` command.
+If you want to run a specific test file remember to run `make docker-up` first to start the PostgreSQL test container.
+After using it, remember to run `make clean-docker` to delete the test container.
+
 ### Test Categories and Markers
 ```python
 @pytest.mark.gpu       # Tests requiring GPU hardware
@@ -80,12 +85,7 @@ When generating tests, provide:
 
 ## Verification Steps
 
-Before finalizing test code:
-1. Verify imports are correct and available
-2. Ensure fixtures used exist in conftest.py
-3. Check that test data references match seeded data
-4. Confirm markers are appropriate for the test type
-5. Validate code passes `make check` (ruff + ty)
+Call `qa-guardian` agent to verify.
 
 ## Reference Documentation
 
