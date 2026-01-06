@@ -9,7 +9,7 @@ Tests cover:
 - Edge cases and error handling
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from llama_index.core import MockEmbedding
@@ -25,8 +25,12 @@ from autorag_research.data.bright import (
     _process_gold_answer,
 )
 from autorag_research.exceptions import ServiceNotSetError
+from autorag_research.orm.schema_factory import create_schema
+from autorag_research.orm.service.text_ingestion import TextDataIngestionService
+from autorag_research.orm.util import create_database, drop_database, install_vector_extensions
 
 EMBEDDING_DIM = 768
+BRIGHT_TEST_DB_NAME = "bright_ingestor_test"
 
 
 # ==================== Fixtures ====================
@@ -37,16 +41,55 @@ def mock_embedding_model():
     return MockEmbedding(EMBEDDING_DIM)
 
 
+@pytest.fixture(scope="function")
+def bright_test_db():
+    """Create a separate database for BRIGHT ingestor tests with string PKs."""
+    import os
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import scoped_session, sessionmaker
+
+    host = os.getenv("POSTGRES_HOST", "localhost")
+    user = os.getenv("POSTGRES_USER", "postgres")
+    pwd = os.getenv("POSTGRES_PASSWORD", "postgres")
+    port = int(os.getenv("POSTGRES_PORT", "5432"))
+
+    # Create a new database for BRIGHT tests
+    create_database(host=host, user=user, password=pwd, database=BRIGHT_TEST_DB_NAME, port=port)
+    install_vector_extensions(host=host, user=user, password=pwd, database=BRIGHT_TEST_DB_NAME, port=port)
+
+    # Create engine and session for the new database
+    postgres_url = f"postgresql+psycopg://{user}:{pwd}@{host}:{port}/{BRIGHT_TEST_DB_NAME}"
+    engine = create_engine(postgres_url, pool_pre_ping=True)
+
+    # Create schema with string primary keys
+    schema = create_schema(embedding_dim=EMBEDDING_DIM, primary_key_type="string")
+    schema.Base.metadata.create_all(engine)
+
+    # Create session factory
+    session_factory = scoped_session(sessionmaker(bind=engine))
+
+    yield {"schema": schema, "engine": engine, "session_factory": session_factory}
+
+    # Cleanup
+    session_factory.remove()
+    engine.dispose()
+    drop_database(host=host, user=user, password=pwd, database=BRIGHT_TEST_DB_NAME, port=port, force=True)
+
+
 @pytest.fixture
-def mock_service():
-    service = MagicMock()
-    service.add_chunks = MagicMock(return_value=[1, 2, 3])
-    service.add_queries = MagicMock(return_value=[1, 2])
-    service.add_retrieval_gt = MagicMock(return_value=[(1, 0, 0)])
-    service.clean = MagicMock(return_value={"deleted_queries": 0, "deleted_chunks": 0})
-    service.embed_all_queries = MagicMock(return_value=10)
-    service.embed_all_chunks = MagicMock(return_value=100)
-    return service
+def text_service(bright_test_db):
+    """Create TextDataIngestionService with string primary key schema."""
+    return TextDataIngestionService(bright_test_db["session_factory"], schema=bright_test_db["schema"])
+
+
+@pytest.fixture
+def bright_db_session(bright_test_db):
+    """Create a database session for BRIGHT tests."""
+    session = bright_test_db["session_factory"]()
+    yield session
+    session.rollback()
+    bright_test_db["session_factory"].remove()
 
 
 @pytest.fixture
@@ -55,6 +98,14 @@ def sample_corpus_data():
         {"id": "doc_001", "content": "This is the first document content."},
         {"id": "doc_002", "content": "This is the second document content."},
         {"id": "doc_003", "content": "This is the third document content."},
+    ]
+
+
+@pytest.fixture
+def sample_long_corpus_data():
+    return [
+        {"id": "long_doc_001", "content": "This is the first long document content."},
+        {"id": "long_doc_002", "content": "This is the second long document content."},
     ]
 
 
@@ -221,8 +272,8 @@ class TestBRIGHTIngestorIngest:
             ingestor.ingest()
 
     @patch("autorag_research.data.bright.load_dataset")
-    def test_ingest_calls_service_methods(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_corpus_data, sample_examples_data
+    def test_ingest_persists_data_to_database(
+        self, mock_load_dataset, mock_embedding_model, text_service, sample_corpus_data, sample_examples_data
     ):
         mock_load_dataset.side_effect = [
             create_mock_dataset(sample_corpus_data),
@@ -230,17 +281,16 @@ class TestBRIGHTIngestorIngest:
         ]
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         ingestor.ingest()
 
-        mock_service.add_chunks.assert_called()
-        mock_service.add_queries.assert_called()
-        mock_service.add_retrieval_gt.assert_called()
-        mock_service.clean.assert_called_once()
+        stats = text_service.get_statistics()
+        assert stats["chunks"]["total"] == 3
+        assert stats["queries"]["total"] == 2
 
     @patch("autorag_research.data.bright.load_dataset")
     def test_ingest_processes_multiple_domains(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_corpus_data, sample_examples_data
+        self, mock_load_dataset, mock_embedding_model, text_service, sample_corpus_data, sample_examples_data
     ):
         mock_load_dataset.side_effect = [
             create_mock_dataset(sample_corpus_data),
@@ -250,12 +300,13 @@ class TestBRIGHTIngestorIngest:
         ]
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology", "economics"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         ingestor.ingest()
 
         assert mock_load_dataset.call_count == 4
-        assert mock_service.add_chunks.call_count == 2
-        assert mock_service.add_queries.call_count == 2
+        stats = text_service.get_statistics()
+        assert stats["chunks"]["total"] == 6
+        assert stats["queries"]["total"] == 4
 
 
 class TestBRIGHTIngestorIngestCorpus:
@@ -267,12 +318,12 @@ class TestBRIGHTIngestorIngestCorpus:
 
     @patch("autorag_research.data.bright.load_dataset")
     def test_ingest_corpus_short_mode_uses_documents_config(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_corpus_data
+        self, mock_load_dataset, mock_embedding_model, text_service, sample_corpus_data
     ):
         mock_load_dataset.return_value = create_mock_dataset(sample_corpus_data)
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"], document_mode="short")
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         ingestor._ingest_corpus("biology")
 
         mock_load_dataset.assert_called_once_with(
@@ -281,12 +332,12 @@ class TestBRIGHTIngestorIngestCorpus:
 
     @patch("autorag_research.data.bright.load_dataset")
     def test_ingest_corpus_long_mode_uses_long_documents_config(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_corpus_data
+        self, mock_load_dataset, mock_embedding_model, text_service, sample_corpus_data
     ):
         mock_load_dataset.return_value = create_mock_dataset(sample_corpus_data)
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"], document_mode="long")
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         ingestor._ingest_corpus("biology")
 
         mock_load_dataset.assert_called_once_with(
@@ -295,41 +346,47 @@ class TestBRIGHTIngestorIngestCorpus:
 
     @patch("autorag_research.data.bright.load_dataset")
     def test_ingest_corpus_creates_prefixed_ids(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_corpus_data
+        self,
+        mock_load_dataset,
+        mock_embedding_model,
+        text_service,
+        sample_corpus_data,
+        bright_test_db,
+        bright_db_session,
     ):
         mock_load_dataset.return_value = create_mock_dataset(sample_corpus_data)
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         ingestor._ingest_corpus("biology")
 
-        call_args = mock_service.add_chunks.call_args[0][0]
+        Chunk = bright_test_db["schema"].Chunk
+        chunks = bright_db_session.query(Chunk).filter(Chunk.id.like("biology_%")).all()
+        chunk_ids = [chunk.id for chunk in chunks]
         expected_ids = ["biology_doc_001", "biology_doc_002", "biology_doc_003"]
-        actual_ids = [chunk["id"] for chunk in call_args]
-        assert actual_ids == expected_ids
+        assert sorted(chunk_ids) == sorted(expected_ids)
 
     @patch("autorag_research.data.bright.load_dataset")
     def test_ingest_corpus_returns_total_count(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_corpus_data
+        self, mock_load_dataset, mock_embedding_model, text_service, sample_corpus_data
     ):
         mock_load_dataset.return_value = create_mock_dataset(sample_corpus_data)
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         count = ingestor._ingest_corpus("biology")
 
         assert count == 3
 
     @patch("autorag_research.data.bright.load_dataset")
-    def test_ingest_corpus_empty_dataset_returns_zero(self, mock_load_dataset, mock_embedding_model, mock_service):
+    def test_ingest_corpus_empty_dataset_returns_zero(self, mock_load_dataset, mock_embedding_model, text_service):
         mock_load_dataset.return_value = create_mock_dataset([])
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         count = ingestor._ingest_corpus("biology")
 
         assert count == 0
-        mock_service.add_chunks.assert_not_called()
 
 
 class TestBRIGHTIngestorIngestQueries:
@@ -341,45 +398,53 @@ class TestBRIGHTIngestorIngestQueries:
 
     @patch("autorag_research.data.bright.load_dataset")
     def test_ingest_queries_creates_prefixed_ids(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_examples_data
+        self, mock_load_dataset, mock_embedding_model, text_service, sample_examples_data
     ):
         mock_load_dataset.return_value = create_mock_dataset(sample_examples_data)
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         query_ids, _ = ingestor._ingest_queries("biology")
 
         assert query_ids == ["biology_q_001", "biology_q_002"]
 
     @patch("autorag_research.data.bright.load_dataset")
     def test_ingest_queries_returns_prefixed_gold_ids(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_examples_data
+        self, mock_load_dataset, mock_embedding_model, text_service, sample_examples_data
     ):
         mock_load_dataset.return_value = create_mock_dataset(sample_examples_data)
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         _, gold_ids_list = ingestor._ingest_queries("biology")
 
         assert gold_ids_list[0] == ["biology_doc_001", "biology_doc_002"]
         assert gold_ids_list[1] == ["biology_doc_002"]
 
     @patch("autorag_research.data.bright.load_dataset")
-    def test_ingest_queries_processes_gold_answer_na(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_examples_data
+    def test_ingest_queries_persists_generation_gt(
+        self,
+        mock_load_dataset,
+        mock_embedding_model,
+        text_service,
+        sample_examples_data,
+        bright_test_db,
+        bright_db_session,
     ):
         mock_load_dataset.return_value = create_mock_dataset(sample_examples_data)
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         ingestor._ingest_queries("biology")
 
-        call_args = mock_service.add_queries.call_args[0][0]
-        assert call_args[0]["generation_gt"] == ["The first document is about testing."]
-        assert call_args[1]["generation_gt"] is None
+        Query = bright_test_db["schema"].Query
+        query1 = bright_db_session.query(Query).filter(Query.id == "biology_q_001").first()
+        query2 = bright_db_session.query(Query).filter(Query.id == "biology_q_002").first()
+        assert query1.generation_gt == ["The first document is about testing."]
+        assert query2.generation_gt is None
 
     @patch("autorag_research.data.bright.load_dataset")
-    def test_ingest_queries_skips_queries_without_gold_ids(self, mock_load_dataset, mock_embedding_model, mock_service):
+    def test_ingest_queries_skips_queries_without_gold_ids(self, mock_load_dataset, mock_embedding_model, text_service):
         data_with_empty_gold = [
             {
                 "id": "q_001",
@@ -394,7 +459,7 @@ class TestBRIGHTIngestorIngestQueries:
         mock_load_dataset.return_value = create_mock_dataset(data_with_empty_gold)
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         query_ids, gold_ids_list = ingestor._ingest_queries("biology")
 
         assert query_ids == []
@@ -402,12 +467,12 @@ class TestBRIGHTIngestorIngestQueries:
 
     @patch("autorag_research.data.bright.load_dataset")
     def test_ingest_queries_long_mode_filters_na_gold_ids(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_examples_data
+        self, mock_load_dataset, mock_embedding_model, text_service, sample_examples_data
     ):
         mock_load_dataset.return_value = create_mock_dataset(sample_examples_data)
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"], document_mode="long")
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         query_ids, gold_ids_list = ingestor._ingest_queries("biology")
 
         assert len(query_ids) == 2
@@ -421,25 +486,67 @@ class TestBRIGHTIngestorIngestRelations:
         with pytest.raises(ServiceNotSetError):
             ingestor._ingest_relations(["q1"], [["c1", "c2"]])
 
-    def test_ingest_relations_calls_service_for_each_query(self, mock_embedding_model, mock_service):
-        ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+    @patch("autorag_research.data.bright.load_dataset")
+    def test_ingest_relations_persists_to_database(
+        self,
+        mock_load_dataset,
+        mock_embedding_model,
+        text_service,
+        sample_corpus_data,
+        sample_examples_data,
+        bright_test_db,
+        bright_db_session,
+    ):
+        mock_load_dataset.side_effect = [
+            create_mock_dataset(sample_corpus_data),
+            create_mock_dataset(sample_examples_data),
+        ]
 
-        query_ids = ["biology_q_001", "biology_q_002"]
-        gold_ids_list = [["biology_doc_001", "biology_doc_002"], ["biology_doc_003"]]
+        ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
+        ingestor.set_service(text_service)
+        ingestor._ingest_corpus("biology")
+        query_ids, gold_ids_list = ingestor._ingest_queries("biology")
         ingestor._ingest_relations(query_ids, gold_ids_list)
 
-        assert mock_service.add_retrieval_gt.call_count == 2
+        RetrievalRelation = bright_test_db["schema"].RetrievalRelation
+        relations_q1 = (
+            bright_db_session.query(RetrievalRelation).filter(RetrievalRelation.query_id == "biology_q_001").all()
+        )
+        relations_q2 = (
+            bright_db_session.query(RetrievalRelation).filter(RetrievalRelation.query_id == "biology_q_002").all()
+        )
+        assert len(relations_q1) == 2
+        assert len(relations_q2) == 1
 
-    def test_ingest_relations_skips_empty_gold_ids(self, mock_embedding_model, mock_service):
+    @patch("autorag_research.data.bright.load_dataset")
+    def test_ingest_relations_skips_empty_gold_ids(
+        self,
+        mock_load_dataset,
+        mock_embedding_model,
+        text_service,
+        sample_corpus_data,
+        bright_test_db,
+        bright_db_session,
+    ):
+        mock_load_dataset.return_value = create_mock_dataset(sample_corpus_data)
+
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
+        ingestor._ingest_corpus("biology")
+
+        text_service.add_queries([
+            {"id": "biology_q_001", "contents": "Query 1"},
+            {"id": "biology_q_002", "contents": "Query 2"},
+            {"id": "biology_q_003", "contents": "Query 3"},
+        ])
 
         query_ids = ["biology_q_001", "biology_q_002", "biology_q_003"]
         gold_ids_list = [["biology_doc_001"], [], ["biology_doc_002"]]
         ingestor._ingest_relations(query_ids, gold_ids_list)
 
-        assert mock_service.add_retrieval_gt.call_count == 2
+        RetrievalRelation = bright_test_db["schema"].RetrievalRelation
+        all_relations = bright_db_session.query(RetrievalRelation).all()
+        assert len(all_relations) == 2
 
 
 # ==================== Embed All Tests ====================
@@ -451,38 +558,51 @@ class TestBRIGHTIngestorEmbedAll:
         with pytest.raises(ServiceNotSetError):
             ingestor.embed_all()
 
-    def test_embed_all_calls_embed_methods(self, mock_embedding_model, mock_service):
+    @patch("autorag_research.data.bright.load_dataset")
+    def test_embed_all_embeds_queries_and_chunks(
+        self, mock_load_dataset, mock_embedding_model, text_service, sample_corpus_data, sample_examples_data
+    ):
+        mock_load_dataset.side_effect = [
+            create_mock_dataset(sample_corpus_data),
+            create_mock_dataset(sample_examples_data),
+        ]
+
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
-        ingestor.embed_all(max_concurrency=8, batch_size=64)
+        ingestor.set_service(text_service)
+        ingestor.ingest()
+        ingestor.embed_all(max_concurrency=2, batch_size=10)
 
-        mock_service.embed_all_queries.assert_called_once()
-        mock_service.embed_all_chunks.assert_called_once()
-
-        query_call_kwargs = mock_service.embed_all_queries.call_args
-        assert query_call_kwargs.kwargs["batch_size"] == 64
-        assert query_call_kwargs.kwargs["max_concurrency"] == 8
+        stats = text_service.get_statistics()
+        assert stats["chunks"]["with_embeddings"] == 3
+        assert stats["chunks"]["without_embeddings"] == 0
 
 
 # ==================== Set Service Tests ====================
 
 
 class TestBRIGHTIngestorSetService:
-    def test_set_service_stores_service(self, mock_embedding_model, mock_service):
+    def test_set_service_stores_service(self, mock_embedding_model, text_service):
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
         assert ingestor.service is None
 
-        ingestor.set_service(mock_service)
-        assert ingestor.service is mock_service
+        ingestor.set_service(text_service)
+        assert ingestor.service is text_service
 
 
-# ==================== Integration-Style Tests (Mocked Dependencies) ====================
+# ==================== Integration-Style Tests ====================
 
 
 class TestBRIGHTIngestorIntegration:
     @patch("autorag_research.data.bright.load_dataset")
     def test_full_ingest_flow_short_mode(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_corpus_data, sample_examples_data
+        self,
+        mock_load_dataset,
+        mock_embedding_model,
+        text_service,
+        sample_corpus_data,
+        sample_examples_data,
+        bright_test_db,
+        bright_db_session,
     ):
         mock_load_dataset.side_effect = [
             create_mock_dataset(sample_corpus_data),
@@ -490,28 +610,31 @@ class TestBRIGHTIngestorIntegration:
         ]
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"], document_mode="short")
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         ingestor.ingest()
 
-        chunks_call = mock_service.add_chunks.call_args[0][0]
-        assert len(chunks_call) == 3
-        assert all("biology_" in chunk["id"] for chunk in chunks_call)
+        Chunk = bright_test_db["schema"].Chunk
+        Query = bright_test_db["schema"].Query
 
-        queries_call = mock_service.add_queries.call_args[0][0]
-        assert len(queries_call) == 2
-        assert queries_call[0]["contents"] == "What is the first document about?"
+        chunks = bright_db_session.query(Chunk).filter(Chunk.id.like("biology_%")).all()
+        assert len(chunks) == 3
+        assert all("biology_" in chunk.id for chunk in chunks)
+
+        queries = bright_db_session.query(Query).filter(Query.id.like("biology_%")).all()
+        assert len(queries) == 2
+        assert queries[0].contents == "What is the first document about?"
 
     @patch("autorag_research.data.bright.load_dataset")
     def test_full_ingest_flow_long_mode(
-        self, mock_load_dataset, mock_embedding_model, mock_service, sample_corpus_data, sample_examples_data
+        self, mock_load_dataset, mock_embedding_model, text_service, sample_long_corpus_data, sample_examples_data
     ):
         mock_load_dataset.side_effect = [
-            create_mock_dataset(sample_corpus_data),
+            create_mock_dataset(sample_long_corpus_data),
             create_mock_dataset(sample_examples_data),
         ]
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"], document_mode="long")
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         ingestor.ingest()
 
         mock_load_dataset.assert_any_call(
@@ -519,7 +642,7 @@ class TestBRIGHTIngestorIntegration:
         )
 
     @patch("autorag_research.data.bright.load_dataset")
-    def test_ingest_with_batch_processing(self, mock_load_dataset, mock_embedding_model, mock_service):
+    def test_ingest_with_batch_processing(self, mock_load_dataset, mock_embedding_model, text_service):
         large_corpus = [{"id": f"doc_{i:04d}", "content": f"Content {i}"} for i in range(2500)]
         large_examples = [
             {
@@ -540,7 +663,9 @@ class TestBRIGHTIngestorIntegration:
         ]
 
         ingestor = BRIGHTIngestor(mock_embedding_model, domains=["biology"])
-        ingestor.set_service(mock_service)
+        ingestor.set_service(text_service)
         ingestor.ingest()
 
-        assert mock_service.add_chunks.call_count == 3
+        stats = text_service.get_statistics()
+        assert stats["chunks"]["total"] == 2500
+        assert stats["queries"]["total"] == 100

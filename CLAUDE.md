@@ -115,5 +115,6 @@ Detailed patterns and examples are in `/ai_instructions/`:
 ## Strict Rules to follow
 
 - Always check the linting/typing before commit. (`make check`)
+- DO NOT USE other linting/typing check commands other than `make check`.
 - Generate the corresponding test file correctly when you add the code, and runs the test code before commit (`make test`)
 - **Run `/commit-push` when finalizing each execution** to save checkpoints and track changes

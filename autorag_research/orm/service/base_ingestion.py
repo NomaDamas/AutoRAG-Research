@@ -36,7 +36,7 @@ logger = logging.getLogger("AutoRAG-Research")
 # Entity configuration for _embed_entities method
 # Maps entity_type to (repository_attr, data_attr, display_name, filter_none)
 ENTITY_CONFIG: dict[str, tuple[str, str, str, bool]] = {
-    "query": ("queries", "query", "queries", False),
+    "query": ("queries", "contents", "queries", False),
     "chunk": ("chunks", "contents", "chunks", False),
     "image_chunk": ("image_chunks", "content", "image chunks", True),
 }

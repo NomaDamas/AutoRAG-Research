@@ -26,12 +26,19 @@ You are an expert Python test engineer specializing in writing comprehensive, ma
 - Always use the `db_session` fixture from conftest.py for database access
 - Reference pre-seeded data from the init SQL scripts when possible
 - Clean up any test data you create within the test
-- For async tests, use appropriate async fixtures
+- For async tests, use appropriate async fixtures (Use `pytest-asyncio`)
+
+### Test code about new 'DataIngestor'
+- Build a new database for its tests, deletes it after tests.
+- DO NOT USE `db_session` fixture from conftest.py for 'DataIngestor' tests.
+- The database will last during the pytest test session.
+- Be aware the primary key type (bigint or string) when creating the new database.
 
 ### Mocking Strategy
 - **Prefer mocks over real API calls** - use LlamaIndex's MockLLM and MockEmbedding
+- DO NOT MOCK internal *Service* and *Repository* classes.
 - Mock external dependencies at the boundary (API clients, external services)
-- Use `unittest.mock` or `pytest-mock` for mocking
+- Use `pytest-mock` for mocking
 
 ### PostgreSQL DB for tests
 If you want to run whole test codes, use `make test` command.
