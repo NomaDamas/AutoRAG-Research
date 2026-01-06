@@ -85,7 +85,7 @@ When generating tests, provide:
 
 ## Verification Steps
 
-Call `qa-guardian` agent to verify.
+Run `make check` to verify code quality (ruff linting, ty type checking, deptry). Fix any issues found before finalizing.
 
 ## Reference Documentation
 

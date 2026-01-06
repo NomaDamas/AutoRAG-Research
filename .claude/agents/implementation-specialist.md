@@ -68,7 +68,7 @@ from datasets import load_dataset
 
 3. **Line Length**: Maximum 120 characters
 
-4. Call 'qa-guardian' agent to verify adherence to code quality standards before finalizing.
+4. Run `make check` to verify code quality (ruff linting, ty type checking, deptry). Fix any issues found before finalizing.
 
 5. **NO Documentation**: Do not add docstrings or create markdown files. The code should be self-documenting through clear naming and type hints.
 

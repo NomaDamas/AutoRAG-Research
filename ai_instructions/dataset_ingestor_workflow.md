@@ -11,7 +11,7 @@ This document defines the workflow for implementing a new Dataset Ingestor in **
 3. **Implementation Specialist:** Writes production code.
 4. **Test Writer:** Creates unit tests.
 
-During implementation, the implementation specialist will call the qa guardian to check the code quality.
+During implementation, agents will run `make check` (ruff linting, ty type checking, deptry) to verify code quality and fix any issues.
 
 ## Workflow Steps
 
