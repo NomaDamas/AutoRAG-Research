@@ -107,7 +107,13 @@ Detailed patterns and examples are in `/ai_instructions/`:
 - `db_schema.md` - Complete DBML schema
 - `test_code_generation_instructions.md` - Testing conventions
 
+## Custom Slash Commands
+
+- `/commit-push` - Stage, commit, and push changes to current branch (checkpoint saves)
+- `/pr` - Create a pull request from current branch to main
+
 ## Strict Rules to follow
 
 - Always check the linting/typing before commit. (`make check`)
 - Generate the corresponding test file correctly when you add the code, and runs the test code before commit (`make test`)
+- **Run `/commit-push` when finalizing each execution** to save checkpoints and track changes
