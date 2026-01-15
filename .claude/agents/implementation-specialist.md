@@ -93,6 +93,47 @@ Before considering implementation complete:
 6. ✓ Code passes `make check` (ruff linting, ty type checking)
 7. ✓ File placed in correct location with proper naming
 
+## Service Layer Usage Reference
+
+### TextDataIngestionService Methods
+
+The service provides these key methods for data ingestion:
+
+```python
+# Adding chunks (documents)
+service.add_chunks(chunks: list[dict[str, str | int | None]]) -> list[int | str]
+# Each chunk dict: {"id": ..., "contents": ...}
+
+# Adding queries
+service.add_queries(queries: list[dict[str, str | list[str] | None]]) -> list[int | str]
+# Each query dict: {"id": ..., "contents": ..., "generation_gt": [...] | None}
+
+# Adding retrieval ground truth (query-chunk relationships)
+service.add_retrieval_gt(query_id: int | str, gt: RetrievalGT, chunk_type: str = "text")
+# Use or_all() helper for single-hop OR semantics
+
+# Embedding methods
+service.embed_all_queries(embed_fn, batch_size=128, max_concurrency=16)
+service.embed_all_chunks(embed_fn, batch_size=128, max_concurrency=16)
+
+# Cleanup (removes orphan entries)
+service.clean()
+```
+
+### RetrievalGT Helpers
+
+For ground truth relationships, use helpers from `autorag_research.orm.models`:
+
+```python
+from autorag_research.orm.models import or_all, and_all, or_any
+
+# Single-hop OR: any of these chunks is relevant
+or_all(["chunk_id_1", "chunk_id_2", "chunk_id_3"])
+
+# Multi-hop AND: all chunks required together
+and_all(["chunk_id_1", "chunk_id_2"])
+```
+
 ## Error Recovery
 
 If you encounter ambiguity in the Mapping_Strategy.md:
