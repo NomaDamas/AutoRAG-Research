@@ -11,7 +11,7 @@ This document defines the workflow for implementing a new Dataset Ingestor in **
 3. **Test Writer:** Creates minimal integration tests BEFORE implementation.
 4. **Implementation Specialist:** Writes production code to pass the tests.
 
-During implementation, agents will run `make check` (ruff linting, ty type checking, deptry) to verify code quality and fix any issues.
+**Note:** Code quality checks (`make check`) run automatically via hooks after file edits.
 
 ## Workflow Steps (Test-Driven Development)
 

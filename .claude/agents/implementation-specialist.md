@@ -68,7 +68,7 @@ from datasets import load_dataset
 
 3. **Line Length**: Maximum 120 characters
 
-4. Run `make check` to verify code quality (ruff linting, ty type checking, deptry). Fix any issues found before finalizing.
+4. **Code Quality**: Checks run automatically via hooks after file edits
 
 5. **NO Documentation**: Do not add docstrings or create markdown files. The code should be self-documenting through clear naming and type hints.
 
@@ -90,8 +90,7 @@ Before considering implementation complete:
 3. ✓ All methods have complete type hints
 4. ✓ No docstrings or markdown documentation added
 5. ✓ Utility functions from `util.py` reused where applicable
-6. ✓ Code passes `make check` (ruff linting, ty type checking)
-7. ✓ File placed in correct location with proper naming
+6. ✓ File placed in correct location with proper naming
 
 ## Service Layer Usage Reference
 

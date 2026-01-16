@@ -78,8 +78,7 @@ After using it, remember to run `make clean-docker` to delete the test container
 
 - Python 3.10+ type hints: use `list`, `dict`, `|` (not `typing.List`, `typing.Optional`)
 - Line length: 120 characters maximum
-- Follow Ruff linting/formatting rules
-- Ensure type checker (ty) compatibility
+- Code quality checks run automatically via hooks
 
 ## Testing the Layered Architecture
 
@@ -119,9 +118,9 @@ When generating tests, provide:
 4. Assertions that verify both positive and negative cases
 5. Cleanup code if test creates data
 
-## Verification Steps
+## Verification
 
-Run `make check` to verify code quality (ruff linting, ty type checking, deptry). Fix any issues found before finalizing.
+Code quality checks (`make check`) run automatically via hooks after file edits.
 
 ## Reference Documentation
 
