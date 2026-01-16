@@ -48,8 +48,10 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
 
         rng = random.Random(RANDOM_SEED)  # noqa: S311
 
-        # Step 1: Sample queries and collect gold IDs
-        qids, filtered_qrels, gold_corpus_ids = self._sample_queries(queries, qrels, query_limit, rng)
+        # Step 1: Sample queries and collect gold IDs (only when corpus_limit is set)
+        qids, filtered_qrels, gold_corpus_ids = self._sample_queries(
+            queries, qrels, query_limit, rng, collect_gold_ids=corpus_limit is not None
+        )
 
         # Step 2: Filter corpus
         corpus_ids = self._filter_corpus(corpus, gold_corpus_ids, corpus_limit, rng)
@@ -68,8 +70,14 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         qrels: dict,
         query_limit: int | None,
         rng: random.Random,
+        collect_gold_ids: bool = False,
     ) -> tuple[list, dict[str, dict[str, int]], set[str]]:
-        """Sample queries and collect gold corpus IDs."""
+        """Sample queries and collect gold corpus IDs.
+
+        Args:
+            collect_gold_ids: If True, collect gold corpus IDs from qrels.
+                Only needed when corpus_limit is set.
+        """
         qids = list(queries.keys())
         if query_limit is not None and query_limit < len(qids):
             qids = rng.sample(qids, query_limit)
@@ -80,9 +88,10 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         for qid in qids:
             if qid in qrels:
                 filtered_qrels[qid] = qrels[qid]
-                for doc_id, score in qrels[qid].items():
-                    if score > 0:
-                        gold_corpus_ids.add(doc_id)
+                if collect_gold_ids:
+                    for doc_id, score in qrels[qid].items():
+                        if score > 0:
+                            gold_corpus_ids.add(doc_id)
 
         return qids, filtered_qrels, gold_corpus_ids
 
