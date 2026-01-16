@@ -10,8 +10,7 @@ from llama_index.core import MockEmbedding
 from autorag_research.data.bright import (
     BRIGHTIngestor,
     _get_gold_ids,
-    _make_chunk_id,
-    _make_query_id,
+    _make_id,
 )
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
@@ -32,25 +31,13 @@ def mock_embedding_model():
 
 
 # ==================== Unit Tests: Helper Functions ====================
-
-
-class TestMakeQueryId:
-    def test_make_query_id_basic(self):
-        result = _make_query_id("biology", "123")
-        assert result == "biology_123"
-
-    def test_make_query_id_with_complex_id(self):
-        result = _make_query_id("stackoverflow", "question_456_abc")
-        assert result == "stackoverflow_question_456_abc"
-
-
-class TestMakeChunkId:
-    def test_make_chunk_id_basic(self):
-        result = _make_chunk_id("economics", "doc_789")
+class TestMakeId:
+    def test_make_id_basic(self):
+        result = _make_id("economics", "doc_789")
         assert result == "economics_doc_789"
 
-    def test_make_chunk_id_with_numeric_source_id(self):
-        result = _make_chunk_id("robotics", "12345")
+    def test_make_id_with_numeric_source_id(self):
+        result = _make_id("robotics", "12345")
         assert result == "robotics_12345"
 
 
