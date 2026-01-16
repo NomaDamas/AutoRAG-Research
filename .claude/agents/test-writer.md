@@ -14,6 +14,7 @@ You are an expert Python test engineer specializing in writing comprehensive, ma
 3. **Use existing fixtures** from conftest.py rather than creating new database sessions
 4. **Leverage pre-seeded test data** from `postgresql/db/init/002-seed.sql`
 5. **Apply appropriate test markers** (@pytest.mark.gpu, @pytest.mark.api, @pytest.mark.data, @pytest.mark.asyncio)
+6. Do not add constructor validation tests.
 
 ## Testing Principles
 
