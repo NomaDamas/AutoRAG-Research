@@ -1,5 +1,6 @@
 import ast
 import io
+import random
 from abc import ABC
 from typing import Literal
 
@@ -14,6 +15,8 @@ from autorag_research.exceptions import (
     InvalidDatasetNameError,
     ServiceNotSetError,
 )
+
+RANDOM_SEED = 42
 
 ViDoReDatasets = [
     "arxivqa_test_subsampled",  # options
@@ -141,10 +144,16 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
     def detect_primary_key_type(self) -> Literal["bigint"] | Literal["string"]:
         return "bigint"
 
-    def ingest(self, subset: Literal["train", "dev", "test"] = "test"):
-        super().ingest(subset)
+    def ingest(
+        self,
+        subset: Literal["train", "dev", "test"] = "test",
+        query_limit: int | None = None,
+        corpus_limit: int | None = None,
+    ) -> None:
+        super().ingest(subset, query_limit, corpus_limit)
         if self.service is None:
             raise ServiceNotSetError
+
         image_list = list(self.ds["image"])  # ty: ignore[invalid-argument-type]
         queries = list(self.ds["query"])  # ty: ignore[invalid-argument-type]
         options = ["\n".join(ast.literal_eval(opt)) for opt in list(self.ds["options"])]  # ty: ignore[invalid-argument-type]
@@ -152,11 +161,32 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
             f"Given the following query and options, select the correct option.\n\nQuery: {q}\n\nOptions: {opts}"
             for q, opts in zip(queries, options, strict=True)
         ]
-
         answers = list(self.ds["answer"])  # ty: ignore[invalid-argument-type]
 
         if not (len(image_list) == len(queries) == len(answers)):
             raise ValueError("Length mismatch among image_list, queries, and answers.")  # noqa: TRY003
+
+        # For ViDoRe, each query has exactly one corresponding image (1:1 mapping)
+        # So corpus_limit and query_limit effectively mean the same thing
+        # Use the minimum of both limits if both are set
+        total_count = len(queries)
+        effective_limit = total_count
+        if query_limit is not None:
+            effective_limit = min(effective_limit, query_limit)
+        if corpus_limit is not None:
+            effective_limit = min(effective_limit, corpus_limit)
+
+        # Sample indices if limit is less than total
+        if effective_limit < total_count:
+            rng = random.Random(RANDOM_SEED)  # noqa: S311
+            selected_indices = sorted(rng.sample(range(total_count), effective_limit))
+        else:
+            selected_indices = list(range(total_count))
+
+        # Filter data by selected indices
+        image_list = [image_list[i] for i in selected_indices]
+        queries = [queries[i] for i in selected_indices]
+        answers = [answers[i] for i in selected_indices]
 
         # Convert PIL images to bytes
         image_bytes_list = self.pil_images_to_bytes(image_list)
