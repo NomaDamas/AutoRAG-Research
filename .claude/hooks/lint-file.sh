@@ -1,6 +1,8 @@
 #!/bin/bash
-# Lint check for individual Python files (PostToolUse hook)
+# Code quality check for individual Python files (PostToolUse hook)
 # Runs after Edit/Write operations to provide immediate feedback
+# Checks: ruff (lint/format) + ty (type check)
+# Note: deptry requires project-level analysis, runs only in Stop hook via make check
 
 # Read tool input JSON from stdin
 INPUT=$(cat)
@@ -20,27 +22,34 @@ cd "$CLAUDE_PROJECT_DIR"
 
 echo "🔍 Checking: $FILE_PATH"
 
+HAS_ERROR=0
+
 # Ruff check (linting)
 RUFF_OUTPUT=$(uv run ruff check "$FILE_PATH" 2>&1)
-RUFF_EXIT=$?
+if [[ $? -ne 0 ]]; then
+  echo "❌ Ruff lint errors:"
+  echo "$RUFF_OUTPUT"
+  HAS_ERROR=1
+fi
 
 # Ruff format check
 FORMAT_OUTPUT=$(uv run ruff format --check "$FILE_PATH" 2>&1)
-FORMAT_EXIT=$?
-
-# Report results to Claude
-if [[ $RUFF_EXIT -ne 0 ]]; then
-  echo "❌ Ruff lint errors:"
-  echo "$RUFF_OUTPUT"
-fi
-
-if [[ $FORMAT_EXIT -ne 0 ]]; then
+if [[ $? -ne 0 ]]; then
   echo "❌ Ruff format errors:"
   echo "$FORMAT_OUTPUT"
+  HAS_ERROR=1
 fi
 
-if [[ $RUFF_EXIT -eq 0 && $FORMAT_EXIT -eq 0 ]]; then
-  echo "✅ Lint/format check passed"
+# Type check (ty)
+TY_OUTPUT=$(uv run ty check "$FILE_PATH" 2>&1)
+if [[ $? -ne 0 ]]; then
+  echo "❌ Type errors:"
+  echo "$TY_OUTPUT"
+  HAS_ERROR=1
+fi
+
+if [[ $HAS_ERROR -eq 0 ]]; then
+  echo "✅ All checks passed"
 fi
 
 # Always exit 0 to allow Claude to continue (errors are reported via stdout)
