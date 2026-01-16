@@ -30,10 +30,30 @@ You are an expert Python test engineer specializing in writing comprehensive, ma
 - For async tests, use appropriate async fixtures (Use `pytest-asyncio`)
 
 ### Test code about new 'DataIngestor'
-- Build a new database for its tests, deletes it after tests.
-- DO NOT USE `db_session` fixture from conftest.py for 'DataIngestor' tests.
-- The database will last during the pytest test session.
-- Be aware the primary key type (bigint or string) when creating the new database.
+
+**IMPORTANT:** Use the common test framework in `tests/autorag_research/data/ingestor_test_utils.py`.
+
+**Key Principles:**
+- Write tests BEFORE implementation based on the design document (TDD)
+- One `verify_all()` test is often sufficient - don't add redundant tests
+- Only add extra tests for dataset-specific business logic not covered by `verify_all()`
+
+**DO NOT create tests for:**
+- Query/chunk count variations (`query_limit=5`, `query_limit=10`, etc.)
+- Things `verify_all()` already checks (counts, format, relations, generation GT)
+- Image mimetype or data validation (covered by `_verify_image_chunk_format_random_sample`)
+
+**DO create tests for:**
+- Dataset-specific transformations (e.g., ArxivQA query format includes "Query:" and "Options:")
+- Unique business logic that `verify_all()` cannot verify
+
+**Technical requirements:**
+- Build a new database for tests using `create_test_database()` context manager
+- DO NOT USE `db_session` fixture from conftest.py for DataIngestor tests
+- Be aware of primary key type (bigint or string) when configuring `IngestorTestConfig`
+- Use `MockEmbedding` - no actual embedding computation in tests
+
+**Reference:** See `ai_instructions/test_code_generation_instructions.md` for detailed patterns.
 
 ### Mocking Strategy
 - **Prefer mocks over real API calls** - use LlamaIndex's MockLLM and MockEmbedding
@@ -81,6 +101,14 @@ After using it, remember to run `make clean-docker` to delete the test container
 - Test pipeline configuration validation
 - Mock external LLM/embedding calls
 - Verify pipeline output formats
+
+## Anti-Patterns to Avoid
+
+1. **Redundant Tests**: Don't test multiple limit variations (`limit=5`, `limit=10`) - one test is enough
+2. **Testing Framework Code**: Don't verify that `verify_all()` works - it's already tested. Use it.
+3. **Implementation-Driven Tests**: Don't look at implementation first then write tests. Write tests from the design spec.
+4. **Over-Specification**: Don't assert exact content unless it's a specific business requirement
+5. **Verbose Tests**: If `verify_all()` covers it, don't add another test for it
 
 ## Output Format
 
