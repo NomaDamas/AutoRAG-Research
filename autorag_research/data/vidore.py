@@ -93,7 +93,7 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor, ABC):
             max_concurrency=max_concurrency,
         )
 
-    def ingest_qrels(self, query_pk_list: list[int], image_chunk_pk_list: list[int]) -> None:
+    def ingest_qrels(self, query_pk_list: list[int | str], image_chunk_pk_list: list[int | str]) -> None:
         """Add retrieval ground truth for image chunks (1:1 query to image mapping)."""
         if self.service is None:
             raise ServiceNotSetError

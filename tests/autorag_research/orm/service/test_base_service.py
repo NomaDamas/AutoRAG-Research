@@ -37,3 +37,25 @@ class TestBaseService:
         service = ConcreteTestService(session_factory)
         with pytest.raises(ValueError, match="Table 'InvalidTable' not found"):
             service._add([{"data": "test"}], table_name="InvalidTable", repository_property="chunks")
+
+    def test_add_bulk_returns_ids_and_persists_data(self, session_factory):
+        service = ConcreteTestService(session_factory)
+        chunks = [
+            {"contents": "bulk chunk 1"},
+            {"contents": "bulk chunk 2"},
+            {"contents": "bulk chunk 3"},
+        ]
+        ids = service._add_bulk(chunks, repository_property="chunks")
+
+        assert len(ids) == 3
+        assert all(isinstance(id_, int) for id_ in ids)
+
+        with service._create_uow() as uow:
+            for id_ in ids:
+                chunk = uow.chunks.get_by_id(id_)
+                assert chunk is not None
+                assert "bulk chunk" in chunk.contents
+
+            for id_ in ids:
+                uow.chunks.delete_by_id(id_)
+            uow.commit()
