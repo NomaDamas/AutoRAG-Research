@@ -144,3 +144,16 @@ class EvaluationError(ExecutorError):
         self.metric_name = metric_name
         self.pipeline_id = pipeline_id
         self.reason = reason
+
+
+class UnsupportedLanguageError(Exception):
+    """Raised when an unsupported language is specified."""
+
+    def __init__(self, language_code: str, supported_languages: list[str] | None = None):
+        if supported_languages:
+            languages_str = ", ".join(supported_languages)
+            super().__init__(
+                f"Unsupported language code '{language_code}' specified. Supported languages are: {languages_str}."
+            )
+        else:
+            super().__init__(f"Unsupported language code '{language_code}' specified.")
