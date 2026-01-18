@@ -214,6 +214,7 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
 
         id: Mapped[int | str] = make_pk_column()
         contents: Mapped[str] = mapped_column(Text, nullable=False)
+        query_to_llm: Mapped[str | None] = mapped_column(Text, nullable=True)
         generation_gt: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
         embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
