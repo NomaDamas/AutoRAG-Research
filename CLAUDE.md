@@ -51,6 +51,17 @@ Repository Layer (orm/repository/) - Data access (GenericRepository[T])
 ORM Models (orm/models/) - SQLAlchemy with pgvector
 ```
 
+**Pipeline Types:**
+- **Retrieval Pipelines** (`pipelines/retrieval/`) - Vector search, BM25, hybrid retrieval
+  - Extend `BaseRetrievalPipeline`
+  - Use `RetrievalPipelineService` + `RetrievalUnitOfWork`
+  - Methods: `.retrieve(query, top_k)` for single-query, `.run()` for batch
+- **Generation Pipelines** (`pipelines/generation/`) - LLM-based answer generation
+  - Extend `BaseGenerationPipeline`
+  - Use `GenerationPipelineService` + `GenerationUnitOfWork`
+  - Compose with retrieval pipelines for flexible RAG strategies
+  - Example: `NaiveRAGPipeline` (single retrieve + generate)
+
 **Key Entry Points:**
 - `executor.py` - Orchestrates pipeline execution and metric evaluation
 - `config.py` - Configuration dataclasses (ExecutorConfig, BasePipelineConfig, BaseMetricConfig)
@@ -96,7 +107,9 @@ Prefer mocks over real API calls (use LlamaIndex MockLLM/MockEmbedding).
 - **Query** - Search queries with ground truth
 - **RetrievalRelation** - Query-to-chunk relevance (composite key: query_id, group_index, group_order)
 - **Pipeline/Metric** - Configuration storage
-- **ChunkRetrievedResult/EvaluationResult** - Pipeline outputs
+- **ChunkRetrievedResult** - Retrieval pipeline outputs (query → chunks with scores)
+- **ExecutorResult** - Generation pipeline outputs (generation_result, token_usage, execution_time)
+- **EvaluationResult** - Metric evaluation outputs
 
 ## AI Instructions
 
