@@ -46,7 +46,7 @@ clean-docker:
 # 테스트 실행 (PostgreSQL 자동 관리)
 test: docker-up docker-wait ## Test the code with pytest
 	@echo "🚀 Testing code: Running pytest"
-	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -m "not gpu and not data"; \
+	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -m "not gpu"; \
 	TEST_EXIT_CODE=$$?; \
 	$(MAKE) clean-docker; \
 	exit $$TEST_EXIT_CODE
