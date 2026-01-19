@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Literal
 
 from llama_index.core.base.embeddings.base import BaseEmbedding
@@ -8,6 +9,14 @@ from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 
+@dataclass
+class QueryMetadata:
+    """Lightweight query metadata for subset sampling."""
+
+    query_id: str
+    query_text: str
+    gold_ids: list[str]
+    gold_answer: str | None
 
 class DataIngestor(ABC):
     def __init__(self):

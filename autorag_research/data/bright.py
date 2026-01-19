@@ -1,12 +1,11 @@
 import logging
 import random
-from dataclasses import dataclass
 from typing import Any, Literal
 
 from datasets import load_dataset
 from llama_index.core.base.embeddings.base import BaseEmbedding
 
-from autorag_research.data.base import TextEmbeddingDataIngestor
+from autorag_research.data.base import TextEmbeddingDataIngestor, QueryMetadata
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import or_all
 
@@ -45,16 +44,6 @@ DOMAINS_WITHOUT_LONG_DOCS = ["leetcode", "aops", "theoremqa_theorems", "theoremq
 DocumentMode = Literal["short", "long"]
 
 BATCH_SIZE = 1000
-
-
-@dataclass
-class QueryMetadata:
-    """Lightweight query metadata for subset sampling."""
-
-    query_id: str
-    query_text: str
-    gold_ids: list[str]
-    gold_answer: str | None
 
 
 class BRIGHTIngestor(TextEmbeddingDataIngestor):
