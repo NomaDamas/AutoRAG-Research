@@ -1,4 +1,54 @@
 {
+  "permissions": {
+    "allow": [
+      "WebFetch",
+      "Bash(make test)",
+      "Bash(make check)",
+      "Bash(uv sync)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(uv run pytest)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)"
+    ],
+    "deny": [
+      "Bash(uv publish)"
+    ],
+    "ask": [
+      "Bash(make clean-docker)",
+      "Bash(rm:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/lint-file.sh",
+            "timeout": 30000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && make check",
+            "timeout": 120000
+          }
+        ]
+      }
+    ]
+  },
   "enabledPlugins": {
     "clarify@team-attention-plugins": true,
     "dev@team-attention-plugins": true,
