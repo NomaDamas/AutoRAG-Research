@@ -92,9 +92,7 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
             filtered_qrels[qid] = qrels[qid]
 
             if collect_gold_ids:
-                gold_corpus_ids.update(
-                    doc_id for doc_id, score in qrels[qid].items() if score > 0
-                )
+                gold_corpus_ids.update(doc_id for doc_id, score in qrels[qid].items() if score > 0)
 
         return qids, filtered_qrels, gold_corpus_ids
 

@@ -5,7 +5,7 @@ from typing import Any, Literal
 from datasets import load_dataset
 from llama_index.core.base.embeddings.base import BaseEmbedding
 
-from autorag_research.data.base import TextEmbeddingDataIngestor, QueryMetadata
+from autorag_research.data.base import QueryMetadata, TextEmbeddingDataIngestor
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import or_all
 
