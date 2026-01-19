@@ -68,6 +68,21 @@ class GenericRepository(Generic[T]):
         """
         return self.session.get(self.model_cls, _id)
 
+    def get_by_ids(self, ids: list[Any]) -> list[T]:
+        """Retrieve multiple entities by their primary keys.
+
+        Args:
+            ids: List of primary key values.
+
+        Returns:
+            List of entities found (may be fewer than requested if some don't exist).
+        """
+        if not ids:
+            return []
+        # Assume 'id' is the primary key column name
+        stmt = select(self.model_cls).where(self.model_cls.id.in_(ids))
+        return list(self.session.execute(stmt).scalars().all())
+
     def get_all(self, limit: int | None = None, offset: int | None = None) -> list[T]:
         """Retrieve all entities of this type.
 
