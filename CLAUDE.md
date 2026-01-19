@@ -1,13 +1,11 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
 AutoRAG-Research is a Python framework for automating RAG (Retrieval-Augmented Generation) research workflows.
 It provides tools for data ingestion, pipeline execution, and evaluation metrics.
-The user can download pre-ingested datasets and runs pre-made RAG pipelines and evaluates it.
-The pipelines are can be customized. There are two types (retrieval/generation) pipelines.
+The user can download pre-ingested datasets and run pre-made RAG pipelines and evaluate it.
+The pipelines can be customized. There are two types (retrieval/generation) pipelines.
 
 ## Common Commands
 
@@ -107,13 +105,7 @@ Detailed patterns and examples are in `/ai_instructions/`:
 - `db_schema.md` - Complete DBML schema
 - `test_code_generation_instructions.md` - Testing conventions
 
-## Custom Slash Commands
-
-- `/commit-push` - Stage, commit, and push changes to current branch (checkpoint saves)
-- `/pr` - Create a pull request from current branch to main
-
 ## Strict Rules to follow
 
 - **Code quality checks are automated via hooks** - `make check` runs automatically after file edits and on session end
 - Generate the corresponding test file correctly when you add the code, and runs the test code before commit (`make test`)
-- **Run `/commit-push` when finalizing each execution** to save checkpoints and track changes

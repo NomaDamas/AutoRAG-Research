@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from autorag_research.orm.service.base import BaseService
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
 
 __all__ = ["RetrievalFunc", "RetrievalPipelineService"]
@@ -24,7 +25,7 @@ logger = logging.getLogger("AutoRAG-Research")
 RetrievalFunc = Callable[[list[str], int], list[list[dict[str, Any]]]]
 
 
-class RetrievalPipelineService:
+class RetrievalPipelineService(BaseService):
     """Service for running retrieval pipelines.
 
     This service handles the common workflow for all retrieval pipelines:
@@ -73,16 +74,25 @@ class RetrievalPipelineService:
             session_factory: SQLAlchemy sessionmaker for database connections.
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """
-        self.session_factory = session_factory
-        self._schema: Any = self._resolve_schema(schema)
+        super().__init__(session_factory, schema)
 
-    def _resolve_schema(self, schema: Any | None) -> Any:
-        """Resolve schema, using default if not provided."""
-        if schema is not None:
-            return schema
-        from autorag_research.orm import schema as default_schema
+    def _get_schema_classes(self) -> dict[str, Any]:
+        """Get schema classes from the schema namespace.
 
-        return default_schema  # type: ignore[return-value]
+        Returns:
+            Dictionary mapping class names to ORM classes.
+        """
+        if self._schema is not None:
+            return {
+                "Pipeline": self._schema.Pipeline,
+                "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
+            }
+        from autorag_research.orm.schema import ChunkRetrievedResult, Pipeline
+
+        return {
+            "Pipeline": Pipeline,
+            "ChunkRetrievedResult": ChunkRetrievedResult,
+        }
 
     def _create_uow(self) -> RetrievalUnitOfWork:
         """Create a new RetrievalUnitOfWork instance."""
@@ -99,7 +109,7 @@ class RetrievalPipelineService:
             The pipeline ID.
         """
         with self._create_uow() as uow:
-            pipeline = self._schema.Pipeline(name=name, config=config)
+            pipeline = self._get_schema_classes()["Pipeline"](name=name, config=config)
             uow.pipelines.add(pipeline)
             uow.flush()
             pipeline_id = pipeline.id

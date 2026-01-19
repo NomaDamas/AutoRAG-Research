@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS caption_chunk_relation (
 CREATE TABLE IF NOT EXISTS query (
 	id BIGSERIAL PRIMARY KEY,
 	contents TEXT NOT NULL,
+    query_to_llm TEXT,
 	generation_gt TEXT[],
 	embedding VECTOR(768),
 	embeddings VECTOR(768)[]  -- Multi-vector for ColBERT/ColPali style retrieval
