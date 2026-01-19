@@ -47,7 +47,8 @@
           }
         ]
       }
-    ],
+    ]
+  },
   "enabledPlugins": {
     "clarify@team-attention-plugins": true,
     "dev@team-attention-plugins": true,
