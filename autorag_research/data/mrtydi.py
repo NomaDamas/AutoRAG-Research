@@ -12,19 +12,23 @@ logger = logging.getLogger("AutoRAG-Research")
 
 RANDOM_SEED = 42
 
-LANGUAGE_CONFIGS = {
-    "arabic": "ar",
-    "bengali": "bn",
-    "english": "en",
-    "finnish": "fi",
-    "indonesian": "id",
-    "japanese": "ja",
-    "korean": "ko",
-    "russian": "ru",
-    "swahili": "sw",
-    "telugu": "te",
-    "thai": "th",
+# Language to directory name mapping (for URL construction)
+LANGUAGE_DIR_MAP = {
+    "arabic": "mrtydi-v1.1-arabic",
+    "bengali": "mrtydi-v1.1-bengali",
+    "english": "mrtydi-v1.1-english",
+    "finnish": "mrtydi-v1.1-finnish",
+    "indonesian": "mrtydi-v1.1-indonesian",
+    "japanese": "mrtydi-v1.1-japanese",
+    "korean": "mrtydi-v1.1-korean",
+    "russian": "mrtydi-v1.1-russian",
+    "swahili": "mrtydi-v1.1-swahili",
+    "telugu": "mrtydi-v1.1-telugu",
+    "thai": "mrtydi-v1.1-thai",
 }
+
+MRTYDI_BASE_URL = "https://huggingface.co/datasets/castorini/mr-tydi/resolve/main"
+MRTYDI_CORPUS_BASE_URL = "https://huggingface.co/datasets/castorini/mr-tydi-corpus/resolve/main"
 
 
 class MrTyDiIngestor(TextEmbeddingDataIngestor):
@@ -34,6 +38,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
     covering 11 typologically diverse languages.
 
     Dataset: https://huggingface.co/datasets/castorini/mr-tydi
+    Corpus: https://huggingface.co/datasets/castorini/mr-tydi-corpus
     """
 
     def __init__(self, embedding_model: BaseEmbedding, language: str = "english"):
@@ -45,10 +50,10 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
                      indonesian, japanese, korean, russian, swahili, telugu, thai.
         """
         super().__init__(embedding_model)
-        if language.lower() not in LANGUAGE_CONFIGS:
-            raise UnsupportedLanguageError(language.lower(), list(LANGUAGE_CONFIGS.keys()))
+        if language.lower() not in LANGUAGE_DIR_MAP:
+            raise UnsupportedLanguageError(language.lower(), list(LANGUAGE_DIR_MAP.keys()))
         self.language = language.lower()
-        self.language_code = LANGUAGE_CONFIGS[self.language]
+        self.language_dir = LANGUAGE_DIR_MAP[self.language]
 
     def detect_primary_key_type(self) -> Literal["bigint", "string"]:
         """Mr. TyDi uses string primary keys (e.g., '26569#0')."""
@@ -64,6 +69,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
 
         Args:
             subset: Dataset split to ingest (train, dev, or test).
+                Recommend to use only 'test' subset for benchmarking.
             query_limit: Maximum number of queries to ingest.
             corpus_limit: Maximum number of corpus items to ingest.
                          Gold passages are always included.
@@ -71,40 +77,45 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        logger.info(f"Loading Mr. TyDi dataset ({self.language}, {subset} split)...")
-        dataset = load_dataset("castorini/mr-tydi", self.language_code, split=subset)
-
         rng = random.Random(RANDOM_SEED)  # noqa: S311
 
-        # Step 1: Sample queries and extract data
-        queries, qrels, corpus = self._process_dataset(dataset, query_limit, corpus_limit, rng)
+        # Step 1: Load queries and extract gold docids
+        logger.info(f"Loading Mr. TyDi queries ({self.language}, {subset} split)...")
+        queries_url = f"{MRTYDI_BASE_URL}/{self.language_dir}/{subset}.jsonl.gz"
+        queries_dataset = load_dataset("json", data_files=queries_url, split="train")
 
-        # Step 2: Ingest data
+        queries, qrels, gold_docids = self._process_queries(queries_dataset, query_limit, rng)
+
+        # Step 2: Load corpus
+        logger.info(f"Loading Mr. TyDi corpus ({self.language})...")
+        corpus_url = f"{MRTYDI_CORPUS_BASE_URL}/{self.language_dir}/corpus.jsonl.gz"
+        corpus_dataset = load_dataset("json", data_files=corpus_url, split="train")
+
+        corpus = self._process_corpus(corpus_dataset, gold_docids, corpus_limit, rng)
+
+        # Step 3: Ingest data
         self._ingest_queries(queries)
         self._ingest_corpus(corpus)
         self._ingest_qrels(qrels, set(corpus.keys()))
 
         self.service.clean()
 
-    def _process_dataset(
+    def _process_queries(
         self,
         dataset,
         query_limit: int | None,
-        corpus_limit: int | None,
         rng: random.Random,
-    ) -> tuple[dict, dict, dict]:
-        """Process dataset to extract queries, qrels, and corpus.
+    ) -> tuple[dict[str, str], dict[str, dict[str, int]], set[str]]:
+        """Process query dataset to extract queries, qrels, and gold docids.
 
         Args:
-            dataset: HuggingFace dataset object.
+            dataset: HuggingFace dataset with queries.
             query_limit: Maximum queries to include.
-            corpus_limit: Maximum corpus items to include.
             rng: Random number generator for sampling.
 
         Returns:
-            Tuple of (queries, qrels, corpus) dictionaries.
+            Tuple of (queries, qrels, gold_docids).
         """
-        # Convert to list for sampling
         data_list = list(dataset)
 
         # Sample queries if limit specified
@@ -112,81 +123,75 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
             data_list = rng.sample(data_list, query_limit)
             logger.info(f"Sampled {len(data_list)} queries from {len(dataset)} total")
 
-        # Extract queries, qrels, and corpus
         queries: dict[str, str] = {}
         qrels: dict[str, dict[str, int]] = {}
-        corpus: dict[str, dict[str, str]] = {}
-        gold_corpus_ids: set[str] = set()
+        gold_docids: set[str] = set()
 
         for row in data_list:
             qid = str(row["query_id"])
             queries[qid] = row["query"]
             qrels[qid] = {}
 
-            # Process positive passages (relevant documents)
+            # Process positive passages (only docids, no content)
             for passage in row["positive_passages"]:
                 docid = passage["docid"]
                 qrels[qid][docid] = 1
-                gold_corpus_ids.add(docid)
-                if docid not in corpus:
-                    corpus[docid] = {
-                        "title": passage["title"],
-                        "text": passage["text"],
-                    }
+                gold_docids.add(docid)
 
-            # Process negative passages (add to corpus but not qrels)
-            for passage in row["negative_passages"]:
-                docid = passage["docid"]
-                if docid not in corpus:
-                    corpus[docid] = {
-                        "title": passage["title"],
-                        "text": passage["text"],
-                    }
+        logger.info(f"Extracted {len(queries)} queries with {len(gold_docids)} unique gold docids")
+        return queries, qrels, gold_docids
 
-        # Apply corpus limit if specified
-        if corpus_limit is not None and len(corpus) > corpus_limit:
-            corpus = self._filter_corpus(corpus, gold_corpus_ids, corpus_limit, rng)
-
-        return queries, qrels, corpus
-
-    def _filter_corpus(
+    def _process_corpus(
         self,
-        corpus: dict,
-        gold_corpus_ids: set[str],
-        corpus_limit: int,
+        dataset,
+        gold_docids: set[str],
+        corpus_limit: int | None,
         rng: random.Random,
-    ) -> dict:
-        """Filter corpus to include gold IDs + random samples up to limit.
+    ) -> dict[str, dict[str, str]]:
+        """Process corpus dataset to extract documents.
 
         Args:
-            corpus: Full corpus dictionary.
-            gold_corpus_ids: Set of gold (relevant) corpus IDs that must be included.
+            dataset: HuggingFace dataset with corpus.
+            gold_docids: Set of gold docids that must be included.
             corpus_limit: Maximum corpus size.
-            rng: Random number generator.
+            rng: Random number generator for sampling.
 
         Returns:
-            Filtered corpus dictionary.
+            Corpus dictionary mapping docid to {title, text}.
         """
-        # Always include gold IDs
-        gold_in_corpus = gold_corpus_ids & set(corpus.keys())
-        selected_ids = list(gold_in_corpus)
-        remaining_ids = [cid for cid in corpus if cid not in gold_in_corpus]
+        # Build corpus dict - only include gold docids + random samples if limit is set
+        corpus: dict[str, dict[str, str]] = {}
+        non_gold_docs: list[dict] = []
 
-        # Add random samples if we need more
-        additional_needed = corpus_limit - len(selected_ids)
-        if additional_needed > 0 and remaining_ids:
-            additional_ids = rng.sample(
-                remaining_ids,
-                min(additional_needed, len(remaining_ids)),
+        for row in dataset:
+            docid = row["docid"]
+            doc_data = {"title": row["title"], "text": row["text"]}
+
+            if docid in gold_docids:
+                corpus[docid] = doc_data
+            elif corpus_limit is None:
+                # No limit - include all docs
+                corpus[docid] = doc_data
+            else:
+                # Limit specified - collect non-gold for later sampling
+                non_gold_docs.append({"docid": docid, **doc_data})
+
+        # If corpus_limit is set, add random non-gold docs up to limit
+        if corpus_limit is not None:
+            additional_needed = corpus_limit - len(corpus)
+            if additional_needed > 0 and non_gold_docs:
+                sampled = rng.sample(non_gold_docs, min(additional_needed, len(non_gold_docs)))
+                for doc in sampled:
+                    corpus[doc["docid"]] = {"title": doc["title"], "text": doc["text"]}
+
+            logger.info(
+                f"Corpus subset: {len(gold_docids)} gold IDs + "
+                f"{len(corpus) - len(gold_docids)} random = {len(corpus)} total"
             )
-            selected_ids.extend(additional_ids)
+        else:
+            logger.info(f"Loaded full corpus: {len(corpus)} documents")
 
-        logger.info(
-            f"Corpus subset: {len(gold_in_corpus)} gold IDs + "
-            f"{len(selected_ids) - len(gold_in_corpus)} random = {len(selected_ids)} total"
-        )
-
-        return {cid: corpus[cid] for cid in selected_ids}
+        return corpus
 
     def _ingest_queries(self, queries: dict[str, str]) -> None:
         """Ingest queries into the database."""
