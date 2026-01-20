@@ -22,7 +22,7 @@ dependencies = [
     "aiohttp>=3.13.2",
     "beir>=2.2.0",
     "bert-score>=0.3.13",
-    "datasets>=4.4.1",
+    "datasets<3.0.0",
     "evaluate>=0.4.6",
     "llama-index>=0.12.52",
     "nltk>=3.9.2",
