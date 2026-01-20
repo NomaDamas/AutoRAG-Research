@@ -130,14 +130,6 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
 
                 chunk_id = make_chunk_id(doc_id, section_id)
 
-                if section_text:
-                    self.service.add_chunks([
-                        {
-                            "id": chunk_id,
-                            "contents": section_text,
-                        }
-                    ])
-
                 image_chunk_ids: list[str] = []
                 for img_key, img_data_uri in images.items():
                     try:
@@ -155,7 +147,14 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                         logger.warning(f"Failed to extract image {img_key} from section {section_id}: {e}")
                         continue
 
-                chunk_id_map[chunk_id] = image_chunk_ids
+                if section_text:
+                    self.service.add_chunks([
+                        {
+                            "id": chunk_id,
+                            "contents": section_text,
+                        }
+                    ])
+                    chunk_id_map[chunk_id] = image_chunk_ids
 
         return chunk_id_map
 
