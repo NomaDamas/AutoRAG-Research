@@ -28,12 +28,16 @@ class GenerationResult:
 
     Attributes:
         text: The generated text response.
-        token_usage: Number of tokens used (if available).
+        token_usage: Detailed token breakdown as JSONB dict with keys:
+            - prompt_tokens: Number of tokens in the prompt
+            - completion_tokens: Number of tokens in the completion
+            - total_tokens: Total tokens used
+            - embedding_tokens: Number of tokens for embeddings (if any)
         metadata: Optional metadata dict (can store retrieval info, intermediate steps, etc.).
     """
 
     text: str
-    token_usage: int | None = None
+    token_usage: dict | None = None
     metadata: dict | None = None
 
 
@@ -151,11 +155,13 @@ class GenerationPipelineService(BaseService):
             Dictionary with pipeline execution statistics:
             - pipeline_id: The pipeline ID
             - total_queries: Number of queries processed
-            - total_tokens: Total tokens used (if available)
+            - token_usage: Aggregated token usage dict (prompt_tokens, completion_tokens, total_tokens, embedding_tokens)
             - avg_execution_time_ms: Average execution time per query
         """
         total_queries = 0
-        total_tokens = 0
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+        total_embedding_tokens = 0
         total_execution_time_ms = 0
         offset = 0
 
@@ -183,14 +189,17 @@ class GenerationPipelineService(BaseService):
                         "result_metadata": result.metadata,
                     })
 
+                    # Aggregate token usage from dict
                     if result.token_usage:
-                        total_tokens += result.token_usage
+                        total_prompt_tokens += result.token_usage.get("prompt_tokens", 0)
+                        total_completion_tokens += result.token_usage.get("completion_tokens", 0)
+                        total_embedding_tokens += result.token_usage.get("embedding_tokens", 0)
                     total_execution_time_ms += execution_time_ms
 
                 # Batch insert executor results
                 if batch_results:
-                    ExecutorResultClass = self._get_schema_classes()["ExecutorResult"]
-                    entities = [ExecutorResultClass(**item) for item in batch_results]
+                    executor_result_class = self._get_schema_classes()["ExecutorResult"]
+                    entities = [executor_result_class(**item) for item in batch_results]
                     uow.executor_results.add_all(entities)
 
                 total_queries += len(queries)
@@ -201,10 +210,21 @@ class GenerationPipelineService(BaseService):
 
         avg_execution_time_ms = total_execution_time_ms / total_queries if total_queries > 0 else 0
 
+        # Build aggregated token usage
+        total_tokens = total_prompt_tokens + total_completion_tokens
+        token_usage = None
+        if total_tokens > 0:
+            token_usage = {
+                "prompt_tokens": total_prompt_tokens,
+                "completion_tokens": total_completion_tokens,
+                "total_tokens": total_tokens,
+                "embedding_tokens": total_embedding_tokens,
+            }
+
         return {
             "pipeline_id": pipeline_id,
             "total_queries": total_queries,
-            "total_tokens": total_tokens if total_tokens > 0 else None,
+            "token_usage": token_usage,
             "avg_execution_time_ms": avg_execution_time_ms,
         }
 

@@ -6,6 +6,7 @@ Implements simple single-call RAG: retrieve once -> build prompt -> generate onc
 from dataclasses import dataclass, field
 from typing import Any
 
+from llama_index.core.callbacks import CallbackManager, TokenCountingHandler
 from llama_index.core.llms import LLM
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -139,6 +140,13 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         # because _get_pipeline_config() is called in super().__init__
         self._prompt_template = prompt_template
 
+        # Setup token counter for detailed token usage tracking
+        self._token_counter = TokenCountingHandler()
+        callback_manager = CallbackManager([self._token_counter])
+
+        # Set callback manager on the LLM for token counting
+        llm.callback_manager = callback_manager
+
         super().__init__(session_factory, name, llm, retrieval_pipeline, schema)
 
     def _get_pipeline_config(self) -> dict[str, Any]:
@@ -174,6 +182,9 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         Returns:
             GenerationResult containing the generated text and metadata.
         """
+        # Reset token counter before each generation
+        self._token_counter.reset_counts()
+
         # 1. Retrieve relevant chunks using composed retrieval pipeline
         retrieved = self._retrieval_pipeline.retrieve(query, top_k)
 
@@ -188,15 +199,32 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         # 4. Generate using LLM
         response = self._llm.complete(prompt)
 
-        # Extract token usage if available
-        token_usage = None
-        if hasattr(response, "raw") and response.raw:
+        # Extract token usage from TokenCountingHandler
+        token_usage = {
+            "prompt_tokens": self._token_counter.prompt_llm_token_count,
+            "completion_tokens": self._token_counter.completion_llm_token_count,
+            "total_tokens": self._token_counter.total_llm_token_count,
+            "embedding_tokens": self._token_counter.total_embedding_token_count,
+        }
+
+        # Fallback to response.raw for token usage if TokenCountingHandler didn't capture counts
+        # (e.g., when LLM doesn't support callbacks or in mock scenarios)
+        if token_usage["total_tokens"] == 0 and hasattr(response, "raw") and response.raw:
             usage = response.raw.get("usage", {})
-            token_usage = usage.get("total_tokens")
+            raw_prompt = usage.get("prompt_tokens", 0)
+            raw_completion = usage.get("completion_tokens", 0)
+            raw_total = usage.get("total_tokens", raw_prompt + raw_completion)
+            if raw_total > 0:
+                token_usage = {
+                    "prompt_tokens": raw_prompt,
+                    "completion_tokens": raw_completion,
+                    "total_tokens": raw_total,
+                    "embedding_tokens": 0,
+                }
 
         return GenerationResult(
             text=str(response),
-            token_usage=token_usage,
+            token_usage=token_usage if token_usage["total_tokens"] > 0 else None,
             metadata={
                 "retrieved_chunk_ids": chunk_ids,
                 "retrieved_scores": [r["score"] for r in retrieved],

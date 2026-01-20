@@ -16,7 +16,12 @@ class TestGenerationPipelineService:
         def generate_func(query: str, top_k: int) -> GenerationResult:
             return GenerationResult(
                 text=f"Answer for: {query}",
-                token_usage=100,
+                token_usage={
+                    "prompt_tokens": 50,
+                    "completion_tokens": 50,
+                    "total_tokens": 100,
+                    "embedding_tokens": 0,
+                },
                 metadata={"retrieved_chunk_ids": [1, 2]},
             )
 
@@ -62,11 +67,16 @@ class TestGenerationPipelineService:
 
         assert "pipeline_id" in result
         assert "total_queries" in result
-        assert "total_tokens" in result
+        assert "token_usage" in result
         assert "avg_execution_time_ms" in result
         assert result["pipeline_id"] == pipeline_id
         assert result["total_queries"] == 5  # Seed data has 5 queries
-        assert result["total_tokens"] == 500  # 5 queries * 100 tokens each
+
+        # Verify aggregated token usage
+        assert result["token_usage"] is not None
+        assert result["token_usage"]["total_tokens"] == 500  # 5 queries * 100 tokens each
+        assert result["token_usage"]["prompt_tokens"] == 250  # 5 queries * 50 tokens each
+        assert result["token_usage"]["completion_tokens"] == 250  # 5 queries * 50 tokens each
 
     def test_delete_pipeline_results(self, service, mock_generate_func, cleanup_pipeline_results):
         pipeline_id = service.save_pipeline(
@@ -110,8 +120,52 @@ class TestGenerationPipelineService:
             top_k=2,
         )
 
-        assert result["total_tokens"] is None
+        assert result["token_usage"] is None
 
     def test_get_pipeline_config_not_found(self, service):
         config = service.get_pipeline_config(999999)
         assert config is None
+
+    def test_run_pipeline_with_token_usage_jsonb(self, service, cleanup_pipeline_results):
+        """Test that token_usage JSONB is stored correctly in ExecutorResult."""
+        token_usage = {
+            "prompt_tokens": 50,
+            "completion_tokens": 50,
+            "total_tokens": 100,
+            "embedding_tokens": 0,
+        }
+
+        def generate_func_with_detail(query: str, top_k: int) -> GenerationResult:
+            return GenerationResult(
+                text=f"Answer for: {query}",
+                token_usage=token_usage,
+                metadata={"retrieved_chunk_ids": [1, 2]},
+            )
+
+        pipeline_id = service.save_pipeline(
+            name="test_token_jsonb_pipeline",
+            config={"type": "test"},
+        )
+        cleanup_pipeline_results.append(pipeline_id)
+
+        result = service.run_pipeline(
+            generate_func=generate_func_with_detail,
+            pipeline_id=pipeline_id,
+            top_k=3,
+        )
+
+        # Verify aggregated token usage
+        assert result["token_usage"] is not None
+        assert result["token_usage"]["total_tokens"] == 500  # 5 queries * 100 tokens each
+
+        # Verify token_usage is stored in ExecutorResult as JSONB
+        with service._create_uow() as uow:
+            executor_results = uow.executor_results.get_by_pipeline_id(pipeline_id)
+            assert len(executor_results) == 5
+
+            for exec_result in executor_results:
+                assert exec_result.token_usage is not None
+                assert exec_result.token_usage["prompt_tokens"] == 50
+                assert exec_result.token_usage["completion_tokens"] == 50
+                assert exec_result.token_usage["total_tokens"] == 100
+                assert exec_result.token_usage["embedding_tokens"] == 0

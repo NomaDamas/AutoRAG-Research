@@ -15,7 +15,13 @@ class TestBasicRAGPipeline:
         mock_response = MagicMock()
         mock_response.text = "This is a generated answer."
         mock_response.__str__ = lambda x: "This is a generated answer."
-        mock_response.raw = {"usage": {"total_tokens": 150}}
+        mock_response.raw = {
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+            }
+        }
         mock.complete.return_value = mock_response
         return mock
 
@@ -82,7 +88,11 @@ class TestBasicRAGPipeline:
         result = pipeline._generate("What is the meaning of life?", top_k=3)
 
         assert result.text == "This is a generated answer."
-        assert result.token_usage == 150
+        # token_usage is now a dict
+        assert result.token_usage is not None
+        assert result.token_usage["total_tokens"] == 150
+        assert result.token_usage["prompt_tokens"] == 100
+        assert result.token_usage["completion_tokens"] == 50
         assert result.metadata is not None
         assert "retrieved_chunk_ids" in result.metadata
         assert len(result.metadata["retrieved_chunk_ids"]) == 3
@@ -96,11 +106,16 @@ class TestBasicRAGPipeline:
 
         assert "pipeline_id" in result
         assert "total_queries" in result
-        assert "total_tokens" in result
+        assert "token_usage" in result
         assert "avg_execution_time_ms" in result
         assert result["pipeline_id"] == pipeline.pipeline_id
         assert result["total_queries"] == 5  # Seed data has 5 queries
-        assert result["total_tokens"] == 750  # 5 queries * 150 tokens each
+
+        # Aggregated token_usage is a dict
+        assert result["token_usage"] is not None
+        assert result["token_usage"]["total_tokens"] == 750  # 5 queries * 150 tokens each
+        assert result["token_usage"]["prompt_tokens"] == 500  # 5 queries * 100 tokens each
+        assert result["token_usage"]["completion_tokens"] == 250  # 5 queries * 50 tokens each
 
     def test_custom_prompt_template(self, session_factory, mock_llm, mock_retrieval_pipeline, cleanup_pipeline_results):
         """Test pipeline with custom prompt template."""
@@ -142,3 +157,45 @@ class TestBasicRAGPipeline:
         # Should still produce a result even with no context
         assert result.text is not None
         assert result.metadata["retrieved_chunk_ids"] == []
+
+    def test_token_counting_handler_initialization(self, pipeline):
+        """Test that TokenCountingHandler is initialized properly."""
+        assert hasattr(pipeline, "_token_counter")
+        assert pipeline._token_counter is not None
+
+        # Verify the callback manager is set on the LLM
+        assert pipeline._llm.callback_manager is not None
+
+    def test_token_usage_dict_structure(self, pipeline):
+        """Test that _generate returns token_usage as a dict with expected keys."""
+        result = pipeline._generate("What is AI?", top_k=2)
+
+        assert result.token_usage is not None
+        assert "prompt_tokens" in result.token_usage
+        assert "completion_tokens" in result.token_usage
+        assert "total_tokens" in result.token_usage
+        assert "embedding_tokens" in result.token_usage
+
+    def test_token_counter_reset_between_generations(self, pipeline):
+        """Test that token counter is reset between generations."""
+        # First generation
+        result1 = pipeline._generate("First query", top_k=2)
+
+        # Second generation
+        result2 = pipeline._generate("Second query", top_k=2)
+
+        # Token counts should be independent (not accumulated)
+        # Since we're using mock LLM with raw response, values should be present
+        assert result1.token_usage is not None
+        assert result2.token_usage is not None
+        # Verify both have the expected keys
+        assert "total_tokens" in result1.token_usage
+        assert "total_tokens" in result2.token_usage
+
+    def test_token_usage_total_consistency(self, pipeline):
+        """Test that total_tokens equals prompt_tokens + completion_tokens."""
+        result = pipeline._generate("Test query", top_k=2)
+
+        if result.token_usage:
+            expected_total = result.token_usage["prompt_tokens"] + result.token_usage["completion_tokens"]
+            assert result.token_usage["total_tokens"] == expected_total

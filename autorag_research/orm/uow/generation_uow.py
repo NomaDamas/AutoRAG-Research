@@ -47,7 +47,7 @@ class GenerationUnitOfWork(BaseUnitOfWork):
                 query_id=query_id,
                 pipeline_id=pipeline_id,
                 generation_result="...",
-                token_usage=100,
+                token_usage={"prompt_tokens": 50, "completion_tokens": 50, "total_tokens": 100},
             )
             uow.executor_results.add(executor_result)
             uow.commit()
