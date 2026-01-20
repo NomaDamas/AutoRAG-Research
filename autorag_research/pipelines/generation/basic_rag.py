@@ -1,4 +1,4 @@
-"""Naive RAG Pipeline for AutoRAG-Research.
+"""Basic RAG Pipeline for AutoRAG-Research.
 
 Implements simple single-call RAG: retrieve once -> build prompt -> generate once.
 """
@@ -24,8 +24,8 @@ Answer:"""
 
 
 @dataclass(kw_only=True)
-class NaiveRAGPipelineConfig(BaseGenerationPipelineConfig):
-    """Configuration for Naive RAG pipeline.
+class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
+    """Configuration for a Basic RAG pipeline.
 
     Attributes:
         name: Unique name for this pipeline instance.
@@ -40,8 +40,8 @@ class NaiveRAGPipelineConfig(BaseGenerationPipelineConfig):
         ```python
         from llama_index.llms.openai import OpenAI
 
-        config = NaiveRAGPipelineConfig(
-            name="naive_rag_v1",
+        config = BasicRAGPipelineConfig(
+            name="basic_rag_v1",
             llm=OpenAI(model="gpt-4"),
             retrieval_pipeline=my_retrieval_pipeline,
             prompt_template="Context:\\n{context}\\n\\nQ: {query}\\nA:",
@@ -54,12 +54,12 @@ class NaiveRAGPipelineConfig(BaseGenerationPipelineConfig):
     retrieval_pipeline: "BaseRetrievalPipeline"
     prompt_template: str = field(default=DEFAULT_PROMPT_TEMPLATE)
 
-    def get_pipeline_class(self) -> type["NaiveRAGPipeline"]:
-        """Return the NaiveRAGPipeline class."""
-        return NaiveRAGPipeline
+    def get_pipeline_class(self) -> type["BasicRAGPipeline"]:
+        """Return the BasicRAGPipeline class."""
+        return BasicRAGPipeline
 
     def get_pipeline_kwargs(self) -> dict[str, Any]:
-        """Return kwargs for NaiveRAGPipeline constructor."""
+        """Return kwargs for BasicRAGPipeline constructor."""
         return {
             "llm": self.llm,
             "retrieval_pipeline": self.retrieval_pipeline,
@@ -71,7 +71,7 @@ class NaiveRAGPipelineConfig(BaseGenerationPipelineConfig):
         return {"top_k": self.top_k, "batch_size": self.batch_size}
 
 
-class NaiveRAGPipeline(BaseGenerationPipeline):
+class BasicRAGPipeline(BaseGenerationPipeline):
     """Simple single-call RAG pipeline: retrieve once -> build prompt -> generate once.
 
     This pipeline implements the most basic RAG pattern:
@@ -90,7 +90,7 @@ class NaiveRAGPipeline(BaseGenerationPipeline):
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
 
-        from autorag_research.pipelines.generation.naive_rag import NaiveRAGPipeline
+        from autorag_research.pipelines.generation.basic_rag import BasicRAGPipeline
         from autorag_research.pipelines.retrieval.bm25 import BM25RetrievalPipeline
 
         engine = create_engine("postgresql://user:pass@localhost/dbname")
@@ -104,9 +104,9 @@ class NaiveRAGPipeline(BaseGenerationPipeline):
         )
 
         # Create generation pipeline
-        pipeline = NaiveRAGPipeline(
+        pipeline = BasicRAGPipeline(
             session_factory=session_factory,
-            name="naive_rag_v1",
+            name="basic_rag_v1",
             llm=OpenAI(model="gpt-4"),
             retrieval_pipeline=retrieval_pipeline,
         )
@@ -125,7 +125,7 @@ class NaiveRAGPipeline(BaseGenerationPipeline):
         prompt_template: str = DEFAULT_PROMPT_TEMPLATE,
         schema: Any | None = None,
     ):
-        """Initialize Naive RAG pipeline.
+        """Initialize Basic RAG pipeline.
 
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
@@ -142,9 +142,9 @@ class NaiveRAGPipeline(BaseGenerationPipeline):
         super().__init__(session_factory, name, llm, retrieval_pipeline, schema)
 
     def _get_pipeline_config(self) -> dict[str, Any]:
-        """Return Naive RAG pipeline configuration."""
+        """Return Basic RAG pipeline configuration."""
         return {
-            "type": "naive_rag",
+            "type": "basic_rag",
             "prompt_template": self._prompt_template,
             "retrieval_pipeline_id": self._retrieval_pipeline.pipeline_id,
         }

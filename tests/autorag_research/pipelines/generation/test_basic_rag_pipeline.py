@@ -4,10 +4,10 @@ import pytest
 
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.orm.repository.executor_result import ExecutorResultRepository
-from autorag_research.pipelines.generation.naive_rag import NaiveRAGPipeline
+from autorag_research.pipelines.generation.basic_rag import BasicRAGPipeline
 
 
-class TestNaiveRAGPipeline:
+class TestBasicRAGPipeline:
     @pytest.fixture
     def mock_llm(self):
         """Create a mock LLM that returns predictable responses."""
@@ -55,9 +55,9 @@ class TestNaiveRAGPipeline:
 
     @pytest.fixture
     def pipeline(self, session_factory, mock_llm, mock_retrieval_pipeline, cleanup_pipeline_results):
-        pipeline = NaiveRAGPipeline(
+        pipeline = BasicRAGPipeline(
             session_factory=session_factory,
-            name="test_naive_rag_pipeline",
+            name="test_basic_rag_pipeline",
             llm=mock_llm,
             retrieval_pipeline=mock_retrieval_pipeline,
         )
@@ -73,7 +73,7 @@ class TestNaiveRAGPipeline:
     def test_pipeline_config(self, pipeline, mock_retrieval_pipeline):
         """Test that pipeline config is stored correctly."""
         config = pipeline._get_pipeline_config()
-        assert config["type"] == "naive_rag"
+        assert config["type"] == "basic_rag"
         assert config["retrieval_pipeline_id"] == mock_retrieval_pipeline.pipeline_id
         assert "prompt_template" in config
 
@@ -106,7 +106,7 @@ class TestNaiveRAGPipeline:
         """Test pipeline with custom prompt template."""
         custom_template = "Documents:\n{context}\n\nQuery: {query}\n\nResponse:"
 
-        pipeline = NaiveRAGPipeline(
+        pipeline = BasicRAGPipeline(
             session_factory=session_factory,
             name="test_custom_template_pipeline",
             llm=mock_llm,
@@ -129,7 +129,7 @@ class TestNaiveRAGPipeline:
         mock_retrieval.pipeline_id = 999
         mock_retrieval.retrieve.return_value = []
 
-        pipeline = NaiveRAGPipeline(
+        pipeline = BasicRAGPipeline(
             session_factory=session_factory,
             name="test_empty_retrieval_pipeline",
             llm=mock_llm,
