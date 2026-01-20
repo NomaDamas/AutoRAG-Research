@@ -154,3 +154,16 @@ class UnsupportedMTEBTaskTypeError(Exception):
 
     def __init__(self, message: str):
         super().__init__(message)
+
+
+class UnsupportedLanguageError(Exception):
+    """Raised when an unsupported language is specified."""
+
+    def __init__(self, language_code: str, supported_languages: list[str] | None = None):
+        if supported_languages:
+            languages_str = ", ".join(supported_languages)
+            super().__init__(
+                f"Unsupported language code '{language_code}' specified. Supported languages are: {languages_str}."
+            )
+        else:
+            super().__init__(f"Unsupported language code '{language_code}' specified.")
