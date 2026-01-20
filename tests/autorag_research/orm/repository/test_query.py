@@ -21,6 +21,7 @@ def test_get_with_retrieval_relations(query_repository: QueryRepository):
     result = query_repository.get_with_retrieval_relations(1)
 
     assert result is not None
+    assert hasattr(result, "query_to_llm")
     assert hasattr(result, "retrieval_relations")
 
 

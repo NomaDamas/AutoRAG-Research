@@ -86,12 +86,13 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         gold_corpus_ids: set[str] = set()
         filtered_qrels: dict[str, dict[str, int]] = {}
         for qid in qids:
-            if qid in qrels:
-                filtered_qrels[qid] = qrels[qid]
-                if collect_gold_ids:
-                    for doc_id, score in qrels[qid].items():
-                        if score > 0:
-                            gold_corpus_ids.add(doc_id)
+            if qid not in qrels:
+                continue
+
+            filtered_qrels[qid] = qrels[qid]
+
+            if collect_gold_ids:
+                gold_corpus_ids.update(doc_id for doc_id, score in qrels[qid].items() if score > 0)
 
         return qids, filtered_qrels, gold_corpus_ids
 

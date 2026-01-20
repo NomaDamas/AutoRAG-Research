@@ -48,5 +48,11 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "clarify@team-attention-plugins": true,
+    "dev@team-attention-plugins": true,
+    "session-wrap@team-attention-plugins": true,
+    "agent-council@team-attention-plugins": true
   }
 }
