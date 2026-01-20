@@ -11,8 +11,8 @@ Key characteristics:
 """
 
 import pytest
-from autorag_research.data.chartqa import ChartQAIngestor
 
+from autorag_research.data.chartqa import ChartQAIngestor
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestConfig,

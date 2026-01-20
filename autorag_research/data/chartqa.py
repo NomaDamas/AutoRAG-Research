@@ -41,7 +41,7 @@ class ChartQAIngestor(MultiModalEmbeddingDataIngestor):
         labels: list[list[str]] = list(self.ds["label"])  # ty: ignore[non-subscriptable]
 
         if not (len(image_list) == len(queries) == len(labels)):
-            raise ValueError("Length mismatch among image_list, queries, and labels.")
+            raise ValueError("Length mismatch among image_list, queries, and labels.")  # noqa: TRY003
 
         total_count = len(queries)
         effective_limit = total_count
@@ -51,7 +51,7 @@ class ChartQAIngestor(MultiModalEmbeddingDataIngestor):
             effective_limit = min(effective_limit, corpus_limit)
 
         if effective_limit < total_count:
-            rng = random.Random(RANDOM_SEED)
+            rng = random.Random(RANDOM_SEED)  # noqa: S311
             selected_indices = sorted(rng.sample(range(total_count), effective_limit))
         else:
             selected_indices = list(range(total_count))
