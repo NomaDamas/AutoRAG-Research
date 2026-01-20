@@ -19,6 +19,8 @@ make check               # Run all checks (ruff, ty type checker, deptry)
 # Testing (requires Docker)
 make test                # Full test with Docker PostgreSQL lifecycle management
 make test-only           # Run tests (assumes PostgreSQL container is running)
+make test-data          # Run tests only marked as data
+make test-full         # Run all tests including api/gpu/data marked tests
 
 # Run single test
 uv run pytest tests/path/to/test_file.py::test_function_name -v
