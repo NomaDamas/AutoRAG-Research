@@ -19,18 +19,18 @@ class BaseGenerationPipeline(BasePipeline, ABC):
     """Abstract base class for all generation pipelines.
 
     This class provides common functionality for generation pipelines:
-    - Composition with retrieval pipeline for flexible retrieval strategies
+    - Composition with a retrieval pipeline for flexible retrieval strategies
     - Service initialization for database operations
     - Pipeline creation in database
     - Abstract generate method for subclasses to implement
 
     Subclasses must implement:
-    - `_generate()`: Generate an answer given a query (has access to retrieval pipeline)
+    - `_generate()`: Generate an answer given a query (has access to a retrieval pipeline)
     - `_get_pipeline_config()`: Return the pipeline configuration dict
 
     Example:
         ```python
-        class NaiveRAGPipeline(BaseGenerationPipeline):
+        class BasicRAGPipeline(BaseGenerationPipeline):
             def _generate(self, query: str, top_k: int) -> GenerationResult:
                 # Retrieve relevant chunks
                 results = self._retrieval_pipeline.retrieve(query, top_k)
