@@ -23,6 +23,7 @@ dependencies = [
     "beir>=2.2.0",
     "bert-score>=0.3.13",
     "datasets<3.0.0",
+    "huggingface-hub>=0.28.0",
     "evaluate>=0.4.6",
     "llama-index>=0.12.52",
     "nltk>=3.9.2",
