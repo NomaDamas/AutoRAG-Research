@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Literal
 
 from llama_index.core.base.embeddings.base import BaseEmbedding
@@ -9,13 +10,36 @@ from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngesti
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 
 
+@dataclass
+class QueryMetadata:
+    """Lightweight query metadata for subset sampling."""
+
+    query_id: str
+    query_text: str
+    gold_ids: list[str]
+    gold_answer: str | None
+
+
 class DataIngestor(ABC):
     def __init__(self):
         self.dataset = None
 
     @abstractmethod
-    def ingest(self, subset: Literal["train", "dev", "test"] = "test"):
-        """Ingest data from the specified source. This process does not include an embedding process."""
+    def ingest(
+        self,
+        subset: Literal["train", "dev", "test"] = "test",
+        query_limit: int | None = None,
+        corpus_limit: int | None = None,
+    ) -> None:
+        """Ingest data from the specified source. This process does not include an embedding process.
+
+        Args:
+            subset: Dataset split to ingest (train, dev, or test).
+            query_limit: Maximum number of queries to ingest. None means no limit.
+            corpus_limit: Maximum number of corpus items to ingest.
+                          When set, gold IDs from selected queries are always included,
+                          plus random samples to reach the limit. None means no limit.
+        """
         pass
 
     @abstractmethod
