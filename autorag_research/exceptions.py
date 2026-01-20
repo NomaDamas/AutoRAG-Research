@@ -144,3 +144,13 @@ class EvaluationError(ExecutorError):
         self.metric_name = metric_name
         self.pipeline_id = pipeline_id
         self.reason = reason
+
+
+# MTEB exceptions
+
+
+class UnsupportedMTEBTaskTypeError(Exception):
+    """Raised when an unsupported MTEB task type is provided."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
