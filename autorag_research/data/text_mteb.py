@@ -102,14 +102,9 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         task_type = task.metadata.type
 
         if task_type not in SUPPORTED_TASK_TYPES:
-            raise UnsupportedMTEBTaskTypeError(
-                f"Task '{self.task_name}' has type '{task_type}' which is not supported. "
-                f"Supported types: {', '.join(sorted(SUPPORTED_TASK_TYPES))}"
-            )
+            raise UnsupportedMTEBTaskTypeError(self.task_name, task_type, list(SUPPORTED_TASK_TYPES))
 
-    def _get_split_data(
-        self, split: str
-    ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[str, int]]]:
+    def _get_split_data(self, split: str) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[str, int]]]:
         """Get corpus, queries, and relevant_docs for a split.
 
         MTEB stores data in task.dataset['default'][split] with:
@@ -146,9 +141,7 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         # Handle InstructionRetrieval: prepend instruction to query text
         if is_instruction and self.include_instruction and "instruction" in queries_df.columns:
             mask = queries_df["instruction"].notna() & (queries_df["instruction"] != "")
-            queries_df.loc[mask, "text"] = (
-                queries_df.loc[mask, "instruction"] + "\n\n" + queries_df.loc[mask, "text"]
-            )
+            queries_df.loc[mask, "text"] = queries_df.loc[mask, "instruction"] + "\n\n" + queries_df.loc[mask, "text"]
 
         # relevant_docs is already a dict
         relevant_docs: dict[str, dict[str, int]] = split_data["relevant_docs"]
@@ -282,9 +275,7 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         rng = random.Random(RANDOM_SEED)  # noqa: S311
 
         # Step 1: Sample queries (only those with relevant docs above score_threshold)
-        query_ids_with_relations = [
-            qid for qid in queries_df.index if self._get_gold_ids(relevant_docs, qid)
-        ]
+        query_ids_with_relations = [qid for qid in queries_df.index if self._get_gold_ids(relevant_docs, qid)]
         query_ids = query_ids_with_relations
         if query_limit is not None and query_limit < len(query_ids):
             query_ids = rng.sample(query_ids, query_limit)
@@ -302,17 +293,13 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
 
         # Step 4: Ingest queries
         logger.info(f"Ingesting {len(query_ids)} queries from MTEB task '{self.task_name}'...")
-        self.service.add_queries([
-            {"id": qid, "contents": queries_df.loc[qid, "text"]}
-            for qid in query_ids
-        ])
+        self.service.add_queries([{"id": qid, "contents": queries_df.loc[qid, "text"]} for qid in query_ids])
 
         # Step 5: Ingest corpus
         logger.info(f"Ingesting {len(corpus_ids)} corpus documents from MTEB task '{self.task_name}'...")
         corpus_subset = corpus_df.loc[corpus_ids]
         self.service.add_chunks([
-            {"id": cid, "contents": _combine_title_text(row)}
-            for cid, row in corpus_subset.iterrows()
+            {"id": cid, "contents": _combine_title_text(row)} for cid, row in corpus_subset.iterrows()
         ])
 
         # Step 6: Ingest retrieval relations
