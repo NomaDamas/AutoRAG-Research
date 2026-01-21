@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from llama_index.core import MockEmbedding
 
-from autorag_research.data.mteb import (
+from autorag_research.data.text_mteb import (
     SUPPORTED_TASK_TYPES,
     TextMTEBDatasetIngestor,
     _combine_title_text,
