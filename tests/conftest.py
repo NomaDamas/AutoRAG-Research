@@ -1,25 +1,31 @@
 import os
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
 import pytest
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
 from autorag_research.exceptions import EnvNotFoundError
+
+# Load environment variables from postgresql/.env
+_env_path = Path(__file__).parent.parent / "postgresql" / ".env"
+load_dotenv(_env_path)
 
 
 @pytest.fixture(scope="session")
 def db_engine():
     """Create a database engine for the test session.
 
-    Expects POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_PORT, TEST_DB_NAME environment variable to be set.
+    Reads configuration from postgresql/.env file.
     """
-    host = os.getenv("POSTGRES_HOST")
+    host = os.getenv("POSTGRES_HOST", "localhost")
     user = os.getenv("POSTGRES_USER")
     pwd = os.getenv("POSTGRES_PASSWORD")
-    port = int(os.getenv("POSTGRES_PORT"))
-    db_name = os.getenv("TEST_DB_NAME")
+    port = int(os.getenv("PG_PORT", os.getenv("POSTGRES_PORT", "5432")))
+    db_name = os.getenv("TEST_DB_NAME", os.getenv("POSTGRES_DB"))
     if not all([host, user, pwd, port, db_name]):
         raise EnvNotFoundError(  # noqa: TRY003
             "POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_PORT, and TEST_DB_NAME must be set"

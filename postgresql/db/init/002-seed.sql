@@ -113,9 +113,9 @@ ON CONFLICT DO NOTHING;
 
 -- Executor results
 INSERT INTO executor_result (query_id, pipeline_id, generation_result, token_usage, execution_time, result_metadata) VALUES
-	(1, 1,  NULL, 100, 1200, '{"notes": "ok"}'),
-	(1, 2,  NULL,  120, 1400, '{"notes": "better"}'),
-	(2, 1,  'Generated text 1', 200, 2500, '{"len": 20}')
+	(1, 1,  NULL, '{"prompt_tokens": 50, "completion_tokens": 50, "total_tokens": 100, "embedding_tokens": 0}', 1200, '{"notes": "ok"}'),
+	(1, 2,  NULL, '{"prompt_tokens": 60, "completion_tokens": 60, "total_tokens": 120, "embedding_tokens": 0}', 1400, '{"notes": "better"}'),
+	(2, 1,  'Generated text 1', '{"prompt_tokens": 100, "completion_tokens": 100, "total_tokens": 200, "embedding_tokens": 0}', 2500, '{"len": 20}')
 ON CONFLICT DO NOTHING;
 
 
@@ -139,8 +139,8 @@ ON CONFLICT DO NOTHING;
 
 -- Summary
 INSERT INTO summary (pipeline_id, metric_id, metric_result, token_usage, execution_time, result_metadata) VALUES
-	(1, 1, 0.82, 220, 2600, '{"run": 1}'),
-	(2, 1, 0.85, 120, 1400, '{"run": 1}')
+	(1, 1, 0.82, '{"prompt_tokens": 110, "completion_tokens": 110, "total_tokens": 220, "embedding_tokens": 0}', 2600, '{"run": 1}'),
+	(2, 1, 0.85, '{"prompt_tokens": 60, "completion_tokens": 60, "total_tokens": 120, "embedding_tokens": 0}', 1400, '{"run": 1}')
 ON CONFLICT DO NOTHING;
 
 -- Advance sequences to max IDs to prevent conflicts on future inserts
