@@ -155,3 +155,18 @@ class ExecutorResultRepository(GenericRepository[Any]):
             True if the result exists, False otherwise.
         """
         return self.get_by_composite_key(query_id, pipeline_id) is not None
+
+    def delete_by_pipeline(self, pipeline_id: int) -> int:
+        """Delete all executor results for a specific pipeline.
+
+        Args:
+            pipeline_id: The pipeline ID.
+
+        Returns:
+            Number of deleted records.
+        """
+        results = self.get_by_pipeline_id(pipeline_id)
+        count = len(results)
+        for result in results:
+            self.delete(result)
+        return count

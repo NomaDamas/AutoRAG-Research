@@ -146,6 +146,17 @@ class EvaluationError(ExecutorError):
         self.reason = reason
 
 
+# MTEB exceptions
+class UnsupportedMTEBTaskTypeError(Exception):
+    """Raised when an unsupported MTEB task type is provided."""
+
+    def __init__(self, task_name: str, task_type: str, supported_task_types: list[str]):
+        super().__init__(
+            f"Task '{task_name}' has type '{task_type}' which is not supported. "
+            f"Supported types: {', '.join(sorted(supported_task_types))}"
+        )
+
+
 class UnsupportedLanguageError(Exception):
     """Raised when an unsupported language is specified."""
 
