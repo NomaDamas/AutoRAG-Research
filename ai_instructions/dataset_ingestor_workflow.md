@@ -11,6 +11,10 @@ This document defines the workflow for implementing a new Dataset Ingestor in **
 3. **Test Writer:** Creates minimal integration tests BEFORE implementation.
 4. **Implementation Specialist:** Writes production code to pass the tests.
 
+## Skills
+
+- **`/design-ingestor`:** Orchestrates Phase 2 with **mandatory human review**. Use this skill instead of calling schema-architect directly.
+
 **Note:** Code quality checks (`make check`) run automatically via hooks after file edits.
 
 ## Workflow Steps (Test-Driven Development)
@@ -21,11 +25,18 @@ This document defines the workflow for implementing a new Dataset Ingestor in **
 * **Input:** Dataset Name/Link from Issue.
 * **Output:** `Source_Data_Profile.json` (Local only. Do not commit).
 
-### Phase 2: Design
+### Phase 2: Design (with Human Review)
 
-* **Agent:** Schema Architect
+* **Skill:** `/design-ingestor` (MANDATORY - do not call schema-architect directly)
 * **Input:** `Source_Data_Profile.json`, `ai_instructions/db_schema.md`.
 * **Output:** `Mapping_Strategy.md` (Local only. Do not commit).
+
+**Human-in-the-Loop:** The `/design-ingestor` skill enforces a mandatory review cycle:
+1. Schema Architect generates the mapping strategy
+2. Strategy summary is presented to user
+3. User must explicitly **Approve**, **Request Changes**, or **Reject**
+4. If changes requested → revise and re-present until approved
+5. **Phase 3 cannot begin without explicit approval**
 
 ### Phase 3: Testing (BEFORE Implementation)
 
@@ -175,6 +186,7 @@ def test_query_contents_format(self, mock_embedding_model):
 
 * [ ] `Source_Data_Profile.json` generated (Local).
 * [ ] `Mapping_Strategy.md` generated (Local).
+* [ ] **Human review completed** - Strategy explicitly approved via `/design-ingestor`.
 * [ ] **Tests written FIRST** based on design document.
 * [ ] Ingestor class implemented to pass the tests.
 * [ ] Static analysis (Lint/Type) passed.
