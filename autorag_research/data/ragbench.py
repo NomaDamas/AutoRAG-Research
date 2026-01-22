@@ -32,7 +32,7 @@ SPLIT_MAPPING = {
     "test": "test",
 }
 
-BATCH_SIZE = 1000
+DEFAULT_BATCH_SIZE = 1000
 
 
 def extract_relevant_doc_indices(sentence_keys: list[str]) -> set[int]:
@@ -64,9 +64,11 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         self,
         embedding_model: BaseEmbedding,
         configs: list[str] | None = None,
+        batch_size: int = DEFAULT_BATCH_SIZE,
     ):
         super().__init__(embedding_model)
         self.configs = configs if configs is not None else RAGBENCH_CONFIGS
+        self.batch_size = batch_size
         self._validate_configs()
 
     def _validate_configs(self) -> None:
@@ -121,7 +123,7 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
             example_dict: dict[str, Any] = example  # type: ignore[assignment]
             batch.append(example_dict)
 
-            if len(batch) >= BATCH_SIZE:
+            if len(batch) >= self.batch_size:
                 self._process_batch(config, split, batch, seen_chunk_ids)
                 total_processed += len(batch)
                 logger.info(f"[{config}] Processed {total_processed} examples...")
