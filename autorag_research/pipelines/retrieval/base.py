@@ -58,6 +58,24 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
         """
         pass
 
+    def retrieve(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
+        """Retrieve chunks for a single query (used by GenerationPipeline).
+
+        This method provides single-query retrieval, complementing the batch
+        `run()` method. It's designed for use within GenerationPipeline where
+        queries are processed one at a time.
+
+        Args:
+            query_text: The query text to retrieve for.
+            top_k: Number of chunks to retrieve.
+
+        Returns:
+            List of dicts with 'doc_id' (chunk ID) and 'score' keys.
+        """
+        retrieval_func = self._get_retrieval_func()
+        results = retrieval_func([query_text], top_k)
+        return results[0]  # Single query → single result list
+
     def run(
         self,
         top_k: int = 10,

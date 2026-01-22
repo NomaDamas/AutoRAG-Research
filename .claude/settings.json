@@ -14,7 +14,8 @@
       "Bash(grep:*)",
       "Bash(uv run pytest)",
       "Bash(uv run pytest:*)",
-      "Bash(uv run ruff:*)"
+      "Bash(uv run ruff:*)",
+      "Bash(uv run ty check:*)"
     ],
     "deny": [
       "Bash(uv publish)"

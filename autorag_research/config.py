@@ -124,6 +124,14 @@ class BaseGenerationPipelineConfig(BasePipelineConfig, ABC):
 
     pipeline_type: PipelineType = field(default=PipelineType.GENERATION, init=False)
 
+    def get_run_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for pipeline.run() method.
+
+        Returns:
+            Dictionary of keyword arguments for the run method.
+        """
+        return {"top_k": self.top_k, "batch_size": self.batch_size}
+
 
 @dataclass
 class BaseMetricConfig(ABC):
