@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS executor_result (
 	query_id BIGINT NOT NULL REFERENCES query(id),
 	pipeline_id BIGINT NOT NULL REFERENCES pipeline(id),
 	generation_result TEXT,
-	token_usage INT,
+	token_usage JSONB,
 	execution_time INT,
 	result_metadata JSONB,
 	PRIMARY KEY (query_id, pipeline_id)
@@ -161,7 +161,7 @@ CREATE TABLE IF NOT EXISTS summary (
 	pipeline_id BIGINT NOT NULL REFERENCES pipeline(id),
 	metric_id BIGINT NOT NULL REFERENCES metric(id),
 	metric_result FLOAT NOT NULL,
-	token_usage INT,
+	token_usage JSONB,
 	execution_time INT,
 	result_metadata JSONB,
 	PRIMARY KEY (pipeline_id, metric_id)
