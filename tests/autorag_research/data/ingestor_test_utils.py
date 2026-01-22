@@ -50,6 +50,8 @@ from autorag_research.orm.service.base_ingestion import BaseIngestionService
 from autorag_research.orm.util import create_database, drop_database, install_vector_extensions
 from tests.util import CheckResult, VerificationReport
 
+# Environment variables are loaded by conftest.py via load_dotenv()
+
 logger = logging.getLogger("AutoRAG-Research")
 
 RANDOM_SEED = 42
@@ -125,7 +127,7 @@ def create_test_database(config: IngestorTestConfig) -> Generator[TestDatabaseCo
     host = os.getenv("POSTGRES_HOST", "localhost")
     user = os.getenv("POSTGRES_USER", "postgres")
     pwd = os.getenv("POSTGRES_PASSWORD", "postgres")
-    port = int(os.getenv("POSTGRES_PORT", "5432"))
+    port = int(os.getenv("PG_PORT", os.getenv("POSTGRES_PORT", "5432")))
 
     # Create database
     create_database(host, user, pwd, config.db_name, port)

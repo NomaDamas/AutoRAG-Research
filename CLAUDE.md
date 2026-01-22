@@ -12,6 +12,7 @@ The pipelines can be customized. There are two types (retrieval/generation) pipe
 ```bash
 # Setup
 make install              # Create venv, install deps, setup pre-commit hooks
+uv sync --all-groups --all-extras  # Install all deps including optional (gpu, search)
 
 # Code Quality
 make check               # Run all checks (ruff, ty type checker, deptry)
