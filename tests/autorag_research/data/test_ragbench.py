@@ -121,7 +121,7 @@ class TestMakeQueryId:
 
 RAGBENCH_INTEGRATION_CONFIG = IngestorTestConfig(
     expected_query_count=10,
-    expected_chunk_count=30,  # ~3-4 docs per query, some deduplication
+    expected_chunk_count=40,  # ~3-4 docs per query, some deduplication
     chunk_count_is_minimum=True,  # Exact count depends on deduplication
     check_retrieval_relations=True,
     check_generation_gt=True,
