@@ -1,13 +1,15 @@
 """Tests for ChartQA Ingestor.
 
-Integration tests using real ChartQA dataset subsets against PostgreSQL.
+Integration tests using VisRAG filtered ChartQA dataset against PostgreSQL.
 
-ChartQA is a visual question answering dataset with chart images.
+VisRAG-Ret-Test-ChartQA filters context-dependent questions using GPT-4o judge,
+preserving ~10% of the original dataset for better retrieval evaluation quality.
+
 Key characteristics:
-- 1:1 query to image mapping
-- Label field provides generation ground truth (list[str])
-- Uses bigint primary keys (auto-generated)
-- No special query formatting (raw questions)
+- Uses string primary keys (corpus-id format like 'chartqa/test/png/...')
+- Separate corpus (500 images), queries (63), and qrels
+- Each query maps to one or more corpus images via qrels
+- Answer field provides generation ground truth
 """
 
 import pytest
@@ -24,26 +26,26 @@ from tests.autorag_research.data.ingestor_test_utils import (
 
 CHARTQA_INTEGRATION_CONFIG = IngestorTestConfig(
     expected_query_count=10,
-    expected_image_chunk_count=10,  # 1:1 query to image mapping
-    chunk_count_is_minimum=False,  # Exact counts
+    expected_image_chunk_count=10,  # At minimum, gold images for queries
+    chunk_count_is_minimum=True,  # May have more images due to gold ID preservation
     check_retrieval_relations=True,
     check_generation_gt=True,
     generation_gt_required_for_all=True,  # All queries have answers
-    primary_key_type="bigint",
+    primary_key_type="string",  # VisRAG uses string IDs
     db_name="chartqa_integration_test",
 )
 
 
 @pytest.mark.data
 class TestChartQAIngestorIntegration:
-    """Integration tests using real ChartQA dataset subsets."""
+    """Integration tests using VisRAG filtered ChartQA dataset."""
 
     def test_ingest_subset(self):
         """Basic integration test - verify_all() handles all standard checks.
 
         This test verifies:
         - Correct query count (10)
-        - Correct image chunk count (10, 1:1 mapping)
+        - Image chunk count (at least 10, gold images always included)
         - All queries have retrieval relations
         - All queries have generation_gt
         - Query format validation (non-empty strings)
@@ -54,7 +56,10 @@ class TestChartQAIngestorIntegration:
 
             ingestor = ChartQAIngestor()
             ingestor.set_service(service)
-            ingestor.ingest(query_limit=CHARTQA_INTEGRATION_CONFIG.expected_query_count)
+            ingestor.ingest(
+                query_limit=CHARTQA_INTEGRATION_CONFIG.expected_query_count,
+                corpus_limit=CHARTQA_INTEGRATION_CONFIG.expected_image_chunk_count,
+            )
 
             verifier = IngestorTestVerifier(service, db.schema, CHARTQA_INTEGRATION_CONFIG)
             verifier.verify_all()
