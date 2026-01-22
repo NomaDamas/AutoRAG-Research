@@ -8,6 +8,7 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 from autorag_research.data.base import TextEmbeddingDataIngestor
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import or_all
+from autorag_research.util import normalize_string
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -50,7 +51,7 @@ def extract_relevant_doc_indices(sentence_keys: list[str]) -> set[int]:
 
 
 def compute_chunk_id(content: str, config: str) -> str:
-    normalized = " ".join(content.lower().split())
+    normalized = normalize_string(content)
     content_hash = hashlib.sha256(normalized.encode()).hexdigest()[:16]
     return f"{config}_{content_hash}"
 
