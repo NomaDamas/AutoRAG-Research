@@ -2,6 +2,8 @@ import asyncio
 import functools
 import itertools
 import logging
+import re
+import string
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, TypeVar, cast
 
@@ -171,3 +173,25 @@ def to_async_func(func: Callable[..., R]) -> Callable[..., Awaitable[R]]:
         return await asyncio.to_thread(func, *args, **kwargs)
 
     return async_func
+
+
+def normalize_string(s: str) -> str:
+    """
+    Taken from the official evaluation script for v1.1 of the SQuAD dataset.
+    Lower text and remove punctuation, articles, and extra whitespace.
+    """
+
+    def remove_articles(text):
+        return re.sub(r"\b(a|an|the)\b", " ", text)
+
+    def white_space_fix(text):
+        return " ".join(text.split())
+
+    def remove_punc(text):
+        exclude = set(string.punctuation)
+        return "".join(ch for ch in text if ch not in exclude)
+
+    def lower(text):
+        return text.lower()
+
+    return white_space_fix(remove_articles(remove_punc(lower(s))))
