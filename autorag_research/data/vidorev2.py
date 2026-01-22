@@ -21,6 +21,7 @@ import random
 from enum import Enum
 from typing import Any, Literal
 
+import pandas as pd
 from datasets import load_dataset
 from llama_index.core.embeddings import MultiModalEmbedding
 from PIL import Image
@@ -80,8 +81,8 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         self.dataset_name = dataset_name
 
     def detect_primary_key_type(self) -> Literal["bigint", "string"]:
-        """ViDoReV2 uses string IDs (e.g., 'page_123')."""
-        return "string"
+        """ViDoReV2 uses integer IDs."""
+        return "bigint"
 
     def ingest(
         self,
@@ -97,21 +98,17 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
             corpus_limit: Maximum number of corpus items to ingest.
                          Gold IDs from selected queries are always included.
         """
-        import pandas as pd
-
-        super().ingest(subset, query_limit, corpus_limit)
         if self.service is None:
             raise ServiceNotSetError
+        if subset != "test":
+            raise ValueError("ViDoReV2 datasets only have 'test' split.")  # noqa: TRY003
 
         dataset_path = f"vidore/{self.dataset_name.value}"
 
         # Step 1: Load qrels into pandas and process with groupby
-        from datasets import Dataset
-
-        qrels_ds: Dataset = load_dataset(dataset_path, "qrels", streaming=False, split="test")  # ty: ignore[invalid-assignment]
-        qrels_df: pd.DataFrame = qrels_ds.to_pandas()  # ty: ignore[invalid-assignment]
-        qrels_df["query-id"] = qrels_df["query-id"].astype(str)
-        qrels_df["corpus-id"] = qrels_df["corpus-id"].astype(str)
+        qrels_df: pd.DataFrame = load_dataset(dataset_path, "qrels", streaming=False, split=subset).to_pandas()  # ty: ignore[invalid-assignment]
+        qrels_df["query-id"] = qrels_df["query-id"].astype(int)
+        qrels_df["corpus-id"] = qrels_df["corpus-id"].astype(int)
 
         # Group by query-id: get corpus IDs and unique answers per query
         grouped = qrels_df.groupby("query-id").agg(
@@ -126,11 +123,11 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
             selected_queries_df = grouped
 
         selected_query_ids = list(selected_queries_df.index)
-        query_to_corpus_ids: dict[str, list[str]] = selected_queries_df["corpus_ids"].to_dict()
-        query_to_answers: dict[str, list[str]] = selected_queries_df["answers"].to_dict()
+        query_to_corpus_ids: dict[int, list[int]] = selected_queries_df["corpus_ids"].to_dict()
+        query_to_answers: dict[int, list[str]] = selected_queries_df["answers"].to_dict()
 
         # Step 3: Get gold corpus IDs from selected queries
-        gold_corpus_ids: set[str] = set()
+        gold_corpus_ids: set[int] = set()
         for corpus_list in query_to_corpus_ids.values():
             gold_corpus_ids.update(corpus_list)
 
@@ -162,7 +159,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
             corpus_id_to_pk,
         )
 
-    def _ingest_corpus(self, corpus_ds: Any, selected_ids: set[str]) -> dict[str, str]:
+    def _ingest_corpus(self, corpus_ds: Any, selected_ids: set[int]) -> dict[int, int]:
         """Ingest corpus images.
 
         Args:
@@ -175,11 +172,11 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        corpus_id_to_pk: dict[str, str] = {}
+        corpus_id_to_pk: dict[int, int] = {}
         image_chunks_batch: list[dict] = []
 
         for row in corpus_ds:
-            corpus_id = str(row["corpus-id"])
+            corpus_id = int(row["corpus-id"])
             if corpus_id not in selected_ids:
                 continue
 
@@ -201,9 +198,9 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
     def _ingest_queries(
         self,
         queries_ds: Any,
-        selected_ids: list[str],
-        query_to_answers: dict[str, list[str]],
-    ) -> dict[str, str]:
+        selected_ids: list[int],
+        query_to_answers: dict[int, list[str]],
+    ) -> dict[int, int]:
         """Ingest queries.
 
         Args:
@@ -218,11 +215,11 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
             raise ServiceNotSetError
 
         selected_ids_set = set(selected_ids)
-        query_id_to_pk: dict[str, str] = {}
+        query_id_to_pk: dict[int, int] = {}
         queries_batch: list[dict] = []
 
         for row in queries_ds:
-            query_id = str(row["query-id"])
+            query_id = int(row["query-id"])
             if query_id not in selected_ids_set:
                 continue
 
@@ -248,10 +245,10 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
 
     def _ingest_qrels(
         self,
-        query_to_corpus: dict[str, list[str]],
-        selected_query_ids: list[str],
-        query_id_to_pk: dict[str, str],
-        corpus_id_to_pk: dict[str, str],
+        query_to_corpus: dict[int, list[int]],
+        selected_query_ids: list[int],
+        query_id_to_pk: dict[int, int],
+        corpus_id_to_pk: dict[int, int],
     ) -> None:
         """Create retrieval relations from qrels.
 

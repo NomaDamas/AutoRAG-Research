@@ -44,7 +44,7 @@ VIDOREV2_ECONOMICS_REPORTS_CONFIG = IngestorTestConfig(
     chunk_count_is_minimum=True,  # Gold IDs always included
     check_retrieval_relations=True,
     check_generation_gt=True,
-    primary_key_type="string",
+    primary_key_type="bigint",
     db_name="vidorev2_economics_reports_test",
 )
 
