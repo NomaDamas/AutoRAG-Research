@@ -12,6 +12,7 @@ The pipelines can be customized. There are two types (retrieval/generation) pipe
 ```bash
 # Setup
 make install              # Create venv, install deps, setup pre-commit hooks
+uv sync --all-groups --all-extras  # Install all deps including optional (gpu, search)
 
 # Code Quality
 make check               # Run all checks (ruff, ty type checker, deptry)
@@ -19,6 +20,8 @@ make check               # Run all checks (ruff, ty type checker, deptry)
 # Testing (requires Docker)
 make test                # Full test with Docker PostgreSQL lifecycle management
 make test-only           # Run tests (assumes PostgreSQL container is running)
+make test-data          # Run tests only marked as data
+make test-full         # Run all tests including api/gpu/data marked tests
 
 # Run single test
 uv run pytest tests/path/to/test_file.py::test_function_name -v
@@ -50,6 +53,17 @@ Repository Layer (orm/repository/) - Data access (GenericRepository[T])
     ↓
 ORM Models (orm/models/) - SQLAlchemy with pgvector
 ```
+
+**Pipeline Types:**
+- **Retrieval Pipelines** (`pipelines/retrieval/`) - Vector search, BM25, hybrid retrieval
+  - Extend `BaseRetrievalPipeline`
+  - Use `RetrievalPipelineService` + `RetrievalUnitOfWork`
+  - Methods: `.retrieve(query, top_k)` for single-query, `.run()` for batch
+- **Generation Pipelines** (`pipelines/generation/`) - LLM-based answer generation
+  - Extend `BaseGenerationPipeline`
+  - Use `GenerationPipelineService` + `GenerationUnitOfWork`
+  - Compose with retrieval pipelines for flexible RAG strategies
+  - Example: `NaiveRAGPipeline` (single retrieve + generate)
 
 **Key Entry Points:**
 - `executor.py` - Orchestrates pipeline execution and metric evaluation
@@ -96,7 +110,9 @@ Prefer mocks over real API calls (use LlamaIndex MockLLM/MockEmbedding).
 - **Query** - Search queries with ground truth
 - **RetrievalRelation** - Query-to-chunk relevance (composite key: query_id, group_index, group_order)
 - **Pipeline/Metric** - Configuration storage
-- **ChunkRetrievedResult/EvaluationResult** - Pipeline outputs
+- **ChunkRetrievedResult** - Retrieval pipeline outputs (query → chunks with scores)
+- **ExecutorResult** - Generation pipeline outputs (generation_result, token_usage, execution_time)
+- **EvaluationResult** - Metric evaluation outputs
 
 ## AI Instructions
 
@@ -109,3 +125,4 @@ Detailed patterns and examples are in `/ai_instructions/`:
 
 - **Code quality checks are automated via hooks** - `make check` runs automatically after file edits and on session end
 - Generate the corresponding test file correctly when you add the code, and runs the test code before commit (`make test`)
+- Do not use relative imports.

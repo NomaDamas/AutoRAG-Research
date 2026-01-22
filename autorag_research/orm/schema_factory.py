@@ -306,7 +306,7 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         query_id: Mapped[int | str] = make_fk_column("query", primary_key=True)
         pipeline_id: Mapped[int | str] = make_fk_column("pipeline", primary_key=True)
         generation_result: Mapped[str | None] = mapped_column(Text)
-        token_usage: Mapped[int | None] = mapped_column(Integer)
+        token_usage: Mapped[dict | None] = mapped_column(JSONB)
         execution_time: Mapped[int | None] = mapped_column(Integer)
         result_metadata: Mapped[dict | None] = mapped_column(JSONB)
 
@@ -367,7 +367,7 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         pipeline_id: Mapped[int | str] = make_fk_column("pipeline", primary_key=True)
         metric_id: Mapped[int | str] = make_fk_column("metric", primary_key=True)
         metric_result: Mapped[float] = mapped_column(Float, nullable=False)
-        token_usage: Mapped[int | None] = mapped_column(Integer)
+        token_usage: Mapped[dict | None] = mapped_column(JSONB)
         execution_time: Mapped[int | None] = mapped_column(Integer)
         result_metadata: Mapped[dict | None] = mapped_column(JSONB)
 
