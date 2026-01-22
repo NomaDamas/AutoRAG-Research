@@ -95,7 +95,7 @@ Table ExecutorResult {
   pipeline_id bigint [ref: > Pipeline.id, not null]
 
   generation_result text
-  token_usage int
+  token_usage jsonb
   execution_time int //아무튼 시간임
   result_metadata jsonb
 
@@ -142,7 +142,7 @@ Table Summary {
   pipeline_id bigint [ref: > Pipeline.id, not null]
   metric_id bigint [ref: > Metric.id, not null]
   metric_result float [not null]
-  token_usage int
+  token_usage jsonb
   execution_time int //아무튼 시간임
   result_metadata jsonb
 
