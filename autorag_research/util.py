@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import io
 import itertools
 import logging
 from collections.abc import Awaitable, Callable, Iterable
@@ -8,6 +9,7 @@ from typing import Any, TypeVar, cast
 import numpy as np
 import pandas as pd
 import tiktoken
+from PIL import Image
 from pydantic import BaseModel as BM
 from pydantic.v1 import BaseModel
 
@@ -171,3 +173,20 @@ def to_async_func(func: Callable[..., R]) -> Callable[..., Awaitable[R]]:
         return await asyncio.to_thread(func, *args, **kwargs)
 
     return async_func
+
+
+def pil_image_to_bytes(image: Image.Image) -> tuple[bytes, str]:
+    """Convert PIL image to bytes with mimetype.
+
+    Args:
+        image: PIL Image object.
+
+    Returns:
+        Tuple of (image_bytes, mimetype).
+    """
+    buffer = io.BytesIO()
+    # Determine format based on image mode
+    img_format = "PNG" if image.mode in ("RGBA", "LA", "P") else "JPEG"
+    image.save(buffer, format=img_format)
+    mimetype = f"image/{img_format.lower()}"
+    return buffer.getvalue(), mimetype
