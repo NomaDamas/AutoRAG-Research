@@ -19,6 +19,14 @@ REPO_ID = "vectara/open_ragbench"
 DEFAULT_SUBSET = "pdf/arxiv"
 
 
+def make_page_id(doc_id: str, section_id: int) -> str:
+    return f"{doc_id}_page_{section_id}"
+
+
+def make_caption_id(doc_id: str, section_id: int) -> str:
+    return f"{doc_id}_caption_{section_id}"
+
+
 def make_chunk_id(doc_id: str, section_id: int) -> str:
     return f"{doc_id}_section_{section_id}"
 
@@ -89,6 +97,11 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
         logger.info(f"OpenRAGBench ingestion complete: {len(query_ids)} queries, {len(required_doc_ids)} documents")
 
     def _ingest_documents(self, doc_ids: set[str]) -> dict[str, list[str]]:
+        """Ingest documents with proper hierarchy: Document -> Page -> Caption -> Chunk.
+
+        Each section becomes a Page, with its text stored as Caption and Chunk.
+        Images (figures/tables) become ImageChunks linked to the Page.
+        """
         if self.service is None:
             raise ServiceNotSetError
 
@@ -111,6 +124,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
             authors = doc.get("authors", [])
             author_str = ", ".join(authors) if authors else None
 
+            # 1. Create Document
             self.service.add_documents([
                 {
                     "id": doc_id,
@@ -128,8 +142,20 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                 if not section_text and not images:
                     continue
 
+                page_id = make_page_id(doc_id, section_id)
+                caption_id = make_caption_id(doc_id, section_id)
                 chunk_id = make_chunk_id(doc_id, section_id)
 
+                # 2. Create Page for each section
+                self.service.add_pages([
+                    {
+                        "id": page_id,
+                        "document_id": doc_id,
+                        "page_num": section_id,
+                    }
+                ])
+
+                # 3. Create ImageChunks for figures/tables (linked to Page)
                 image_chunk_ids: list[str] = []
                 for img_key, img_data_uri in images.items():
                     try:
@@ -140,6 +166,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                                 "id": img_chunk_id,
                                 "contents": img_bytes,
                                 "mimetype": mimetype,
+                                "parent_page": page_id,
                             }
                         ])
                         image_chunk_ids.append(img_chunk_id)
@@ -148,10 +175,21 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                         continue
 
                 if section_text:
+                    # 4. Create Caption for section text (linked to Page)
+                    self.service.add_captions([
+                        {
+                            "id": caption_id,
+                            "page_id": page_id,
+                            "contents": section_text,
+                        }
+                    ])
+
+                    # 5. Create Chunk (linked to Caption)
                     self.service.add_chunks([
                         {
                             "id": chunk_id,
                             "contents": section_text,
+                            "parent_caption": caption_id,
                         }
                     ])
                     chunk_id_map[chunk_id] = image_chunk_ids
