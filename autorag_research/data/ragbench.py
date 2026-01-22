@@ -88,6 +88,13 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
+        if corpus_limit is not None:
+            logger.warning(
+                "corpus_limit is ineffective for RAGBench. "
+                "Each query has its own document set (1:N relation) without a shared corpus. "
+                "Only query_limit is effective for this dataset."
+            )
+
         hf_split = SPLIT_MAPPING[subset]
 
         for config in self.configs:
