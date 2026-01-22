@@ -158,7 +158,7 @@ ignore = [
 preview = true
 
 [tool.deptry.per_rule_ignores]
-DEP002 = ["bert-score"]
+DEP002 = ["bert-score", "huggingface-hub"]
 
 [tool.deptry]
 exclude = ["tests/*", "scripts/*", ".venv/*", "venv/*"]

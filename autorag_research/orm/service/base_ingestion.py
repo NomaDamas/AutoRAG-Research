@@ -483,7 +483,7 @@ class BaseIngestionService(BaseService, ABC):
 
     def add_retrieval_gt_batch(
         self,
-        items: list[tuple[int, Any]],
+        items: list[tuple[int | str, Any]],
         chunk_type: Literal["mixed", "text", "image"] = "mixed",
         upsert: bool = False,
     ) -> list[tuple[int, int, int]]:

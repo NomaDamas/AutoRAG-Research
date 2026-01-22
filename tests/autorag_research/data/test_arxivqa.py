@@ -1,7 +1,12 @@
-"""Tests for ArxivQA (Full 100K) Dataset Ingestor.
+"""Tests for ArxivQA Dataset Ingestor (VisRAG filtered version).
 
-Unit tests for helper functions (TDD - written before implementation).
+Unit tests for helper functions.
 Integration tests use real data subsets against PostgreSQL.
+
+The VisRAG-filtered dataset has:
+- corpus: 8,070 images from arXiv papers
+- queries: 816 filtered questions (context-independent)
+- qrels: Query-to-corpus relevance judgments
 """
 
 import io
@@ -16,69 +21,6 @@ from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestVerifier,
     create_test_database,
 )
-
-# ==================== Unit Tests: Label Normalization ====================
-
-
-class TestNormalizeLabel:
-    """Test _normalize_label static method for various label formats."""
-
-    @pytest.mark.parametrize(
-        "label,expected",
-        [
-            ("A", "A"),
-            ("B", "B"),
-            ("C", "C"),
-            ("D", "D"),
-            ("E", "E"),
-            ("a", "A"),
-            ("b", "B"),
-            ("c", "C"),
-        ],
-    )
-    def test_single_letter(self, label: str, expected: str):
-        options = ["A. First", "B. Second", "C. Third", "D. Fourth"]
-        result = ArxivQAIngestor._normalize_label(label, options)
-        assert result == expected
-
-    @pytest.mark.parametrize(
-        "label,expected",
-        [
-            ("A.", "A"),
-            ("B.", "B"),
-            ("A)", "A"),
-            ("B)", "B"),
-            ("C. Some text here", "C"),
-            ("D) Another option", "D"),
-            ("e.", "E"),
-        ],
-    )
-    def test_letter_with_separator(self, label: str, expected: str):
-        options = ["A. First", "B. Second", "C. Third", "D. Fourth", "E. Fifth"]
-        result = ArxivQAIngestor._normalize_label(label, options)
-        assert result == expected
-
-    def test_full_option_text_matching(self):
-        options = ["A. Apple", "B. Banana", "C. Cherry", "D. Date"]
-        # Label is the full option text without prefix
-        result = ArxivQAIngestor._normalize_label("Banana", options)
-        assert result == "B"
-
-    def test_full_option_with_prefix(self):
-        options = ["A. Apple", "B. Banana", "C. Cherry", "D. Date"]
-        result = ArxivQAIngestor._normalize_label("B. Banana", options)
-        assert result == "B"
-
-    def test_case_insensitive_option_matching(self):
-        options = ["A. APPLE", "B. Banana", "C. cherry", "D. Date"]
-        result = ArxivQAIngestor._normalize_label("apple", options)
-        assert result == "A"
-
-    def test_whitespace_handling(self):
-        options = ["A. First", "B. Second"]
-        result = ArxivQAIngestor._normalize_label("  A  ", options)
-        assert result == "A"
-
 
 # ==================== Unit Tests: Query Formatting ====================
 
@@ -166,21 +108,27 @@ class TestPilToBytes:
 # ==================== Integration Tests ====================
 
 
+# VisRAG ArxivQA has BEIR-style format:
+# - 816 queries total
+# - 8,070 corpus images
+# - When using query_limit=10 with corpus_limit=100:
+#   - 10 queries sampled
+#   - 10 gold images (1:1 in this dataset) + up to 90 additional images = up to 100 total
 ARXIVQA_INTEGRATION_CONFIG = IngestorTestConfig(
     expected_query_count=10,
-    expected_image_chunk_count=10,  # 1:1 query to image mapping
-    chunk_count_is_minimum=False,  # Exact counts for ArxivQA
+    expected_image_chunk_count=50,  # 10 gold + 40 sampled
+    chunk_count_is_minimum=True,  # At least this many (gold IDs always included)
     check_retrieval_relations=True,
     check_generation_gt=True,  # ArxivQA has answers
     generation_gt_required_for_all=True,  # All queries must have generation_gt
-    primary_key_type="bigint",
+    primary_key_type="string",  # VisRAG uses string IDs
     db_name="arxivqa_integration_test",
 )
 
 
 @pytest.mark.data
 class TestArxivQAIngestorIntegration:
-    """Integration tests using real ArxivQA dataset subsets."""
+    """Integration tests using real VisRAG-filtered ArxivQA dataset subsets."""
 
     def test_ingest_arxivqa_subset(self):
         with create_test_database(ARXIVQA_INTEGRATION_CONFIG) as db:
@@ -190,6 +138,7 @@ class TestArxivQAIngestorIntegration:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=ARXIVQA_INTEGRATION_CONFIG.expected_query_count,
+                corpus_limit=ARXIVQA_INTEGRATION_CONFIG.expected_image_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, ARXIVQA_INTEGRATION_CONFIG)
@@ -199,12 +148,12 @@ class TestArxivQAIngestorIntegration:
         """Test that query contents include expected format (ArxivQA-specific)."""
         config = IngestorTestConfig(
             expected_query_count=3,
-            expected_image_chunk_count=3,
-            chunk_count_is_minimum=False,
+            expected_image_chunk_count=20,  # 3 gold + 17 sampled
+            chunk_count_is_minimum=True,
             check_retrieval_relations=True,
             check_generation_gt=True,
             generation_gt_required_for_all=True,
-            primary_key_type="bigint",
+            primary_key_type="string",
             db_name="arxivqa_query_format_test",
         )
 
@@ -213,7 +162,10 @@ class TestArxivQAIngestorIntegration:
 
             ingestor = ArxivQAIngestor()
             ingestor.set_service(service)
-            ingestor.ingest(query_limit=config.expected_query_count)
+            ingestor.ingest(
+                query_limit=config.expected_query_count,
+                corpus_limit=config.expected_image_chunk_count,
+            )
 
             # Verify ArxivQA-specific query format
             with service._create_uow() as uow:
@@ -223,3 +175,37 @@ class TestArxivQAIngestorIntegration:
                     assert "Query:" in query.contents
                     assert "Options:" in query.contents
                     assert "Given the following query and options" in query.contents
+
+    def test_corpus_always_includes_gold_ids(self):
+        """Test that corpus filtering always includes gold IDs from qrels."""
+        config = IngestorTestConfig(
+            expected_query_count=5,
+            expected_image_chunk_count=5,  # Minimal: exactly gold IDs
+            chunk_count_is_minimum=True,  # Must have at least the gold IDs
+            check_retrieval_relations=True,
+            check_generation_gt=True,
+            generation_gt_required_for_all=True,
+            primary_key_type="string",
+            db_name="arxivqa_gold_ids_test",
+        )
+
+        with create_test_database(config) as db:
+            service = MultiModalIngestionService(db.session_factory, schema=db.schema)
+
+            ingestor = ArxivQAIngestor()
+            ingestor.set_service(service)
+            # Set corpus_limit equal to query_limit to test gold ID inclusion
+            ingestor.ingest(
+                query_limit=config.expected_query_count,
+                corpus_limit=config.expected_query_count,  # Forces minimal corpus
+            )
+
+            # Verify all queries have valid retrieval relations
+            with service._create_uow() as uow:
+                queries = uow.queries.get_all(limit=100)
+                relations = uow.retrieval_relations.get_all(limit=1000)
+
+                # All queries should have at least one retrieval relation
+                query_ids_with_relations = {r.query_id for r in relations}
+                for query in queries:
+                    assert query.id in query_ids_with_relations, f"Query {query.id} has no retrieval relations"

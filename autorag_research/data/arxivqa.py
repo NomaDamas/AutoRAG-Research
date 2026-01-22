@@ -1,13 +1,19 @@
+"""ArxivQA Ingestor using VisRAG filtered dataset.
+
+This ingestor uses the filtered ArxivQA dataset from the VisRAG paper,
+which removes context-dependent questions for better retrieval evaluation.
+Dataset: openbmb/VisRAG-Ret-Test-ArxivQA
+
+The VisRAG filtering stage uses GPT-4o to identify and remove questions
+that are context-dependent, preserving only ~10% of the original dataset.
+"""
+
 import io
 import logging
 import random
-import re
-import tarfile
-from pathlib import Path
 from typing import Literal
 
 from datasets import load_dataset
-from huggingface_hub import hf_hub_download
 from llama_index.core.embeddings import MultiModalEmbedding
 from PIL import Image
 
@@ -17,39 +23,19 @@ from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
 
 RANDOM_SEED = 42
 BATCH_SIZE = 1000
+DATASET_NAME = "openbmb/VisRAG-Ret-Test-ArxivQA"
+
 logger = logging.getLogger("AutoRAG-Research")
 
 
-def _normalize_label(label: str, options: list[str]) -> str:
-    label = label.strip()
-
-    if len(label) == 1 and label.upper() in "ABCDE":
-        return label.upper()
-
-    match = re.match(r"^([A-Ea-e])[.)]", label)
-    if match:
-        return match.group(1).upper()
-
-    for i, opt in enumerate(options):
-        opt_letter = chr(ord("A") + i)
-        opt_text = re.sub(r"^[A-Ea-e][.)]\s*", "", opt).strip()
-        label_text = re.sub(r"^[A-Ea-e][.)]\s*", "", label).strip()
-        if label_text.lower() == opt_text.lower():
-            return opt_letter
-
-    if label and label[0].upper() in "ABCDE":
-        return label[0].upper()
-
-    logger.warning(f"Could not normalize label: {label}")
-    return label
-
-
 def _format_query(question: str, options: list[str]) -> str:
+    """Format query with question and multiple choice options."""
     options_text = "\n".join(options)
     return f"Given the following query and options, select the correct option.\n\nQuery: {question}\n\nOptions: {options_text}"
 
 
 def _pil_to_bytes(image: Image.Image) -> tuple[bytes, str]:
+    """Convert PIL Image to bytes with appropriate format."""
     buffer = io.BytesIO()
     img_format = "PNG" if image.mode in ("RGBA", "LA", "P") else "JPEG"
     image.save(buffer, format=img_format)
@@ -57,53 +43,64 @@ def _pil_to_bytes(image: Image.Image) -> tuple[bytes, str]:
 
 
 class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
+    """Ingestor for the VisRAG-filtered ArxivQA dataset.
+
+    The dataset follows BEIR-style format with separate corpus, queries, and qrels:
+    - corpus: 8,070 images from arXiv papers
+    - queries: 816 filtered questions (context-independent)
+    - qrels: Query-to-corpus relevance judgments
+
+    Attributes:
+        embedding_model: MultiModal embedding model for single-vector embeddings.
+        late_interaction_embedding_model: Multi-vector embedding model (e.g., ColPali).
+    """
+
     def __init__(
         self,
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
-        cache_dir: Path | None = None,
     ):
         super().__init__(embedding_model, late_interaction_embedding_model)
-        self.cache_dir = cache_dir
-        self._images_dir: Path | None = None
-        self._ds = None
+        self._corpus_ds = None
+        self._queries_ds = None
+        self._qrels_ds = None
 
     def detect_primary_key_type(self) -> Literal["bigint"] | Literal["string"]:
-        return "bigint"
+        return "string"
 
-    def _ensure_images_downloaded(self) -> Path:
-        if self._images_dir is not None and self._images_dir.exists():
-            return self._images_dir
+    def _load_corpus(self):
+        """Load corpus subset (images)."""
+        if self._corpus_ds is None:
+            logger.info(f"Loading {DATASET_NAME} corpus...")
+            self._corpus_ds = load_dataset(DATASET_NAME, name="corpus", split="train")
+        return self._corpus_ds
 
-        logger.info("Downloading images.tgz from HuggingFace...")
-        archive_path = hf_hub_download(
-            repo_id="MMInstruction/ArxivQA",
-            filename="images.tgz",
-            repo_type="dataset",
-            cache_dir=str(self.cache_dir) if self.cache_dir else None,
-        )
+    def _load_queries(self):
+        """Load queries subset."""
+        if self._queries_ds is None:
+            logger.info(f"Loading {DATASET_NAME} queries...")
+            self._queries_ds = load_dataset(DATASET_NAME, name="queries", split="train")
+        return self._queries_ds
 
-        extract_dir = Path(archive_path).parent / "extracted"
-        self._images_dir = extract_dir / "images"
+    def _load_qrels(self) -> dict[str, dict[str, int]]:
+        """Load and parse qrels into dict format.
 
-        if not self._images_dir.exists():
-            logger.info(f"Extracting images to {extract_dir}...")
-            extract_dir.mkdir(parents=True, exist_ok=True)
-            with tarfile.open(archive_path, "r:gz") as tar:
-                tar.extractall(extract_dir, filter="data")
+        Returns:
+            Dict mapping query_id -> {corpus_id: score}
+        """
+        if self._qrels_ds is None:
+            logger.info(f"Loading {DATASET_NAME} qrels...")
+            self._qrels_ds = load_dataset(DATASET_NAME, name="qrels", split="train")
 
-        logger.info(f"Images ready at {self._images_dir}")
-        return self._images_dir
-
-    def _load_dataset(self):
-        if self._ds is None:
-            logger.info("Loading MMInstruction/ArxivQA dataset...")
-            self._ds = load_dataset("MMInstruction/ArxivQA")["train"]  # ty: ignore[non-subscriptable]
-        return self._ds
-
-    @staticmethod
-    def _normalize_label(label: str, options: list[str]) -> str:
-        return _normalize_label(label, options)
+        qrels: dict[str, dict[str, int]] = {}
+        for row in self._qrels_ds:
+            query_id = row["query-id"]
+            corpus_id = row["corpus-id"]
+            score = row["score"]
+            if query_id not in qrels:
+                qrels[query_id] = {}
+            qrels[query_id][corpus_id] = score
+        return qrels
 
     @staticmethod
     def _format_query(question: str, options: list[str]) -> str:
@@ -113,108 +110,290 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
     def _pil_to_bytes(image: Image.Image) -> tuple[bytes, str]:
         return _pil_to_bytes(image)
 
+    def _sample_queries(
+        self,
+        query_index: dict[str, dict],
+        qrels: dict[str, dict[str, int]],
+        query_limit: int | None,
+        rng: random.Random,
+    ) -> list[str]:
+        """Sample queries that have valid qrels.
+
+        Args:
+            query_index: Dict mapping query_id to row data.
+            qrels: Dict mapping query_id -> {corpus_id: score}.
+            query_limit: Maximum number of queries to sample.
+            rng: Random number generator.
+
+        Returns:
+            List of selected query IDs.
+        """
+        all_query_ids = [qid for qid in query_index if qrels.get(qid)]
+
+        if query_limit is not None and query_limit < len(all_query_ids):
+            selected_query_ids = rng.sample(all_query_ids, query_limit)
+        else:
+            selected_query_ids = all_query_ids
+
+        logger.info(f"Selected {len(selected_query_ids)} queries from {len(all_query_ids)} total")
+        return selected_query_ids
+
+    def _collect_gold_corpus_ids(
+        self,
+        query_ids: list[str],
+        qrels: dict[str, dict[str, int]],
+    ) -> set[str]:
+        """Collect gold corpus IDs from selected queries.
+
+        Args:
+            query_ids: List of query IDs.
+            qrels: Dict mapping query_id -> {corpus_id: score}.
+
+        Returns:
+            Set of gold corpus IDs.
+        """
+        gold_corpus_ids: set[str] = set()
+        for qid in query_ids:
+            for corpus_id, score in qrels[qid].items():
+                if score > 0:
+                    gold_corpus_ids.add(corpus_id)
+        logger.info(f"Found {len(gold_corpus_ids)} gold corpus IDs")
+        return gold_corpus_ids
+
+    def _filter_corpus(
+        self,
+        all_corpus_ids: list[str],
+        gold_corpus_ids: set[str],
+        corpus_limit: int | None,
+        rng: random.Random,
+    ) -> list[str]:
+        """Filter corpus to include gold IDs plus random samples.
+
+        Args:
+            all_corpus_ids: All corpus IDs.
+            gold_corpus_ids: Gold corpus IDs that must be included.
+            corpus_limit: Maximum corpus size.
+            rng: Random number generator.
+
+        Returns:
+            List of selected corpus IDs.
+        """
+        if corpus_limit is not None and corpus_limit < len(all_corpus_ids):
+            non_gold_ids = [cid for cid in all_corpus_ids if cid not in gold_corpus_ids]
+            remaining_slots = max(0, corpus_limit - len(gold_corpus_ids))
+
+            if remaining_slots > 0 and len(non_gold_ids) > remaining_slots:
+                sampled_non_gold = rng.sample(non_gold_ids, remaining_slots)
+            else:
+                sampled_non_gold = non_gold_ids[:remaining_slots]
+
+            selected = list(gold_corpus_ids) + sampled_non_gold
+        else:
+            selected = all_corpus_ids
+
+        logger.info(f"Selected {len(selected)} corpus items from {len(all_corpus_ids)} total")
+        return selected
+
+    def _ingest_corpus(
+        self,
+        corpus_ids: list[str],
+        corpus_index: dict[str, dict],
+    ) -> tuple[dict[str, str], int]:
+        """Ingest corpus images in batches.
+
+        Args:
+            corpus_ids: Corpus IDs to ingest.
+            corpus_index: Dict mapping corpus_id to row data.
+
+        Returns:
+            Tuple of (corpus_id_to_pk mapping, skipped count).
+        """
+        if self.service is None:
+            raise ServiceNotSetError
+
+        corpus_id_to_pk: dict[str, str] = {}
+        skipped = 0
+
+        for batch_start in range(0, len(corpus_ids), BATCH_SIZE):
+            batch_ids = corpus_ids[batch_start : batch_start + BATCH_SIZE]
+            image_data, valid_ids, batch_skipped = self._process_image_batch(batch_ids, corpus_index)
+            skipped += batch_skipped
+
+            if image_data:
+                pks = self.service.add_image_chunks(image_data)
+                for cid, pk in zip(valid_ids, pks, strict=True):
+                    corpus_id_to_pk[cid] = pk
+
+            logger.info(f"Processed corpus {batch_start + len(batch_ids)}/{len(corpus_ids)} (skipped: {skipped})")
+
+        return corpus_id_to_pk, skipped
+
+    def _process_image_batch(
+        self,
+        batch_ids: list[str],
+        corpus_index: dict[str, dict],
+    ) -> tuple[list[dict], list[str], int]:
+        """Process a batch of images for ingestion.
+
+        Args:
+            batch_ids: Batch of corpus IDs.
+            corpus_index: Dict mapping corpus_id to row data.
+
+        Returns:
+            Tuple of (image_chunks_data, valid_ids, skipped_count).
+        """
+        image_chunks_data: list[dict] = []
+        valid_ids: list[str] = []
+        skipped = 0
+
+        for corpus_id in batch_ids:
+            row = corpus_index[corpus_id]
+            try:
+                img = row["image"]
+                if isinstance(img, Image.Image):
+                    img_bytes, mimetype = _pil_to_bytes(img)
+                else:
+                    img_bytes, mimetype = _pil_to_bytes(Image.open(io.BytesIO(img)))
+
+                image_chunks_data.append({"id": corpus_id, "content": img_bytes, "mimetype": mimetype})
+                valid_ids.append(corpus_id)
+            except Exception as e:
+                logger.warning(f"Failed to process image {corpus_id}: {e}")
+                skipped += 1
+
+        return image_chunks_data, valid_ids, skipped
+
+    def _ingest_queries(
+        self,
+        query_ids: list[str],
+        query_index: dict[str, dict],
+    ) -> dict[str, str]:
+        """Ingest queries in batches.
+
+        Args:
+            query_ids: Query IDs to ingest.
+            query_index: Dict mapping query_id to row data.
+
+        Returns:
+            Dict mapping query_id to database PK.
+        """
+        if self.service is None:
+            raise ServiceNotSetError
+
+        query_id_to_pk: dict[str, str] = {}
+
+        for batch_start in range(0, len(query_ids), BATCH_SIZE):
+            batch_ids = query_ids[batch_start : batch_start + BATCH_SIZE]
+            queries_data: list[dict] = []
+
+            for query_id in batch_ids:
+                row = query_index[query_id]
+                formatted_query = _format_query(row["query"], row["options"])
+                queries_data.append({"id": query_id, "contents": formatted_query, "generation_gt": [row["answer"]]})
+
+            if queries_data:
+                pks = self.service.add_queries(queries_data)
+                for qid, pk in zip(batch_ids, pks, strict=True):
+                    query_id_to_pk[qid] = pk
+
+            logger.info(f"Processed queries {batch_start + len(batch_ids)}/{len(query_ids)}")
+
+        return query_id_to_pk
+
     def ingest(
         self,
         subset: Literal["train", "dev", "test"] = "train",
         query_limit: int | None = None,
         corpus_limit: int | None = None,
     ) -> None:
+        """Ingest ArxivQA data from the VisRAG filtered dataset.
+
+        Note: The VisRAG dataset only has a 'train' split, so all subset
+        values are mapped to 'train'.
+
+        Args:
+            subset: Dataset split (ignored - always uses 'train').
+            query_limit: Maximum number of queries to ingest.
+            corpus_limit: Maximum number of corpus images to ingest.
+                         Gold IDs from selected queries are always included.
+        """
         super().ingest(subset, query_limit, corpus_limit)
 
         if self.service is None:
             raise ServiceNotSetError
 
-        images_dir = self._ensure_images_downloaded()
-        ds = self._load_dataset()
-        total_count = len(ds)
+        # Load all dataset components
+        corpus_ds = self._load_corpus()
+        queries_ds = self._load_queries()
+        qrels = self._load_qrels()
+        rng = random.Random(RANDOM_SEED)  # noqa: S311
 
-        effective_limit = total_count
-        if query_limit is not None:
-            effective_limit = min(effective_limit, query_limit)
-        if corpus_limit is not None:
-            effective_limit = min(effective_limit, corpus_limit)
+        # Build indexes
+        query_index = {row["query-id"]: row for row in queries_ds}
+        corpus_index = {row["corpus-id"]: row for row in corpus_ds}
 
-        if effective_limit < total_count:
-            rng = random.Random(RANDOM_SEED)  # noqa: S311
-            selected_indices = sorted(rng.sample(range(total_count), effective_limit))
-        else:
-            selected_indices = list(range(total_count))
+        # Sample and filter
+        selected_query_ids = self._sample_queries(query_index, qrels, query_limit, rng)
+        gold_corpus_ids = self._collect_gold_corpus_ids(selected_query_ids, qrels)
+        selected_corpus_ids = self._filter_corpus(list(corpus_index.keys()), gold_corpus_ids, corpus_limit, rng)
 
-        logger.info(f"Ingesting {len(selected_indices)} examples from ArxivQA...")
-
-        skipped_count = 0
-        all_query_pks: list[int | str] = []
-        all_image_chunk_pks: list[int | str] = []
-
-        for batch_start in range(0, len(selected_indices), BATCH_SIZE):
-            batch_indices = selected_indices[batch_start : batch_start + BATCH_SIZE]
-
-            queries_data: list[dict] = []
-            image_chunks_data: list[dict] = []
-
-            for idx in batch_indices:
-                row = ds[idx]
-                image_path = row["image"]
-                question = row["question"]
-                options = row["options"]
-                label = row["label"]
-
-                try:
-                    filename = image_path.replace("images/", "")
-                    img = Image.open(images_dir / filename)
-                    img_bytes, mimetype = _pil_to_bytes(img)
-                except Exception as e:
-                    logger.warning(f"Failed to load image {image_path}: {e}")
-                    skipped_count += 1
-                    continue
-
-                formatted_query = _format_query(question, options)
-                normalized_answer = _normalize_label(label, options)
-
-                queries_data.append({
-                    "contents": formatted_query,
-                    "generation_gt": [normalized_answer],
-                })
-
-                image_chunks_data.append({
-                    "contents": img_bytes,
-                    "mimetype": mimetype,
-                })
-
-            if queries_data:
-                query_pks = self.service.add_queries(queries_data)
-                image_chunk_pks = self.service.add_image_chunks(image_chunks_data)
-                all_query_pks.extend(query_pks)
-                all_image_chunk_pks.extend(image_chunk_pks)
-
-            logger.info(
-                f"Processed {batch_start + len(batch_indices)}/{len(selected_indices)} (skipped: {skipped_count})"
-            )
-
-        self.ingest_qrels(all_query_pks, all_image_chunk_pks)
+        # Ingest data
+        corpus_id_to_pk, skipped = self._ingest_corpus(selected_corpus_ids, corpus_index)
+        query_id_to_pk = self._ingest_queries(selected_query_ids, query_index)
+        self._ingest_qrels(selected_query_ids, qrels, query_id_to_pk, corpus_id_to_pk, set(selected_corpus_ids))
 
         logger.info(
-            f"Ingestion complete: {len(all_query_pks)} queries, "
-            f"{len(all_image_chunk_pks)} images, {skipped_count} skipped"
+            f"Ingestion complete: {len(query_id_to_pk)} queries, {len(corpus_id_to_pk)} images, {skipped} skipped"
         )
 
-    def ingest_qrels(
+    def _ingest_qrels(
         self,
-        query_pk_list: list[int | str],
-        image_chunk_pk_list: list[int | str],
+        query_ids: list[str],
+        qrels: dict[str, dict[str, int]],
+        query_id_to_pk: dict[str, str],
+        corpus_id_to_pk: dict[str, str],
+        selected_corpus_ids_set: set[str],
     ) -> None:
+        """Ingest qrels (retrieval ground truth).
+
+        Args:
+            query_ids: List of query IDs to process.
+            qrels: Dict mapping query_id -> {corpus_id: score}.
+            query_id_to_pk: Mapping from original query_id to database PK.
+            corpus_id_to_pk: Mapping from original corpus_id to database PK.
+            selected_corpus_ids_set: Set of corpus IDs that were actually ingested.
+        """
         if self.service is None:
             raise ServiceNotSetError
 
-        self.service.add_retrieval_gt_batch(
-            [
-                (query_pk, image_chunk_pk)
-                for query_pk, image_chunk_pk in zip(query_pk_list, image_chunk_pk_list, strict=True)
-            ],
-            chunk_type="image",
-        )
+        from autorag_research.orm.models.retrieval_gt import or_all
+
+        qrels_items: list[tuple[str, list[str]]] = []
+
+        for query_id in query_ids:
+            if query_id not in query_id_to_pk:
+                continue
+
+            query_pk = query_id_to_pk[query_id]
+            gold_pks: list[str] = []
+
+            for corpus_id, score in qrels[query_id].items():
+                if score > 0 and corpus_id in selected_corpus_ids_set and corpus_id in corpus_id_to_pk:
+                    gold_pks.append(corpus_id_to_pk[corpus_id])
+
+            if gold_pks:
+                qrels_items.append((query_pk, gold_pks))
+
+        if qrels_items:
+            self.service.add_retrieval_gt_batch(
+                [(qid, or_all(gold_ids)) for qid, gold_ids in qrels_items],  # ty: ignore[invalid-argument-type]
+                chunk_type="image",
+            )
+
+        logger.info(f"Added {len(qrels_items)} qrel entries")
 
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
+        """Embed all queries and image chunks with single-vector embeddings."""
         if self.embedding_model is None:
             raise EmbeddingNotSetError
         if self.service is None:
@@ -236,6 +415,7 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
         max_concurrency: int = 16,
         batch_size: int = 128,
     ) -> None:
+        """Embed all queries and image chunks with multi-vector embeddings."""
         if self.late_interaction_embedding_model is None:
             raise EmbeddingNotSetError
         if self.service is None:
