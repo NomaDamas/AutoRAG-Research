@@ -17,7 +17,6 @@ Available Datasets:
 - esg_reports_human_labeled_v2: Human-labeled ESG reports (52 queries, 1538 pages)
 """
 
-import random
 from enum import Enum
 from typing import Any, Literal
 
@@ -29,6 +28,7 @@ from PIL import Image
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
+from autorag_research.orm.models import image, or_all
 from autorag_research.util import pil_image_to_bytes
 
 RANDOM_SEED = 42
@@ -122,49 +122,41 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         else:
             selected_queries_df = grouped
 
-        selected_query_ids = list(selected_queries_df.index)
-        query_to_corpus_ids: dict[int, list[int]] = selected_queries_df["corpus_ids"].to_dict()
-        query_to_answers: dict[int, list[str]] = selected_queries_df["answers"].to_dict()
-
         # Step 3: Get gold corpus IDs from selected queries
         gold_corpus_ids: set[int] = set()
-        for corpus_list in query_to_corpus_ids.values():
+        for corpus_list in selected_queries_df["corpus_ids"]:
             gold_corpus_ids.update(corpus_list)
 
-        # Step 4: Determine final corpus IDs (gold + additional if needed for corpus_limit)
-        all_corpus_ids = set(qrels_df["corpus-id"].unique())
-        if corpus_limit is None or len(gold_corpus_ids) >= corpus_limit:
-            selected_corpus_ids = gold_corpus_ids
-        else:
-            # Need more corpus items - sample from non-gold items
-            remaining_slots = corpus_limit - len(gold_corpus_ids)
-            available = list(all_corpus_ids - gold_corpus_ids)
-            rng = random.Random(RANDOM_SEED)  # noqa: S311
-            additional = rng.sample(available, min(remaining_slots, len(available)))
-            selected_corpus_ids = gold_corpus_ids | set(additional)
+        # Step 4: Calculate how many additional corpus items are needed (if any)
+        additional_corpus_needed = 0
+        if corpus_limit is not None and corpus_limit > len(gold_corpus_ids):
+            additional_corpus_needed = corpus_limit - len(gold_corpus_ids)
 
         # Step 5: Load and ingest corpus (images) - streaming for large image data
+        # Gold IDs are always ingested, plus additional items if corpus_limit requires more
         corpus_ds = load_dataset(dataset_path, "corpus", streaming=True, split="test")
-        corpus_id_to_pk = self._ingest_corpus(corpus_ds, selected_corpus_ids)
+        corpus_id_to_pk = self._ingest_corpus(corpus_ds, gold_corpus_ids, additional_corpus_needed)
 
         # Step 6: Load and ingest queries - streaming
         queries_ds = load_dataset(dataset_path, "queries", streaming=True, split="test")
-        query_id_to_pk = self._ingest_queries(queries_ds, selected_query_ids, query_to_answers)
+        query_id_to_pk = self._ingest_queries(queries_ds, selected_queries_df)
 
         # Step 7: Create retrieval relations
-        self._ingest_qrels(
-            query_to_corpus_ids,
-            selected_query_ids,
-            query_id_to_pk,
-            corpus_id_to_pk,
-        )
+        self._ingest_qrels(selected_queries_df, query_id_to_pk, corpus_id_to_pk)
 
-    def _ingest_corpus(self, corpus_ds: Any, selected_ids: set[int]) -> dict[int, int]:
+    def _ingest_corpus(
+        self,
+        corpus_ds: Any,
+        gold_ids: set[int],
+        additional_needed: int = 0,
+    ) -> dict[int, int]:
         """Ingest corpus images.
 
         Args:
             corpus_ds: Streaming corpus dataset.
-            selected_ids: Set of corpus IDs to ingest.
+            gold_ids: Set of gold corpus IDs (from qrels) that must be ingested.
+            additional_needed: Number of additional corpus items to ingest beyond gold IDs.
+                             These are sampled from items NOT in gold_ids (may include items not in qrels).
 
         Returns:
             Mapping from corpus-id to database primary key.
@@ -177,8 +169,17 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
 
         for row in corpus_ds:
             corpus_id = int(row["corpus-id"])
-            if corpus_id not in selected_ids:
+
+            # Always ingest gold IDs
+            is_gold = corpus_id in gold_ids
+            # Ingest additional items if we still need more
+            is_additional = (not is_gold) and (additional_needed > 0)
+
+            if not is_gold and not is_additional:
                 continue
+
+            if is_additional:
+                additional_needed -= 1
 
             image: Image.Image = row["image"]
             img_bytes, mimetype = pil_image_to_bytes(image)
@@ -198,15 +199,13 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
     def _ingest_queries(
         self,
         queries_ds: Any,
-        selected_ids: list[int],
-        query_to_answers: dict[int, list[str]],
+        selected_queries_df: pd.DataFrame,
     ) -> dict[int, int]:
         """Ingest queries.
 
         Args:
             queries_ds: Streaming queries dataset.
-            selected_ids: List of query IDs to ingest.
-            query_to_answers: Mapping from query-id to list of ground truth answers (from qrels).
+            selected_queries_df: DataFrame with query-id as index, containing 'corpus_ids' and 'answers' columns.
 
         Returns:
             Mapping from query-id to database primary key.
@@ -214,7 +213,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        selected_ids_set = set(selected_ids)
+        selected_ids_set = set(selected_queries_df.index)
         query_id_to_pk: dict[int, int] = {}
         queries_batch: list[dict] = []
 
@@ -231,7 +230,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
             }
 
             # Get answers from qrels (not from queries dataset)
-            answers = query_to_answers.get(query_id)
+            answers = selected_queries_df.at[query_id, "answers"]
             if answers:
                 query_data["generation_gt"] = answers
 
@@ -245,30 +244,26 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
 
     def _ingest_qrels(
         self,
-        query_to_corpus: dict[int, list[int]],
-        selected_query_ids: list[int],
+        selected_queries_df: pd.DataFrame,
         query_id_to_pk: dict[int, int],
         corpus_id_to_pk: dict[int, int],
     ) -> None:
         """Create retrieval relations from qrels.
 
         Args:
-            query_to_corpus: Mapping of query-id to list of relevant corpus-ids.
-            selected_query_ids: Query IDs that were ingested.
+            selected_queries_df: DataFrame with query-id as index, containing 'corpus_ids' column.
             query_id_to_pk: Mapping from query-id to database PK.
             corpus_id_to_pk: Mapping from corpus-id to database PK.
         """
         if self.service is None:
             raise ServiceNotSetError
 
-        from autorag_research.orm.models import image, or_all
-
-        for query_id in selected_query_ids:
+        for query_id in selected_queries_df.index:
             query_pk = query_id_to_pk.get(query_id)
             if query_pk is None:
                 continue
 
-            corpus_ids = query_to_corpus.get(query_id, [])
+            corpus_ids = selected_queries_df.at[query_id, "corpus_ids"]
             # Filter to only include corpus IDs that were ingested
             valid_corpus_pks = [corpus_id_to_pk[cid] for cid in corpus_ids if cid in corpus_id_to_pk]
 
