@@ -44,7 +44,7 @@ class GenerationResult:
 # Type alias for generation function
 # Signature: (query_text: str, top_k: int) -> GenerationResult
 # The function has internal access to retrieval pipeline via closure/method binding
-GenerateFunc = Callable[[str, int], GenerationResult]
+GenerateFunc = Callable[[str, int], GenerationResult | str]
 
 
 class GenerationPipelineService(BaseService):
@@ -178,6 +178,8 @@ class GenerationPipelineService(BaseService):
                     # Time the generation
                     start_time = time.time()
                     result = generate_func(query.contents, top_k)
+                    if isinstance(result, str):
+                        result = GenerationResult(text=result)
                     execution_time_ms = int((time.time() - start_time) * 1000)
 
                     batch_results.append({
