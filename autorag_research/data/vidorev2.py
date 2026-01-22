@@ -17,9 +17,7 @@ Available Datasets:
 - esg_reports_human_labeled_v2: Human-labeled ESG reports (52 queries, 1538 pages)
 """
 
-import io
 import random
-from collections import defaultdict
 from enum import Enum
 from typing import Any, Literal
 
@@ -30,6 +28,7 @@ from PIL import Image
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
+from autorag_research.util import pil_image_to_bytes
 
 RANDOM_SEED = 42
 
@@ -40,7 +39,6 @@ class ViDoReV2DatasetName(str, Enum):
     ESG_REPORTS_V2 = "esg_reports_v2"
     BIOMEDICAL_LECTURES_V2 = "biomedical_lectures_v2"
     ECONOMICS_REPORTS_V2 = "economics_reports_v2"
-    ESG_REPORTS_HUMAN_LABELED_V2 = "esg_reports_human_labeled_v2"
 
 
 class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
@@ -99,34 +97,62 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
             corpus_limit: Maximum number of corpus items to ingest.
                          Gold IDs from selected queries are always included.
         """
+        import pandas as pd
+
         super().ingest(subset, query_limit, corpus_limit)
         if self.service is None:
             raise ServiceNotSetError
 
         dataset_path = f"vidore/{self.dataset_name.value}"
 
-        # Step 1: Load qrels to build query->corpus mappings
-        qrels_ds = load_dataset(dataset_path, "qrels", streaming=True, split="test")
-        query_to_corpus_ids, all_query_ids, all_corpus_ids = self._load_qrels(qrels_ds)
+        # Step 1: Load qrels into pandas and process with groupby
+        from datasets import Dataset
 
-        # Step 2: Select queries (random sample if limit is set)
-        selected_query_ids = self._select_items(list(all_query_ids), query_limit, "queries")
+        qrels_ds: Dataset = load_dataset(dataset_path, "qrels", streaming=False, split="test")  # ty: ignore[invalid-assignment]
+        qrels_df: pd.DataFrame = qrels_ds.to_pandas()  # ty: ignore[invalid-assignment]
+        qrels_df["query-id"] = qrels_df["query-id"].astype(str)
+        qrels_df["corpus-id"] = qrels_df["corpus-id"].astype(str)
 
-        # Step 3: Determine required corpus IDs (gold IDs from selected queries)
-        required_corpus_ids: set[str] = set()
-        for qid in selected_query_ids:
-            required_corpus_ids.update(query_to_corpus_ids.get(qid, []))
+        # Group by query-id: get corpus IDs and unique answers per query
+        grouped = qrels_df.groupby("query-id").agg(
+            corpus_ids=pd.NamedAgg(column="corpus-id", aggfunc=list),
+            answers=pd.NamedAgg(column="answer", aggfunc=lambda x: list(x.dropna().unique())),
+        )
 
-        # Step 4: If corpus_limit is set, add random corpus items to reach limit
-        selected_corpus_ids = self._select_corpus_with_gold_ids(required_corpus_ids, all_corpus_ids, corpus_limit)
+        # Step 2: Sample queries if limit is set
+        if query_limit is not None and query_limit < len(grouped):
+            selected_queries_df = grouped.sample(n=query_limit, random_state=RANDOM_SEED)
+        else:
+            selected_queries_df = grouped
 
-        # Step 5: Load and ingest corpus (images)
+        selected_query_ids = list(selected_queries_df.index)
+        query_to_corpus_ids: dict[str, list[str]] = selected_queries_df["corpus_ids"].to_dict()
+        query_to_answers: dict[str, list[str]] = selected_queries_df["answers"].to_dict()
+
+        # Step 3: Get gold corpus IDs from selected queries
+        gold_corpus_ids: set[str] = set()
+        for corpus_list in query_to_corpus_ids.values():
+            gold_corpus_ids.update(corpus_list)
+
+        # Step 4: Determine final corpus IDs (gold + additional if needed for corpus_limit)
+        all_corpus_ids = set(qrels_df["corpus-id"].unique())
+        if corpus_limit is None or len(gold_corpus_ids) >= corpus_limit:
+            selected_corpus_ids = gold_corpus_ids
+        else:
+            # Need more corpus items - sample from non-gold items
+            remaining_slots = corpus_limit - len(gold_corpus_ids)
+            available = list(all_corpus_ids - gold_corpus_ids)
+            rng = random.Random(RANDOM_SEED)  # noqa: S311
+            additional = rng.sample(available, min(remaining_slots, len(available)))
+            selected_corpus_ids = gold_corpus_ids | set(additional)
+
+        # Step 5: Load and ingest corpus (images) - streaming for large image data
         corpus_ds = load_dataset(dataset_path, "corpus", streaming=True, split="test")
         corpus_id_to_pk = self._ingest_corpus(corpus_ds, selected_corpus_ids)
 
-        # Step 6: Load and ingest queries
+        # Step 6: Load and ingest queries - streaming
         queries_ds = load_dataset(dataset_path, "queries", streaming=True, split="test")
-        query_id_to_pk = self._ingest_queries(queries_ds, selected_query_ids)
+        query_id_to_pk = self._ingest_queries(queries_ds, selected_query_ids, query_to_answers)
 
         # Step 7: Create retrieval relations
         self._ingest_qrels(
@@ -135,77 +161,6 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
             query_id_to_pk,
             corpus_id_to_pk,
         )
-
-    def _load_qrels(self, qrels_ds: Any) -> tuple[dict[str, list[str]], set[str], set[str]]:
-        """Load qrels and build query-to-corpus mappings.
-
-        Args:
-            qrels_ds: Streaming qrels dataset.
-
-        Returns:
-            Tuple of (query_to_corpus mapping, all query IDs, all corpus IDs).
-        """
-        query_to_corpus: dict[str, list[str]] = defaultdict(list)
-        all_query_ids: set[str] = set()
-        all_corpus_ids: set[str] = set()
-
-        for row in qrels_ds:
-            query_id = str(row["query-id"])
-            corpus_id = str(row["corpus-id"])
-            query_to_corpus[query_id].append(corpus_id)
-            all_query_ids.add(query_id)
-            all_corpus_ids.add(corpus_id)
-
-        return dict(query_to_corpus), all_query_ids, all_corpus_ids
-
-    def _select_items(self, items: list[str], limit: int | None, item_type: str) -> list[str]:
-        """Select items with optional random sampling.
-
-        Args:
-            items: List of item IDs.
-            limit: Maximum number of items to select (None = all).
-            item_type: Type name for logging.
-
-        Returns:
-            Selected item IDs.
-        """
-        if limit is None or limit >= len(items):
-            return items
-
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
-        return rng.sample(items, limit)
-
-    def _select_corpus_with_gold_ids(
-        self,
-        required_ids: set[str],
-        all_corpus_ids: set[str],
-        corpus_limit: int | None,
-    ) -> set[str]:
-        """Select corpus IDs ensuring gold IDs are included.
-
-        Args:
-            required_ids: Gold corpus IDs that must be included.
-            all_corpus_ids: All available corpus IDs.
-            corpus_limit: Maximum corpus items (None = all).
-
-        Returns:
-            Set of selected corpus IDs.
-        """
-        if corpus_limit is None:
-            return all_corpus_ids
-
-        # Always include gold IDs
-        selected = set(required_ids)
-
-        # If we still have room, add random items
-        remaining_slots = corpus_limit - len(selected)
-        if remaining_slots > 0:
-            available = list(all_corpus_ids - selected)
-            rng = random.Random(RANDOM_SEED)  # noqa: S311
-            additional = rng.sample(available, min(remaining_slots, len(available)))
-            selected.update(additional)
-
-        return selected
 
     def _ingest_corpus(self, corpus_ds: Any, selected_ids: set[str]) -> dict[str, str]:
         """Ingest corpus images.
@@ -229,7 +184,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
                 continue
 
             image: Image.Image = row["image"]
-            img_bytes, mimetype = self._pil_image_to_bytes(image)
+            img_bytes, mimetype = pil_image_to_bytes(image)
 
             image_chunks_batch.append({
                 "id": corpus_id,
@@ -243,12 +198,18 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
 
         return corpus_id_to_pk
 
-    def _ingest_queries(self, queries_ds: Any, selected_ids: list[str]) -> dict[str, str]:
+    def _ingest_queries(
+        self,
+        queries_ds: Any,
+        selected_ids: list[str],
+        query_to_answers: dict[str, list[str]],
+    ) -> dict[str, str]:
         """Ingest queries.
 
         Args:
             queries_ds: Streaming queries dataset.
             selected_ids: List of query IDs to ingest.
+            query_to_answers: Mapping from query-id to list of ground truth answers (from qrels).
 
         Returns:
             Mapping from query-id to database primary key.
@@ -266,14 +227,16 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
                 continue
 
             query_text = str(row["query"])
-            answer = row.get("answer")
 
             query_data: dict = {
                 "id": query_id,
                 "contents": query_text,
             }
-            if answer is not None:
-                query_data["generation_gt"] = [str(answer)]
+
+            # Get answers from qrels (not from queries dataset)
+            answers = query_to_answers.get(query_id)
+            if answers:
+                query_data["generation_gt"] = answers
 
             queries_batch.append(query_data)
             query_id_to_pk[query_id] = query_id
@@ -319,23 +282,6 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
                     or_all(valid_corpus_pks, image),
                     chunk_type="image",
                 )
-
-    @staticmethod
-    def _pil_image_to_bytes(image: Image.Image) -> tuple[bytes, str]:
-        """Convert PIL image to bytes with mimetype.
-
-        Args:
-            image: PIL Image object.
-
-        Returns:
-            Tuple of (image_bytes, mimetype).
-        """
-        buffer = io.BytesIO()
-        # Determine format based on image mode
-        img_format = "PNG" if image.mode in ("RGBA", "LA", "P") else "JPEG"
-        image.save(buffer, format=img_format)
-        mimetype = f"image/{img_format.lower()}"
-        return buffer.getvalue(), mimetype
 
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
         """Embed all queries and image chunks using single-vector embedding model.
