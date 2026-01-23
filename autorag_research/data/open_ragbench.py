@@ -16,7 +16,7 @@ logger = logging.getLogger("AutoRAG-Research")
 
 RANDOM_SEED = 42
 REPO_ID = "vectara/open_ragbench"
-DEFAULT_SUBSET = "pdf/arxiv"
+DATA_PATH = "pdf/arxiv"
 
 
 def make_page_id(doc_id: str, section_id: int) -> str:
