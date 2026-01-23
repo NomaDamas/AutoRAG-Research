@@ -51,7 +51,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
         self,
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
-        subset: str = DEFAULT_SUBSET,
+        subset: str = DATA_PATH,
     ):
         super().__init__(embedding_model, late_interaction_embedding_model)
         self.subset = subset
