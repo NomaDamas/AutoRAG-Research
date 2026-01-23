@@ -102,14 +102,6 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
             qrels[query_id][corpus_id] = score
         return qrels
 
-    @staticmethod
-    def _format_query(question: str, options: list[str]) -> str:
-        return _format_query(question, options)
-
-    @staticmethod
-    def _pil_to_bytes(image: Image.Image) -> tuple[bytes, str]:
-        return _pil_to_bytes(image)
-
     def _sample_queries(
         self,
         query_index: dict[str, dict],
