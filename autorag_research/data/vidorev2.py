@@ -271,7 +271,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
             if valid_corpus_pks:
                 # Use or_all with image wrapper for multiple relevant image chunks
                 self.service.add_retrieval_gt(
-                    query_pk,  # ty: ignore[invalid-argument-type]
+                    query_pk,
                     or_all(valid_corpus_pks, image),
                     chunk_type="image",
                 )

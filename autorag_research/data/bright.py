@@ -150,7 +150,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         metadata_list: list[QueryMetadata] = []
 
         for example in ds:
-            example_dict: dict[str, Any] = example  # type: ignore[assignment]
+            example_dict: dict[str, Any] = example
             gold_ids = _get_gold_ids(example_dict, self.document_mode, domain)
 
             if not gold_ids:
@@ -196,7 +196,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         stream_count = 0
 
         for doc in ds:
-            doc_dict: dict[str, Any] = doc  # type: ignore[assignment]
+            doc_dict: dict[str, Any] = doc
             chunk_id = _make_id(domain, doc_dict["id"])
             chunk_data: dict[str, str | int | None] = {
                 "id": chunk_id,
@@ -241,7 +241,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         total_count = 0
 
         for doc in ds:
-            doc_dict: dict[str, Any] = doc  # type: ignore[assignment]
+            doc_dict: dict[str, Any] = doc
             chunk_id = _make_id(domain, doc_dict["id"])
             chunks.append({
                 "id": chunk_id,
