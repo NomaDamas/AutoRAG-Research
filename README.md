@@ -11,64 +11,185 @@ Automate your RAG research.
 - **Github repository**: <https://github.com/vkehfdl1/AutoRAG-Research/>
 - **Documentation** <https://vkehfdl1.github.io/AutoRAG-Research/>
 
-## Getting started with your project
+## CLI Usage
 
-### 1. Create a New Repository
+AutoRAG-Research provides a CLI tool for managing RAG research workflows.
 
-First, create a repository on GitHub with the same name as this project, and then run the following commands:
-
-```bash
-git init -b main
-git add .
-git commit -m "init commit"
-git remote add origin git@github.com:vkehfdl1/AutoRAG-Research.git
-git push -u origin main
-```
-
-### 2. Set Up Your Development Environment
-
-Then, install the environment and the pre-commit hooks with
+### Installation
 
 ```bash
-make install
+pip install autorag-research
 ```
 
-This will also generate your `uv.lock` file
-
-### 3. Run the pre-commit hooks
-
-Initially, the CI/CD pipeline might be failing due to formatting issues. To resolve those run:
+or
 
 ```bash
-uv run pre-commit run -a
+uv pip install autorag-research
 ```
 
-### 4. Commit the changes
-
-Lastly, commit the changes made by the two steps above to your repository.
+### Quick Start
 
 ```bash
-git add .
-git commit -m 'Fix formatting issues'
-git push origin main
+# 1. Initialize configuration files
+autorag-research init-config
+
+# 2. Edit database settings
+vi configs/db/default.yaml
+
+# 3. Ingest a dataset
+autorag-research ingest beir --dataset=scifact
+
+# 4. Run experiments
+autorag-research run --db-name=beir_scifact_test
 ```
 
-You are now ready to start development on your project!
-The CI/CD pipeline will be triggered when you open a pull request, merge to main, or when you create a new release.
+### Commands
 
-To finalize the set-up for publishing to PyPI, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/publishing/#set-up-for-pypi).
-For activating the automatic documentation with MkDocs, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/mkdocs/#enabling-the-documentation-on-github).
-To enable the code coverage reports, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/codecov/).
+#### `init-config` - Initialize Configuration Files
 
-## Releasing a new version
+Downloads default configuration files to `./configs/` directory.
 
-- Create an API Token on [PyPI](https://pypi.org/).
-- Add the API Token to your projects secrets with the name `PYPI_TOKEN` by visiting [this page](https://github.com/vkehfdl1/AutoRAG-Research/settings/secrets/actions/new).
-- Create a [new release](https://github.com/vkehfdl1/AutoRAG-Research/releases/new) on Github.
-- Create a new tag in the form `*.*.*`.
+```bash
+autorag-research init-config
+```
 
-For more details, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/cicd/#how-to-trigger-a-release).
+This creates:
+- `configs/db/default.yaml` - Database connection settings
+- `configs/experiment.yaml` - Experiment configuration
+- `configs/pipelines/*.yaml` - Pipeline configurations
+- `configs/metrics/*.yaml` - Metric configurations
 
----
+#### `ingest` - Ingest Datasets
 
-Repository initiated with [fpgmaas/cookiecutter-uv](https://github.com/fpgmaas/cookiecutter-uv).
+Ingest datasets into PostgreSQL. Each ingestor supports different datasets.
+
+```bash
+# Show available ingestors
+autorag-research ingest --help
+
+# Show available datasets for an ingestor
+autorag-research ingest beir --list
+```
+
+**BEIR Benchmark:**
+```bash
+autorag-research ingest beir --dataset=scifact
+autorag-research ingest beir --dataset=nfcorpus --subset=test --query-limit=100
+```
+
+**Mr. TyDi (Multilingual):**
+```bash
+autorag-research ingest mrtydi --language=english
+autorag-research ingest mrtydi --language=korean --query-limit=500
+```
+
+**RAGBench:**
+```bash
+autorag-research ingest ragbench --configs=covidqa
+autorag-research ingest ragbench --configs=covidqa,msmarco,hotpotqa
+```
+
+**MTEB Retrieval:**
+```bash
+autorag-research ingest mteb --task-name=NFCorpus
+autorag-research ingest mteb --task-name=SciFact --score-threshold=2
+```
+
+**BRIGHT:**
+```bash
+autorag-research ingest bright --domains=biology,economics
+autorag-research ingest bright --domains=stackoverflow --document-mode=long
+```
+
+**Common Options:**
+| Option | Description |
+|--------|-------------|
+| `--subset` | Dataset split: train, dev, test (default: test) |
+| `--query-limit` | Maximum number of queries to ingest |
+| `--corpus-limit` | Maximum number of corpus documents |
+| `--db-name` | Custom schema name (auto-generated if not specified) |
+
+**Database Override Options:**
+```bash
+# Override database settings from configs/db/default.yaml
+autorag-research ingest beir --dataset=scifact \
+  --db-host=localhost \
+  --db-port=5432 \
+  --db-user=postgres \
+  --db-password=secret \
+  --db-database=mydb
+```
+
+#### `list` - List Available Resources
+
+```bash
+# List available ingestors/datasets
+autorag-research list resource=datasets
+
+# List available pipelines
+autorag-research list resource=pipelines
+
+# List available metrics
+autorag-research list resource=metrics
+```
+
+#### `info` - Show Database Schema Information
+
+```bash
+autorag-research info schema=beir_scifact_test
+```
+(not work?)
+
+#### `run` - Run Experiments
+
+Run experiment pipelines with metrics evaluation. **Requires `--db-name` to specify the target database schema.**
+
+```bash
+# Basic run (uses configs/experiment.yaml)
+autorag-research run --db-name=beir_scifact_test
+
+# Override pipeline parameters
+autorag-research run --db-name=beir_scifact_test pipelines.0.k1=1.2
+
+# Multirun (hyperparameter sweep)
+autorag-research run --db-name=beir_scifact_test -m pipelines.0.k1=0.5,0.9,1.2
+
+# Multiple parameter sweep
+autorag-research run --db-name=beir_scifact_test -m \
+  pipelines.0.k1=0.5,0.9,1.2 \
+  pipelines.0.b=0.25,0.4,0.75
+```
+
+### Configuration
+
+#### Database Configuration (`configs/db/default.yaml`)
+
+```yaml
+host: localhost
+port: 5432
+user: postgres
+password: ${oc.env:PGPASSWORD,postgres}  # Uses PGPASSWORD env var or 'postgres'
+database: autorag_research
+```
+
+#### Experiment Configuration (`configs/experiment.yaml`)
+
+```yaml
+defaults:
+  - db: default
+  - pipelines/bm25_baseline@pipelines.0
+  - metrics/recall@metrics.0
+  - metrics/ndcg@metrics.1
+  - _self_
+
+schema: beir_scifact_test  # Can be overridden with --db-name
+embedding_dim: 1536
+max_retries: 3
+eval_batch_size: 100
+```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `PGPASSWORD` | PostgreSQL password (recommended for security) |

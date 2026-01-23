@@ -1,0 +1,18 @@
+# BM25 Retrieval Pipeline Configuration
+#
+# Uses Pyserini for BM25 retrieval.
+# Requires: pyserini (pip install autorag-research[search])
+#
+# Parameters:
+#   k1: Term frequency saturation (default: 0.9)
+#   b: Length normalization (default: 0.4)
+#   top_k: Number of results to retrieve (default: 10)
+#
+_target_: autorag_research.pipelines.retrieval.bm25.BM25PipelineConfig
+name: bm25_baseline
+index_path: ${hydra:runtime.cwd}/indices/bm25
+k1: 0.9
+b: 0.4
+language: en
+top_k: 10
+batch_size: 100

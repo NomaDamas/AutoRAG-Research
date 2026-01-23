@@ -1,0 +1,10 @@
+# MRR Metric Configuration
+#
+# Mean Reciprocal Rank - average of reciprocal ranks of first relevant result.
+# MRR = 1/|Q| * sum(1/rank_i) for each query
+#
+# Parameters:
+#   k: Cutoff for evaluation (default: 10)
+#
+_target_: autorag_research.metrics.retrieval.mrr.MRRConfig
+k: 10

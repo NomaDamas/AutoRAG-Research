@@ -1,0 +1,6 @@
+# Recall@5 Metric Configuration
+#
+# Measures the proportion of relevant documents retrieved at k=5.
+#
+_target_: autorag_research.metrics.retrieval.recall.RecallConfig
+k: 5

@@ -1,0 +1,9 @@
+# ROUGE Score Metric Configuration
+#
+# Longest common subsequence based evaluation.
+#
+# Parameters:
+#   rouge_type: Type of ROUGE score (default: rougeL)
+#
+_target_: autorag_research.metrics.generation.rouge.RougeConfig
+rouge_type: rougeL

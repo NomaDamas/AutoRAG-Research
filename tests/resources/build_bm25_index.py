@@ -35,7 +35,7 @@ def build_index():
     ]
 
     print(f"Building index at {INDEX_PATH}...")
-    subprocess.run(cmd, capture_output=True, text=True, check=True)  # noqa: S603
+    subprocess.run(cmd, capture_output=True, text=True, check=True)
     print(f"Index built successfully at {INDEX_PATH}")
 
 

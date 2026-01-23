@@ -276,12 +276,12 @@ dependencies = [
     { name = "aiohttp" },
     { name = "beir" },
     { name = "bert-score" },
+    { name = "click" },
     { name = "datasets" },
     { name = "evaluate" },
     { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "hydra-core" },
-    { name = "hydra-zen" },
     { name = "llama-index" },
     { name = "mteb", version = "2.6.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "mteb", version = "2.7.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
@@ -294,6 +294,7 @@ dependencies = [
     { name = "platformdirs" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "rouge-score" },
     { name = "sacrebleu" },
     { name = "sqlalchemy" },
@@ -344,6 +345,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.2" },
     { name = "beir", specifier = ">=2.2.0" },
     { name = "bert-score", specifier = ">=0.3.13" },
+    { name = "click", specifier = ">=8.1.0" },
     { name = "colpali-engine", marker = "extra == 'all'", specifier = ">=0.3.13" },
     { name = "colpali-engine", marker = "extra == 'gpu'", specifier = ">=0.3.13" },
     { name = "datasets", specifier = "<3.0.0" },
@@ -351,7 +353,6 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "huggingface-hub", specifier = ">=0.27.0" },
     { name = "hydra-core", specifier = ">=1.3.0" },
-    { name = "hydra-zen", specifier = ">=0.14.0" },
     { name = "llama-index", specifier = ">=0.12.52" },
     { name = "mteb", specifier = ">=1.34.0" },
     { name = "nltk", specifier = ">=3.9.2" },
@@ -365,6 +366,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.4" },
     { name = "pyserini", marker = "extra == 'all'", specifier = ">=1.2.0" },
     { name = "pyserini", marker = "extra == 'search'", specifier = ">=1.2.0" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "rouge-score", specifier = ">=0.1.2" },
     { name = "sacrebleu", specifier = ">=2.5.1" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
@@ -1863,20 +1865,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6d/8e/07e42bc434a847154083b315779b0a81d567154504624e181caf2c71cd98/hydra-core-1.3.2.tar.gz", hash = "sha256:8a878ed67216997c3e9d88a8e72e7b4767e81af37afb4ea3334b269a4390a824", size = 3263494, upload-time = "2023-02-23T18:33:43.03Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c6/50/e0edd38dcd63fb26a8547f13d28f7a008bc4a3fd4eb4ff030673f22ad41a/hydra_core-1.3.2-py3-none-any.whl", hash = "sha256:fa0238a9e31df3373b35b0bfb672c34cc92718d21f81311d8996a16de1141d8b", size = 154547, upload-time = "2023-02-23T18:33:40.801Z" },
-]
-
-[[package]]
-name = "hydra-zen"
-version = "0.16.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "hydra-core" },
-    { name = "omegaconf" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/2c/61/b0f50be4f34b52390fdd204d86696aa37f718e91c73f727cdcbc782592ba/hydra_zen-0.16.0.tar.gz", hash = "sha256:55b931ba79bef329c9baa64e47c44b2dcc1594b0df292a445bed5d9a349596b0", size = 1332416, upload-time = "2025-10-22T17:29:52.861Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/cc/64d0fad725570ed6a02f5c7676cbfe3a268bed2fc3b10a74b59425ce6386/hydra_zen-0.16.0-py3-none-any.whl", hash = "sha256:fdf33060dfc530ef14248b861c5a8ab43ebb54df38fec8fb6d0be15b5af617ea", size = 106312, upload-time = "2025-10-22T17:29:50.925Z" },
 ]
 
 [[package]]

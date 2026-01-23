@@ -1,0 +1,10 @@
+# NDCG@k Metric Configuration
+#
+# Normalized Discounted Cumulative Gain - considers ranking quality.
+# Higher scores for relevant docs appearing earlier in the ranking.
+#
+# Parameters:
+#   k: Cutoff for evaluation (default: 10)
+#
+_target_: autorag_research.metrics.retrieval.ndcg.NDCGConfig
+k: 10

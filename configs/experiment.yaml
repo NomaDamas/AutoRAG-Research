@@ -1,0 +1,29 @@
+# Experiment configuration
+#
+# This file defines an experiment with pipelines and metrics.
+# Edit this file to configure your RAG experiment.
+#
+# Usage:
+#   autorag-research run                           # Run this config
+#   autorag-research run pipelines.0.k1=1.2       # Override parameter
+#   autorag-research run -m pipelines.0.k1=0.5,0.9,1.2  # Multirun
+#
+
+defaults:
+  - db: default
+  # Include pipeline configs
+  - pipelines/bm25_baseline@pipelines.0
+  # Include metric configs
+  - metrics/recall@metrics.0
+  - metrics/ndcg@metrics.1
+  - _self_
+
+# Target database schema (created by ingest command)
+schema: beir_scifact_test
+
+# Embedding dimension (must match ingested data)
+embedding_dim: 1536
+
+# Executor settings
+max_retries: 3
+eval_batch_size: 100
