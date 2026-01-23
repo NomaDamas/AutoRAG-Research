@@ -94,6 +94,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
             raise ServiceNotSetError
 
         chunk_id_map: dict[str, list[str]] = {}
+        pdf_urls_data = self._download_json("pdf_urls.json")
 
         for doc_id in doc_ids:
             try:
@@ -102,11 +103,14 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                 logger.exception(f"Failed to load document {doc_id}")
                 continue
 
+            pdf_url = pdf_urls_data.get(doc_id)
+
             doc_metadata = {
                 "abstract": doc.get("abstract"),
                 "categories": doc.get("categories", []),
                 "published": doc.get("published"),
                 "updated": doc.get("updated"),
+                "pdf_url": pdf_url,
             }
 
             authors = doc.get("authors", [])
