@@ -63,7 +63,7 @@ class TestMrTyDiIngestorIntegration:
             ingestor.ingest(
                 subset="test",
                 query_limit=MRTYDI_SMALL_CONFIG.expected_query_count,
-                corpus_limit=MRTYDI_SMALL_CONFIG.expected_chunk_count,
+                min_corpus_cnt=MRTYDI_SMALL_CONFIG.expected_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, MRTYDI_SMALL_CONFIG)
@@ -89,7 +89,7 @@ class TestMrTyDiIngestorIntegration:
             ingestor.ingest(
                 subset="test",
                 query_limit=config.expected_query_count,
-                corpus_limit=config.expected_chunk_count,
+                min_corpus_cnt=config.expected_chunk_count,
             )
 
             # Before embedding

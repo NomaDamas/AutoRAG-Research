@@ -29,14 +29,14 @@ class DataIngestor(ABC):
         self,
         subset: Literal["train", "dev", "test"] = "test",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
         """Ingest data from the specified source. This process does not include an embedding process.
 
         Args:
             subset: Dataset split to ingest (train, dev, or test).
             query_limit: Maximum number of queries to ingest. None means no limit.
-            corpus_limit: Maximum number of corpus items to ingest.
+            min_corpus_cnt: Maximum number of corpus items to ingest.
                           When set, gold IDs from selected queries are always included,
                           plus random samples to reach the limit. None means no limit.
         """

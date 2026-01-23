@@ -62,7 +62,7 @@ class TestViDoReV2ESGReportsIngestorIntegration:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=VIDOREV2_ECONOMICS_REPORTS_CONFIG.expected_query_count,
-                corpus_limit=VIDOREV2_ECONOMICS_REPORTS_CONFIG.expected_image_chunk_count,
+                min_corpus_cnt=VIDOREV2_ECONOMICS_REPORTS_CONFIG.expected_image_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, VIDOREV2_ECONOMICS_REPORTS_CONFIG)
