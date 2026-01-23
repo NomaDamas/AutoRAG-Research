@@ -25,9 +25,14 @@ dependencies = [
     "bert-score>=0.3.13",
     "datasets<3.0.0",
     "evaluate>=0.4.6",
+    "huggingface-hub>=0.27.0",
+    "hydra-core>=1.3.0",
+    "hydra-zen>=0.14.0",
+    "httpx>=0.28.0",
     "llama-index>=0.12.52",
     "nltk>=3.9.2",
     "numpy>=2.2.6",
+    "omegaconf>=2.3.0",
     "pandas>=2.3.3",
     "pgvector>=0.4.1",
     "pillow>=12.0.0",
@@ -40,6 +45,9 @@ dependencies = [
     "tiktoken>=0.12.0",
     "typing-extensions>=4.15.0",
 ]
+
+[project.scripts]
+autorag-research = "autorag_research.cli.main:main"
 
 [project.urls]
 Homepage = "https://vkehfdl1.github.io/AutoRAG-Research/"
@@ -151,7 +159,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]
+"tests/*" = ["S101", "S603"]
 
 [tool.ruff.format]
 preview = true

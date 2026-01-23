@@ -134,3 +134,4 @@ Detailed patterns and examples are in `/ai_instructions/`:
 - **Code quality checks are automated via hooks** - `make check` runs automatically after file edits and on session end
 - Generate the corresponding test file correctly when you add the code, and runs the test code before commit (`make test`)
 - Do not use relative imports.
+- Always use `uv sync --all-extras --all-groups` to install dependencies to avoid missing optional packages.

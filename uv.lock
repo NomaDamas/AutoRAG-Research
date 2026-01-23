@@ -217,6 +217,12 @@ wheels = [
 ]
 
 [[package]]
+name = "antlr4-python3-runtime"
+version = "4.9.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3e/38/7859ff46355f76f8d19459005ca000b6e7012f2f1ca597746cbcd1fbfe5e/antlr4-python3-runtime-4.9.3.tar.gz", hash = "sha256:f224469b4168294902bb1efa80a8bf7855f24c99aef99cbefc1bcd3cce77881b", size = 117034, upload-time = "2021-11-06T17:52:23.524Z" }
+
+[[package]]
 name = "anyio"
 version = "4.11.0"
 source = { registry = "https://pypi.org/simple" }
@@ -272,11 +278,16 @@ dependencies = [
     { name = "bert-score" },
     { name = "datasets" },
     { name = "evaluate" },
+    { name = "httpx" },
+    { name = "huggingface-hub" },
+    { name = "hydra-core" },
+    { name = "hydra-zen" },
     { name = "llama-index" },
     { name = "mteb", version = "2.6.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "mteb", version = "2.7.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "nltk" },
     { name = "numpy" },
+    { name = "omegaconf" },
     { name = "pandas" },
     { name = "pgvector" },
     { name = "pillow" },
@@ -337,10 +348,15 @@ requires-dist = [
     { name = "colpali-engine", marker = "extra == 'gpu'", specifier = ">=0.3.13" },
     { name = "datasets", specifier = "<3.0.0" },
     { name = "evaluate", specifier = ">=0.4.6" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "huggingface-hub", specifier = ">=0.27.0" },
+    { name = "hydra-core", specifier = ">=1.3.0" },
+    { name = "hydra-zen", specifier = ">=0.14.0" },
     { name = "llama-index", specifier = ">=0.12.52" },
     { name = "mteb", specifier = ">=1.34.0" },
     { name = "nltk", specifier = ">=3.9.2" },
     { name = "numpy", specifier = ">=2.2.6" },
+    { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pgvector", specifier = ">=0.4.1" },
     { name = "pillow", specifier = ">=12.0.0" },
@@ -1833,6 +1849,34 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cc/3f/2c29224acb2e2df4d2046e4c73ee2662023c58ff5b113c4c1adac0886c43/humanfriendly-10.0.tar.gz", hash = "sha256:6b0b831ce8f15f7300721aa49829fc4e83921a9a301cc7f606be6686a2288ddc", size = 360702, upload-time = "2021-09-17T21:40:43.31Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f0/0f/310fb31e39e2d734ccaa2c0fb981ee41f7bd5056ce9bc29b2248bd569169/humanfriendly-10.0-py2.py3-none-any.whl", hash = "sha256:1697e1a8a8f550fd43c2865cd84542fc175a61dcb779b6fee18cf6b6ccba1477", size = 86794, upload-time = "2021-09-17T21:40:39.897Z" },
+]
+
+[[package]]
+name = "hydra-core"
+version = "1.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "antlr4-python3-runtime" },
+    { name = "omegaconf" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6d/8e/07e42bc434a847154083b315779b0a81d567154504624e181caf2c71cd98/hydra-core-1.3.2.tar.gz", hash = "sha256:8a878ed67216997c3e9d88a8e72e7b4767e81af37afb4ea3334b269a4390a824", size = 3263494, upload-time = "2023-02-23T18:33:43.03Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/50/e0edd38dcd63fb26a8547f13d28f7a008bc4a3fd4eb4ff030673f22ad41a/hydra_core-1.3.2-py3-none-any.whl", hash = "sha256:fa0238a9e31df3373b35b0bfb672c34cc92718d21f81311d8996a16de1141d8b", size = 154547, upload-time = "2023-02-23T18:33:40.801Z" },
+]
+
+[[package]]
+name = "hydra-zen"
+version = "0.16.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "hydra-core" },
+    { name = "omegaconf" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2c/61/b0f50be4f34b52390fdd204d86696aa37f718e91c73f727cdcbc782592ba/hydra_zen-0.16.0.tar.gz", hash = "sha256:55b931ba79bef329c9baa64e47c44b2dcc1594b0df292a445bed5d9a349596b0", size = 1332416, upload-time = "2025-10-22T17:29:52.861Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a5/cc/64d0fad725570ed6a02f5c7676cbfe3a268bed2fc3b10a74b59425ce6386/hydra_zen-0.16.0-py3-none-any.whl", hash = "sha256:fdf33060dfc530ef14248b861c5a8ab43ebb54df38fec8fb6d0be15b5af617ea", size = 106312, upload-time = "2025-10-22T17:29:50.925Z" },
 ]
 
 [[package]]
@@ -3385,6 +3429,19 @@ version = "12.8.90"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/eb/86626c1bbc2edb86323022371c39aa48df6fd8b0a1647bc274577f72e90b/nvidia_nvtx_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:5b17e2001cc0d751a5bc2c6ec6d26ad95913324a4adb86788c944f8ce9ba441f", size = 89954, upload-time = "2025-03-07T01:42:44.131Z" },
+]
+
+[[package]]
+name = "omegaconf"
+version = "2.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "antlr4-python3-runtime" },
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/09/48/6388f1bb9da707110532cb70ec4d2822858ddfb44f1cdf1233c20a80ea4b/omegaconf-2.3.0.tar.gz", hash = "sha256:d5d4b6d29955cc50ad50c46dc269bcd92c6e00f5f90d23ab5fee7bfca4ba4cc7", size = 3298120, upload-time = "2022-12-08T20:59:22.753Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e3/94/1843518e420fa3ed6919835845df698c7e27e183cb997394e4a670973a65/omegaconf-2.3.0-py3-none-any.whl", hash = "sha256:7b4df175cdb08ba400f45cae3bdcae7ba8365db4d165fc65fd04b050ab63b46b", size = 79500, upload-time = "2022-12-08T20:59:19.686Z" },
 ]
 
 [[package]]
