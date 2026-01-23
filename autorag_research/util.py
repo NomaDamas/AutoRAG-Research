@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import functools
 import itertools
 import logging
@@ -195,3 +196,15 @@ def normalize_string(s: str) -> str:
         return text.lower()
 
     return white_space_fix(remove_articles(remove_punc(lower(s))))
+
+
+def extract_image_from_data_uri(data_uri: str) -> tuple[bytes, str]:
+    """Extract image bytes and mimetype from a data URI."""
+    match = re.match(r"data:([^;]+);base64,(.+)", data_uri)
+    if not match:
+        msg = f"Invalid data URI format: {data_uri[:50]}..."
+        raise ValueError(msg)
+    mimetype = match.group(1)
+    base64_data = match.group(2)
+    image_bytes = base64.b64decode(base64_data)
+    return image_bytes, mimetype

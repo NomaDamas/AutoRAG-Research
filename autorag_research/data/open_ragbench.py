@@ -1,8 +1,6 @@
-import base64
 import json
 import logging
 import random
-import re
 from typing import Any, Literal
 
 from huggingface_hub import hf_hub_download
@@ -11,6 +9,7 @@ from llama_index.core.embeddings import MultiModalEmbedding
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
+from autorag_research.util import extract_image_from_data_uri
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -35,32 +34,21 @@ def make_image_chunk_id(doc_id: str, section_id: int, img_key: str) -> str:
     return f"{doc_id}_section_{section_id}_img_{img_key}"
 
 
-def extract_image_from_data_uri(data_uri: str) -> tuple[bytes, str]:
-    match = re.match(r"data:([^;]+);base64,(.+)", data_uri)
-    if not match:
-        msg = f"Invalid data URI format: {data_uri[:50]}..."
-        raise ValueError(msg)
-    mimetype = match.group(1)
-    base64_data = match.group(2)
-    image_bytes = base64.b64decode(base64_data)
-    return image_bytes, mimetype
-
-
 class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
-        subset: str = DATA_PATH,
+        data_path: str = DATA_PATH,
     ):
         super().__init__(embedding_model, late_interaction_embedding_model)
-        self.subset = subset
+        self.data_path = data_path
 
     def detect_primary_key_type(self) -> Literal["bigint", "string"]:
         return "string"
 
     def _download_json(self, filename: str) -> dict[str, Any]:
-        path = hf_hub_download(repo_id=REPO_ID, filename=f"{self.subset}/{filename}", repo_type="dataset")
+        path = hf_hub_download(repo_id=REPO_ID, filename=f"{self.data_path}/{filename}", repo_type="dataset")
         with open(path) as f:
             return json.load(f)
 
