@@ -134,22 +134,23 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
 
         # Step 5: Load and ingest corpus (images) - streaming for large image data
         # Gold IDs are always ingested, plus additional items if corpus_limit requires more
+        # corpus_id is used directly as PK, so no mapping needed
         corpus_ds = load_dataset(dataset_path, "corpus", streaming=True, split="test")
-        corpus_id_to_pk = self._ingest_corpus(corpus_ds, gold_corpus_ids, additional_corpus_needed)
+        ingested_corpus_ids = self._ingest_corpus(corpus_ds, gold_corpus_ids, additional_corpus_needed)
 
         # Step 6: Load and ingest queries - streaming
         queries_ds = load_dataset(dataset_path, "queries", streaming=True, split="test")
         query_id_to_pk = self._ingest_queries(queries_ds, selected_queries_df)
 
         # Step 7: Create retrieval relations
-        self._ingest_qrels(selected_queries_df, query_id_to_pk, corpus_id_to_pk)
+        self._ingest_qrels(selected_queries_df, query_id_to_pk, ingested_corpus_ids)
 
     def _ingest_corpus(
         self,
         corpus_ds: Any,
         gold_ids: set[int],
         additional_needed: int = 0,
-    ) -> dict[int, int]:
+    ) -> set[int]:
         """Ingest corpus images.
 
         Args:
@@ -159,13 +160,13 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
                              These are sampled from items NOT in gold_ids (may include items not in qrels).
 
         Returns:
-            Mapping from corpus-id to database primary key.
+            Set of ingested corpus IDs (corpus_id is used directly as PK).
         """
         if self.service is None:
             raise ServiceNotSetError
 
-        corpus_id_to_pk: dict[int, int] = {}
         image_chunks_batch: list[dict] = []
+        ingested_ids: set[int] = set()
 
         for row in corpus_ds:
             corpus_id = int(row["corpus-id"])
@@ -181,20 +182,20 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
             if is_additional:
                 additional_needed -= 1
 
-            image: Image.Image = row["image"]
-            img_bytes, mimetype = pil_image_to_bytes(image)
+            img: Image.Image = row["image"]
+            img_bytes, mimetype = pil_image_to_bytes(img)
 
             image_chunks_batch.append({
                 "id": corpus_id,
                 "contents": img_bytes,
                 "mimetype": mimetype,
             })
-            corpus_id_to_pk[corpus_id] = corpus_id
+            ingested_ids.add(corpus_id)
 
         if image_chunks_batch:
             self.service.add_image_chunks(image_chunks_batch)
 
-        return corpus_id_to_pk
+        return ingested_ids
 
     def _ingest_queries(
         self,
@@ -246,14 +247,14 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         self,
         selected_queries_df: pd.DataFrame,
         query_id_to_pk: dict[int, int],
-        corpus_id_to_pk: dict[int, int],
+        ingested_corpus_ids: set[int],
     ) -> None:
         """Create retrieval relations from qrels.
 
         Args:
             selected_queries_df: DataFrame with query-id as index, containing 'corpus_ids' column.
             query_id_to_pk: Mapping from query-id to database PK.
-            corpus_id_to_pk: Mapping from corpus-id to database PK.
+            ingested_corpus_ids: Set of corpus IDs that were ingested (corpus_id = PK).
         """
         if self.service is None:
             raise ServiceNotSetError
@@ -264,8 +265,8 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
                 continue
 
             corpus_ids = selected_queries_df.at[query_id, "corpus_ids"]
-            # Filter to only include corpus IDs that were ingested
-            valid_corpus_pks = [corpus_id_to_pk[cid] for cid in corpus_ids if cid in corpus_id_to_pk]
+            # Filter to only include corpus IDs that were ingested (corpus_id is used directly as PK)
+            valid_corpus_pks = [cid for cid in corpus_ids if cid in ingested_corpus_ids]
 
             if valid_corpus_pks:
                 # Use or_all with image wrapper for multiple relevant image chunks
