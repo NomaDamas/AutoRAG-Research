@@ -158,8 +158,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "S105", "S106"]
-"autorag_research/reporting/service.py" = ["S608", "TRY003", "S112"]
-"autorag_research/reporting/config.py" = ["S105"]
 
 [tool.ruff.format]
 preview = true
