@@ -20,6 +20,7 @@ from PIL import Image
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
+from autorag_research.util import pil_image_to_bytes
 
 RANDOM_SEED = 42
 BATCH_SIZE = 1000
@@ -32,14 +33,6 @@ def _format_query(question: str, options: list[str]) -> str:
     """Format query with question and multiple choice options."""
     options_text = "\n".join(options)
     return f"Given the following query and options, select the correct option.\n\nQuery: {question}\n\nOptions: {options_text}"
-
-
-def _pil_to_bytes(image: Image.Image) -> tuple[bytes, str]:
-    """Convert PIL Image to bytes with appropriate format."""
-    buffer = io.BytesIO()
-    img_format = "PNG" if image.mode in ("RGBA", "LA", "P") else "JPEG"
-    image.save(buffer, format=img_format)
-    return buffer.getvalue(), f"image/{img_format.lower()}"
 
 
 class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
@@ -243,9 +236,9 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
             try:
                 img = row["image"]
                 if isinstance(img, Image.Image):
-                    img_bytes, mimetype = _pil_to_bytes(img)
+                    img_bytes, mimetype = pil_image_to_bytes(img)
                 else:
-                    img_bytes, mimetype = _pil_to_bytes(Image.open(io.BytesIO(img)))
+                    img_bytes, mimetype = pil_image_to_bytes(Image.open(io.BytesIO(img)))
 
                 image_chunks_data.append({"id": corpus_id, "content": img_bytes, "mimetype": mimetype})
                 valid_ids.append(corpus_id)

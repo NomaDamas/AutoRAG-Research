@@ -14,8 +14,9 @@ import io
 import pytest
 from PIL import Image
 
-from autorag_research.data.arxivqa import ArxivQAIngestor
+from autorag_research.data.arxivqa import ArxivQAIngestor, _format_query
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
+from autorag_research.util import pil_image_to_bytes
 from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestConfig,
     IngestorTestVerifier,
@@ -26,12 +27,12 @@ from tests.autorag_research.data.ingestor_test_utils import (
 
 
 class TestFormatQuery:
-    """Test _format_query static method."""
+    """Test _format_query function."""
 
     def test_format_query_basic(self):
         question = "What color is the sky?"
         options = ["A. Red", "B. Blue", "C. Green", "D. Yellow"]
-        result = ArxivQAIngestor._format_query(question, options)
+        result = _format_query(question, options)
 
         assert "Given the following query and options" in result
         assert "Query: What color is the sky?" in result
@@ -44,14 +45,14 @@ class TestFormatQuery:
     def test_format_query_with_five_options(self):
         question = "Sample question?"
         options = ["A. One", "B. Two", "C. Three", "D. Four", "E. Five"]
-        result = ArxivQAIngestor._format_query(question, options)
+        result = _format_query(question, options)
 
         assert "E. Five" in result
 
     def test_format_query_options_joined_with_newlines(self):
         question = "Question?"
         options = ["A. First", "B. Second"]
-        result = ArxivQAIngestor._format_query(question, options)
+        result = _format_query(question, options)
 
         # Options should be on separate lines
         assert "A. First\nB. Second" in result
@@ -61,11 +62,11 @@ class TestFormatQuery:
 
 
 class TestPilToBytes:
-    """Test _pil_to_bytes static method."""
+    """Test pil_image_to_bytes function."""
 
     def test_jpeg_conversion_rgb(self):
         img = Image.new("RGB", (100, 100), color="red")
-        img_bytes, mimetype = ArxivQAIngestor._pil_to_bytes(img)
+        img_bytes, mimetype = pil_image_to_bytes(img)
 
         assert isinstance(img_bytes, bytes)
         assert len(img_bytes) > 0
@@ -77,21 +78,21 @@ class TestPilToBytes:
 
     def test_jpeg_conversion_grayscale(self):
         img = Image.new("L", (50, 50), color=128)
-        img_bytes, mimetype = ArxivQAIngestor._pil_to_bytes(img)
+        img_bytes, mimetype = pil_image_to_bytes(img)
 
         assert isinstance(img_bytes, bytes)
         assert mimetype == "image/jpeg"
 
     def test_png_conversion_rgba(self):
         img = Image.new("RGBA", (50, 50), color=(255, 0, 0, 128))
-        img_bytes, mimetype = ArxivQAIngestor._pil_to_bytes(img)
+        img_bytes, mimetype = pil_image_to_bytes(img)
 
         assert isinstance(img_bytes, bytes)
         assert mimetype == "image/png"
 
     def test_png_conversion_la_mode(self):
         img = Image.new("LA", (30, 30), color=(128, 200))
-        img_bytes, mimetype = ArxivQAIngestor._pil_to_bytes(img)
+        img_bytes, mimetype = pil_image_to_bytes(img)
 
         assert isinstance(img_bytes, bytes)
         assert mimetype == "image/png"
@@ -99,7 +100,7 @@ class TestPilToBytes:
     def test_png_conversion_palette_mode(self):
         img = Image.new("RGB", (20, 20), color="blue")
         img_p = img.convert("P")
-        img_bytes, mimetype = ArxivQAIngestor._pil_to_bytes(img_p)
+        img_bytes, mimetype = pil_image_to_bytes(img_p)
 
         assert isinstance(img_bytes, bytes)
         assert mimetype == "image/png"
