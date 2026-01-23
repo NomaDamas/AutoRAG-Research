@@ -54,6 +54,9 @@
     "clarify@team-attention-plugins": true,
     "dev@team-attention-plugins": true,
     "session-wrap@team-attention-plugins": true,
-    "agent-council@team-attention-plugins": true
+    "agent-council@team-attention-plugins": true,
+    "code-documentation@claude-code-workflows": true,
+    "debugging-toolkit@claude-code-workflows": true,
+    "code-review-ai@claude-code-workflows": true
   }
 }

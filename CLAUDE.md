@@ -104,6 +104,14 @@ Prefer mocks over real API calls (use LlamaIndex MockLLM/MockEmbedding).
 - Ruff for linting/formatting
 - Type checking: ty
 
+## Utility Functions (DRY!)
+
+Before implementing common functionality, CHECK existing utils first:
+
+- `autorag_research/util.py` - Core utilities (list conversion, async helpers, image processing)
+
+DO NOT duplicate - reuse existing helpers!
+
 ## Key Database Tables
 
 - **Document/Page/Chunk/ImageChunk** - Content storage with embeddings
