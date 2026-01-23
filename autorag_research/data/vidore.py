@@ -1,12 +1,10 @@
 import ast
-import io
 import random
 from abc import ABC
 from typing import Literal
 
 from datasets import load_dataset
 from llama_index.core.embeddings import MultiModalEmbedding
-from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
@@ -15,6 +13,7 @@ from autorag_research.exceptions import (
     InvalidDatasetNameError,
     ServiceNotSetError,
 )
+from autorag_research.util import pil_image_to_bytes
 
 RANDOM_SEED = 42
 
@@ -108,26 +107,6 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor, ABC):
             chunk_type="image",
         )
 
-    @staticmethod
-    def pil_images_to_bytes(image_list: list[Image.Image]) -> list[tuple[bytes, str]]:
-        """Convert PIL images to bytes with mimetype.
-
-        Args:
-            image_list: List of PIL Image objects.
-
-        Returns:
-            List of tuples (image_bytes, mimetype).
-        """
-        results = []
-        for img in image_list:
-            buffer = io.BytesIO()
-            # Determine format based on image mode
-            img_format = "PNG" if img.mode in ("RGBA", "LA", "P") else "JPEG"
-            img.save(buffer, format=img_format)
-            mimetype = f"image/{img_format.lower()}"
-            results.append((buffer.getvalue(), mimetype))
-        return results
-
 
 class ViDoReArxivQAIngestor(ViDoReIngestor):
     def __init__(
@@ -189,7 +168,7 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
         answers = [answers[i] for i in selected_indices]
 
         # Convert PIL images to bytes
-        image_bytes_list = self.pil_images_to_bytes(image_list)
+        image_bytes_list = [pil_image_to_bytes(img) for img in image_list]
 
         query_pk_list = self.service.add_queries([
             {
