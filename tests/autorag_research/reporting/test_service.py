@@ -103,7 +103,6 @@ class TestReportingService:
     def test_attach_dataset_idempotent(self, service_with_mock):
         """Test that attaching same database twice doesn't duplicate."""
         service, mock_conn = service_with_mock
-        initial_call_count = mock_conn.execute.call_count
 
         service.attach_dataset("test-db")
         first_call_count = mock_conn.execute.call_count
@@ -116,9 +115,12 @@ class TestReportingService:
     def test_get_leaderboard(self, service_with_mock):
         """Test get_leaderboard generates correct query structure."""
         service, mock_conn = service_with_mock
-        mock_conn.execute.return_value.df.return_value = pd.DataFrame(
-            {"rank": [1, 2], "pipeline": ["bm25", "vector"], "score": [0.9, 0.8], "time_ms": [100, 200]}
-        )
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame({
+            "rank": [1, 2],
+            "pipeline": ["bm25", "vector"],
+            "score": [0.9, 0.8],
+            "time_ms": [100, 200],
+        })
 
         df = service.get_leaderboard("test-db", "recall@10", limit=5)
 
@@ -138,13 +140,11 @@ class TestReportingService:
     def test_compare_pipelines(self, service_with_mock):
         """Test compare_pipelines generates pivot table."""
         service, mock_conn = service_with_mock
-        mock_conn.execute.return_value.df.return_value = pd.DataFrame(
-            {
-                "pipeline": ["bm25", "bm25", "vector", "vector"],
-                "metric": ["recall@10", "ndcg@10", "recall@10", "ndcg@10"],
-                "score": [0.9, 0.85, 0.88, 0.87],
-            }
-        )
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame({
+            "pipeline": ["bm25", "bm25", "vector", "vector"],
+            "metric": ["recall@10", "ndcg@10", "recall@10", "ndcg@10"],
+            "score": [0.9, 0.85, 0.88, 0.87],
+        })
 
         df = service.compare_pipelines("test-db", ["bm25", "vector"], ["recall@10", "ndcg@10"])
 
@@ -178,9 +178,11 @@ class TestReportingService:
     def test_compare_across_datasets(self, service_with_mock):
         """Test cross-dataset comparison."""
         service, mock_conn = service_with_mock
-        mock_conn.execute.return_value.df.return_value = pd.DataFrame(
-            {"dataset": ["db1", "db2"], "score": [0.9, 0.85], "time_ms": [100, 150]}
-        )
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame({
+            "dataset": ["db1", "db2"],
+            "score": [0.9, 0.85],
+            "time_ms": [100, 150],
+        })
 
         df = service.compare_across_datasets(["db1", "db2"], "bm25", "recall@10")
 
@@ -190,14 +192,12 @@ class TestReportingService:
     def test_generate_benchmark_report(self, service_with_mock):
         """Test comprehensive benchmark report generation."""
         service, mock_conn = service_with_mock
-        mock_conn.execute.return_value.df.return_value = pd.DataFrame(
-            {
-                "dataset": ["db1", "db1", "db2", "db2"],
-                "pipeline": ["bm25", "vector", "bm25", "vector"],
-                "metric": ["recall@10", "recall@10", "recall@10", "recall@10"],
-                "score": [0.9, 0.88, 0.85, 0.87],
-            }
-        )
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame({
+            "dataset": ["db1", "db1", "db2", "db2"],
+            "pipeline": ["bm25", "vector", "bm25", "vector"],
+            "metric": ["recall@10", "recall@10", "recall@10", "recall@10"],
+            "score": [0.9, 0.88, 0.85, 0.87],
+        })
 
         df = service.generate_benchmark_report(["db1", "db2"], ["bm25", "vector"], ["recall@10"])
 
@@ -209,13 +209,11 @@ class TestReportingService:
     def test_get_aggregated_leaderboard(self, service_with_mock):
         """Test aggregated leaderboard across datasets."""
         service, mock_conn = service_with_mock
-        mock_conn.execute.return_value.df.return_value = pd.DataFrame(
-            {
-                "dataset": ["db1", "db1", "db2", "db2"],
-                "pipeline": ["bm25", "vector", "bm25", "vector"],
-                "score": [0.9, 0.88, 0.85, 0.87],
-            }
-        )
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame({
+            "dataset": ["db1", "db1", "db2", "db2"],
+            "pipeline": ["bm25", "vector", "bm25", "vector"],
+            "score": [0.9, 0.88, 0.85, 0.87],
+        })
 
         df = service.get_aggregated_leaderboard(["db1", "db2"], "recall@10")
 
@@ -274,9 +272,11 @@ class TestReportingService:
         from autorag_research.reporting.service import VALID_AGGREGATIONS
 
         service, mock_conn = service_with_mock
-        mock_conn.execute.return_value.df.return_value = pd.DataFrame(
-            {"dataset": ["db1"], "pipeline": ["bm25"], "score": [0.9]}
-        )
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame({
+            "dataset": ["db1"],
+            "pipeline": ["bm25"],
+            "score": [0.9],
+        })
 
         for agg in VALID_AGGREGATIONS:
             # Should not raise
@@ -389,9 +389,11 @@ class TestReportingService:
     def test_get_pipeline_details(self, service_with_mock):
         """Test getting pipeline details with config."""
         service, mock_conn = service_with_mock
-        mock_conn.execute.return_value.df.return_value = pd.DataFrame(
-            {"id": [1], "name": ["bm25"], "config": [{"k": 10, "b": 0.75}]}
-        )
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame({
+            "id": [1],
+            "name": ["bm25"],
+            "config": [{"k": 10, "b": 0.75}],
+        })
 
         details = service.get_pipeline_details("test-db", "bm25")
 
@@ -443,9 +445,7 @@ class TestReportingService:
             if "ATTACH" in query:
                 return result
             # Return rankings
-            result.df.return_value = pd.DataFrame(
-                {"pipeline": ["bm25", "vector", "hybrid"], "rank": [1, 2, 3]}
-            )
+            result.df.return_value = pd.DataFrame({"pipeline": ["bm25", "vector", "hybrid"], "rank": [1, 2, 3]})
             return result
 
         mock_conn.execute.side_effect = execute_side_effect
@@ -467,20 +467,14 @@ class TestReportingService:
                 return result
             # Check if ASC is used for latency metric
             if "ASC" in query:
-                result.df.return_value = pd.DataFrame(
-                    {"pipeline": ["vector", "bm25"], "rank": [1, 2]}
-                )
+                result.df.return_value = pd.DataFrame({"pipeline": ["vector", "bm25"], "rank": [1, 2]})
             else:
-                result.df.return_value = pd.DataFrame(
-                    {"pipeline": ["bm25", "vector"], "rank": [1, 2]}
-                )
+                result.df.return_value = pd.DataFrame({"pipeline": ["bm25", "vector"], "rank": [1, 2]})
             return result
 
         mock_conn.execute.side_effect = execute_side_effect
 
-        df = service.get_borda_count_leaderboard(
-            ["db1"], ["recall@10", "latency"], ascending_metrics={"latency"}
-        )
+        df = service.get_borda_count_leaderboard(["db1"], ["recall@10", "latency"], ascending_metrics={"latency"})
 
         assert not df.empty
 

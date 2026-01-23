@@ -2,5 +2,6 @@
 
 from autorag_research.reporting.config import DatabaseConfig
 from autorag_research.reporting.service import ReportingService
+from autorag_research.reporting.ui import create_leaderboard_app
 
-__all__ = ["DatabaseConfig", "ReportingService"]
+__all__ = ["DatabaseConfig", "ReportingService", "create_leaderboard_app"]

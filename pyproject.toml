@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "aiofiles>=25.1.0",
+    "aiofiles>=22.0.0,<25.0",
     "aiohttp>=3.13.2",
     "beir>=2.2.0",
     "mteb>=1.34.0",
@@ -57,6 +57,7 @@ search = [
 ]
 reporting = [
     "duckdb>=1.0.0",
+    "gradio>=6.0.0",
 ]
 all = [
     "colpali-engine>=0.3.13",
@@ -64,6 +65,7 @@ all = [
     "transformers>=4.57.1",
     "pyserini>=1.2.0",
     "duckdb>=1.0.0",
+    "gradio>=6.0.0",
 ]
 
 [dependency-groups]
@@ -155,7 +157,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]
+"tests/*" = ["S101", "S105", "S106"]
+"autorag_research/reporting/service.py" = ["S608", "TRY003", "S112"]
+"autorag_research/reporting/config.py" = ["S105"]
 
 [tool.ruff.format]
 preview = true

@@ -64,9 +64,7 @@ class ReportingService:
 
     # === Single Dataset Queries ===
 
-    def get_leaderboard(
-        self, db_name: str, metric_name: str, limit: int = 10, ascending: bool = False
-    ) -> pd.DataFrame:
+    def get_leaderboard(self, db_name: str, metric_name: str, limit: int = 10, ascending: bool = False) -> pd.DataFrame:
         """Get pipeline rankings for a specific metric.
 
         Args:
@@ -97,9 +95,7 @@ class ReportingService:
             [metric_name, limit],
         ).df()
 
-    def compare_pipelines(
-        self, db_name: str, pipeline_names: list[str], metric_names: list[str]
-    ) -> pd.DataFrame:
+    def compare_pipelines(self, db_name: str, pipeline_names: list[str], metric_names: list[str]) -> pd.DataFrame:
         """Compare multiple pipelines across multiple metrics (pivot table).
 
         Args:
@@ -117,9 +113,7 @@ class ReportingService:
 
         # Create parameterized placeholders
         pipeline_placeholders = ", ".join(f"${i + 1}" for i in range(len(pipeline_names)))
-        metric_placeholders = ", ".join(
-            f"${i + 1 + len(pipeline_names)}" for i in range(len(metric_names))
-        )
+        metric_placeholders = ", ".join(f"${i + 1 + len(pipeline_names)}" for i in range(len(metric_names)))
 
         df = self._conn.execute(
             f"""
@@ -177,15 +171,19 @@ class ReportingService:
         postgres_alias = self.attach_dataset("postgres", alias="pg_catalog_db")
 
         # Query pg_database for all user databases (excluding templates)
-        all_dbs = self._conn.execute(
-            f"""
+        all_dbs = (
+            self._conn.execute(
+                f"""
             SELECT datname
             FROM {postgres_alias}.pg_database
             WHERE datistemplate = false
               AND datname NOT IN ('postgres')
             ORDER BY datname
             """
-        ).df()["datname"].tolist()
+            )
+            .df()["datname"]
+            .tolist()
+        )
 
         # Check each database for AutoRAG schema (presence of 'summary' table)
         valid_datasets = []
@@ -286,9 +284,7 @@ class ReportingService:
 
     # === Multi-Dataset Queries ===
 
-    def compare_across_datasets(
-        self, db_names: list[str], pipeline_name: str, metric_name: str
-    ) -> pd.DataFrame:
+    def compare_across_datasets(self, db_names: list[str], pipeline_name: str, metric_name: str) -> pd.DataFrame:
         """Compare a single pipeline's performance across multiple datasets.
 
         Args:
@@ -322,7 +318,7 @@ class ReportingService:
     def generate_benchmark_report(
         self, db_names: list[str], pipeline_names: list[str], metric_names: list[str]
     ) -> pd.DataFrame:
-        """Generate a comprehensive benchmark report (dataset × pipeline × metric).
+        """Generate a comprehensive benchmark report (dataset x pipeline x metric).
 
         Args:
             db_names: List of database names (each representing a dataset).
@@ -341,9 +337,7 @@ class ReportingService:
 
             # Create parameterized placeholders (starting at $2 because $1 is db_name)
             pipeline_placeholders = ", ".join(f"${i + 2}" for i in range(len(pipeline_names)))
-            metric_placeholders = ", ".join(
-                f"${i + 2 + len(pipeline_names)}" for i in range(len(metric_names))
-            )
+            metric_placeholders = ", ".join(f"${i + 2 + len(pipeline_names)}" for i in range(len(metric_names)))
 
             df = self._conn.execute(
                 f"""
@@ -431,9 +425,7 @@ class ReportingService:
 
         # Aggregate by pipeline: sum ranks, count rankings
         result = (
-            combined.groupby("pipeline")
-            .agg(total_rank=("rank", "sum"), num_rankings=("rank", "count"))
-            .reset_index()
+            combined.groupby("pipeline").agg(total_rank=("rank", "sum"), num_rankings=("rank", "count")).reset_index()
         )
 
         # Compute average rank
@@ -461,9 +453,7 @@ class ReportingService:
             ValueError: If aggregation is not a valid function name.
         """
         if aggregation not in VALID_AGGREGATIONS:
-            raise ValueError(
-                f"Invalid aggregation: '{aggregation}'. Must be one of {sorted(VALID_AGGREGATIONS)}."
-            )
+            raise ValueError(f"Invalid aggregation: '{aggregation}'. Must be one of {sorted(VALID_AGGREGATIONS)}.")
 
         if not db_names:
             return pd.DataFrame()
