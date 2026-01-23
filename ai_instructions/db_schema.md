@@ -38,15 +38,8 @@ Table Chunk {
   contents text [not null]
   embedding vector(768)
   embeddings vector[](768)
-}
-
-Table TableChunk {
-    id bigserial [pk]
-    parent_caption bigint [ref: > Caption.id]
-    contents text [not null]
-    type varchar(255) [not null] // xml, md, html...
-    embedding vector(768)
-    embeddings vector[](768)
+  is_table boolean [default: false]
+  table_type varchar(255) // markdown, xml, html
 }
 
 Table ImageChunk {

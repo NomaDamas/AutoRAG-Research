@@ -34,6 +34,10 @@ def make_image_chunk_id(doc_id: str, section_id: int, img_key: str) -> str:
     return f"{doc_id}_section_{section_id}_img_{img_key}"
 
 
+def make_table_chunk_id(doc_id: str, section_id: int, table_key: str) -> str:
+    return f"{doc_id}_section_{section_id}_table_{table_key}"
+
+
 class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,
@@ -130,8 +134,9 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                 section_id = section["section_id"]
                 section_text = section.get("text", "")
                 images = section.get("images", {})
+                tables = section.get("tables", {})
 
-                if not section_text and not images:
+                if not section_text and not images and not tables:
                     continue
 
                 page_id = make_page_id(doc_id, section_id)
@@ -182,9 +187,24 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                             "id": chunk_id,
                             "contents": section_text,
                             "parent_caption": caption_id,
+                            "is_table": False,
                         }
                     ])
                     chunk_id_map[chunk_id] = image_chunk_ids
+
+                # 6. Create Table Chunks (is_table=True)
+                for table_key, table_data in tables.items():
+                    table_chunk_id = make_table_chunk_id(doc_id, section_id, table_key)
+                    table_contents = str(table_data)
+                    self.service.add_chunks([
+                        {
+                            "id": table_chunk_id,
+                            "contents": table_contents,
+                            "parent_caption": caption_id if section_text else None,
+                            "is_table": True,
+                            "table_type": "html",  # OpenRAGBench uses HTML tables
+                        }
+                    ])
 
         return chunk_id_map
 
@@ -225,6 +245,15 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
 
         if retrieval_gt_items:
             self.service.add_retrieval_gt_batch(retrieval_gt_items, chunk_type="text")  # ty: ignore[invalid-argument-type]
+
+        # Add ImageChunk retrieval ground truth
+        image_retrieval_gt_items: list[tuple[str, str]] = []
+        for qid, chunk_id in retrieval_gt_items:
+            for image_chunk_id in chunk_id_map.get(chunk_id, []):
+                image_retrieval_gt_items.append((qid, image_chunk_id))
+
+        if image_retrieval_gt_items:
+            self.service.add_retrieval_gt_batch(image_retrieval_gt_items, chunk_type="image")  # ty: ignore[invalid-argument-type]
 
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
         if self.embedding_model is None:
