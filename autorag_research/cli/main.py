@@ -66,14 +66,20 @@ def main() -> None:
 
     command = sys.argv[1]
 
-    # Handle Click-based commands (ingest) separately
+    # Handle Click-based commands separately
     # Click handles its own argv parsing
     if command == "ingest":
         from autorag_research.cli.commands.ingest import ingest
 
-        # Pass remaining args to Click (it will parse sys.argv[2:])
         sys.argv = [f"{sys.argv[0]} ingest", *sys.argv[2:]]
         ingest()
+        return
+
+    if command == "list":
+        from autorag_research.cli.commands.list_cmd import list_resources
+
+        sys.argv = [f"{sys.argv[0]} list", *sys.argv[2:]]
+        list_resources()
         return
 
     # For Hydra-based commands, remove the command from argv
@@ -96,10 +102,6 @@ def main() -> None:
         from autorag_research.cli.commands.run import run
 
         run()
-    elif command == "list":
-        from autorag_research.cli.commands.list_cmd import list_resources
-
-        list_resources()
     elif command in {"--help", "-h", "help"}:
         print_usage()
     else:
@@ -131,9 +133,9 @@ Examples:
   autorag-research ingest ragbench --configs=covidqa,msmarco
 
   # 3. List available resources
-  autorag-research list resource=datasets
-  autorag-research list resource=pipelines
-  autorag-research list resource=metrics
+  autorag-research list datasets
+  autorag-research list pipelines
+  autorag-research list metrics
 
   # 4. Run experiment (uses configs/experiment.yaml)
   autorag-research run --db-name=beir_scifact_test

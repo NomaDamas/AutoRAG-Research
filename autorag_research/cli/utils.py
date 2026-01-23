@@ -43,8 +43,20 @@ def print_config(cfg: DictConfig) -> None:
 
 def list_schemas(cfg: DictConfig) -> list[str]:
     """List all user-created schemas in the database (excluding system schemas)."""
+    return list_schemas_with_connection(
+        host=cfg.db.host,
+        port=cfg.db.port,
+        user=cfg.db.user,
+        password=cfg.db.password,
+        database=cfg.db.database,
+    )
+
+
+def list_schemas_with_connection(host: str, port: int, user: str, password: str, database: str) -> list[str]:
+    """List all user-created schemas in the database (excluding system schemas)."""
     system_schemas = {"information_schema", "pg_catalog", "pg_toast", "public"}
-    engine = create_engine(get_db_url(cfg))
+    db_url = f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
+    engine = create_engine(db_url)
     with engine.connect() as conn:
         result = conn.execute(text("SELECT schema_name FROM information_schema.schemata"))
         schemas = [row[0] for row in result if row[0] not in system_schemas]

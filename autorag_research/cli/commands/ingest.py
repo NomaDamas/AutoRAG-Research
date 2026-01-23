@@ -56,9 +56,6 @@ def load_db_config_from_yaml() -> DatabaseConfig:
 class IngestorGroup(click.MultiCommand):  # ty: ignore[invalid-base]
     """Dynamic Click group that creates subcommands for each ingestor."""
 
-    def list_commands(self, ctx: click.Context) -> list[str]:
-        return sorted(INGESTOR_REGISTRY.keys())
-
     def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:  # noqa: C901
         if cmd_name not in INGESTOR_REGISTRY:
             return None

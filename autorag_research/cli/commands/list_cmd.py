@@ -1,23 +1,51 @@
-"""list command - List available resources."""
+"""list command - List available resources using Click CLI."""
 
-from pathlib import Path
+import logging
+import sys
 
-import hydra
-from omegaconf import DictConfig
+import click
 
+from autorag_research.cli.commands.ingest import load_db_config_from_yaml
 from autorag_research.cli.configs.datasets import AVAILABLE_DATASETS
 from autorag_research.cli.configs.metrics import AVAILABLE_METRICS
 from autorag_research.cli.configs.pipelines import AVAILABLE_PIPELINES
-from autorag_research.cli.utils import list_schemas
 
-CONFIG_PATH = str(Path.cwd() / "configs")
+logger = logging.getLogger("AutoRAG-Research")
+
+RESOURCE_TYPES = ["datasets", "pipelines", "metrics", "databases"]
 
 
-@hydra.main(version_base=None, config_name="list_config", config_path=None)
-def list_resources(cfg: DictConfig) -> None:
-    """List available resources based on the resource type."""
-    resource = cfg.get("resource", "datasets")
+@click.command()
+@click.argument("resource", type=click.Choice(RESOURCE_TYPES))
+@click.option("--db-host", default=None, help="Database host (default: from configs/db/default.yaml)")
+@click.option("--db-port", type=int, default=None, help="Database port (default: from configs/db/default.yaml)")
+@click.option("--db-user", default=None, help="Database user (default: from configs/db/default.yaml)")
+@click.option("--db-password", default=None, help="Database password (default: from configs/db/default.yaml)")
+@click.option("--db-database", default=None, help="Database name (default: from configs/db/default.yaml)")
+def list_resources(
+    resource: str,
+    db_host: str | None,
+    db_port: int | None,
+    db_user: str | None,
+    db_password: str | None,
+    db_database: str | None,
+) -> None:
+    """List available resources.
 
+    \b
+    RESOURCE types:
+      datasets   - Available datasets for ingestion
+      pipelines  - Available pipeline configurations
+      metrics    - Available evaluation metrics
+      databases  - Database schemas (uses configs/db/default.yaml)
+
+    \b
+    Examples:
+      autorag-research list datasets
+      autorag-research list pipelines
+      autorag-research list metrics
+      autorag-research list databases
+    """
     if resource == "datasets":
         print_datasets()
     elif resource == "pipelines":
@@ -25,52 +53,66 @@ def list_resources(cfg: DictConfig) -> None:
     elif resource == "metrics":
         print_metrics()
     elif resource == "databases":
-        print_databases(cfg)
-    else:
-        print(f"Unknown resource type: {resource}")
-        print("Available types: datasets, pipelines, metrics, databases")
+        # Load from yaml, then override with CLI options if provided
+        db_config = load_db_config_from_yaml()
+        if db_host is not None:
+            db_config.host = db_host
+        if db_port is not None:
+            db_config.port = db_port
+        if db_user is not None:
+            db_config.user = db_user
+        if db_password is not None:
+            db_config.password = db_password
+        if db_database is not None:
+            db_config.database = db_database
+        print_databases(db_config.host, db_config.port, db_config.user, db_config.password, db_config.database)
 
 
 def print_datasets() -> None:
     """Print available datasets."""
-    print("\nAvailable Datasets:")
-    print("-" * 60)
+    click.echo("\nAvailable Datasets:")
+    click.echo("-" * 60)
     for name, description in sorted(AVAILABLE_DATASETS.items()):
-        print(f"  {name:<25} {description}")
-    print("\nUsage: autorag-research ingest dataset=<name>")
+        click.echo(f"  {name:<25} {description}")
+    click.echo("\nUsage: autorag-research ingest <ingestor> --dataset=<name>")
 
 
 def print_pipelines() -> None:
     """Print available pipelines."""
-    print("\nAvailable Pipelines:")
-    print("-" * 60)
+    click.echo("\nAvailable Pipelines:")
+    click.echo("-" * 60)
     for name, description in sorted(AVAILABLE_PIPELINES.items()):
-        print(f"  {name:<20} {description}")
-    print("\nSee configs/pipelines/ for configuration options")
+        click.echo(f"  {name:<20} {description}")
+    click.echo("\nSee configs/pipelines/ for configuration options")
 
 
 def print_metrics() -> None:
     """Print available metrics."""
-    print("\nAvailable Metrics:")
-    print("-" * 60)
+    click.echo("\nAvailable Metrics:")
+    click.echo("-" * 60)
     for name, description in sorted(AVAILABLE_METRICS.items()):
-        print(f"  {name:<15} {description}")
-    print("\nSee configs/metrics/ for configuration options")
+        click.echo(f"  {name:<15} {description}")
+    click.echo("\nSee configs/metrics/ for configuration options")
 
 
-def print_databases(cfg: DictConfig) -> None:
+def print_databases(host: str, port: int, user: str, password: str, database: str) -> None:
     """Print database schemas."""
-    print("\nDatabase Schemas:")
-    print("-" * 60)
+    from autorag_research.cli.utils import list_schemas_with_connection
+
+    click.echo("\nDatabase Schemas:")
+    click.echo("-" * 60)
     try:
-        schemas = list_schemas(cfg)
+        schemas = list_schemas_with_connection(host, port, user, password, database)
         if schemas:
             for schema in schemas:
-                print(f"  {schema}")
+                click.echo(f"  {schema}")
         else:
-            print("  No user schemas found.")
-        print(f"\nDatabase: {cfg.db.host}:{cfg.db.port}/{cfg.db.database}")
-        print("\nUsage: autorag-research info database=<schema_name>")
-    except Exception as e:
-        print(f"  Error connecting to database: {e}")
-        print("  Make sure PostgreSQL is running and credentials are correct.")
+            click.echo("  No user schemas found.")
+        click.echo(f"\nDatabase: {host}:{port}/{database}")
+    except Exception:
+        logger.exception("Error connecting to database. Make sure PostgreSQL is running and credentials are correct.")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    list_resources()
