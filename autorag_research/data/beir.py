@@ -37,7 +37,7 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         self,
         subset: Literal["train", "dev", "test"] = "test",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
         corpus, queries, qrels = GenericDataLoader(
             data_folder=self.data_path,
@@ -48,13 +48,13 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
 
         rng = random.Random(RANDOM_SEED)  # noqa: S311
 
-        # Step 1: Sample queries and collect gold IDs (only when corpus_limit is set)
+        # Step 1: Sample queries and collect gold IDs (only when min_corpus_cnt is set)
         qids, filtered_qrels, gold_corpus_ids = self._sample_queries(
-            queries, qrels, query_limit, rng, collect_gold_ids=corpus_limit is not None
+            queries, qrels, query_limit, rng, collect_gold_ids=min_corpus_cnt is not None
         )
 
         # Step 2: Filter corpus
-        corpus_ids = self._filter_corpus(corpus, gold_corpus_ids, corpus_limit, rng)
+        corpus_ids = self._filter_corpus(corpus, gold_corpus_ids, min_corpus_cnt, rng)
         corpus_ids_set = set(corpus_ids)
 
         # Step 3: Ingest data
@@ -76,7 +76,7 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
 
         Args:
             collect_gold_ids: If True, collect gold corpus IDs from qrels.
-                Only needed when corpus_limit is set.
+                Only needed when min_corpus_cnt is set.
         """
         qids = list(queries.keys())
         if query_limit is not None and query_limit < len(qids):
@@ -100,12 +100,12 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         self,
         corpus: dict,
         gold_corpus_ids: set[str],
-        corpus_limit: int | None,
+        min_corpus_cnt: int | None,
         rng: random.Random,
     ) -> list:
         """Filter corpus to include gold IDs + random samples up to limit."""
         corpus_ids = list(corpus.keys())
-        if corpus_limit is None:
+        if min_corpus_cnt is None:
             return corpus_ids
 
         # Always include gold IDs
@@ -113,7 +113,7 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         remaining_corpus_ids = [cid for cid in corpus_ids if cid not in gold_corpus_ids]
 
         # Add random samples if we need more
-        additional_needed = corpus_limit - len(selected_corpus_ids)
+        additional_needed = min_corpus_cnt - len(selected_corpus_ids)
         if additional_needed > 0 and remaining_corpus_ids:
             additional_ids = rng.sample(
                 remaining_corpus_ids,

@@ -110,9 +110,11 @@ from tests.autorag_research.data.ingestor_test_utils import (
 
 EMBEDDING_DIM = 768
 
+
 @pytest.fixture
 def mock_embedding_model():
     return MockEmbedding(EMBEDDING_DIM)
+
 
 # ==================== Integration Tests ====================
 
@@ -127,6 +129,7 @@ CONFIG = IngestorTestConfig(
     db_name="my_dataset_test",
 )
 
+
 @pytest.mark.data
 class TestMyDatasetIngestorIntegration:
     def test_ingest_subset(self, mock_embedding_model):
@@ -138,7 +141,7 @@ class TestMyDatasetIngestorIntegration:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=CONFIG.expected_query_count,
-                corpus_limit=CONFIG.expected_chunk_count,
+                min_corpus_cnt=CONFIG.expected_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, CONFIG)

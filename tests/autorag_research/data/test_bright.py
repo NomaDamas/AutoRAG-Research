@@ -99,7 +99,7 @@ class TestBRIGHTIngestorIntegration:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=BRIGHT_INTEGRATION_CONFIG.expected_query_count,
-                corpus_limit=BRIGHT_INTEGRATION_CONFIG.expected_chunk_count,
+                min_corpus_cnt=BRIGHT_INTEGRATION_CONFIG.expected_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, BRIGHT_INTEGRATION_CONFIG)
@@ -128,7 +128,7 @@ class TestBRIGHTIngestorIntegration:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=3,  # Per domain
-                corpus_limit=10,  # Per domain
+                min_corpus_cnt=10,  # Per domain
             )
 
             verifier = IngestorTestVerifier(service, db.schema, config)
@@ -157,7 +157,7 @@ class TestBRIGHTIngestorIntegration:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=config.expected_query_count,
-                corpus_limit=config.expected_chunk_count,
+                min_corpus_cnt=config.expected_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, config)

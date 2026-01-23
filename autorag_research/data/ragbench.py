@@ -84,14 +84,14 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         self,
         subset: Literal["train", "dev", "test"] = "test",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
         if self.service is None:
             raise ServiceNotSetError
 
-        if corpus_limit is not None:
+        if min_corpus_cnt is not None:
             logger.warning(
-                "corpus_limit is ineffective for RAGBench. "
+                "min_corpus_cnt is ineffective for RAGBench. "
                 "Each query has its own document set (1:N relation) without a shared corpus. "
                 "Only query_limit is effective for this dataset."
             )

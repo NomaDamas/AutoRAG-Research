@@ -46,7 +46,7 @@ For data ingestor tests, use the common test framework in `tests/autorag_researc
   - Image data validity (PIL Image.open)
   - Retrieval relation existence
   - Generation GT existence
-- `query_limit` / `corpus_limit` parameter variations
+- `query_limit` / `min_corpus_cnt` parameter variations
 - Different limit combinations (both limits, one limit, etc.)
 - 1:1 mapping verification for single-relation datasets
 
@@ -67,6 +67,7 @@ class TestHelperFunctions:
         result = _helper_function("input")
         assert result == "expected"
 
+
 # ==================== Integration Tests ====================
 # Use common framework, mark with @pytest.mark.data
 
@@ -81,6 +82,7 @@ CONFIG = IngestorTestConfig(
     db_name="unique_db_name",
 )
 
+
 @pytest.mark.data
 class TestIngestorIntegration:
     def test_ingest_subset(self, mock_embedding_model):
@@ -91,7 +93,7 @@ class TestIngestorIntegration:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=CONFIG.expected_query_count,
-                corpus_limit=CONFIG.expected_chunk_count,
+                min_corpus_cnt=CONFIG.expected_chunk_count,
             )
             verifier = IngestorTestVerifier(service, db.schema, CONFIG)
             verifier.verify_all()
