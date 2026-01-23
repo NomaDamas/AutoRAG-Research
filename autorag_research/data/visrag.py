@@ -1,16 +1,24 @@
-"""ArxivQA Ingestor using VisRAG filtered dataset.
+"""VisRAG Dataset Ingestor for multi-modal retrieval evaluation.
 
-This ingestor uses the filtered ArxivQA dataset from the VisRAG paper,
-which removes context-dependent questions for better retrieval evaluation.
-Dataset: openbmb/VisRAG-Ret-Test-ArxivQA
+This unified ingestor supports all 6 VisRAG benchmark datasets:
+- ArxivQA: Academic paper figures with questions
+- ChartQA: Chart comprehension questions
+- MP-DocVQA: Multi-page document visual QA
+- InfoVQA: Infographic visual QA
+- PlotQA: Scientific plot questions
+- SlideVQA: Slide presentation questions
 
-The VisRAG filtering stage uses GPT-4o to identify and remove questions
-that are context-dependent, preserving only ~10% of the original dataset.
+All datasets follow the BEIR-style format with separate corpus, queries, and qrels.
+HuggingFace path pattern: openbmb/VisRAG-Ret-Test-{DatasetName}
+
+Reference: https://github.com/OpenBMB/VisRAG
 """
 
 import io
 import logging
 import random
+from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
 
 from datasets import load_dataset
@@ -24,36 +32,99 @@ from autorag_research.util import pil_image_to_bytes
 
 RANDOM_SEED = 42
 BATCH_SIZE = 1000
-DATASET_NAME = "openbmb/VisRAG-Ret-Test-ArxivQA"
 
 logger = logging.getLogger("AutoRAG-Research")
 
 
-def _format_query(question: str, options: list[str]) -> str:
+class VisRAGDatasetName(str, Enum):
+    """Supported VisRAG benchmark datasets."""
+
+    ARXIV_QA = "ArxivQA"
+    CHART_QA = "ChartQA"
+    MP_DOCVQA = "MP-DocVQA"
+    INFO_VQA = "InfoVQA"
+    PLOT_QA = "PlotQA"
+    SLIDE_VQA = "SlideVQA"
+
+
+@dataclass(frozen=True)
+class _DatasetConfig:
+    """Configuration for each VisRAG dataset variant."""
+
+    hf_path: str  # HuggingFace dataset path
+    has_options: bool  # Whether queries have multiple choice options
+    supports_multi_answer: bool  # Whether answers can be a list
+
+
+# Dataset-specific configurations
+_DATASET_CONFIGS: dict[VisRAGDatasetName, _DatasetConfig] = {
+    VisRAGDatasetName.ARXIV_QA: _DatasetConfig(
+        hf_path="openbmb/VisRAG-Ret-Test-ArxivQA",
+        has_options=True,
+        supports_multi_answer=False,
+    ),
+    VisRAGDatasetName.CHART_QA: _DatasetConfig(
+        hf_path="openbmb/VisRAG-Ret-Test-ChartQA",
+        has_options=True,
+        supports_multi_answer=False,
+    ),
+    VisRAGDatasetName.MP_DOCVQA: _DatasetConfig(
+        hf_path="openbmb/VisRAG-Ret-Test-MP-DocVQA",
+        has_options=False,
+        supports_multi_answer=True,
+    ),
+    VisRAGDatasetName.INFO_VQA: _DatasetConfig(
+        hf_path="openbmb/VisRAG-Ret-Test-InfographicsVQA",
+        has_options=False,
+        supports_multi_answer=True,
+    ),
+    VisRAGDatasetName.PLOT_QA: _DatasetConfig(
+        hf_path="openbmb/VisRAG-Ret-Test-PlotQA",
+        has_options=True,
+        supports_multi_answer=False,
+    ),
+    VisRAGDatasetName.SLIDE_VQA: _DatasetConfig(
+        hf_path="openbmb/VisRAG-Ret-Test-SlideVQA",
+        has_options=False,
+        supports_multi_answer=False,
+    ),
+}
+
+
+def _format_query_with_options(question: str, options: list[str]) -> str:
     """Format query with question and multiple choice options."""
     options_text = "\n".join(options)
     return f"Given the following query and options, select the correct option.\n\nQuery: {question}\n\nOptions: {options_text}"
 
 
-class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
-    """Ingestor for the VisRAG-filtered ArxivQA dataset.
+class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
+    """Unified ingestor for all VisRAG benchmark datasets.
 
-    The dataset follows BEIR-style format with separate corpus, queries, and qrels:
-    - corpus: 8,070 images from arXiv papers
-    - queries: 816 filtered questions (context-independent)
+    The datasets follow BEIR-style format with separate corpus, queries, and qrels:
+    - corpus: Images from various document types
+    - queries: Context-independent questions (filtered by GPT-4o)
     - qrels: Query-to-corpus relevance judgments
 
     Attributes:
+        dataset_name: Which VisRAG dataset to use.
         embedding_model: MultiModal embedding model for single-vector embeddings.
         late_interaction_embedding_model: Multi-vector embedding model (e.g., ColPali).
+
+    Example:
+        >>> ingestor = VisRAGIngestor(VisRAGDatasetName.CHART_QA)
+        >>> ingestor.set_service(service)
+        >>> ingestor.ingest(query_limit=100, corpus_limit=500)
     """
 
     def __init__(
         self,
+        dataset_name: VisRAGDatasetName,
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         super().__init__(embedding_model, late_interaction_embedding_model)
+        self.dataset_name = dataset_name
+        self._config = _DATASET_CONFIGS[dataset_name]
         self._corpus_ds = None
         self._queries_ds = None
         self._qrels_ds = None
@@ -64,15 +135,15 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
     def _load_corpus(self):
         """Load corpus subset (images)."""
         if self._corpus_ds is None:
-            logger.info(f"Loading {DATASET_NAME} corpus...")
-            self._corpus_ds = load_dataset(DATASET_NAME, name="corpus", split="train")
+            logger.info(f"Loading {self._config.hf_path} corpus...")
+            self._corpus_ds = load_dataset(self._config.hf_path, name="corpus", split="train")
         return self._corpus_ds
 
     def _load_queries(self):
         """Load queries subset."""
         if self._queries_ds is None:
-            logger.info(f"Loading {DATASET_NAME} queries...")
-            self._queries_ds = load_dataset(DATASET_NAME, name="queries", split="train")
+            logger.info(f"Loading {self._config.hf_path} queries...")
+            self._queries_ds = load_dataset(self._config.hf_path, name="queries", split="train")
         return self._queries_ds
 
     def _load_qrels(self) -> dict[str, dict[str, int]]:
@@ -82,8 +153,8 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
             Dict mapping query_id -> {corpus_id: score}
         """
         if self._qrels_ds is None:
-            logger.info(f"Loading {DATASET_NAME} qrels...")
-            self._qrels_ds = load_dataset(DATASET_NAME, name="qrels", split="train")
+            logger.info(f"Loading {self._config.hf_path} qrels...")
+            self._qrels_ds = load_dataset(self._config.hf_path, name="qrels", split="train")
 
         qrels: dict[str, dict[str, int]] = {}
         for row in self._qrels_ds:
@@ -179,6 +250,41 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
         logger.info(f"Selected {len(selected)} corpus items from {len(all_corpus_ids)} total")
         return selected
 
+    def _format_query(self, row: dict) -> str:
+        """Format query text based on dataset configuration.
+
+        Args:
+            row: Query row from the dataset.
+
+        Returns:
+            Formatted query string.
+        """
+        query_text = row["query"]
+        options = row.get("options")
+
+        if self._config.has_options and options:
+            return _format_query_with_options(query_text, options)
+        return query_text
+
+    def _extract_answers(self, row: dict) -> list[str]:
+        """Extract answers based on dataset configuration.
+
+        Args:
+            row: Query row from the dataset.
+
+        Returns:
+            List of answer strings.
+        """
+        answer = row.get("answer")
+
+        if answer is None:
+            return []
+
+        if self._config.supports_multi_answer and isinstance(answer, list):
+            return [str(a) for a in answer if a]
+
+        return [str(answer)]
+
     def _ingest_corpus(
         self,
         corpus_ids: list[str],
@@ -240,7 +346,7 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
                 else:
                     img_bytes, mimetype = pil_image_to_bytes(Image.open(io.BytesIO(img)))
 
-                image_chunks_data.append({"id": corpus_id, "content": img_bytes, "mimetype": mimetype})
+                image_chunks_data.append({"id": corpus_id, "contents": img_bytes, "mimetype": mimetype})
                 valid_ids.append(corpus_id)
             except Exception as e:
                 logger.warning(f"Failed to process image {corpus_id}: {e}")
@@ -273,8 +379,13 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
 
             for query_id in batch_ids:
                 row = query_index[query_id]
-                formatted_query = _format_query(row["query"], row["options"])
-                queries_data.append({"id": query_id, "contents": formatted_query, "generation_gt": [row["answer"]]})
+                formatted_query = self._format_query(row)
+                answers = self._extract_answers(row)
+                queries_data.append({
+                    "id": query_id,
+                    "contents": formatted_query,
+                    "generation_gt": answers if answers else None,
+                })
 
             if queries_data:
                 pks = self.service.add_queries(queries_data)
@@ -291,9 +402,9 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
         query_limit: int | None = None,
         corpus_limit: int | None = None,
     ) -> None:
-        """Ingest ArxivQA data from the VisRAG filtered dataset.
+        """Ingest VisRAG dataset.
 
-        Note: The VisRAG dataset only has a 'train' split, so all subset
+        Note: VisRAG datasets only have a 'train' split, so all subset
         values are mapped to 'train'.
 
         Args:
@@ -328,7 +439,8 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
         self._ingest_qrels(selected_query_ids, qrels, query_id_to_pk, corpus_id_to_pk, set(selected_corpus_ids))
 
         logger.info(
-            f"Ingestion complete: {len(query_id_to_pk)} queries, {len(corpus_id_to_pk)} images, {skipped} skipped"
+            f"[{self.dataset_name.value}] Ingestion complete: "
+            f"{len(query_id_to_pk)} queries, {len(corpus_id_to_pk)} images, {skipped} skipped"
         )
 
     def _ingest_qrels(
@@ -351,7 +463,7 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        from autorag_research.orm.models.retrieval_gt import or_all
+        from autorag_research.orm.models.retrieval_gt import image, or_all
 
         qrels_items: list[tuple[str, list[str]]] = []
 
@@ -371,7 +483,7 @@ class ArxivQAIngestor(MultiModalEmbeddingDataIngestor):
 
         if qrels_items:
             self.service.add_retrieval_gt_batch(
-                [(qid, or_all(gold_ids)) for qid, gold_ids in qrels_items],  # ty: ignore[invalid-argument-type]
+                [(qid, or_all(gold_ids, image)) for qid, gold_ids in qrels_items],  # ty: ignore[invalid-argument-type]
                 chunk_type="image",
             )
 
