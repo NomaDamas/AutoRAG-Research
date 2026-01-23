@@ -156,7 +156,9 @@ OPENRAGBENCH_CONFIG = IngestorTestConfig(
     expected_chunk_count=10,  # Each query maps to exactly one section
     expected_image_chunk_count=5,  # Some sections have images (figures/tables)
     chunk_count_is_minimum=True,  # Gold sections always included, may have more
-    # Full hierarchy checks: Document -> Page -> Caption -> Chunk/ImageChunk
+    # Full hierarchy checks:
+    #   - Chunk: Document -> Page -> Caption -> Chunk
+    #   - ImageChunk: Document -> Page -> ImageChunk
     check_documents=True,
     expected_document_count=10,  # One document per query's gold section (unique doc_ids)
     check_pages=True,
