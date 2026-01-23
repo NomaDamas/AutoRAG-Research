@@ -133,13 +133,6 @@ autorag-research list resource=pipelines
 autorag-research list resource=metrics
 ```
 
-#### `info` - Show Database Schema Information
-
-```bash
-autorag-research info schema=beir_scifact_test
-```
-(not work?)
-
 #### `run` - Run Experiments
 
 Run experiment pipelines with metrics evaluation. **Requires `--db-name` to specify the target database schema.**

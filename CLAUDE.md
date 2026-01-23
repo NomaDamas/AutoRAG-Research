@@ -104,6 +104,10 @@ Prefer mocks over real API calls (use LlamaIndex MockLLM/MockEmbedding).
 - Ruff for linting/formatting
 - Type checking: ty
 
+## Logging
+- Alwasy use `logger = logging.getLogger("AutoRAG-Research")` to initialize logger
+- Do not use print statements for logging. Or any other logging methods.
+
 ## Utility Functions (DRY!)
 
 Before implementing common functionality, CHECK existing utils first:

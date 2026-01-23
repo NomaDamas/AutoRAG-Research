@@ -1,9 +1,16 @@
 """Main entry point for AutoRAG-Research CLI."""
 
+import logging
 import sys
 from pathlib import Path
 
 from autorag_research.cli.configs import register_configs
+
+# Configure logging for CLI output
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+)
 
 # Hydra overrides to disable output directory and log file creation
 HYDRA_OVERRIDES = [
@@ -93,10 +100,6 @@ def main() -> None:
         from autorag_research.cli.commands.list_cmd import list_resources
 
         list_resources()
-    elif command == "info":
-        from autorag_research.cli.commands.info import info
-
-        info()
     elif command in {"--help", "-h", "help"}:
         print_usage()
     else:
@@ -116,8 +119,7 @@ Commands:
   init-config    Download default configuration files to ./configs/
   ingest         Ingest a dataset into PostgreSQL
   run            Run experiment pipelines with metrics evaluation
-  list           List available resources (datasets, pipelines, metrics, databases)
-  info           Show detailed information about a database schema
+  list           List available resources (datasets, pipelines, metrics)
 
 Examples:
   # 1. Download configuration files (first time setup)
