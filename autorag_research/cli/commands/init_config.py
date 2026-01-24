@@ -63,7 +63,7 @@ def init_config() -> None:
         f"\nDone: {downloaded} downloaded, {skipped} skipped, {failed} failed"
         f"\nConfiguration files are in: {config_dir}"
         "\nNext steps:"
-        "\n  1. Edit configs/db/default.yaml with your database credentials"
+        "\n  1. Edit configs/db.yaml with your database credentials"
         "\n  2. Ingest a dataset: autorag-research ingest beir --dataset=scifact"
         "\n  3. Run experiment: autorag-research run --db-name=beir_scifact_test"
     )

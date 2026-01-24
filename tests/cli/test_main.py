@@ -103,8 +103,8 @@ class TestInitConfigCommand:
         configs_dir = tmp_path / "configs"
         assert configs_dir.exists()
 
-        # Check that db/default.yaml was created
-        assert (configs_dir / "db" / "default.yaml").exists()
+        # Check that db.yaml was created
+        assert (configs_dir / "db.yaml").exists()
 
         # Check subdirectories (datasets handled via CLI, not YAML)
         assert (configs_dir / "pipelines").exists()
@@ -113,9 +113,7 @@ class TestInitConfigCommand:
     def test_init_config_skips_existing_files(self, tmp_path):
         """Test that init-config skips existing files."""
         # Create configs directory and a file
-        configs_dir = tmp_path / "configs" / "db"
-        configs_dir.mkdir(parents=True)
-        db_yaml = configs_dir / "default.yaml"
+        db_yaml = tmp_path / "configs" / "db.yaml"
         db_yaml.write_text("existing: content")
 
         result = subprocess.run(
@@ -125,7 +123,7 @@ class TestInitConfigCommand:
             cwd=str(tmp_path),
         )
         assert result.returncode == 0
-        assert "[skip] db/default.yaml" in result.stdout
+        assert "[skip] db.yaml" in result.stdout
 
         # Verify file wasn't overwritten
         assert db_yaml.read_text() == "existing: content"

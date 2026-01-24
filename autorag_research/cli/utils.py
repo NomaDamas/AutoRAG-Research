@@ -181,11 +181,11 @@ def setup_logging(verbose: bool = False) -> None:
 
 
 def load_db_config_from_yaml() -> DatabaseConfig:
-    """Load database config from configs/db/default.yaml if exists."""
+    """Load database config from configs/db.yaml if exists."""
     import autorag_research.cli as cli
 
     config_dir = cli.CONFIG_PATH or Path.cwd() / "configs"
-    yaml_path = config_dir / "db" / "default.yaml"
+    yaml_path = config_dir / "db.yaml"
 
     defaults = DatabaseConfig()
 

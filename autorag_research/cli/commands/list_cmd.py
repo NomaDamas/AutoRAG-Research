@@ -28,19 +28,19 @@ def list_resources(
         typer.Argument(help="Resource type to list: datasets, ingestors, pipelines, metrics, or databases"),
     ],
     db_host: Annotated[
-        str | None, typer.Option("--db-host", help="Database host (default: from configs/db/default.yaml)")
+        str | None, typer.Option("--db-host", help="Database host (default: from configs/db.yaml)")
     ] = None,
     db_port: Annotated[
-        int | None, typer.Option("--db-port", help="Database port (default: from configs/db/default.yaml)")
+        int | None, typer.Option("--db-port", help="Database port (default: from configs/db.yaml)")
     ] = None,
     db_user: Annotated[
-        str | None, typer.Option("--db-user", help="Database user (default: from configs/db/default.yaml)")
+        str | None, typer.Option("--db-user", help="Database user (default: from configs/db.yaml)")
     ] = None,
     db_password: Annotated[
-        str | None, typer.Option("--db-password", help="Database password (default: from configs/db/default.yaml)")
+        str | None, typer.Option("--db-password", help="Database password (default: from configs/db.yaml)")
     ] = None,
     db_database: Annotated[
-        str | None, typer.Option("--db-database", help="Database name (default: from configs/db/default.yaml)")
+        str | None, typer.Option("--db-database", help="Database name (default: from configs/db.yaml)")
     ] = None,
 ) -> None:
     """List available resources.
@@ -50,7 +50,7 @@ def list_resources(
       ingestors  - Available data ingestors with their parameters
       pipelines  - Available pipeline configurations
       metrics    - Available evaluation metrics
-      databases  - Database schemas (uses configs/db/default.yaml)
+      databases  - Database schemas (uses configs/db.yaml)
 
     Examples:
       autorag-research list datasets

@@ -34,7 +34,7 @@ uv pip install autorag-research
 autorag-research init-config
 
 # 2. Edit database settings
-vi configs/db/default.yaml
+vi configs/db.yaml
 
 # 3. Ingest a dataset
 autorag-research ingest beir --dataset=scifact
@@ -54,7 +54,7 @@ autorag-research init-config
 ```
 
 This creates:
-- `configs/db/default.yaml` - Database connection settings
+- `configs/db.yaml` - Database connection settings
 - `configs/experiment.yaml` - Experiment configuration
 - `configs/pipelines/*.yaml` - Pipeline configurations
 - `configs/metrics/*.yaml` - Metric configurations
@@ -111,7 +111,7 @@ autorag-research ingest bright --domains=stackoverflow --document-mode=long
 
 **Database Override Options:**
 ```bash
-# Override database settings from configs/db/default.yaml
+# Override database settings from configs/db.yaml
 autorag-research ingest beir --dataset=scifact \
   --db-host=localhost \
   --db-port=5432 \
@@ -169,7 +169,7 @@ autorag-research run --db-name=test pipelines.0.k1=1.2
 
 ### Configuration
 
-#### Database Configuration (`configs/db/default.yaml`)
+#### Database Configuration (`configs/db.yaml`)
 
 ```yaml
 host: localhost
