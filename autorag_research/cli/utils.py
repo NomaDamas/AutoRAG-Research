@@ -180,8 +180,17 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
-def load_db_config_from_yaml() -> DatabaseConfig:
-    """Load database config from configs/db.yaml if exists."""
+def load_db_config_from_yaml(
+    host: str | None = None,
+    port: str | None = None,
+    user: str | None = None,
+    password: str | None = None,
+    database: str | None = None,
+) -> DatabaseConfig:
+    """
+    Load database config from configs/db.yaml if exists.
+    The parameters can be overridden via function arguments.
+    """
     import autorag_research.cli as cli
 
     config_dir = cli.CONFIG_PATH or Path.cwd() / "configs"
@@ -197,16 +206,16 @@ def load_db_config_from_yaml() -> DatabaseConfig:
             data = yaml.safe_load(f) or {}
 
         # Handle OmegaConf-style env var: ${oc.env:PGPASSWORD,postgres}
-        password = data.get("password", defaults.password)
-        if isinstance(password, str) and password.startswith("${"):
-            password = os.environ.get("PGPASSWORD", "postgres")
+        loaded_password = data.get("password", defaults.password)
+        if isinstance(loaded_password, str) and loaded_password.startswith("${"):
+            loaded_password = os.environ.get("PGPASSWORD", "postgres")
 
         return DatabaseConfig(
-            host=data.get("host", defaults.host),
-            port=data.get("port", defaults.port),
-            user=data.get("user", defaults.user),
-            password=password,
-            database=data.get("database", defaults.database),
+            host=host or data.get("host", defaults.host),
+            port=port or data.get("port", defaults.port),
+            user=user or data.get("user", defaults.user),
+            password=password or loaded_password,
+            database=database or data.get("database", defaults.database),
         )
     except Exception as e:
         logger.warning(f"Failed to load DB config from YAML: {e}")
@@ -236,7 +245,7 @@ def load_embedding_model(config_name: str) -> "BaseEmbedding":
 
     yaml_path = get_config_dir() / "embedding" / f"{config_name}.yaml"
     if not yaml_path.exists():
-        raise FileNotFoundError(f"Embedding config not found: {yaml_path}")  # noqa: TRY003
+        raise FileNotFoundError
 
     cfg = OmegaConf.load(yaml_path)
     model = instantiate(cfg)

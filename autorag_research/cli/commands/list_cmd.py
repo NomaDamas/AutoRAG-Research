@@ -73,17 +73,7 @@ def _print_databases_with_config(
     db_database: str | None,
 ) -> None:
     """Load DB config with CLI overrides and print databases."""
-    db_config = load_db_config_from_yaml()
-    if db_host is not None:
-        db_config.host = db_host
-    if db_port is not None:
-        db_config.port = db_port
-    if db_user is not None:
-        db_config.user = db_user
-    if db_password is not None:
-        db_config.password = db_password
-    if db_database is not None:
-        db_config.database = db_database
+    db_config = load_db_config_from_yaml(db_host, db_port, db_user, db_password, db_database)
     print_databases(db_config.host, db_config.port, db_config.user, db_config.password, db_config.database)
 
 

@@ -49,7 +49,7 @@ class DataIngestor(ABC):
 
 
 class TextEmbeddingDataIngestor(DataIngestor, ABC):
-    def __init__(self, embedding_model: BaseEmbedding):
+    def __init__(self, embedding_model: BaseEmbedding, **kwargs):
         super().__init__()
         self.service = None
         self.embedding_model = embedding_model
@@ -67,6 +67,7 @@ class MultiModalEmbeddingDataIngestor(DataIngestor, ABC):
         self,
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
+        **kwargs,
     ):
         super().__init__()
         self.service = None

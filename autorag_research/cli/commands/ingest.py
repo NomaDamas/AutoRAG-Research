@@ -277,19 +277,7 @@ def ingest(  # noqa: C901
     final_db_name = db_name or generate_db_name(name, init_kwargs, subset, embedding_model)
 
     # Load DB config from YAML first, then override with CLI options
-    db_config = load_db_config_from_yaml()
-
-    # Override with CLI options if provided
-    if db_host is not None:
-        db_config.host = db_host
-    if db_port is not None:
-        db_config.port = db_port
-    if db_user is not None:
-        db_config.user = db_user
-    if db_password is not None:
-        db_config.password = db_password
-    if db_database is not None:
-        db_config.database = db_database
+    db_config = load_db_config_from_yaml(db_host, db_port, db_user, db_password, db_database)
 
     typer.echo(f"\nIngesting dataset: {name}")
     for param in meta.params:
@@ -329,7 +317,20 @@ def ingest(  # noqa: C901
     if issubclass(ingestor_class, TextEmbeddingDataIngestor):
         ingestor = ingestor_class(embed_model, **init_kwargs)
     elif issubclass(ingestor_class, MultiModalEmbeddingDataIngestor):
-        ingestor = ingestor_class(embedding_model=embed_model, **init_kwargs)
+        from llama_index.core.embeddings import MultiModalEmbedding
+
+        from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+
+        if isinstance(embed_model, MultiModalEmbedding):
+            ingestor = ingestor_class(embedding_model=embed_model, **init_kwargs)
+        elif isinstance(embed_model, MultiVectorMultiModalEmbedding):
+            ingestor = ingestor_class(late_interaction_embedding_model=embed_model, **init_kwargs)
+        else:
+            typer.echo(
+                "Error: Multi-modal ingestor requires a MultiModalEmbedding model or MultiVectorMultiModalEmbedding",
+                err=True,
+            )
+            raise typer.Exit(1)
     else:
         typer.echo(f"Error: Unknown ingestor type: {ingestor_class}", err=True)
         raise typer.Exit(1)
