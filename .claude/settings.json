@@ -12,6 +12,7 @@
       "Bash(find:*)",
       "Bash(cat:*)",
       "Bash(grep:*)",
+      "Bash(mgrep:*)",
       "Bash(uv run pytest)",
       "Bash(uv run pytest:*)",
       "Bash(uv run ruff:*)",
@@ -57,6 +58,7 @@
     "agent-council@team-attention-plugins": true,
     "code-documentation@claude-code-workflows": true,
     "debugging-toolkit@claude-code-workflows": true,
-    "code-review-ai@claude-code-workflows": true
+    "code-review-ai@claude-code-workflows": true,
+    "mgrep@Mixedbread-Grep": true
   }
 }
