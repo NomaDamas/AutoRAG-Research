@@ -4,15 +4,11 @@ Unit tests for helper functions and constructor validation.
 Integration tests use real data subsets against PostgreSQL.
 """
 
-import io
-
 import pytest
-from PIL import Image
 
 from autorag_research.data.vidore import (
     ViDoReArxivQAIngestor,
     ViDoReDatasets,
-    ViDoReIngestor,
 )
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
@@ -20,79 +16,6 @@ from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestVerifier,
     create_test_database,
 )
-
-# ==================== Unit Tests: Helper Functions ====================
-
-
-class TestPilImagesToBytes:
-    """Test static method pil_images_to_bytes."""
-
-    def test_pil_images_to_bytes_jpeg_rgb(self):
-        """Test converting RGB image to JPEG bytes."""
-        # Create a simple RGB image
-        img = Image.new("RGB", (100, 100), color="red")
-        result = ViDoReIngestor.pil_images_to_bytes([img])
-
-        assert len(result) == 1
-        img_bytes, mimetype = result[0]
-        assert isinstance(img_bytes, bytes)
-        assert len(img_bytes) > 0
-        assert mimetype == "image/jpeg"
-
-        # Verify bytes can be read back as image
-        loaded_img = Image.open(io.BytesIO(img_bytes))
-        assert loaded_img.size == (100, 100)
-
-    def test_pil_images_to_bytes_png_rgba(self):
-        """Test converting RGBA image to PNG bytes (transparent)."""
-        # Create RGBA image with transparency
-        img = Image.new("RGBA", (50, 50), color=(255, 0, 0, 128))
-        result = ViDoReIngestor.pil_images_to_bytes([img])
-
-        assert len(result) == 1
-        img_bytes, mimetype = result[0]
-        assert isinstance(img_bytes, bytes)
-        assert mimetype == "image/png"
-
-    def test_pil_images_to_bytes_png_la_mode(self):
-        """Test converting LA mode (grayscale with alpha) to PNG."""
-        img = Image.new("LA", (30, 30), color=(128, 200))
-        result = ViDoReIngestor.pil_images_to_bytes([img])
-
-        assert len(result) == 1
-        _, mimetype = result[0]
-        assert mimetype == "image/png"
-
-    def test_pil_images_to_bytes_png_palette_mode(self):
-        """Test converting palette mode (P) to PNG."""
-        # Create RGB and convert to palette mode
-        img = Image.new("RGB", (20, 20), color="blue")
-        img_p = img.convert("P")
-        result = ViDoReIngestor.pil_images_to_bytes([img_p])
-
-        assert len(result) == 1
-        _, mimetype = result[0]
-        assert mimetype == "image/png"
-
-    def test_pil_images_to_bytes_multiple_images(self):
-        """Test converting multiple images."""
-        img1 = Image.new("RGB", (10, 10), color="red")
-        img2 = Image.new("RGBA", (20, 20), color=(0, 255, 0, 255))
-        img3 = Image.new("L", (30, 30), color=128)  # Grayscale
-
-        result = ViDoReIngestor.pil_images_to_bytes([img1, img2, img3])
-
-        assert len(result) == 3
-        # RGB -> JPEG, RGBA -> PNG, L -> JPEG
-        assert result[0][1] == "image/jpeg"
-        assert result[1][1] == "image/png"
-        assert result[2][1] == "image/jpeg"
-
-    def test_pil_images_to_bytes_empty_list(self):
-        """Test with empty list returns empty list."""
-        result = ViDoReIngestor.pil_images_to_bytes([])
-        assert result == []
-
 
 # ==================== Unit Tests: Dataset Validation ====================
 

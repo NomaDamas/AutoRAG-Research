@@ -5,25 +5,18 @@ import pytest
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.orm.repository.executor_result import ExecutorResultRepository
 from autorag_research.pipelines.generation.basic_rag import BasicRAGPipeline
+from tests.autorag_research.pipelines.pipeline_test_utils import (
+    PipelineTestConfig,
+    PipelineTestVerifier,
+    create_mock_llm,
+)
 
 
 class TestBasicRAGPipeline:
     @pytest.fixture
     def mock_llm(self):
         """Create a mock LLM that returns predictable responses."""
-        mock = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = "This is a generated answer."
-        mock_response.__str__ = lambda x: "This is a generated answer."
-        mock_response.raw = {
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150,
-            }
-        }
-        mock.complete.return_value = mock_response
-        return mock
+        return create_mock_llm()
 
     @pytest.fixture
     def mock_retrieval_pipeline(self, session_factory):
@@ -100,22 +93,29 @@ class TestBasicRAGPipeline:
         # Verify LLM was called
         mock_llm.complete.assert_called_once()
 
-    def test_run_pipeline(self, pipeline, mock_llm):
-        """Test running the full pipeline."""
+    def test_run_pipeline(self, pipeline, session_factory):
+        """Test running the full pipeline with PipelineTestVerifier."""
         result = pipeline.run(top_k=2, batch_size=10)
 
-        assert "pipeline_id" in result
-        assert "total_queries" in result
-        assert "token_usage" in result
-        assert "avg_execution_time_ms" in result
-        assert result["pipeline_id"] == pipeline.pipeline_id
-        assert result["total_queries"] == 5  # Seed data has 5 queries
+        # Use PipelineTestVerifier for standard output validation
+        config = PipelineTestConfig(
+            pipeline_type="generation",
+            expected_total_queries=5,  # Seed data has 5 queries
+            check_token_usage=True,
+            check_execution_time=True,
+            check_persistence=True,
+        )
+        verifier = PipelineTestVerifier(result, pipeline.pipeline_id, session_factory, config)
+        verifier.verify_all()
 
-        # Aggregated token_usage is a dict
-        assert result["token_usage"] is not None
-        assert result["token_usage"]["total_tokens"] == 750  # 5 queries * 150 tokens each
-        assert result["token_usage"]["prompt_tokens"] == 500  # 5 queries * 100 tokens each
-        assert result["token_usage"]["completion_tokens"] == 250  # 5 queries * 50 tokens each
+    def test_run_pipeline_token_aggregation(self, pipeline):
+        """Test that token usage is correctly aggregated across all queries."""
+        result = pipeline.run(top_k=2, batch_size=10)
+
+        # Verify aggregated token_usage values (5 queries * mock token counts)
+        assert result["token_usage"]["total_tokens"] == 750  # 5 * 150
+        assert result["token_usage"]["prompt_tokens"] == 500  # 5 * 100
+        assert result["token_usage"]["completion_tokens"] == 250  # 5 * 50
 
     def test_custom_prompt_template(self, session_factory, mock_llm, mock_retrieval_pipeline, cleanup_pipeline_results):
         """Test pipeline with custom prompt template."""

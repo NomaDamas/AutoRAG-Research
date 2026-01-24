@@ -1,12 +1,10 @@
 import ast
-import io
 import random
 from abc import ABC
 from typing import Literal
 
 from datasets import load_dataset
 from llama_index.core.embeddings import MultiModalEmbedding
-from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
@@ -15,6 +13,7 @@ from autorag_research.exceptions import (
     InvalidDatasetNameError,
     ServiceNotSetError,
 )
+from autorag_research.util import pil_image_to_bytes
 
 RANDOM_SEED = 42
 
@@ -108,26 +107,6 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor, ABC):
             chunk_type="image",
         )
 
-    @staticmethod
-    def pil_images_to_bytes(image_list: list[Image.Image]) -> list[tuple[bytes, str]]:
-        """Convert PIL images to bytes with mimetype.
-
-        Args:
-            image_list: List of PIL Image objects.
-
-        Returns:
-            List of tuples (image_bytes, mimetype).
-        """
-        results = []
-        for img in image_list:
-            buffer = io.BytesIO()
-            # Determine format based on image mode
-            img_format = "PNG" if img.mode in ("RGBA", "LA", "P") else "JPEG"
-            img.save(buffer, format=img_format)
-            mimetype = f"image/{img_format.lower()}"
-            results.append((buffer.getvalue(), mimetype))
-        return results
-
 
 class ViDoReArxivQAIngestor(ViDoReIngestor):
     def __init__(
@@ -148,9 +127,9 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
         self,
         subset: Literal["train", "dev", "test"] = "test",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
-        super().ingest(subset, query_limit, corpus_limit)
+        super().ingest(subset, query_limit, min_corpus_cnt)
         if self.service is None:
             raise ServiceNotSetError
 
@@ -167,14 +146,14 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
             raise ValueError("Length mismatch among image_list, queries, and answers.")  # noqa: TRY003
 
         # For ViDoRe, each query has exactly one corresponding image (1:1 mapping)
-        # So corpus_limit and query_limit effectively mean the same thing
+        # So min_corpus_cnt and query_limit effectively mean the same thing
         # Use the minimum of both limits if both are set
         total_count = len(queries)
         effective_limit = total_count
         if query_limit is not None:
             effective_limit = min(effective_limit, query_limit)
-        if corpus_limit is not None:
-            effective_limit = min(effective_limit, corpus_limit)
+        if min_corpus_cnt is not None:
+            effective_limit = min(effective_limit, min_corpus_cnt)
 
         # Sample indices if limit is less than total
         if effective_limit < total_count:
@@ -189,7 +168,7 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
         answers = [answers[i] for i in selected_indices]
 
         # Convert PIL images to bytes
-        image_bytes_list = self.pil_images_to_bytes(image_list)
+        image_bytes_list = [pil_image_to_bytes(img) for img in image_list]
 
         query_pk_list = self.service.add_queries([
             {

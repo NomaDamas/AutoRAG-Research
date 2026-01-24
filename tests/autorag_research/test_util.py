@@ -1,9 +1,11 @@
 import asyncio
+import io
 from unittest.mock import AsyncMock
 
 import pytest
+from PIL import Image
 
-from autorag_research.util import run_with_concurrency_limit
+from autorag_research.util import pil_image_to_bytes, run_with_concurrency_limit
 
 
 class TestRunWithConcurrencyLimit:
@@ -170,3 +172,44 @@ async def test_to_async_func():
 
     result = await async_func(5)
     assert result == 10
+
+
+class TestPilImagesToBytes:
+    """Test static method pil_images_to_bytes."""
+
+    def test_pil_images_to_bytes_jpeg_rgb(self):
+        """Test converting RGB image to JPEG bytes."""
+        # Create a simple RGB image
+        img = Image.new("RGB", (100, 100), color="red")
+        img_bytes, mimetype = pil_image_to_bytes(img)
+        assert isinstance(img_bytes, bytes)
+        assert len(img_bytes) > 0
+        assert mimetype == "image/jpeg"
+
+        # Verify bytes can be read back as image
+        loaded_img = Image.open(io.BytesIO(img_bytes))
+        assert loaded_img.size == (100, 100)
+
+    def test_pil_images_to_bytes_png_rgba(self):
+        """Test converting RGBA image to PNG bytes (transparent)."""
+        # Create RGBA image with transparency
+        img = Image.new("RGBA", (50, 50), color=(255, 0, 0, 128))
+        img_bytes, mimetype = pil_image_to_bytes(img)
+        assert isinstance(img_bytes, bytes)
+        assert mimetype == "image/png"
+
+    def test_pil_images_to_bytes_png_la_mode(self):
+        """Test converting LA mode (grayscale with alpha) to PNG."""
+        img = Image.new("LA", (30, 30), color=(128, 200))
+        img_bytes, mimetype = pil_image_to_bytes(img)
+        assert mimetype == "image/png"
+        assert isinstance(img_bytes, bytes)
+
+    def test_pil_images_to_bytes_png_palette_mode(self):
+        """Test converting palette mode (P) to PNG."""
+        # Create RGB and convert to palette mode
+        img = Image.new("RGB", (20, 20), color="blue")
+        img_p = img.convert("P")
+        img_bytes, mimetype = pil_image_to_bytes(img_p)
+        assert mimetype == "image/png"
+        assert isinstance(img_bytes, bytes)
