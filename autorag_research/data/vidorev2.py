@@ -106,7 +106,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         dataset_path = f"vidore/{self.dataset_name.value}"
 
         # Step 1: Load qrels into pandas and process with groupby
-        qrels_df: pd.DataFrame = load_dataset(dataset_path, "qrels", streaming=False, split=subset).to_pandas()  # ty: ignore[invalid-assignment]
+        qrels_df: pd.DataFrame = load_dataset(dataset_path, "qrels", streaming=False, split=subset).to_pandas()  # ty: ignore[possibly-missing-attribute, invalid-assignment]
         qrels_df["query-id"] = qrels_df["query-id"].astype(int)
         qrels_df["corpus-id"] = qrels_df["corpus-id"].astype(int)
 
