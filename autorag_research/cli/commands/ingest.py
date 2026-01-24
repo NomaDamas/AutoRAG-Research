@@ -28,6 +28,7 @@ from autorag_research.cli.utils import (
     load_db_config_from_yaml,
     load_embedding_model,
 )
+from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 
 if TYPE_CHECKING:
     from autorag_research.data.registry import IngestorMeta
@@ -296,8 +297,6 @@ def ingest(  # noqa: C901
     elif issubclass(ingestor_class, MultiModalEmbeddingDataIngestor):
         from llama_index.core.embeddings import MultiModalEmbedding
 
-        from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-
         if isinstance(embed_model, MultiModalEmbedding):
             ingestor = ingestor_class(embedding_model=embed_model, **init_kwargs)
         elif isinstance(embed_model, MultiVectorMultiModalEmbedding):
@@ -365,7 +364,10 @@ def ingest(  # noqa: C901
     # 12. Embed data (unless skipped)
     if not skip_embedding:
         typer.echo(f"\nEmbedding all data (batch_size={embed_batch_size}, concurrency={embed_concurrency})...")
-        ingestor.embed_all(max_concurrency=embed_concurrency, batch_size=embed_batch_size)
+        if isinstance(embed_model, MultiVectorMultiModalEmbedding):
+            ingestor.embed_all_late_interaction(max_concurrency=embed_concurrency, batch_size=embed_batch_size)
+        else:
+            ingestor.embed_all(max_concurrency=embed_concurrency, batch_size=embed_batch_size)
         typer.echo("Embedding complete.")
     else:
         typer.echo("\nSkipping embedding step (--skip-embedding)")
