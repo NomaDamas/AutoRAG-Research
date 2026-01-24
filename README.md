@@ -201,3 +201,15 @@ eval_batch_size: 100
 |----------|-------------|
 | `PGPASSWORD` | PostgreSQL password (recommended for security) |
 | `AUTORAG_CONFIG_PATH` | Default configuration directory path |
+
+
+## Implementing New Pipelines (with Claude Code)
+
+This project includes specialized Claude Code agents for implementing new RAG pipelines from research papers.
+
+### Quick Start
+
+```bash
+# Full workflow from paper to validated code
+/implement-pipeline https://arxiv.org/abs/2212.10496
+```

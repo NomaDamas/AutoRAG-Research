@@ -193,17 +193,3 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
     def filter_valid_retrieval_gt_ids(dictionary: dict[str, int]) -> list[str | int]:
         # From a given dict, return only keys that the value is more than zero
         return [k for k, v in dictionary.items() if v > 0]
-
-    def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        if self.service is None:
-            raise ServiceNotSetError
-        self.service.embed_all_queries(
-            self.embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-        self.service.embed_all_chunks(
-            self.embedding_model.aget_text_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )

@@ -27,7 +27,7 @@ from PIL import Image
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
+from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import image, or_all
 from autorag_research.util import pil_image_to_bytes
 
@@ -109,7 +109,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         dataset_path = f"vidore/{self.dataset_name.value}"
 
         # Step 1: Load qrels into pandas and process with groupby
-        qrels_df: pd.DataFrame = load_dataset(dataset_path, "qrels", streaming=False, split=subset).to_pandas()  # ty: ignore[invalid-assignment]
+        qrels_df: pd.DataFrame = load_dataset(dataset_path, "qrels", streaming=False, split=subset).to_pandas()  # ty: ignore[possibly-missing-attribute, invalid-assignment]
         qrels_df["query-id"] = qrels_df["query-id"].astype(int)
         qrels_df["corpus-id"] = qrels_df["corpus-id"].astype(int)
 
@@ -278,55 +278,3 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
                     or_all(valid_corpus_pks, image),
                     chunk_type="image",
                 )
-
-    def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        """Embed all queries and image chunks using single-vector embedding model.
-
-        Args:
-            max_concurrency: Maximum number of concurrent embedding operations.
-            batch_size: Number of items to process per batch.
-
-        Raises:
-            EmbeddingNotSetError: If embedding_model is not set.
-        """
-        if self.embedding_model is None:
-            raise EmbeddingNotSetError
-        if self.service is None:
-            raise ServiceNotSetError
-
-        self.service.embed_all_queries(
-            self.embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-        self.service.embed_all_image_chunks(
-            self.embedding_model.aget_image_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-
-    def embed_all_late_interaction(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        """Embed all queries and image chunks using multi-vector embedding model.
-
-        Args:
-            max_concurrency: Maximum number of concurrent embedding operations.
-            batch_size: Number of items to process per batch.
-
-        Raises:
-            EmbeddingNotSetError: If late_interaction_embedding_model is not set.
-        """
-        if self.late_interaction_embedding_model is None:
-            raise EmbeddingNotSetError
-        if self.service is None:
-            raise ServiceNotSetError
-
-        self.service.embed_all_queries_multi_vector(
-            self.late_interaction_embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-        self.service.embed_all_image_chunks_multi_vector(
-            self.late_interaction_embedding_model.aget_image_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )

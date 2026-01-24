@@ -316,29 +316,3 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
 
         self.service.clean()
         logger.info(f"MTEB '{self.task_name}' ingestion complete.")
-
-    def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        """Embed all queries and chunks.
-
-        Args:
-            max_concurrency: Maximum concurrent embedding requests.
-            batch_size: Batch size for embedding requests.
-        """
-        if self.service is None:
-            raise ServiceNotSetError
-
-        logger.info("Embedding all queries...")
-        self.service.embed_all_queries(
-            self.embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-
-        logger.info("Embedding all chunks...")
-        self.service.embed_all_chunks(
-            self.embedding_model.aget_text_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-
-        logger.info(f"MTEB '{self.task_name}' embedding complete.")
