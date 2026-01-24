@@ -9,7 +9,7 @@ class DatabaseConfig:
     host: str = "localhost"
     port: int = 5432
     user: str = "postgres"
-    password: str = "postgres"
+    password: str = "postgres"  # noqa: S105
 
     @classmethod
     def from_env(cls) -> "DatabaseConfig":

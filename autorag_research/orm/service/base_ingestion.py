@@ -276,7 +276,7 @@ class BaseIngestionService(BaseService, ABC):
 
             # Run embedding
             data_list = [data for _, data in valid_items]
-            embeddings = asyncio.run(run_with_concurrency_limit(data_list, embed_func, max_concurrency, error_msg))
+            embeddings = asyncio.run(run_with_concurrency_limit(data_list, embed_func, max_concurrency, error_msg))  # ty: ignore[invalid-argument-type]
 
             # Filter out None embeddings and update entities
             valid_updates = [

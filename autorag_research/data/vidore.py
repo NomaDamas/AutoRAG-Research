@@ -90,7 +90,7 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor, ABC):
             max_concurrency=max_concurrency,
         )
         self.service.embed_all_image_chunks_multi_vector(
-            self.late_interaction_embedding_model.aget_image_embedding,
+            self.late_interaction_embedding_model.aget_image_embedding,  # ty: ignore[invalid-argument-type]
             batch_size=batch_size,
             max_concurrency=max_concurrency,
         )

@@ -69,7 +69,7 @@ class MetricInput:
     @staticmethod
     def _check_list(lst_or_arr: list[Any] | np.ndarray) -> bool:
         if isinstance(lst_or_arr, np.ndarray):
-            lst_or_arr = lst_or_arr.flatten().tolist()
+            lst_or_arr = lst_or_arr.flatten().tolist()  # ty: ignore[invalid-argument-type]
 
         if len(lst_or_arr) == 0:
             return False

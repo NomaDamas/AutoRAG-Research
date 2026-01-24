@@ -59,7 +59,7 @@ class BM25Module(BaseModule):
             # Use custom index
             self.searcher = LuceneSearcher(str(index_path))
             self.index_name = None
-            self.index_path = Path(index_path)
+            self.index_path = Path(index_path)  # ty: ignore[invalid-argument-type]
 
         # Set search language
         self.searcher.set_language(language)

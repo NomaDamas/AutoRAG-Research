@@ -9,23 +9,35 @@ from autorag_research.reporting.service import ReportingService
 
 # === Service Management ===
 
-_service: ReportingService | None = None
+
+class _ServiceManager:
+    """Manages ReportingService singleton without global variables."""
+
+    _instance: ReportingService | None = None
+
+    @classmethod
+    def get(cls) -> ReportingService:
+        """Get or create ReportingService singleton."""
+        if cls._instance is None:
+            cls._instance = ReportingService()
+        return cls._instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset the service singleton (useful for testing)."""
+        if cls._instance is not None:
+            cls._instance.close()
+            cls._instance = None
 
 
 def get_service() -> ReportingService:
     """Get or create ReportingService singleton."""
-    global _service
-    if _service is None:
-        _service = ReportingService()
-    return _service
+    return _ServiceManager.get()
 
 
 def reset_service() -> None:
     """Reset the service singleton (useful for testing)."""
-    global _service
-    if _service is not None:
-        _service.close()
-        _service = None
+    _ServiceManager.reset()
 
 
 # === Data Fetchers (Event Handlers) ===

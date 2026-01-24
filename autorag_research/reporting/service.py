@@ -52,7 +52,7 @@ class ReportingService:
         """
         alias = alias or db_name.replace("-", "_")
         if not _VALID_IDENTIFIER_PATTERN.match(alias):
-            raise ValueError(
+            raise ValueError(  # noqa: TRY003
                 f"Invalid alias: '{alias}'. Must be a valid SQL identifier "
                 "(letters, digits, underscores, starting with letter or underscore)."
             )
@@ -78,6 +78,7 @@ class ReportingService:
         """
         alias = self.attach_dataset(db_name)
         order = "ASC" if ascending else "DESC"
+        # S608: alias is validated by attach_dataset, order is hardcoded
         return self._conn.execute(
             f"""
             SELECT
@@ -91,7 +92,7 @@ class ReportingService:
             WHERE m.name = $1
             ORDER BY s.metric_result {order}
             LIMIT $2
-            """,
+            """,  # noqa: S608
             [metric_name, limit],
         ).df()
 
@@ -115,6 +116,7 @@ class ReportingService:
         pipeline_placeholders = ", ".join(f"${i + 1}" for i in range(len(pipeline_names)))
         metric_placeholders = ", ".join(f"${i + 1 + len(pipeline_names)}" for i in range(len(metric_names)))
 
+        # S608: alias is validated by attach_dataset
         df = self._conn.execute(
             f"""
             SELECT p.name as pipeline, m.name as metric, s.metric_result as score
@@ -122,7 +124,7 @@ class ReportingService:
             JOIN {alias}.pipeline p ON s.pipeline_id = p.id
             JOIN {alias}.metric m ON s.metric_id = m.id
             WHERE p.name IN ({pipeline_placeholders}) AND m.name IN ({metric_placeholders})
-            """,
+            """,  # noqa: S608
             [*pipeline_names, *metric_names],
         ).df()
 
@@ -141,7 +143,7 @@ class ReportingService:
             List of pipeline names.
         """
         alias = self.attach_dataset(db_name)
-        return self._conn.execute(f"SELECT name FROM {alias}.pipeline").df()["name"].tolist()
+        return self._conn.execute(f"SELECT name FROM {alias}.pipeline").df()["name"].tolist()  # noqa: S608
 
     def list_metrics(self, db_name: str) -> list[str]:
         """List all metrics in a database.
@@ -153,7 +155,7 @@ class ReportingService:
             List of metric names.
         """
         alias = self.attach_dataset(db_name)
-        return self._conn.execute(f"SELECT name FROM {alias}.metric").df()["name"].tolist()
+        return self._conn.execute(f"SELECT name FROM {alias}.metric").df()["name"].tolist()  # noqa: S608
 
     # === Dataset Discovery ===
 
@@ -172,6 +174,7 @@ class ReportingService:
 
         # Query pg_database for all user databases (excluding templates)
         # Note: pg_database is in pg_catalog schema, must use fully qualified path
+        # S608: postgres_alias is validated by attach_dataset
         all_dbs = (
             self._conn.execute(
                 f"""
@@ -180,7 +183,7 @@ class ReportingService:
             WHERE datistemplate = false
               AND datname NOT IN ('postgres')
             ORDER BY datname
-            """
+            """  # noqa: S608
             )
             .df()["datname"]
             .tolist()
@@ -192,16 +195,17 @@ class ReportingService:
             try:
                 alias = self.attach_dataset(db_name)
                 # Check if summary table exists by querying information_schema
+                # S608: alias is validated by attach_dataset
                 result = self._conn.execute(
                     f"""
                     SELECT COUNT(*) as cnt
                     FROM {alias}.information_schema.tables
                     WHERE table_schema = 'public' AND table_name = 'summary'
-                    """
+                    """  # noqa: S608
                 ).df()
                 if result["cnt"].iloc[0] > 0:
                     valid_datasets.append(db_name)
-            except Exception:
+            except Exception:  # noqa: S112
                 # Skip databases we can't access or that don't have the schema
                 continue
 
@@ -221,13 +225,14 @@ class ReportingService:
             ValueError: If metric_type is not 'retrieval' or 'generation'.
         """
         if metric_type not in ("retrieval", "generation"):
-            raise ValueError(f"Invalid metric_type: '{metric_type}'. Must be 'retrieval' or 'generation'.")
+            raise ValueError(f"Invalid metric_type: '{metric_type}'. Must be 'retrieval' or 'generation'.")  # noqa: TRY003
 
         alias = self.attach_dataset(db_name)
         # Embed validated metric_type directly to avoid DuckDB PostgreSQL extension
         # parameter pushdown issues with ATTACH'ed databases
+        # S608: alias validated by attach_dataset, metric_type validated above
         return (
-            self._conn.execute(f"SELECT name FROM {alias}.metric WHERE type = '{metric_type}' ORDER BY name")
+            self._conn.execute(f"SELECT name FROM {alias}.metric WHERE type = '{metric_type}' ORDER BY name")  # noqa: S608
             .df()["name"]
             .tolist()
         )
@@ -245,7 +250,7 @@ class ReportingService:
         """
         alias = self.attach_dataset(db_name)
         df = self._conn.execute(
-            f"SELECT id, name, config FROM {alias}.pipeline WHERE name = $1",
+            f"SELECT id, name, config FROM {alias}.pipeline WHERE name = $1",  # noqa: S608
             [pipeline_name],
         ).df()
 
@@ -273,9 +278,10 @@ class ReportingService:
         # Query counts from each table
         stats = {}
 
+        # S608: alias validated by attach_dataset, table names are hardcoded
         for table, key in [("query", "query_count"), ("chunk", "chunk_count"), ("document", "document_count")]:
             try:
-                result = self._conn.execute(f"SELECT COUNT(*) as cnt FROM {alias}.{table}").df()
+                result = self._conn.execute(f"SELECT COUNT(*) as cnt FROM {alias}.{table}").df()  # noqa: S608
                 stats[key] = int(result["cnt"].iloc[0])
             except Exception:
                 stats[key] = 0
@@ -301,6 +307,7 @@ class ReportingService:
         results = []
         for db_name in db_names:
             alias = self.attach_dataset(db_name)
+            # S608: alias is validated by attach_dataset
             df = self._conn.execute(
                 f"""
                 SELECT $1 as dataset, s.metric_result as score, s.execution_time as time_ms
@@ -308,7 +315,7 @@ class ReportingService:
                 JOIN {alias}.pipeline p ON s.pipeline_id = p.id
                 JOIN {alias}.metric m ON s.metric_id = m.id
                 WHERE p.name = $2 AND m.name = $3
-                """,
+                """,  # noqa: S608
                 [db_name, pipeline_name, metric_name],
             ).df()
             results.append(df)
@@ -339,6 +346,7 @@ class ReportingService:
             pipeline_placeholders = ", ".join(f"${i + 2}" for i in range(len(pipeline_names)))
             metric_placeholders = ", ".join(f"${i + 2 + len(pipeline_names)}" for i in range(len(metric_names)))
 
+            # S608: alias is validated by attach_dataset
             df = self._conn.execute(
                 f"""
                 SELECT
@@ -350,7 +358,7 @@ class ReportingService:
                 JOIN {alias}.pipeline p ON s.pipeline_id = p.id
                 JOIN {alias}.metric m ON s.metric_id = m.id
                 WHERE p.name IN ({pipeline_placeholders}) AND m.name IN ({metric_placeholders})
-                """,
+                """,  # noqa: S608
                 [db_name, *pipeline_names, *metric_names],
             ).df()
             results.append(df)
@@ -399,6 +407,7 @@ class ReportingService:
                 ascending = metric_name in ascending_metrics
                 order = "ASC" if ascending else "DESC"
 
+                # S608: alias validated by attach_dataset, order is hardcoded
                 df = self._conn.execute(
                     f"""
                     SELECT
@@ -408,7 +417,7 @@ class ReportingService:
                     JOIN {alias}.pipeline p ON s.pipeline_id = p.id
                     JOIN {alias}.metric m ON s.metric_id = m.id
                     WHERE m.name = $1
-                    """,
+                    """,  # noqa: S608
                     [metric_name],
                 ).df()
 
@@ -453,7 +462,7 @@ class ReportingService:
             ValueError: If aggregation is not a valid function name.
         """
         if aggregation not in VALID_AGGREGATIONS:
-            raise ValueError(f"Invalid aggregation: '{aggregation}'. Must be one of {sorted(VALID_AGGREGATIONS)}.")
+            raise ValueError(f"Invalid aggregation: '{aggregation}'. Must be one of {sorted(VALID_AGGREGATIONS)}.")  # noqa: TRY003
 
         if not db_names:
             return pd.DataFrame()
@@ -461,6 +470,7 @@ class ReportingService:
         results = []
         for db_name in db_names:
             alias = self.attach_dataset(db_name)
+            # S608: alias is validated by attach_dataset
             df = self._conn.execute(
                 f"""
                 SELECT $1 as dataset, p.name as pipeline, s.metric_result as score
@@ -468,7 +478,7 @@ class ReportingService:
                 JOIN {alias}.pipeline p ON s.pipeline_id = p.id
                 JOIN {alias}.metric m ON s.metric_id = m.id
                 WHERE m.name = $2
-                """,
+                """,  # noqa: S608
                 [db_name, metric_name],
             ).df()
             results.append(df)
