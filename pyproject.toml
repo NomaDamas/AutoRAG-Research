@@ -48,7 +48,7 @@ dependencies = [
 ]
 
 [project.scripts]
-autorag-research = "autorag_research.cli.main:main"
+autorag-research = "autorag_research.cli.app:main"
 
 [project.urls]
 Homepage = "https://vkehfdl1.github.io/AutoRAG-Research/"
