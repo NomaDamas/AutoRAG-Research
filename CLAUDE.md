@@ -129,23 +129,6 @@ Detailed patterns and examples are in `/ai_instructions/`:
 - `db_schema.md` - Complete DBML schema
 - `test_code_generation_instructions.md` - Testing conventions
 
-## Search Guidelines
-
-Use mgrep for all search operations:
-
-- **Code/File Search:** Use `mgrep "query"` instead of built-in Grep/Glob
-  ```bash
-  mgrep "How are chunks defined?"  # semantic search
-  mgrep "What code parsers are available?" src/models  # search in specific dir
-  ```
-
-- **Web Search:** Use `mgrep --web --answer "query"` instead of WebSearch
-  ```bash
-  mgrep --web --answer "How to use pgvector with SQLAlchemy"
-  ```
-
-mgrep provides semantic search with natural language queries for better accuracy.
-
 ## Strict Rules to follow
 
 - **Code quality checks are automated via hooks** - `make check` runs automatically after file edits and on session end
