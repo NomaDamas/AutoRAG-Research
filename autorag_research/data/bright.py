@@ -30,21 +30,6 @@ BRIGHT_DOMAINS_LITERAL = Literal[
     "theoremqa_questions",
 ]
 
-BRIGHT_DOMAINS = [
-    "biology",
-    "earth_science",
-    "economics",
-    "psychology",
-    "robotics",
-    "stackoverflow",
-    "sustainable_living",
-    "pony",
-    "leetcode",
-    "aops",
-    "theoremqa_theorems",
-    "theoremqa_questions",
-]
-
 DOMAINS_WITH_LONG_DOCS = [
     "biology",
     "earth_science",
@@ -71,23 +56,20 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
     def __init__(
         self,
         embedding_model: BaseEmbedding,
-        domains: list[str] | None = None,
+        domain: BRIGHT_DOMAINS_LITERAL,
         document_mode: DocumentMode = "short",
     ):
         super().__init__(embedding_model)
-        self.domains = domains if domains is not None else BRIGHT_DOMAINS
+        self.domain = domain
         self.document_mode = document_mode
-        self._validate_domains()
+        self._validate_domain()
 
-    def _validate_domains(self) -> None:
-        for domain in self.domains:
-            if domain not in BRIGHT_DOMAINS:
-                raise ValueError(f"Invalid domain '{domain}'. Valid domains: {BRIGHT_DOMAINS}")  # noqa: TRY003
-            if self.document_mode == "long" and domain in DOMAINS_WITHOUT_LONG_DOCS:
-                raise ValueError(  # noqa: TRY003
-                    f"Domain '{domain}' does not support long documents. "
-                    f"Available domains for long_documents: {DOMAINS_WITH_LONG_DOCS}"
-                )
+    def _validate_domain(self) -> None:
+        if self.document_mode == "long" and self.domain in DOMAINS_WITHOUT_LONG_DOCS:
+            raise ValueError(  # noqa: TRY003
+                f"Domain '{self.domain}' does not support long documents. "
+                f"Available domains for long_documents: {DOMAINS_WITH_LONG_DOCS}"
+            )
 
     def detect_primary_key_type(self) -> Literal["bigint", "string"]:
         return "string"
@@ -101,10 +83,9 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        for domain in self.domains:
-            logger.info(f"Ingesting domain '{domain}' with document_mode='{self.document_mode}'...")
-            self._ingest_domain(domain, query_limit, min_corpus_cnt)
-            logger.info(f"Completed ingestion for domain '{domain}'")
+        logger.info(f"Ingesting domain '{self.domain}' with document_mode='{self.document_mode}'...")
+        self._ingest_domain(self.domain, query_limit, min_corpus_cnt)
+        logger.info(f"Completed ingestion for domain '{self.domain}'")
 
         self.service.clean()
         logger.info("BRIGHT ingestion complete.")
