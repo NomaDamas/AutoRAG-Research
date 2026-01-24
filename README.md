@@ -71,4 +71,13 @@ For more details, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/
 
 ---
 
-Repository initiated with [fpgmaas/cookiecutter-uv](https://github.com/fpgmaas/cookiecutter-uv).
+## Implementing New Pipelines (with Claude Code)
+
+This project includes specialized Claude Code agents for implementing new RAG pipelines from research papers.
+
+### Quick Start
+
+```bash
+# Full workflow from paper to validated code
+/implement-pipeline https://arxiv.org/abs/2212.10496
+```
