@@ -24,7 +24,7 @@ Usage:
             service = TextDataIngestionService(db.session_factory, schema=db.schema)
             ingestor = MyIngestor(MockEmbedding(768))
             ingestor.set_service(service)
-            ingestor.ingest(query_limit=10, corpus_limit=50)
+            ingestor.ingest(query_limit=10, min_corpus_cnt=50)
 
             verifier = IngestorTestVerifier(service, db.schema, CONFIG)
             verifier.verify_all()
@@ -48,6 +48,7 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 from autorag_research.orm.schema_factory import create_schema
 from autorag_research.orm.service.base_ingestion import BaseIngestionService
 from autorag_research.orm.util import create_database, drop_database, install_vector_extensions
+from tests.util import CheckResult, VerificationReport
 
 # Environment variables are loaded by conftest.py via load_dotenv()
 
@@ -63,41 +64,6 @@ class ExpectedContentHash:
     record_id: str | int
     content_hash: str  # MD5 hash of expected content
     record_type: Literal["query", "chunk", "image_chunk"]
-
-
-@dataclass
-class CheckResult:
-    """Result of a single verification check."""
-
-    passed: bool
-    message: str = ""
-    failures: list[str] = field(default_factory=list)
-
-
-@dataclass
-class VerificationReport:
-    """Aggregated report of all verification checks."""
-
-    checks: dict[str, CheckResult] = field(default_factory=dict)
-
-    def add_check(self, name: str, result: CheckResult) -> None:
-        """Add a check result to the report."""
-        self.checks[name] = result
-
-    @property
-    def all_passed(self) -> bool:
-        """Return True if all checks passed."""
-        return all(check.passed for check in self.checks.values())
-
-    def summary(self) -> str:
-        """Return a summary of all checks."""
-        lines = ["=== Verification Report ==="]
-        for name, result in self.checks.items():
-            status = "PASS" if result.passed else "FAIL"
-            lines.append(f"  [{status}] {name}: {result.message}")
-            for failure in result.failures:
-                lines.append(f"    - {failure}")
-        return "\n".join(lines)
 
 
 @dataclass

@@ -75,14 +75,14 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         self,
         subset: Literal["train", "dev", "test"] = "test",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
         if self.service is None:
             raise ServiceNotSetError
 
         for domain in self.domains:
             logger.info(f"Ingesting domain '{domain}' with document_mode='{self.document_mode}'...")
-            self._ingest_domain(domain, query_limit, corpus_limit)
+            self._ingest_domain(domain, query_limit, min_corpus_cnt)
             logger.info(f"Completed ingestion for domain '{domain}'")
 
         self.service.clean()
@@ -92,7 +92,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         self,
         domain: str,
         query_limit: int | None,
-        corpus_limit: int | None,
+        min_corpus_cnt: int | None,
     ) -> None:
         """Ingest a single domain with optional query/corpus limits.
 
@@ -125,7 +125,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         logger.info(f"[{domain}] Total gold IDs: {len(gold_ids_set)}")
 
         # Step 4: Ingest corpus with filtering
-        self._ingest_corpus_filtered(domain, gold_ids_set, corpus_limit, rng)
+        self._ingest_corpus_filtered(domain, gold_ids_set, min_corpus_cnt, rng)
 
         # Step 5: Ingest queries
         self.service.add_queries([
@@ -175,7 +175,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         self,
         domain: str,
         gold_ids_set: set[str],
-        corpus_limit: int | None,
+        min_corpus_cnt: int | None,
         rng: random.Random,
     ) -> int:
         """Ingest corpus with filtering: gold IDs always included, plus reservoir sampling for additional items."""
@@ -185,14 +185,14 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         config = "long_documents" if self.document_mode == "long" else "documents"
         ds = load_dataset("xlangai/BRIGHT", config, split=domain, streaming=True, trust_remote_code=True)
 
-        # If no corpus_limit, ingest all (original behavior)
-        if corpus_limit is None:
+        # If no min_corpus_cnt, ingest all (original behavior)
+        if min_corpus_cnt is None:
             return self._ingest_corpus_all(ds, domain)
 
-        # With corpus_limit: gold IDs + reservoir sampling for additional
+        # With min_corpus_cnt: gold IDs + reservoir sampling for additional
         gold_chunks: list[dict[str, str | int | None]] = []
         reservoir: list[dict[str, str | int | None]] = []
-        reservoir_capacity = max(0, corpus_limit - len(gold_ids_set))
+        reservoir_capacity = max(0, min_corpus_cnt - len(gold_ids_set))
         stream_count = 0
 
         for doc in ds:

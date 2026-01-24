@@ -127,9 +127,9 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
         self,
         subset: Literal["train", "dev", "test"] = "test",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
-        super().ingest(subset, query_limit, corpus_limit)
+        super().ingest(subset, query_limit, min_corpus_cnt)
         if self.service is None:
             raise ServiceNotSetError
 
@@ -146,14 +146,14 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
             raise ValueError("Length mismatch among image_list, queries, and answers.")  # noqa: TRY003
 
         # For ViDoRe, each query has exactly one corresponding image (1:1 mapping)
-        # So corpus_limit and query_limit effectively mean the same thing
+        # So min_corpus_cnt and query_limit effectively mean the same thing
         # Use the minimum of both limits if both are set
         total_count = len(queries)
         effective_limit = total_count
         if query_limit is not None:
             effective_limit = min(effective_limit, query_limit)
-        if corpus_limit is not None:
-            effective_limit = min(effective_limit, corpus_limit)
+        if min_corpus_cnt is not None:
+            effective_limit = min(effective_limit, min_corpus_cnt)
 
         # Sample indices if limit is less than total
         if effective_limit < total_count:

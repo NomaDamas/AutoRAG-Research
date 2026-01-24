@@ -60,7 +60,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
 
         ingestor = ViDoReV2Ingestor(ViDoReV2DatasetName.ESG_REPORTS_V2)
         ingestor.set_service(service)
-        ingestor.ingest(query_limit=10, corpus_limit=50)
+        ingestor.ingest(query_limit=10, min_corpus_cnt=50)
         ```
     """
 
@@ -88,14 +88,14 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         self,
         subset: Literal["train", "dev", "test"] = "test",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
         """Ingest ViDoReV2 dataset using streaming.
 
         Args:
             subset: Dataset split (ViDoReV2 only has 'test' split).
             query_limit: Maximum number of queries to ingest.
-            corpus_limit: Maximum number of corpus items to ingest.
+            min_corpus_cnt: Maximum number of corpus items to ingest.
                          Gold IDs from selected queries are always included.
         """
         if self.service is None:
@@ -129,11 +129,11 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
 
         # Step 4: Calculate how many additional corpus items are needed (if any)
         additional_corpus_needed = 0
-        if corpus_limit is not None and corpus_limit > len(gold_corpus_ids):
-            additional_corpus_needed = corpus_limit - len(gold_corpus_ids)
+        if min_corpus_cnt is not None and min_corpus_cnt > len(gold_corpus_ids):
+            additional_corpus_needed = min_corpus_cnt - len(gold_corpus_ids)
 
         # Step 5: Load and ingest corpus (images) - streaming for large image data
-        # Gold IDs are always ingested, plus additional items if corpus_limit requires more
+        # Gold IDs are always ingested, plus additional items if min_corpus_cnt requires more
         # corpus_id is used directly as PK, so no mapping needed
         corpus_ds = load_dataset(dataset_path, "corpus", streaming=True, split="test")
         ingested_corpus_ids = self._ingest_corpus(corpus_ds, gold_corpus_ids, additional_corpus_needed)
