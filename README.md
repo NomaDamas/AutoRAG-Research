@@ -40,7 +40,7 @@ vi configs/db/default.yaml
 autorag-research ingest beir --dataset=scifact
 
 # 4. Run experiments
-autorag-research run db_name=beir_scifact_test
+autorag-research run --db-name=beir_scifact_test
 ```
 
 ### Commands
@@ -124,26 +124,48 @@ autorag-research ingest beir --dataset=scifact \
 
 ```bash
 # List available ingestors/datasets
-autorag-research list resource=datasets
+autorag-research list datasets
 
 # List available pipelines
-autorag-research list resource=pipelines
+autorag-research list pipelines
 
 # List available metrics
-autorag-research list resource=metrics
+autorag-research list metrics
+
+# List database schemas
+autorag-research list databases
 ```
 
 #### `run` - Run Experiments
 
-Run experiment pipelines with metrics evaluation. **Requires `db_name=` to specify the target database.**
+Run experiment pipelines with metrics evaluation. **Requires `--db-name` to specify the target database schema.**
 
 ```bash
 # Basic run (uses configs/experiment.yaml)
-autorag-research run db_name=beir_scifact_test
+autorag-research run --db-name=beir_scifact_test
+
+# With additional options
+autorag-research run --db-name=beir_scifact_test --max-retries=5 --verbose
+
+# Use custom config file
+autorag-research run --db-name=beir_scifact_test --config-name=my_experiment
 
 # Use custom config directory
-autorag-research --config-path=/my/configs run db_name=beir_scifact_test
+autorag-research --config-path=/my/configs run --db-name=beir_scifact_test
+
+# Advanced: Hydra overrides as positional arguments
+autorag-research run --db-name=test pipelines.0.k1=1.2
 ```
+
+**Run Options:**
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--db-name` | `-d` | Database schema name (required) |
+| `--config-name` | `-cn` | Config file name without .yaml (default: experiment) |
+| `--max-retries` | | Maximum retries for failed operations |
+| `--eval-batch-size` | | Batch size for evaluation |
+| `--embedding-dim` | | Embedding dimension for vector operations |
+| `--verbose` | `-v` | Enable verbose logging |
 
 ### Configuration
 
@@ -178,3 +200,4 @@ eval_batch_size: 100
 | Variable | Description |
 |----------|-------------|
 | `PGPASSWORD` | PostgreSQL password (recommended for security) |
+| `AUTORAG_CONFIG_PATH` | Default configuration directory path |

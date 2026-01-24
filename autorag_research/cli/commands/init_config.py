@@ -14,7 +14,15 @@ GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRAN
 
 
 def init_config() -> None:
-    """Download default configuration files to the configured directory."""
+    """Download default configuration files to the configured directory.
+
+    Downloads configuration files from the AutoRAG-Research GitHub repository
+    to your local configs directory. Existing files are not overwritten.
+
+    Examples:
+      autorag-research init-config
+      autorag-research --config-path=/my/configs init-config
+    """
     import autorag_research.cli as cli
 
     config_dir = cli.CONFIG_PATH or Path.cwd() / "configs"
@@ -55,9 +63,9 @@ def init_config() -> None:
         f"\nDone: {downloaded} downloaded, {skipped} skipped, {failed} failed"
         f"\nConfiguration files are in: {config_dir}"
         "\nNext steps:"
-        "  1. Edit configs/db/default.yaml with your database credentials"
-        "  2. Ingest a dataset: autorag-research ingest beir --dataset=scifact"
-        "  3. Run experiment: autorag-research run db_name=beir_scifact_test"
+        "\n  1. Edit configs/db/default.yaml with your database credentials"
+        "\n  2. Ingest a dataset: autorag-research ingest beir --dataset=scifact"
+        "\n  3. Run experiment: autorag-research run --db-name=beir_scifact_test"
     )
 
 

@@ -1,19 +1,20 @@
-"""ingest command - Ingest datasets into PostgreSQL using Click CLI."""
+"""ingest command - Ingest datasets into PostgreSQL using Typer CLI."""
 
 import logging
 import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Annotated
 
-import click
+import typer
 import yaml
 from huggingface_hub import hf_hub_download
 
 from autorag_research.cli.configs.db import DatabaseConfig
 from autorag_research.cli.configs.ingestors import (
-    COMMON_OPTIONS,
     INGESTOR_REGISTRY,
+    IngestorSpec,
     generate_db_name,
     get_ingestor_help,
 )
@@ -21,6 +22,13 @@ from autorag_research.cli.configs.ingestors import (
 logger = logging.getLogger(__name__)
 
 HF_REPO_ID = "vkehfdl1/autorag-research-datasets"
+
+# Create ingest sub-app
+ingest_app = typer.Typer(
+    name="ingest",
+    help="Ingest datasets into PostgreSQL.",
+    no_args_is_help=True,
+)
 
 
 def load_db_config_from_yaml() -> DatabaseConfig:
@@ -56,148 +64,140 @@ def load_db_config_from_yaml() -> DatabaseConfig:
         return defaults
 
 
-class IngestorGroup(click.MultiCommand):  # ty: ignore[invalid-base]
-    """Dynamic Click group that creates subcommands for each ingestor."""
+def create_ingest_command(ingestor_name: str, spec: IngestorSpec):  # noqa: C901
+    """Create a Typer command function for an ingestor dynamically."""
 
-    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:  # noqa: C901
-        if cmd_name not in INGESTOR_REGISTRY:
-            return None
-
-        spec = INGESTOR_REGISTRY[cmd_name]
-
-        # Build options dynamically
-        params = []
-
-        # Main dataset selection option (not required if --list is used)
-        params.append(
-            click.Option(
-                [f"--{spec.cli_option}"],
-                required=False,  # We'll validate manually to allow --list without --dataset
-                help=f"Dataset to ingest. Available: {', '.join(spec.available_values[:5])}... (use --list for full list)",
-            )
-        )
-
-        # Add --list option to show available values
-        params.append(
-            click.Option(
-                ["--list", "show_list"],
-                is_flag=True,
-                help="Show all available dataset values and exit",
-            )
-        )
-
+    def ingest_command(  # noqa: C901
+        dataset_value: Annotated[
+            str | None,
+            typer.Option(f"--{spec.cli_option}", help="Dataset to ingest. Use --list for available values."),
+        ] = None,
+        show_list: Annotated[bool, typer.Option("--list", help="Show all available dataset values and exit")] = False,
         # Common options
-        for opt in COMMON_OPTIONS:
-            params.append(
-                click.Option(
-                    [f"--{opt.name}"],
-                    type=opt.type if not isinstance(opt.type, bool) else None,
-                    is_flag=isinstance(opt.type, bool),
-                    default=opt.default,
-                    help=opt.help,
-                )
-            )
-
-        # Extra options specific to this ingestor
-        for opt in spec.extra_options:
-            params.append(
-                click.Option(
-                    [f"--{opt.name}"],
-                    type=opt.type if not isinstance(opt.type, bool) else None,
-                    is_flag=isinstance(opt.type, bool),
-                    default=opt.default,
-                    help=opt.help,
-                )
-            )
-
-        # Database connection options (defaults from configs/db/default.yaml, CLI overrides)
-        params.extend([
-            click.Option(["--db-host"], default=None, help="Database host (default: from configs/db/default.yaml)"),
-            click.Option(
-                ["--db-port"], type=int, default=None, help="Database port (default: from configs/db/default.yaml)"
+        subset: Annotated[str, typer.Option("--subset", help="Dataset split: train, dev, or test")] = "test",
+        query_limit: Annotated[
+            int | None, typer.Option("--query-limit", help="Maximum number of queries to ingest")
+        ] = None,
+        min_corpus_cnt: Annotated[
+            int | None, typer.Option("--min-corpus-cnt", help="Minimum number of corpus documents to ingest")
+        ] = None,
+        db_name: Annotated[
+            str | None, typer.Option("--db-name", help="Custom database schema name (auto-generated if not specified)")
+        ] = None,
+        # Database connection options
+        db_host: Annotated[
+            str | None, typer.Option("--db-host", help="Database host (default: from configs/db/default.yaml)")
+        ] = None,
+        db_port: Annotated[
+            int | None, typer.Option("--db-port", help="Database port (default: from configs/db/default.yaml)")
+        ] = None,
+        db_user: Annotated[
+            str | None, typer.Option("--db-user", help="Database user (default: from configs/db/default.yaml)")
+        ] = None,
+        db_password: Annotated[
+            str | None, typer.Option("--db-password", help="Database password (or set PGPASSWORD)")
+        ] = None,
+        db_database: Annotated[
+            str | None, typer.Option("--db-database", help="Database name (default: from configs/db/default.yaml)")
+        ] = None,
+        # Extra options for specific ingestors (handled via context)
+        batch_size: Annotated[
+            int | None, typer.Option("--batch-size", help="Batch size for streaming ingestion")
+        ] = None,
+        score_threshold: Annotated[
+            int | None, typer.Option("--score-threshold", help="Minimum relevance score threshold (0-2)")
+        ] = None,
+        include_instruction: Annotated[
+            bool | None,
+            typer.Option(
+                "--include-instruction/--no-include-instruction",
+                help="Include instruction prefix for InstructionRetrieval tasks",
             ),
-            click.Option(["--db-user"], default=None, help="Database user (default: from configs/db/default.yaml)"),
-            click.Option(["--db-password"], default=None, help="Database password (or set PGPASSWORD)"),
-            click.Option(["--db-database"], default=None, help="Database name (default: from configs/db/default.yaml)"),
-        ])
+        ] = None,
+        document_mode: Annotated[
+            str | None, typer.Option("--document-mode", help="Document mode: 'short' or 'long'")
+        ] = None,
+    ) -> None:
+        # Handle --list flag
+        if show_list:
+            typer.echo(f"\nAvailable values for --{spec.cli_option}:")
+            for val in spec.available_values:
+                typer.echo(f"  {val}")
+            return
 
-        def make_callback(ingestor_name: str, ingestor_spec):  # noqa: C901
-            def callback(**kwargs):  # noqa: C901
-                # Handle --list flag
-                if kwargs.get("show_list"):
-                    click.echo(f"\nAvailable values for --{ingestor_spec.cli_option}:")
-                    for val in ingestor_spec.available_values:
-                        click.echo(f"  {val}")
-                    return
+        # Validate dataset value
+        if not dataset_value:
+            typer.echo(f"Error: --{spec.cli_option} is required", err=True)
+            typer.echo("Use --list to see available values", err=True)
+            raise typer.Exit(1)
 
-                # Extract parameters
-                dataset_value = kwargs.get(ingestor_spec.cli_option.replace("-", "_"))
-                if not dataset_value:
-                    click.echo(f"Error: --{ingestor_spec.cli_option} is required", err=True)
-                    click.echo("Use --list to see available values", err=True)
-                    sys.exit(1)
+        # Handle list parameters (comma-separated) for ragbench and bright
+        processed_value: str | list[str] = dataset_value
+        if ingestor_name in ("ragbench", "bright") and dataset_value:
+            processed_value = [v.strip() for v in str(dataset_value).split(",")]
 
-                subset = kwargs.get("subset", "test")
-                custom_db_name = kwargs.get("db_name")
+        # Generate db_name
+        params_for_name = {spec.dataset_param: processed_value}
+        final_db_name = db_name or generate_db_name(ingestor_name, params_for_name, subset)
 
-                # Handle list parameters (comma-separated)
-                if ingestor_name in ("ragbench", "bright") and dataset_value:
-                    dataset_value = [v.strip() for v in str(dataset_value).split(",")]
+        # Load DB config from YAML first, then override with CLI options
+        db_config = load_db_config_from_yaml()
 
-                # Generate db_name
-                params_for_name = {ingestor_spec.dataset_param: dataset_value}
-                db_name = custom_db_name or generate_db_name(ingestor_name, params_for_name, subset)
+        # Override with CLI options if provided
+        if db_host is not None:
+            db_config.host = db_host
+        if db_port is not None:
+            db_config.port = db_port
+        if db_user is not None:
+            db_config.user = db_user
+        if db_password is not None:
+            db_config.password = db_password
+        if db_database is not None:
+            db_config.database = db_database
 
-                # Load DB config from YAML first, then override with CLI options
-                db_config = load_db_config_from_yaml()
+        typer.echo(f"\nIngesting dataset: {ingestor_name}")
+        typer.echo(f"  {spec.cli_option}: {processed_value}")
+        typer.echo(f"  subset: {subset}")
+        typer.echo(f"  target schema: {final_db_name}")
+        typer.echo(f"  database: {db_config.host}:{db_config.port}/{db_config.database}")
+        typer.echo("=" * 60)
 
-                # Override with CLI options if provided
-                if kwargs.get("db_host") is not None:
-                    db_config.host = kwargs["db_host"]
-                if kwargs.get("db_port") is not None:
-                    db_config.port = kwargs["db_port"]
-                if kwargs.get("db_user") is not None:
-                    db_config.user = kwargs["db_user"]
-                if kwargs.get("db_password") is not None:
-                    db_config.password = kwargs["db_password"]
-                if kwargs.get("db_database") is not None:
-                    db_config.database = kwargs["db_database"]
+        # Try to download pre-built dump first
+        dump_file = download_dump(final_db_name)
 
-                click.echo(f"\nIngesting dataset: {ingestor_name}")
-                click.echo(f"  {ingestor_spec.cli_option}: {dataset_value}")
-                click.echo(f"  subset: {subset}")
-                click.echo(f"  target schema: {db_name}")
-                click.echo(f"  database: {db_config.host}:{db_config.port}/{db_config.database}")
-                click.echo("=" * 60)
+        if dump_file:
+            restore_from_dump(db_config, dump_file, final_db_name)
+        else:
+            typer.echo("\nNo pre-built dump available.")
+            typer.echo("Consider using pre-built dumps from HuggingFace Hub:")
+            typer.echo(f"  https://huggingface.co/datasets/{HF_REPO_ID}")
 
-                # Try to download pre-built dump first
-                dump_file = download_dump(db_name)
+    # Set docstring dynamically
+    ingest_command.__doc__ = f"""{spec.description}
 
-                if dump_file:
-                    restore_from_dump(db_config, dump_file, db_name)
-                else:
-                    click.echo("\nNo pre-built dump available.")
-                    click.echo("Consider using pre-built dumps from HuggingFace Hub:")
-                    click.echo(f"  https://huggingface.co/datasets/{HF_REPO_ID}")
+    Available values for --{spec.cli_option}: {", ".join(spec.available_values[:5])}...
+    Use --list to see all available values.
 
-            return callback
+    Examples:
+      autorag-research ingest {ingestor_name} --{spec.cli_option}={spec.available_values[0] if spec.available_values else "value"}
+      autorag-research ingest {ingestor_name} --list
+    """
 
-        return click.Command(
-            name=cmd_name,
-            params=params,
-            callback=make_callback(cmd_name, spec),
-            help=spec.description,
-        )
+    return ingest_command
 
 
-@click.command(cls=IngestorGroup, invoke_without_command=True)
-@click.pass_context
-def ingest(ctx: click.Context) -> None:
+# Register all ingestors as subcommands
+for name, spec in INGESTOR_REGISTRY.items():
+    command_func = create_ingest_command(name, spec)
+    ingest_app.command(name=name, help=spec.description)(command_func)
+
+
+@ingest_app.callback(invoke_without_command=True)
+def ingest_callback(ctx: typer.Context) -> None:
     """Ingest datasets into PostgreSQL.
 
     Choose an ingestor and specify the dataset to ingest.
 
-    \b
     Examples:
       autorag-research ingest beir --dataset=scifact
       autorag-research ingest mrtydi --language=english --query-limit=100
@@ -205,15 +205,15 @@ def ingest(ctx: click.Context) -> None:
       autorag-research ingest beir --dataset=scifact --db-name=my_custom_schema
     """
     if ctx.invoked_subcommand is None:
-        click.echo(ctx.get_help())
-        click.echo("\n" + get_ingestor_help())
+        typer.echo(ctx.get_help())
+        typer.echo("\n" + get_ingestor_help())
 
 
 def download_dump(schema_name: str) -> Path | None:
     """Download pre-built pg_dump from HuggingFace Hub."""
     dump_filename = f"{schema_name}.dump"
 
-    click.echo(f"\nLooking for pre-built dump: {dump_filename}")
+    typer.echo(f"\nLooking for pre-built dump: {dump_filename}")
 
     try:
         dump_path = hf_hub_download(
@@ -222,11 +222,11 @@ def download_dump(schema_name: str) -> Path | None:
             repo_type="dataset",
             cache_dir=tempfile.gettempdir(),
         )
-        click.echo(f"  Downloaded: {dump_path}")
+        typer.echo(f"  Downloaded: {dump_path}")
         return Path(dump_path)
     except Exception as e:
         logger.debug(f"Could not download pre-built dump: {e}")
-        click.echo("  Not found in HuggingFace Hub")
+        typer.echo("  Not found in HuggingFace Hub")
         return None
 
 
@@ -234,7 +234,7 @@ def restore_from_dump(db_config: DatabaseConfig, dump_file: Path, schema_name: s
     """Restore database from pg_dump file."""
     from autorag_research.data.restore import restore_database
 
-    click.echo(f"\nRestoring from dump file: {dump_file}")
+    typer.echo(f"\nRestoring from dump file: {dump_file}")
 
     try:
         restore_database(
@@ -249,19 +249,15 @@ def restore_from_dump(db_config: DatabaseConfig, dump_file: Path, schema_name: s
             no_owner=True,
             install_extensions=True,
         )
-        click.echo(f"\nSuccess! Schema '{schema_name}' restored.")
-        click.echo("\nNext steps:")
-        click.echo(f"  autorag-research info --schema={schema_name}")
-        click.echo(f"  autorag-research run db_name={schema_name}")
+        typer.echo(f"\nSuccess! Schema '{schema_name}' restored.")
+        typer.echo("\nNext steps:")
+        typer.echo(f"  autorag-research info --schema={schema_name}")
+        typer.echo(f"  autorag-research run --db-name={schema_name}")
     except Exception as e:
         logger.exception("Failed to restore database")
-        click.echo(f"\nError restoring database: {e}", err=True)
-        click.echo("\nTroubleshooting:", err=True)
-        click.echo("  1. Ensure PostgreSQL is running", err=True)
-        click.echo("  2. Check database credentials", err=True)
-        click.echo("  3. Ensure pg_restore is installed", err=True)
+        typer.echo(f"\nError restoring database: {e}", err=True)
+        typer.echo("\nTroubleshooting:", err=True)
+        typer.echo("  1. Ensure PostgreSQL is running", err=True)
+        typer.echo("  2. Check database credentials", err=True)
+        typer.echo("  3. Ensure pg_restore is installed", err=True)
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    ingest()

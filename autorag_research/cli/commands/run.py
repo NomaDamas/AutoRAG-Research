@@ -2,13 +2,15 @@
 
 import logging
 import os
+from typing import Annotated
 
-import hydra
+import typer
+from hydra import compose, initialize_config_dir
+from hydra.core.global_hydra import GlobalHydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
+import autorag_research.cli as cli
 from autorag_research.cli.utils import setup_logging
 from autorag_research.config import ExecutorConfig
 from autorag_research.executor import Executor
@@ -16,75 +18,154 @@ from autorag_research.orm.schema_factory import create_schema
 
 logger = logging.getLogger("AutoRAG-Research")
 
+# Hydra overrides to disable output directory and log file creation
+HYDRA_OVERRIDES = [
+    "hydra.run.dir=.",
+    "hydra.output_subdir=null",
+    "hydra.job.chdir=False",
+    "hydra/job_logging=none",
+    "hydra/hydra_logging=none",
+]
 
-# config_path=None means Hydra will use --config-path CLI option (injected by main.py)
-@hydra.main(version_base=None, config_path=None, config_name="experiment")
-def run(cfg: DictConfig) -> None:
+
+def run_command(
+    db_name: Annotated[
+        str | None,
+        typer.Option("--db-name", "-d", help="Database schema name (required)"),
+    ] = None,
+    config_name: Annotated[
+        str,
+        typer.Option("--config-name", "-cn", help="Config file name without .yaml extension"),
+    ] = "experiment",
+    max_retries: Annotated[
+        int | None,
+        typer.Option("--max-retries", help="Maximum retries for failed operations"),
+    ] = None,
+    eval_batch_size: Annotated[
+        int | None,
+        typer.Option("--eval-batch-size", help="Batch size for evaluation"),
+    ] = None,
+    embedding_dim: Annotated[
+        int | None,
+        typer.Option("--embedding-dim", help="Embedding dimension for vector operations"),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+    overrides: Annotated[
+        list[str] | None,
+        typer.Argument(help="Additional Hydra overrides (e.g., pipelines.0.k1=1.2)"),
+    ] = None,
+) -> None:
     """Run experiment pipelines with metrics evaluation.
 
     Configuration is loaded from configs/experiment.yaml (or specified --config-name).
     Pipelines and metrics are instantiated via _target_ in YAML.
-    """
-    setup_logging(verbose=cfg.get("verbose", False))
 
+    Examples:
+      autorag-research run --db-name=beir_scifact_test
+      autorag-research run --db-name=beir_scifact_test --max-retries=5
+      autorag-research run --db-name=beir_scifact_test --config-name=my_experiment
+      autorag-research run --db-name=test pipelines.0.k1=1.2  # Hydra override
+    """
+    setup_logging(verbose=verbose)
+
+    # Build Hydra overrides from Typer options
+    hydra_overrides = list(HYDRA_OVERRIDES)
+
+    if db_name:
+        hydra_overrides.append(f"db_name={db_name}")
+    if max_retries is not None:
+        hydra_overrides.append(f"max_retries={max_retries}")
+    if eval_batch_size is not None:
+        hydra_overrides.append(f"eval_batch_size={eval_batch_size}")
+    if embedding_dim is not None:
+        hydra_overrides.append(f"embedding_dim={embedding_dim}")
+
+    # Add user-provided Hydra overrides
+    if overrides:
+        hydra_overrides.extend(overrides)
+
+    # Get config path
+    config_path = cli.CONFIG_PATH
+    if config_path is None:
+        typer.echo("Error: config path not set", err=True)
+        raise typer.Exit(1)
+
+    # Clear any existing Hydra state
+    GlobalHydra.instance().clear()
+
+    try:
+        with initialize_config_dir(config_dir=str(config_path), version_base=None):
+            cfg = compose(config_name=config_name, overrides=hydra_overrides)
+            _run_experiment(cfg)
+    except Exception as e:
+        logger.exception("Failed to run experiment")
+        typer.echo(f"\nError: {e}", err=True)
+        raise typer.Exit(1) from None
+
+
+def _run_experiment(cfg: DictConfig) -> None:
+    """Execute the experiment with the given configuration."""
     db_name = cfg.get("db_name", "")
     if not db_name:
-        print("Error: db_name is required in config")
-        print("Add 'db_name: <db_name>' to your experiment YAML or pass db_name=xxx")
-        return
+        typer.echo("Error: db_name is required in config")
+        typer.echo("Add 'db_name: <db_name>' to your experiment YAML or pass --db-name=xxx")
+        raise typer.Exit(1)
 
     pipelines_cfg = cfg.get("pipelines", [])
     metrics_cfg = cfg.get("metrics", [])
 
     if not pipelines_cfg:
-        print("Error: at least one pipeline is required")
-        print("Add pipelines to your experiment YAML using defaults")
-        return
+        typer.echo("Error: at least one pipeline is required")
+        typer.echo("Add pipelines to your experiment YAML using defaults")
+        raise typer.Exit(1)
 
-    print("\nAutoRAG-Research Experiment Runner")
-    print("=" * 60)
+    typer.echo("\nAutoRAG-Research Experiment Runner")
+    typer.echo("=" * 60)
 
-    print(f"\nDatabase name: {db_name}")
-    print(f"Database: {cfg.db.host}:{cfg.db.port}/{cfg.db.database}")
+    typer.echo(f"\nDatabase name: {db_name}")
+    typer.echo(f"Database: {cfg.db.host}:{cfg.db.port}/{cfg.db.database}")
 
-    print("\nPipelines:")
+    typer.echo("\nPipelines:")
     for i, p in enumerate(pipelines_cfg):
         if hasattr(p, "_target_"):
-            print(f"  [{i}] {p._target_.split('.')[-1]}")
-        print(f"       {OmegaConf.to_yaml(p).strip()}")
+            typer.echo(f"  [{i}] {p._target_.split('.')[-1]}")
+        typer.echo(f"       {OmegaConf.to_yaml(p).strip()}")
 
-    print("\nMetrics:")
+    typer.echo("\nMetrics:")
     for i, m in enumerate(metrics_cfg):
         if hasattr(m, "_target_"):
-            print(f"  [{i}] {m._target_.split('.')[-1]}")
-        print(f"       {OmegaConf.to_yaml(m).strip()}")
+            typer.echo(f"  [{i}] {m._target_.split('.')[-1]}")
+        typer.echo(f"       {OmegaConf.to_yaml(m).strip()}")
 
-    print("\nConfiguration:")
-    print(f"  max_retries: {cfg.get('max_retries', 3)}")
-    print(f"  eval_batch_size: {cfg.get('eval_batch_size', 100)}")
+    typer.echo("\nConfiguration:")
+    typer.echo(f"  max_retries: {cfg.get('max_retries', 3)}")
+    typer.echo(f"  eval_batch_size: {cfg.get('eval_batch_size', 100)}")
 
     # Build executor config using instantiate
     try:
         executor_config = build_executor_config(cfg)
     except Exception as e:
         logger.exception("Failed to build executor config")
-        print(f"\nError building configuration: {e}")
-        return
+        typer.echo(f"\nError building configuration: {e}")
+        raise typer.Exit(1) from None
 
     # Create database session
     try:
         session_factory = create_session_factory(cfg)
     except Exception as e:
         logger.exception("Failed to connect to database")
-        print(f"\nError connecting to database: {e}")
-        return
+        typer.echo(f"\nError connecting to database: {e}")
+        raise typer.Exit(1) from None
 
     # Create schema object
     schema = create_schema(dim=cfg.get("embedding_dim", 1536))
 
-    print("\n" + "-" * 60)
-    print("Starting experiment...")
-    print("-" * 60)
+    typer.echo("\n" + "-" * 60)
+    typer.echo("Starting experiment...")
+    typer.echo("-" * 60)
 
     try:
         executor = Executor(
@@ -96,7 +177,8 @@ def run(cfg: DictConfig) -> None:
         print_results(result)
     except Exception as e:
         logger.exception("Experiment failed")
-        print(f"\nExperiment failed: {e}")
+        typer.echo(f"\nExperiment failed: {e}")
+        raise typer.Exit(1) from None
 
 
 def build_executor_config(cfg: DictConfig) -> ExecutorConfig:
@@ -122,8 +204,11 @@ def build_executor_config(cfg: DictConfig) -> ExecutorConfig:
     )
 
 
-def create_session_factory(cfg: DictConfig) -> sessionmaker:
+def create_session_factory(cfg: DictConfig):
     """Create SQLAlchemy session factory from config."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
     password = cfg.db.password
     if isinstance(password, str) and password.startswith("${") and password.endswith("}"):
         password = os.environ.get("PGPASSWORD", "postgres")
@@ -135,28 +220,28 @@ def create_session_factory(cfg: DictConfig) -> sessionmaker:
 
 def print_results(result) -> None:
     """Print experiment results."""
-    print("\n" + "=" * 60)
-    print("EXPERIMENT RESULTS")
-    print("=" * 60)
+    typer.echo("\n" + "=" * 60)
+    typer.echo("EXPERIMENT RESULTS")
+    typer.echo("=" * 60)
 
-    print("\nPipeline Results:")
-    print("-" * 60)
+    typer.echo("\nPipeline Results:")
+    typer.echo("-" * 60)
     for pr in result.pipeline_results:
-        status = "✓" if pr.success else "✗"
-        print(f"  {status} {pr.pipeline_name}")
+        status = "+" if pr.success else "x"
+        typer.echo(f"  {status} {pr.pipeline_name}")
         if pr.error:
-            print(f"      Error: {pr.error}")
+            typer.echo(f"      Error: {pr.error}")
 
-    print("\nMetric Results:")
-    print("-" * 60)
+    typer.echo("\nMetric Results:")
+    typer.echo("-" * 60)
     for mr in result.metric_results:
-        print(f"  {mr.metric_name} @ {mr.pipeline_name}")
-        print(f"      Score: {mr.score:.4f}")
+        typer.echo(f"  {mr.metric_name} @ {mr.pipeline_name}")
+        typer.echo(f"      Score: {mr.score:.4f}")
 
     successful_pipelines = sum(1 for pr in result.pipeline_results if pr.success)
     total_pipelines = len(result.pipeline_results)
-    print(f"\nSummary: {successful_pipelines}/{total_pipelines} pipelines completed")
+    typer.echo(f"\nSummary: {successful_pipelines}/{total_pipelines} pipelines completed")
 
     if result.metric_results:
         avg_score = sum(mr.score for mr in result.metric_results) / len(result.metric_results)
-        print(f"Average metric score: {avg_score:.4f}")
+        typer.echo(f"Average metric score: {avg_score:.4f}")

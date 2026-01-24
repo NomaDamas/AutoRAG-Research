@@ -18,17 +18,19 @@ class TestCLIMain:
         )
         assert result.returncode == 0
         assert "AutoRAG-Research CLI" in result.stdout
-        assert "Commands:" in result.stdout
+        # Typer uses rich formatting with "Commands" header
+        assert "Commands" in result.stdout
 
     def test_unknown_command_shows_usage(self):
-        """Test that unknown command shows usage."""
+        """Test that unknown command shows error message."""
         result = subprocess.run(
             [sys.executable, "-m", "autorag_research.cli.main", "unknown_command"],
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 1
-        assert "Unknown command" in result.stdout
+        # Typer returns exit code 2 for unknown commands
+        assert result.returncode == 2
+        assert "No such command" in result.stderr
 
     def test_no_args_shows_usage(self):
         """Test that no arguments shows usage."""
@@ -37,7 +39,8 @@ class TestCLIMain:
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 1
+        # Typer returns exit code 2 when no_args_is_help=True
+        assert result.returncode == 2
         assert "AutoRAG-Research CLI" in result.stdout
 
 
@@ -126,3 +129,46 @@ class TestInitConfigCommand:
 
         # Verify file wasn't overwritten
         assert db_yaml.read_text() == "existing: content"
+
+
+class TestRunCommand:
+    """Tests for the run command."""
+
+    def test_run_help(self):
+        """Test that run --help shows options with kebab-case."""
+        result = subprocess.run(
+            [sys.executable, "-m", "autorag_research.cli.main", "run", "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "--db-name" in result.stdout
+        assert "--config-name" in result.stdout
+        assert "--max-retries" in result.stdout
+
+
+class TestIngestCommand:
+    """Tests for the ingest command."""
+
+    def test_ingest_help(self):
+        """Test that ingest --help shows available ingestors."""
+        result = subprocess.run(
+            [sys.executable, "-m", "autorag_research.cli.main", "ingest", "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "beir" in result.stdout
+        assert "mrtydi" in result.stdout
+
+    def test_ingest_beir_help(self):
+        """Test that ingest beir --help shows options."""
+        result = subprocess.run(
+            [sys.executable, "-m", "autorag_research.cli.main", "ingest", "beir", "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "--dataset" in result.stdout
+        assert "--db-name" in result.stdout
+        assert "--db-host" in result.stdout

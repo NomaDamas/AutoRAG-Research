@@ -2,9 +2,15 @@
 
 from pathlib import Path
 
-from autorag_research.cli.main import main
-
-# Global config path, set by main() at CLI startup
+# Global config path, set by main_callback() at CLI startup
 CONFIG_PATH: Path | None = None
+
+
+def main() -> None:
+    """CLI entry point."""
+    from autorag_research.cli.app import main as app_main
+
+    app_main()
+
 
 __all__ = ["CONFIG_PATH", "main"]
