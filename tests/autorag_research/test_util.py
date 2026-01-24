@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from PIL import Image
 
-from autorag_research.util import pil_image_to_bytes, run_with_concurrency_limit, extract_image_from_data_uri
+from autorag_research.util import extract_image_from_data_uri, pil_image_to_bytes, run_with_concurrency_limit
 
 
 class TestRunWithConcurrencyLimit:
