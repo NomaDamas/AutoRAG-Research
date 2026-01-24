@@ -260,26 +260,6 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         logger.info(f"[{domain}] Total chunks ingested: {total_count}")
         return total_count
 
-    def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        if self.service is None:
-            raise ServiceNotSetError
-
-        logger.info("Embedding all queries...")
-        self.service.embed_all_queries(
-            self.embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-
-        logger.info("Embedding all chunks...")
-        self.service.embed_all_chunks(
-            self.embedding_model.aget_text_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-
-        logger.info("BRIGHT embedding complete.")
-
 
 def _make_id(domain: str, source_id: str) -> str:
     return f"{domain}_{source_id}"
