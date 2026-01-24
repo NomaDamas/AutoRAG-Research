@@ -1,4 +1,8 @@
+import json
 import os
+import shutil
+import subprocess
+import tempfile
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -9,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
 from autorag_research.exceptions import EnvNotFoundError
+from autorag_research.orm.schema import Chunk
 
 # Load environment variables from postgresql/.env
 _env_path = Path(__file__).parent.parent / "postgresql" / ".env"
@@ -82,13 +87,8 @@ def bm25_index_path(session_factory):
 
     The index is created once per test session and cleaned up afterward.
     """
-    import json
-    import shutil
-    import subprocess
-    import tempfile
-    from pathlib import Path
-
-    from autorag_research.orm.schema import Chunk
+    if not shutil.which("java"):
+        pytest.fail("Java Development Kit (JDK) not found. Pyserini requires Java 11+.")
 
     # Fetch chunks from seed data
     session = session_factory()

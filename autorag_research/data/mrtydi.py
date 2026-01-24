@@ -63,7 +63,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         self,
         subset: Literal["train", "dev", "test"] = "test",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
         """Ingest Mr. TyDi dataset.
 
@@ -71,7 +71,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
             subset: Dataset split to ingest (train, dev, or test).
                 Recommend to use only 'test' subset for benchmarking.
             query_limit: Maximum number of queries to ingest.
-            corpus_limit: Maximum number of corpus items to ingest.
+            min_corpus_cnt: Maximum number of corpus items to ingest.
                          Gold passages are always included.
         """
         if self.service is None:
@@ -91,7 +91,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         corpus_url = f"{MRTYDI_CORPUS_BASE_URL}/{self.language_dir}/corpus.jsonl.gz"
         corpus_dataset = load_dataset("json", data_files=corpus_url, split="train")
 
-        corpus = self._process_corpus(corpus_dataset, gold_docids, corpus_limit, rng)
+        corpus = self._process_corpus(corpus_dataset, gold_docids, min_corpus_cnt, rng)
 
         # Step 3: Ingest data
         self._ingest_queries(queries)
@@ -145,7 +145,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         self,
         dataset,
         gold_docids: set[str],
-        corpus_limit: int | None,
+        min_corpus_cnt: int | None,
         rng: random.Random,
     ) -> dict[str, dict[str, str]]:
         """Process corpus dataset to extract documents.
@@ -153,7 +153,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         Args:
             dataset: HuggingFace dataset with corpus.
             gold_docids: Set of gold docids that must be included.
-            corpus_limit: Maximum corpus size.
+            min_corpus_cnt: Maximum corpus size.
             rng: Random number generator for sampling.
 
         Returns:
@@ -169,16 +169,16 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
 
             if docid in gold_docids:
                 corpus[docid] = doc_data
-            elif corpus_limit is None:
+            elif min_corpus_cnt is None:
                 # No limit - include all docs
                 corpus[docid] = doc_data
             else:
                 # Limit specified - collect non-gold for later sampling
                 non_gold_docs.append({"docid": docid, **doc_data})
 
-        # If corpus_limit is set, add random non-gold docs up to limit
-        if corpus_limit is not None:
-            additional_needed = corpus_limit - len(corpus)
+        # If min_corpus_cnt is set, add random non-gold docs up to the threshold
+        if min_corpus_cnt is not None:
+            additional_needed = min_corpus_cnt - len(corpus)
             if additional_needed > 0 and non_gold_docs:
                 sampled = rng.sample(non_gold_docs, min(additional_needed, len(non_gold_docs)))
                 for doc in sampled:

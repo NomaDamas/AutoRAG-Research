@@ -141,7 +141,7 @@ class TestTextMTEBDatasetIngestorIntegration:
             ingestor.ingest(
                 subset="test",
                 query_limit=MTEB_SMALL_CONFIG.expected_query_count,
-                corpus_limit=MTEB_SMALL_CONFIG.expected_chunk_count,
+                min_corpus_cnt=MTEB_SMALL_CONFIG.expected_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, MTEB_SMALL_CONFIG)
@@ -165,7 +165,7 @@ class TestTextMTEBDatasetIngestorIntegration:
             ingestor.ingest(
                 subset="test",
                 query_limit=config.expected_query_count,
-                corpus_limit=config.expected_chunk_count,
+                min_corpus_cnt=config.expected_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, config)
@@ -191,7 +191,7 @@ class TestTextMTEBDatasetIngestorIntegration:
             ingestor.ingest(
                 subset="test",
                 query_limit=config.expected_query_count,
-                corpus_limit=config.expected_chunk_count,
+                min_corpus_cnt=config.expected_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, config)
@@ -217,7 +217,7 @@ class TestTextMTEBDatasetIngestorIntegration:
             ingestor.ingest(
                 subset="test",
                 query_limit=config.expected_query_count,
-                corpus_limit=config.expected_chunk_count,
+                min_corpus_cnt=config.expected_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, config)
@@ -243,7 +243,7 @@ class TestTextMTEBDatasetIngestorIntegration:
             ingestor.ingest(
                 subset="test",
                 query_limit=config.expected_query_count,
-                corpus_limit=config.expected_chunk_count,
+                min_corpus_cnt=config.expected_chunk_count,
             )
 
             # Before embedding

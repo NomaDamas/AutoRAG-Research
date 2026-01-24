@@ -195,7 +195,7 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         self,
         corpus_df: pd.DataFrame,
         gold_ids: set[str],
-        corpus_limit: int | None,
+        min_corpus_cnt: int | None,
         rng: random.Random,
     ) -> pd.Index:
         """Filter corpus: always include gold IDs, plus random to reach limit.
@@ -203,13 +203,13 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         Args:
             corpus_df: Full corpus DataFrame indexed by id.
             gold_ids: Set of gold document IDs that must be included.
-            corpus_limit: Maximum number of corpus items. None means no limit.
+            min_corpus_cnt: Maximum number of corpus items. None means no limit.
             rng: Random number generator for sampling.
 
         Returns:
             Index of corpus IDs to include.
         """
-        if corpus_limit is None:
+        if min_corpus_cnt is None:
             return corpus_df.index
 
         # Always include gold IDs that exist in corpus
@@ -217,7 +217,7 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         non_gold = corpus_df.index[~corpus_df.index.isin(gold_ids)]
 
         # Calculate how many additional items we need
-        remaining = max(0, corpus_limit - len(gold_in_corpus))
+        remaining = max(0, min_corpus_cnt - len(gold_in_corpus))
         sampled_count = min(remaining, len(non_gold))
         sampled_indices = rng.sample(list(non_gold), sampled_count) if sampled_count > 0 else []
 
@@ -248,14 +248,14 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         self,
         subset: Literal["train", "dev", "test"] = "test",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
         """Ingest data from MTEB dataset.
 
         Args:
             subset: Dataset split to ingest (train, dev, or test).
             query_limit: Maximum number of queries to ingest. None means no limit.
-            corpus_limit: Maximum number of corpus items to ingest.
+            min_corpus_cnt: Maximum number of corpus items to ingest.
                           When set, gold IDs from selected queries are always included,
                           plus random samples to reach the limit. None means no limit.
 
@@ -288,7 +288,7 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         logger.info(f"Total gold IDs: {len(gold_ids)}")
 
         # Step 3: Filter corpus (gold IDs + random sampling)
-        corpus_ids = self._filter_corpus(corpus_df, gold_ids, corpus_limit, rng)
+        corpus_ids = self._filter_corpus(corpus_df, gold_ids, min_corpus_cnt, rng)
         corpus_ids_set = set(corpus_ids)
 
         # Step 4: Ingest queries

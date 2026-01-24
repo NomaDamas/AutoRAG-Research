@@ -24,7 +24,7 @@ Usage:
             service = TextDataIngestionService(db.session_factory, schema=db.schema)
             ingestor = MyIngestor(MockEmbedding(768))
             ingestor.set_service(service)
-            ingestor.ingest(query_limit=10, corpus_limit=50)
+            ingestor.ingest(query_limit=10, min_corpus_cnt=50)
 
             verifier = IngestorTestVerifier(service, db.schema, CONFIG)
             verifier.verify_all()
