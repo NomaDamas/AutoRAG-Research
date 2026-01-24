@@ -171,11 +171,12 @@ class ReportingService:
         postgres_alias = self.attach_dataset("postgres", alias="pg_catalog_db")
 
         # Query pg_database for all user databases (excluding templates)
+        # Note: pg_database is in pg_catalog schema, must use fully qualified path
         all_dbs = (
             self._conn.execute(
                 f"""
             SELECT datname
-            FROM {postgres_alias}.pg_database
+            FROM {postgres_alias}.pg_catalog.pg_database
             WHERE datistemplate = false
               AND datname NOT IN ('postgres')
             ORDER BY datname
@@ -223,11 +224,10 @@ class ReportingService:
             raise ValueError(f"Invalid metric_type: '{metric_type}'. Must be 'retrieval' or 'generation'.")
 
         alias = self.attach_dataset(db_name)
+        # Embed validated metric_type directly to avoid DuckDB PostgreSQL extension
+        # parameter pushdown issues with ATTACH'ed databases
         return (
-            self._conn.execute(
-                f"SELECT name FROM {alias}.metric WHERE type = $1 ORDER BY name",
-                [metric_type],
-            )
+            self._conn.execute(f"SELECT name FROM {alias}.metric WHERE type = '{metric_type}' ORDER BY name")
             .df()["name"]
             .tolist()
         )

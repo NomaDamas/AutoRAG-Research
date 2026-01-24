@@ -45,10 +45,14 @@ def fetch_metrics(db_name: str, metric_type: str) -> list[str]:
     if not db_name:
         return []
     try:
-        return get_service().list_metrics_by_type(db_name, metric_type)
+        result = get_service().list_metrics_by_type(db_name, metric_type)
     except Exception as e:
         gr.Warning(f"Failed to fetch metrics: {e}")
+        print(f"[ERROR] fetch_metrics({db_name}, {metric_type}) failed: {e}")  # Terminal log
         return []
+    if not result:
+        gr.Warning(f"No metrics found for type '{metric_type}' in {db_name}")
+    return result
 
 
 def fetch_pipelines(db_name: str) -> list[str]:
