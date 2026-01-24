@@ -21,8 +21,8 @@ import typer
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from autorag_research.cli.configs.db import DatabaseConfig
 from autorag_research.cli.utils import (
+    DatabaseConfig,
     discover_embedding_configs,
     health_check_embedding,
     load_db_config_from_yaml,
