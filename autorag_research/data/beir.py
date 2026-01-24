@@ -1,7 +1,7 @@
 import logging
 import os
 import random
-from typing import Literal
+from typing import Literal, get_args
 
 from beir.datasets.data_loader import GenericDataLoader
 from beir.util import download_and_unzip
@@ -10,7 +10,7 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 from autorag_research.data import USER_DATA_DIR
 from autorag_research.data.base import TextEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
-from autorag_research.exceptions import ServiceNotSetError
+from autorag_research.exceptions import ServiceNotSetError, UnsupportedDataSubsetError
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -43,6 +43,8 @@ BEIR_DATASETS = Literal[
 class BEIRIngestor(TextEmbeddingDataIngestor):
     def __init__(self, embedding_model: BaseEmbedding, dataset_name: BEIR_DATASETS):
         super().__init__(embedding_model)
+        if dataset_name not in get_args(BEIR_DATASETS):
+            raise UnsupportedDataSubsetError
         self.dataset_name = dataset_name
         url = f"https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{self.dataset_name}.zip"
         out_dir = os.path.join(USER_DATA_DIR, "beir", self.dataset_name)
