@@ -257,23 +257,3 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
 
             if chunk_ids:
                 self.service.add_retrieval_gt(query_id, or_all(chunk_ids), chunk_type="text")
-
-    def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        if self.service is None:
-            raise ServiceNotSetError
-
-        logger.info("Embedding all queries...")
-        self.service.embed_all_queries(
-            self.embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-
-        logger.info("Embedding all chunks...")
-        self.service.embed_all_chunks(
-            self.embedding_model.aget_text_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-
-        logger.info("RAGBench embedding complete.")
