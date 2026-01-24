@@ -141,16 +141,8 @@ Run experiment pipelines with metrics evaluation. **Requires `--db-name` to spec
 # Basic run (uses configs/experiment.yaml)
 autorag-research run --db-name=beir_scifact_test
 
-# Override pipeline parameters
-autorag-research run --db-name=beir_scifact_test pipelines.0.k1=1.2
-
-# Multirun (hyperparameter sweep)
-autorag-research run --db-name=beir_scifact_test -m pipelines.0.k1=0.5,0.9,1.2
-
-# Multiple parameter sweep
-autorag-research run --db-name=beir_scifact_test -m \
-  pipelines.0.k1=0.5,0.9,1.2 \
-  pipelines.0.b=0.25,0.4,0.75
+# Override experiment config path
+autorag-research run --db-name=beir_scifact_test --config-path=path
 ```
 
 ### Configuration

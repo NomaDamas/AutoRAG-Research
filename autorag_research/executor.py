@@ -6,8 +6,10 @@ and metric evaluation with retry logic, completion verification, and logging.
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+from omegaconf import DictConfig
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import (
@@ -19,6 +21,7 @@ from autorag_research.config import (
 )
 from autorag_research.orm.service.generation_evaluation import GenerationEvaluationService
 from autorag_research.orm.service.retrieval_evaluation import RetrievalEvaluationService
+from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -145,6 +148,7 @@ class Executor:
         session_factory: sessionmaker[Session],
         config: ExecutorConfig,
         schema: Any | None = None,
+        config_dir: Path | None = None,
     ):
         """Initialize Executor.
 
@@ -152,16 +156,62 @@ class Executor:
             session_factory: SQLAlchemy sessionmaker for database connections.
             config: Executor configuration.
             schema: Schema namespace from create_schema(). If None, uses default schema.
+            config_dir: Directory containing pipeline YAML configs. If None, attempts to
+                use Hydra's config path if initialized, otherwise falls back to CWD/configs.
         """
         self.session_factory = session_factory
         self.config = config
         self._schema = schema
+        self._config_dir = config_dir or self._resolve_config_dir()
 
         # Initialize evaluation services
         self._retrieval_eval_service = RetrievalEvaluationService(session_factory, schema)
         self._generation_eval_service = GenerationEvaluationService(session_factory, schema)
 
+        # Cache for dependency retrieval pipelines (loaded from YAML)
+        self._dependency_pipelines: dict[str, BaseRetrievalPipeline] = {}
+
         logger.info(f"Executor initialized with {len(config.pipelines)} pipelines and {len(config.metrics)} metrics")
+        logger.debug(f"Config directory: {self._config_dir}")
+
+    @staticmethod
+    def _resolve_config_dir() -> Path:
+        """Resolve config directory from ConfigPathManager, Hydra, or fallback to CWD/configs.
+
+        Priority:
+        1. ConfigPathManager singleton (if initialized)
+        2. Hydra's runtime config (if initialized)
+        3. Fallback to CWD/configs
+
+        Returns:
+            Path to the config directory.
+        """
+        # First, try ConfigPathManager singleton
+        try:
+            from autorag_research.cli.config_path import ConfigPathManager
+
+            if ConfigPathManager.is_initialized():
+                return ConfigPathManager.get_config_dir()
+        except ImportError:
+            pass
+
+        # Then try Hydra
+        try:
+            from hydra.core.global_hydra import GlobalHydra
+
+            gh = GlobalHydra.instance()
+            if gh.is_initialized():
+                # Get the original working directory (where CLI was invoked)
+                from hydra.core.hydra_config import HydraConfig
+
+                runtime_cfg = HydraConfig.get()
+                original_cwd = runtime_cfg.runtime.cwd
+                return Path(original_cwd) / "configs"
+        except Exception:
+            logger.debug("Hydra not initialized, using CWD/configs as fallback")
+
+        # Fallback to CWD/configs
+        return Path.cwd() / "configs"
 
     def run(self) -> ExecutorResult:
         """Run all configured pipelines and evaluate metrics.
@@ -178,6 +228,10 @@ class Executor:
 
         for pipeline_config in self.config.pipelines:
             logger.info(f"=== Starting pipeline: {pipeline_config.name} ===")
+
+            # Step 0: Resolve dependencies for generation pipelines
+            if pipeline_config.pipeline_type == PipelineType.GENERATION:
+                self._resolve_dependencies(pipeline_config)
 
             # Step 1: Run pipeline with retry
             pipeline_result = self._run_pipeline_with_retry(pipeline_config)
@@ -393,3 +447,88 @@ class Executor:
                 success=False,
                 error_message=error_msg,
             )
+
+    def _resolve_dependencies(self, config: BasePipelineConfig) -> None:
+        """Resolve dependencies for a generation pipeline config.
+
+        Checks for `retrieval_pipeline_name` attribute and loads/instantiates
+        the referenced retrieval pipeline, then injects it into the config.
+
+        Uses Hydra's compose API when available to leverage configured search paths,
+        with fallback to direct YAML loading from config_dir.
+
+        Args:
+            config: Pipeline configuration (only processes BasicRAGPipelineConfig).
+        """
+        from hydra.utils import instantiate
+
+        from autorag_research.pipelines.generation.basic_rag import BasicRAGPipelineConfig
+
+        # Only process BasicRAGPipelineConfig which has retrieval_pipeline_name
+        if not isinstance(config, BasicRAGPipelineConfig):
+            return
+
+        name: str = config.retrieval_pipeline_name
+        logger.info(f"Resolving retrieval pipeline dependency: {name}")
+
+        # Return cached pipeline if already loaded
+        if name in self._dependency_pipelines:
+            logger.debug(f"Using cached retrieval pipeline: {name}")
+            config.inject_retrieval_pipeline(self._dependency_pipelines[name])
+            return
+
+        # Load pipeline config using Hydra's compose API or fallback to direct YAML load
+        pipeline_cfg = self._load_pipeline_config(f"pipelines/{name}")
+        pipeline_config = instantiate(pipeline_cfg)
+
+        # Instantiate the retrieval pipeline
+        pipeline_class = pipeline_config.get_pipeline_class()
+        retrieval_pipeline = pipeline_class(
+            session_factory=self.session_factory,
+            name=pipeline_config.name,
+            schema=self._schema,
+            **pipeline_config.get_pipeline_kwargs(),
+        )
+
+        # Cache and inject
+        self._dependency_pipelines[name] = retrieval_pipeline
+        config.inject_retrieval_pipeline(retrieval_pipeline)
+        logger.info(f"Loaded and injected retrieval pipeline: {name}")
+
+    def _load_pipeline_config(self, config_name: str) -> "DictConfig":
+        """Load pipeline config using Hydra compose API or fallback to direct YAML load.
+
+        Args:
+            config_name: Config name relative to search path (e.g., "pipelines/bm25_baseline")
+
+        Returns:
+            OmegaConf DictConfig object.
+
+        Raises:
+            FileNotFoundError: If config cannot be found.
+        """
+        import yaml
+        from omegaconf import OmegaConf
+
+        # Try Hydra compose API first (uses configured search paths)
+        try:
+            from hydra import compose
+            from hydra.core.global_hydra import GlobalHydra
+
+            if GlobalHydra.instance().is_initialized():
+                logger.debug(f"Loading config via Hydra compose: {config_name}")
+                return compose(config_name=config_name)
+        except Exception:
+            logger.debug("Hydra compose not available, falling back to direct YAML load")
+
+        # Fallback: direct YAML load from config_dir
+        yaml_path = self._config_dir / f"{config_name}.yaml"
+        if not yaml_path.exists():
+            msg = f"Pipeline config not found: {yaml_path}"
+            raise FileNotFoundError(msg)
+
+        logger.debug(f"Loading config from file: {yaml_path}")
+        with open(yaml_path) as f:
+            cfg_dict = yaml.safe_load(f)
+
+        return OmegaConf.create(cfg_dict)

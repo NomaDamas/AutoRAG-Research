@@ -2,7 +2,6 @@
 
 import logging
 import os
-from pathlib import Path
 
 import hydra
 from hydra.utils import instantiate
@@ -17,11 +16,9 @@ from autorag_research.orm.schema_factory import create_schema
 
 logger = logging.getLogger(__name__)
 
-# Use configs/ directory in current working directory
-CONFIG_PATH = str(Path.cwd() / "configs")
 
-
-@hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="experiment")
+# config_path=None means Hydra will use --config-path CLI option (injected by main.py)
+@hydra.main(version_base=None, config_path=None, config_name="experiment")
 def run(cfg: DictConfig) -> None:
     """Run experiment pipelines with metrics evaluation.
 

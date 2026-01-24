@@ -9,7 +9,8 @@
 #   top_k: Number of results to retrieve (default: 10)
 #
 _target_: autorag_research.pipelines.retrieval.bm25.BM25PipelineConfig
-name: bm25_baseline
+description: "BM25 retrieval with Pyserini"
+name: bm25
 index_path: ${hydra:runtime.cwd}/indices/bm25
 k1: 0.9
 b: 0.4

@@ -2,8 +2,7 @@
 
 from autorag_research.cli.configs.datasets import AVAILABLE_DATASETS
 from autorag_research.cli.configs.db import DatabaseConfig
-from autorag_research.cli.configs.metrics import AVAILABLE_METRICS
-from autorag_research.cli.configs.pipelines import AVAILABLE_PIPELINES
+from autorag_research.cli.utils import discover_metrics, discover_pipelines
 
 
 class TestDatabaseConfig:
@@ -42,12 +41,14 @@ class TestAvailableResources:
         assert "mrtydi" in AVAILABLE_DATASETS
 
     def test_available_pipelines_not_empty(self):
-        """Test that available pipelines dictionary is populated."""
-        assert len(AVAILABLE_PIPELINES) > 0
-        assert "bm25_baseline" in AVAILABLE_PIPELINES
+        """Test that available pipelines are discovered from YAML configs."""
+        pipelines = discover_pipelines()
+        assert len(pipelines) > 0
+        assert "bm25_baseline" in pipelines
 
     def test_available_metrics_not_empty(self):
-        """Test that available metrics dictionary is populated."""
-        assert len(AVAILABLE_METRICS) > 0
-        assert "recall" in AVAILABLE_METRICS
-        assert "ndcg" in AVAILABLE_METRICS
+        """Test that available metrics are discovered from YAML configs."""
+        metrics = discover_metrics()
+        assert len(metrics) > 0
+        assert "recall" in metrics
+        assert "ndcg" in metrics

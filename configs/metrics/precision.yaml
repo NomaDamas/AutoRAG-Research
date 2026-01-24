@@ -7,4 +7,5 @@
 #   k: Cutoff for evaluation (default: 10)
 #
 _target_: autorag_research.metrics.retrieval.precision.PrecisionConfig
+description: "Precision@k - Retrieval precision"
 k: 10

@@ -8,10 +8,20 @@
 #   llm_model: LLM model identifier (default: gpt-4o-mini)
 #   top_k: Number of chunks to retrieve for context (default: 5)
 #
-_target_: autorag_research.pipelines.generation.naive_rag.NaiveRAGPipelineConfig
-name: naive_rag
+_target_: autorag_research.pipelines.generation.basic_rag.BasicRAGPipelineConfig
+description: "Simple retrieve-then-generate RAG"
+name: basic_rag
 retrieval_pipeline_name: bm25_baseline
 llm_model: gpt-4o-mini
-system_prompt: null
 top_k: 5
 batch_size: 10
+prompt_template: |
+  You are an AI assistant that provides answers based on the provided context.
+
+  Context:
+  {context}
+
+  Question:
+  {question}
+
+  Answer:

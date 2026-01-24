@@ -14,9 +14,10 @@ GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRAN
 
 
 def init_config() -> None:
-    """Download default configuration files to ./configs/ directory."""
-    config_dir = Path.cwd() / "configs"
+    """Download default configuration files to the configured directory."""
+    from autorag_research.cli.config_path import ConfigPathManager
 
+    config_dir = ConfigPathManager.get_config_dir() if ConfigPathManager.is_initialized() else Path.cwd() / "configs"
     logger.info(f"Initializing configuration files in {config_dir}")
 
     downloaded = 0

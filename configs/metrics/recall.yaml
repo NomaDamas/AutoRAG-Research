@@ -7,4 +7,5 @@
 #   k: Cutoff for evaluation (default: 10)
 #
 _target_: autorag_research.metrics.retrieval.recall.RecallConfig
+description: "Recall@k - Retrieval recall"
 k: 10

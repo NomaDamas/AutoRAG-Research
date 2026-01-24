@@ -7,4 +7,5 @@
 #   k: Cutoff for evaluation (default: 10)
 #
 _target_: autorag_research.metrics.retrieval.ndcg.NDCGConfig
+description: "NDCG@k - Normalized Discounted Cumulative Gain"
 k: 10

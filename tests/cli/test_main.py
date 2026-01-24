@@ -47,7 +47,7 @@ class TestListCommand:
     def test_list_datasets(self):
         """Test listing available datasets."""
         result = subprocess.run(
-            [sys.executable, "-m", "autorag_research.cli.main", "list", "resource=datasets"],
+            [sys.executable, "-m", "autorag_research.cli.main", "list", "datasets"],
             capture_output=True,
             text=True,
         )
@@ -60,18 +60,18 @@ class TestListCommand:
     def test_list_pipelines(self):
         """Test listing available pipelines."""
         result = subprocess.run(
-            [sys.executable, "-m", "autorag_research.cli.main", "list", "resource=pipelines"],
+            [sys.executable, "-m", "autorag_research.cli.main", "list", "pipelines"],
             capture_output=True,
             text=True,
         )
         assert result.returncode == 0
         assert "Available Pipelines:" in result.stdout
-        assert "bm25_baseline" in result.stdout
+        assert "bm25" in result.stdout
 
     def test_list_metrics(self):
         """Test listing available metrics."""
         result = subprocess.run(
-            [sys.executable, "-m", "autorag_research.cli.main", "list", "resource=metrics"],
+            [sys.executable, "-m", "autorag_research.cli.main", "list", "metrics"],
             capture_output=True,
             text=True,
         )

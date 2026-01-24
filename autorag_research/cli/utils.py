@@ -4,12 +4,80 @@ import logging
 import sys
 from pathlib import Path
 
+import yaml
 from omegaconf import DictConfig, OmegaConf
 from platformdirs import user_data_dir
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Config Discovery Functions
+# =============================================================================
+
+
+def discover_configs(config_dir: Path) -> dict[str, str]:
+    """Scan YAML configs and return {name: description} dict.
+
+    Args:
+        config_dir: Directory containing YAML config files.
+
+    Returns:
+        Dictionary mapping config name (filename without .yaml) to description.
+    """
+    result = {}
+    if not config_dir.exists():
+        logger.warning(f"Config directory not found: {config_dir}")
+        return result
+
+    for yaml_file in sorted(config_dir.glob("*.yaml")):
+        try:
+            with open(yaml_file) as f:
+                cfg = yaml.safe_load(f)
+            name = yaml_file.stem
+            # Use description if available, otherwise fallback to _target_ or filename
+            description = cfg.get("description", cfg.get("_target_", "No description"))
+            result[name] = description
+        except Exception as e:
+            logger.warning(f"Failed to parse {yaml_file}: {e}")
+            result[yaml_file.stem] = "Error loading config"
+
+    return result
+
+
+def discover_pipelines() -> dict[str, str]:
+    """Discover available pipelines from configs/pipelines/.
+
+    Returns:
+        Dictionary mapping pipeline name to description.
+    """
+    # Internal configs from working directory
+    internal = discover_configs(get_config_dir() / "pipelines")
+    # TODO (Phase 3): Add external plugin entry_points discovery here
+    # external = _discover_plugin_configs("autorag_research.pipelines")
+    # return {**internal, **external}
+    return internal
+
+
+def discover_metrics() -> dict[str, str]:
+    """Discover available metrics from configs/metrics/.
+
+    Returns:
+        Dictionary mapping metric name to description.
+    """
+    # Internal configs from working directory
+    internal = discover_configs(get_config_dir() / "metrics")
+    # TODO (Phase 3): Add external plugin entry_points discovery here
+    # external = _discover_plugin_configs("autorag_research.metrics")
+    # return {**internal, **external}
+    return internal
+
+
+# =============================================================================
+# Path and Config Utilities
+# =============================================================================
 
 APP_NAME = "autorag-research"
 CONFIG_REPO_URL = "https://raw.githubusercontent.com/vkehfdl1/AutoRAG-Research/main/configs"
@@ -21,7 +89,17 @@ def get_user_data_dir() -> Path:
 
 
 def get_config_dir() -> Path:
-    """Get the configs directory in the current working directory."""
+    """Get the configs directory from ConfigPathManager singleton.
+
+    Falls back to CWD/configs if singleton is not initialized
+    (for backward compatibility with programmatic usage).
+    """
+    from autorag_research.cli.config_path import ConfigPathManager
+
+    if ConfigPathManager.is_initialized():
+        return ConfigPathManager.get_config_dir()
+
+    # Fallback for non-CLI usage
     return Path.cwd() / "configs"
 
 

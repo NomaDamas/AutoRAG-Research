@@ -7,8 +7,7 @@ import click
 
 from autorag_research.cli.commands.ingest import load_db_config_from_yaml
 from autorag_research.cli.configs.datasets import AVAILABLE_DATASETS
-from autorag_research.cli.configs.metrics import AVAILABLE_METRICS
-from autorag_research.cli.configs.pipelines import AVAILABLE_PIPELINES
+from autorag_research.cli.utils import discover_metrics, discover_pipelines
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -78,20 +77,28 @@ def print_datasets() -> None:
 
 
 def print_pipelines() -> None:
-    """Print available pipelines."""
+    """Print available pipelines by scanning configs/pipelines/."""
+    pipelines = discover_pipelines()
     click.echo("\nAvailable Pipelines:")
     click.echo("-" * 60)
-    for name, description in sorted(AVAILABLE_PIPELINES.items()):
-        click.echo(f"  {name:<20} {description}")
+    if pipelines:
+        for name, description in sorted(pipelines.items()):
+            click.echo(f"  {name:<20} {description}")
+    else:
+        click.echo("  No pipelines found. Run 'autorag-research init-config' first.")
     click.echo("\nSee configs/pipelines/ for configuration options")
 
 
 def print_metrics() -> None:
-    """Print available metrics."""
+    """Print available metrics by scanning configs/metrics/."""
+    metrics = discover_metrics()
     click.echo("\nAvailable Metrics:")
     click.echo("-" * 60)
-    for name, description in sorted(AVAILABLE_METRICS.items()):
-        click.echo(f"  {name:<15} {description}")
+    if metrics:
+        for name, description in sorted(metrics.items()):
+            click.echo(f"  {name:<15} {description}")
+    else:
+        click.echo("  No metrics found. Run 'autorag-research init-config' first.")
     click.echo("\nSee configs/metrics/ for configuration options")
 
 

@@ -6,4 +6,5 @@
 #   rouge_type: Type of ROUGE score (default: rougeL)
 #
 _target_: autorag_research.metrics.generation.rouge.RougeConfig
+description: "ROUGE-L - Longest common subsequence"
 rouge_type: rougeL

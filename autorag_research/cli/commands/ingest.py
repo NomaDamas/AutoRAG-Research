@@ -25,7 +25,10 @@ HF_REPO_ID = "vkehfdl1/autorag-research-datasets"
 
 def load_db_config_from_yaml() -> DatabaseConfig:
     """Load database config from configs/db/default.yaml if exists."""
-    yaml_path = Path.cwd() / "configs" / "db" / "default.yaml"
+    from autorag_research.cli.config_path import ConfigPathManager
+
+    config_dir = ConfigPathManager.get_config_dir() if ConfigPathManager.is_initialized() else Path.cwd() / "configs"
+    yaml_path = config_dir / "db" / "default.yaml"
 
     defaults = DatabaseConfig()
 
