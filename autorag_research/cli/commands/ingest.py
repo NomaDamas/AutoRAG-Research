@@ -127,31 +127,6 @@ def generate_db_name(ingestor_name: str, params: dict, subset: str, embedding_mo
     return "_".join(parts)
 
 
-def _create_database_and_schema(
-    db_config: DatabaseConfig,
-    schema_name: str,
-    embedding_dim: int,
-    primary_key_type: Literal["bigint", "string"],
-) -> None:
-    """Create database, install extensions, and create schema tables."""
-    from autorag_research.orm.util import create_database, install_vector_extensions
-
-    create_database(
-        db_config.host,
-        db_config.user,
-        db_config.password,
-        schema_name,
-        port=db_config.port,
-    )
-    install_vector_extensions(
-        db_config.host,
-        db_config.user,
-        db_config.password,
-        schema_name,
-        port=db_config.port,
-    )
-
-
 def _create_session_factory_and_schema(
     db_config: DatabaseConfig,
     schema_name: str,
@@ -193,7 +168,9 @@ def ingest(  # noqa: C901
         ),
     ] = None,
     # Common options
-    subset: Annotated[str, typer.Option("--subset", help="Dataset split: train, dev, or test")] = "test",
+    subset: Annotated[
+        Literal["train", "dev", "test"], typer.Option("--subset", help="Dataset split: train, dev, or test")
+    ] = "test",
     query_limit: Annotated[
         int | None, typer.Option("--query-limit", help="Maximum number of queries to ingest")
     ] = None,
@@ -342,7 +319,22 @@ def ingest(  # noqa: C901
 
     # 9. Create database and schema
     typer.echo(f"\nCreating database schema: {final_db_name}")
-    _create_database_and_schema(db_config, final_db_name, embedding_dim, detected_pkey_type)
+    from autorag_research.orm.util import create_database, install_vector_extensions
+
+    create_database(
+        db_config.host,
+        db_config.user,
+        db_config.password,
+        final_db_name,
+        port=db_config.port,
+    )
+    install_vector_extensions(
+        db_config.host,
+        db_config.user,
+        db_config.password,
+        final_db_name,
+        port=db_config.port,
+    )
 
     # 10. Create session factory and service
     session_factory, schema = _create_session_factory_and_schema(
@@ -362,7 +354,7 @@ def ingest(  # noqa: C901
 
     # 11. Ingest data
     typer.echo(f"\nIngesting {name} dataset...")
-    subset_literal: Literal["train", "dev", "test"] = subset  # ty: ignore[invalid-assignment]
+    subset_literal: Literal["train", "dev", "test"] = subset
     ingestor.ingest(
         subset=subset_literal,
         query_limit=query_limit,

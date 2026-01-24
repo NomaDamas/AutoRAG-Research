@@ -182,7 +182,7 @@ def setup_logging(verbose: bool = False) -> None:
 
 def load_db_config_from_yaml(
     host: str | None = None,
-    port: str | None = None,
+    port: int | None = None,
     user: str | None = None,
     password: str | None = None,
     database: str | None = None,
