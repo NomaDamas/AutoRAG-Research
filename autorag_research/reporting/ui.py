@@ -8,8 +8,6 @@ import pandas as pd
 from autorag_research.reporting.service import ReportingService
 
 # === Service Management ===
-
-
 class _ServiceManager:
     """Manages ReportingService singleton without global variables."""
 
@@ -41,8 +39,6 @@ def reset_service() -> None:
 
 
 # === Data Fetchers (Event Handlers) ===
-
-
 def fetch_datasets() -> list[str]:
     """Fetch list of available datasets."""
     try:

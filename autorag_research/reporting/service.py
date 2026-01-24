@@ -1,5 +1,7 @@
+import logging
 import re
 from types import TracebackType
+from typing import Literal
 
 import duckdb
 import pandas as pd
@@ -11,6 +13,8 @@ _VALID_IDENTIFIER_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 # Valid aggregation functions for pandas
 VALID_AGGREGATIONS = frozenset({"mean", "median", "min", "max", "sum", "std"})
+
+logger = logging.getLogger("AutoRAG-Research")
 
 
 class ReportingService:
@@ -189,7 +193,7 @@ class ReportingService:
             .tolist()
         )
 
-        # Check each database for AutoRAG schema (presence of 'summary' table)
+        # Check each database for AutoRAG-Research schema (presence of 'summary' table)
         valid_datasets = []
         for db_name in all_dbs:
             try:
@@ -206,12 +210,12 @@ class ReportingService:
                 if result["cnt"].iloc[0] > 0:
                     valid_datasets.append(db_name)
             except Exception:  # noqa: S112
-                # Skip databases we can't access or that don't have the schema
+                logger.warning(f"Skipping {db_name}")
                 continue
 
         return valid_datasets
 
-    def list_metrics_by_type(self, db_name: str, metric_type: str) -> list[str]:
+    def list_metrics_by_type(self, db_name: str, metric_type: Literal["retrieval", "generation"]) -> list[str]:
         """Filter metrics by type.
 
         Args:
