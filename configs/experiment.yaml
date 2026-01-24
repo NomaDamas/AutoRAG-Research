@@ -18,8 +18,8 @@ defaults:
   - metrics/ndcg@metrics.1
   - _self_
 
-# Target database schema (created by ingest command)
-schema: beir_scifact_test
+# Target database name (created by ingest command)
+db_name: beir_scifact_test
 
 # Embedding dimension (must match ingested data)
 embedding_dim: 1536

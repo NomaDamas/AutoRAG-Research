@@ -54,42 +54,16 @@ def extract_config_path_option(args: list[str]) -> tuple[list[str], Path]:
     return filtered_args, config_path
 
 
-def extract_db_name_option(args: list[str]) -> tuple[list[str], str | None]:
-    """Extract --db-name option from args and return filtered args + db_name value.
-
-    Supports both --db-name=value and --db-name value formats.
-    """
-    db_name = None
-    filtered_args = []
-    skip_next = False
-
-    for i, arg in enumerate(args):
-        if skip_next:
-            skip_next = False
-            continue
-
-        if arg.startswith("--db-name="):
-            db_name = arg.split("=", 1)[1]
-        elif arg == "--db-name":
-            if i + 1 < len(args):
-                db_name = args[i + 1]
-                skip_next = True
-        else:
-            filtered_args.append(arg)
-
-    return filtered_args, db_name
-
-
 def main() -> None:
     """Main CLI entry point that dispatches to subcommands."""
-    from autorag_research.cli.config_path import ConfigPathManager
+    import autorag_research.cli as cli
 
     # Extract --config-path from all args first (before command)
     all_args = sys.argv[1:]
     all_args, config_path = extract_config_path_option(all_args)
 
-    # Initialize ConfigPathManager singleton
-    ConfigPathManager.initialize(config_path)
+    # Set global config path
+    cli.CONFIG_PATH = config_path.resolve()
 
     register_configs()
 
@@ -119,12 +93,6 @@ def main() -> None:
     # For Hydra-based commands, inject --config-path for Hydra to use
     # and inject Hydra overrides to disable output directory
     hydra_config_path = f"--config-path={config_path.resolve()}"
-
-    # Handle --db-name for run command (convert to Hydra schema override)
-    if command == "run":
-        remaining_args, db_name_override = extract_db_name_option(remaining_args)
-        if db_name_override:
-            remaining_args.append(f"schema={db_name_override}")
 
     sys.argv = [sys.argv[0], hydra_config_path, *remaining_args, *HYDRA_OVERRIDES]
 
@@ -165,7 +133,7 @@ Examples:
   autorag-research init-config
 
   # 2. Use custom config directory
-  autorag-research --config-path=/my/configs run --db-name=test
+  autorag-research --config-path=/my/configs run db_name=test
 
   # 3. Ingest datasets (see available ingestors with: ingest --help)
   autorag-research ingest beir --dataset=scifact
@@ -178,13 +146,10 @@ Examples:
   autorag-research list metrics
 
   # 5. Run experiment (uses configs/experiment.yaml)
-  autorag-research run --db-name=beir_scifact_test
+  autorag-research run db_name=beir_scifact_test
 
   # 6. Run with overrides
-  autorag-research run --db-name=beir_scifact_test pipelines.0.k1=1.2
-
-  # 7. Multirun (hyperparameter sweep)
-  autorag-research run --db-name=beir_scifact_test -m pipelines.0.k1=0.5,0.9,1.2
+  autorag-research run db_name=beir_scifact_test pipelines.0.k1=1.2
 
 For more information, visit: https://github.com/vkehfdl1/AutoRAG-Research
 """

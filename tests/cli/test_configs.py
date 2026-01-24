@@ -44,7 +44,7 @@ class TestAvailableResources:
         """Test that available pipelines are discovered from YAML configs."""
         pipelines = discover_pipelines()
         assert len(pipelines) > 0
-        assert "bm25_baseline" in pipelines
+        assert "bm25" in pipelines
 
     def test_available_metrics_not_empty(self):
         """Test that available metrics are discovered from YAML configs."""

@@ -40,7 +40,7 @@ vi configs/db/default.yaml
 autorag-research ingest beir --dataset=scifact
 
 # 4. Run experiments
-autorag-research run --db-name=beir_scifact_test
+autorag-research run db_name=beir_scifact_test
 ```
 
 ### Commands
@@ -135,14 +135,14 @@ autorag-research list resource=metrics
 
 #### `run` - Run Experiments
 
-Run experiment pipelines with metrics evaluation. **Requires `--db-name` to specify the target database schema.**
+Run experiment pipelines with metrics evaluation. **Requires `db_name=` to specify the target database.**
 
 ```bash
 # Basic run (uses configs/experiment.yaml)
-autorag-research run --db-name=beir_scifact_test
+autorag-research run db_name=beir_scifact_test
 
-# Override experiment config path
-autorag-research run --db-name=beir_scifact_test --config-path=path
+# Use custom config directory
+autorag-research --config-path=/my/configs run db_name=beir_scifact_test
 ```
 
 ### Configuration
@@ -167,7 +167,7 @@ defaults:
   - metrics/ndcg@metrics.1
   - _self_
 
-schema: beir_scifact_test  # Can be overridden with --db-name
+db_name: beir_scifact_test
 embedding_dim: 1536
 max_retries: 3
 eval_batch_size: 100

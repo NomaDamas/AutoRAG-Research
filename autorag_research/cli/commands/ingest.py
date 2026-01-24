@@ -25,9 +25,9 @@ HF_REPO_ID = "vkehfdl1/autorag-research-datasets"
 
 def load_db_config_from_yaml() -> DatabaseConfig:
     """Load database config from configs/db/default.yaml if exists."""
-    from autorag_research.cli.config_path import ConfigPathManager
+    import autorag_research.cli as cli
 
-    config_dir = ConfigPathManager.get_config_dir() if ConfigPathManager.is_initialized() else Path.cwd() / "configs"
+    config_dir = cli.CONFIG_PATH or Path.cwd() / "configs"
     yaml_path = config_dir / "db" / "default.yaml"
 
     defaults = DatabaseConfig()
@@ -252,7 +252,7 @@ def restore_from_dump(db_config: DatabaseConfig, dump_file: Path, schema_name: s
         click.echo(f"\nSuccess! Schema '{schema_name}' restored.")
         click.echo("\nNext steps:")
         click.echo(f"  autorag-research info --schema={schema_name}")
-        click.echo(f"  autorag-research run --db-name={schema_name}")
+        click.echo(f"  autorag-research run db_name={schema_name}")
     except Exception as e:
         logger.exception("Failed to restore database")
         click.echo(f"\nError restoring database: {e}", err=True)

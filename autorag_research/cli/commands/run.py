@@ -14,7 +14,7 @@ from autorag_research.config import ExecutorConfig
 from autorag_research.executor import Executor
 from autorag_research.orm.schema_factory import create_schema
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("AutoRAG-Research")
 
 
 # config_path=None means Hydra will use --config-path CLI option (injected by main.py)
@@ -27,10 +27,10 @@ def run(cfg: DictConfig) -> None:
     """
     setup_logging(verbose=cfg.get("verbose", False))
 
-    schema_name = cfg.get("schema", "")
-    if not schema_name:
-        print("Error: schema is required in config")
-        print("Add 'schema: <schema_name>' to your experiment YAML")
+    db_name = cfg.get("db_name", "")
+    if not db_name:
+        print("Error: db_name is required in config")
+        print("Add 'db_name: <db_name>' to your experiment YAML or pass db_name=xxx")
         return
 
     pipelines_cfg = cfg.get("pipelines", [])
@@ -44,7 +44,7 @@ def run(cfg: DictConfig) -> None:
     print("\nAutoRAG-Research Experiment Runner")
     print("=" * 60)
 
-    print(f"\nSchema: {schema_name}")
+    print(f"\nDatabase name: {db_name}")
     print(f"Database: {cfg.db.host}:{cfg.db.port}/{cfg.db.database}")
 
     print("\nPipelines:")

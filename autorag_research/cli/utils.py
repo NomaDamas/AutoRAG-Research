@@ -89,18 +89,13 @@ def get_user_data_dir() -> Path:
 
 
 def get_config_dir() -> Path:
-    """Get the configs directory from ConfigPathManager singleton.
+    """Get the configs directory.
 
-    Falls back to CWD/configs if singleton is not initialized
-    (for backward compatibility with programmatic usage).
+    Returns CONFIG_PATH if set by CLI, otherwise falls back to CWD/configs.
     """
-    from autorag_research.cli.config_path import ConfigPathManager
+    import autorag_research.cli as cli
 
-    if ConfigPathManager.is_initialized():
-        return ConfigPathManager.get_config_dir()
-
-    # Fallback for non-CLI usage
-    return Path.cwd() / "configs"
+    return cli.CONFIG_PATH or Path.cwd() / "configs"
 
 
 def get_db_url(cfg: DictConfig) -> str:

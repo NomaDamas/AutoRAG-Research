@@ -176,22 +176,22 @@ class Executor:
 
     @staticmethod
     def _resolve_config_dir() -> Path:
-        """Resolve config directory from ConfigPathManager, Hydra, or fallback to CWD/configs.
+        """Resolve config directory from CLI, Hydra, or fallback to CWD/configs.
 
         Priority:
-        1. ConfigPathManager singleton (if initialized)
+        1. CLI config path (if set)
         2. Hydra's runtime config (if initialized)
         3. Fallback to CWD/configs
 
         Returns:
             Path to the config directory.
         """
-        # First, try ConfigPathManager singleton
+        # First, try CLI config path
         try:
-            from autorag_research.cli.config_path import ConfigPathManager
+            import autorag_research.cli as cli
 
-            if ConfigPathManager.is_initialized():
-                return ConfigPathManager.get_config_dir()
+            if cli.CONFIG_PATH:
+                return cli.CONFIG_PATH
         except ImportError:
             pass
 

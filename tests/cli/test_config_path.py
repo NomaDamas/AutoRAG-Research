@@ -1,76 +1,39 @@
-"""Tests for ConfigPathManager singleton."""
+"""Tests for CONFIG_PATH in cli module."""
 
 from pathlib import Path
 
-import pytest
-
-from autorag_research.cli.config_path import ConfigPathManager
+import autorag_research.cli as cli
 
 
-class TestConfigPathManager:
-    """Tests for the ConfigPathManager singleton."""
+class TestConfigPath:
+    """Tests for the CONFIG_PATH global variable."""
 
     def setup_method(self):
-        """Reset singleton before each test."""
-        ConfigPathManager.reset()
+        """Reset config path before each test."""
+        cli.CONFIG_PATH = None
 
     def teardown_method(self):
-        """Reset singleton after each test."""
-        ConfigPathManager.reset()
+        """Reset config path after each test."""
+        cli.CONFIG_PATH = None
 
-    def test_initialize_with_default(self):
-        """Test initialization with default path."""
-        ConfigPathManager.initialize()
-        assert ConfigPathManager.get_config_dir() == (Path.cwd() / "configs").resolve()
+    def test_default_is_none(self):
+        """Test that CONFIG_PATH is None by default."""
+        assert cli.CONFIG_PATH is None
 
-    def test_initialize_with_custom_path(self, tmp_path):
-        """Test initialization with custom path."""
-        custom_path = tmp_path / "custom_configs"
-        ConfigPathManager.initialize(custom_path)
-        assert ConfigPathManager.get_config_dir() == custom_path.resolve()
+    def test_set_config_path(self, tmp_path):
+        """Test setting CONFIG_PATH."""
+        cli.CONFIG_PATH = tmp_path / "configs"
+        assert tmp_path / "configs" == cli.CONFIG_PATH
 
-    def test_initialize_with_string_path(self, tmp_path):
-        """Test initialization with string path."""
-        custom_path = str(tmp_path / "string_configs")
-        ConfigPathManager.initialize(custom_path)
-        assert ConfigPathManager.get_config_dir() == Path(custom_path).resolve()
+    def test_or_fallback_when_none(self):
+        """Test fallback behavior with or operator."""
+        fallback = Path.cwd() / "configs"
+        result = cli.CONFIG_PATH or fallback
+        assert result == fallback
 
-    def test_double_initialize_returns_existing(self):
-        """Test that double initialization returns existing instance."""
-        first = ConfigPathManager.initialize()
-        second = ConfigPathManager.initialize()  # Should not raise, returns existing
-        assert first is second
-
-    def test_get_before_initialize_raises_error(self):
-        """Test that get before initialize raises RuntimeError."""
-        with pytest.raises(RuntimeError, match="not initialized"):
-            ConfigPathManager.get_config_dir()
-
-    def test_get_instance_before_initialize_raises_error(self):
-        """Test that get_instance before initialize raises RuntimeError."""
-        with pytest.raises(RuntimeError, match="not initialized"):
-            ConfigPathManager.get_instance()
-
-    def test_is_initialized_false_initially(self):
-        """Test is_initialized returns False before initialization."""
-        assert not ConfigPathManager.is_initialized()
-
-    def test_is_initialized_true_after_init(self):
-        """Test is_initialized returns True after initialization."""
-        ConfigPathManager.initialize()
-        assert ConfigPathManager.is_initialized()
-
-    def test_reset(self):
-        """Test reset method clears the singleton."""
-        ConfigPathManager.initialize()
-        assert ConfigPathManager.is_initialized()
-        ConfigPathManager.reset()
-        assert not ConfigPathManager.is_initialized()
-
-    def test_path_is_resolved(self, tmp_path):
-        """Test that the path is always resolved to absolute."""
-        # Use a relative-looking path
-        ConfigPathManager.initialize(tmp_path / "relative" / ".." / "actual")
-        result = ConfigPathManager.get_config_dir()
-        assert result.is_absolute()
-        assert ".." not in str(result)
+    def test_or_fallback_when_set(self, tmp_path):
+        """Test that set value takes precedence over fallback."""
+        cli.CONFIG_PATH = tmp_path / "custom"
+        fallback = Path.cwd() / "configs"
+        result = cli.CONFIG_PATH or fallback
+        assert result == tmp_path / "custom"

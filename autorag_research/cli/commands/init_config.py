@@ -15,9 +15,9 @@ GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRAN
 
 def init_config() -> None:
     """Download default configuration files to the configured directory."""
-    from autorag_research.cli.config_path import ConfigPathManager
+    import autorag_research.cli as cli
 
-    config_dir = ConfigPathManager.get_config_dir() if ConfigPathManager.is_initialized() else Path.cwd() / "configs"
+    config_dir = cli.CONFIG_PATH or Path.cwd() / "configs"
     logger.info(f"Initializing configuration files in {config_dir}")
 
     downloaded = 0
@@ -51,12 +51,14 @@ def init_config() -> None:
                 logger.error("  [error] %s (HTTP %d)", file_path, response.status_code)
                 failed += 1
 
-    logger.info("\nDone: %d downloaded, %d skipped, %d failed", downloaded, skipped, failed)
-    logger.info("\nConfiguration files are in: %s", config_dir)
-    logger.info("\nNext steps:")
-    logger.info("  1. Edit configs/db/default.yaml with your database credentials")
-    logger.info("  2. Ingest a dataset: autorag-research ingest beir --dataset=scifact")
-    logger.info("  3. Run experiment: autorag-research run --db-name=beir_scifact_test")
+    logger.info(
+        f"\nDone: {downloaded} downloaded, {skipped} skipped, {failed} failed"
+        f"\nConfiguration files are in: {config_dir}"
+        "\nNext steps:"
+        "  1. Edit configs/db/default.yaml with your database credentials"
+        "  2. Ingest a dataset: autorag-research ingest beir --dataset=scifact"
+        "  3. Run experiment: autorag-research run db_name=beir_scifact_test"
+    )
 
 
 def fetch_config_files_from_github(client: httpx.Client) -> list[str]:
