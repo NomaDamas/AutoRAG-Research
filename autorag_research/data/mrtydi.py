@@ -226,23 +226,3 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
             if not gt_ids:
                 continue
             self.service.add_retrieval_gt(qid, or_all(gt_ids), chunk_type="text")
-
-    def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        """Embed all queries and chunks.
-
-        Args:
-            max_concurrency: Maximum concurrent embedding requests.
-            batch_size: Batch size for embedding.
-        """
-        if self.service is None:
-            raise ServiceNotSetError
-        self.service.embed_all_queries(
-            self.embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-        self.service.embed_all_chunks(
-            self.embedding_model.aget_text_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
