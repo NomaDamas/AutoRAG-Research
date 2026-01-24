@@ -1,11 +1,14 @@
 """ingest command - Ingest datasets into PostgreSQL using Typer CLI."""
 
 import logging
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 import typer
+import typer.main
+import typer.models
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from typer.core import TyperGroup, click
 
 from autorag_research.cli.configs.db import DatabaseConfig
 from autorag_research.cli.utils import (
@@ -14,16 +17,62 @@ from autorag_research.cli.utils import (
     load_db_config_from_yaml,
     load_embedding_model,
 )
-from autorag_research.data.base import MultiModalEmbeddingDataIngestor, TextEmbeddingDataIngestor
-from autorag_research.data.registry import IngestorMeta, discover_ingestors, get_ingestor_help
+
+if TYPE_CHECKING:
+    from autorag_research.data.registry import IngestorMeta
 
 logger = logging.getLogger("AutoRAG-Research")
 
-# Create ingest sub-app
+
+class LazyIngestorGroup(TyperGroup):
+    """TyperGroup that lazily registers ingestor commands on first access.
+
+    This avoids importing heavy dependencies (mteb, beir, datasets) at CLI startup.
+    Commands are only registered when the 'ingest' subcommand is actually invoked.
+    """
+
+    _commands_registered: bool = False
+
+    def _ensure_commands_registered(self) -> None:
+        """Register ingestor commands if not already done."""
+        if LazyIngestorGroup._commands_registered:
+            return
+        LazyIngestorGroup._commands_registered = True
+
+        from autorag_research.data.registry import discover_ingestors
+
+        ingestors = discover_ingestors()
+        for name, meta in ingestors.items():
+            command_func = create_ingest_command(name, meta)
+            # Convert to Click command and add directly to this group
+            click_command = typer.main.get_command_from_info(
+                typer.models.CommandInfo(
+                    name=name,
+                    callback=command_func,
+                    help=meta.description,
+                ),
+                pretty_exceptions_short=ingest_app.pretty_exceptions_short,
+                rich_markup_mode=ingest_app.rich_markup_mode,
+            )
+            self.add_command(click_command, name)
+
+    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
+        """Get a command by name, ensuring commands are registered first."""
+        self._ensure_commands_registered()
+        return super().get_command(ctx, cmd_name)
+
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        """List all commands, ensuring commands are registered first."""
+        self._ensure_commands_registered()
+        return super().list_commands(ctx)
+
+
+# Create ingest sub-app with lazy command registration
 ingest_app = typer.Typer(
     name="ingest",
     help="Ingest datasets into PostgreSQL.",
     no_args_is_help=True,
+    cls=LazyIngestorGroup,
 )
 
 
@@ -50,7 +99,7 @@ def generate_db_name(ingestor_name: str, params: dict, subset: str) -> str:
     return "_".join(parts)
 
 
-def create_ingest_command(ingestor_name: str, meta: IngestorMeta):  # noqa: C901
+def create_ingest_command(ingestor_name: str, meta: "IngestorMeta"):  # noqa: C901
     """Create a Typer command function for an ingestor dynamically."""
 
     # Get the first param (main dataset identifier) for CLI option and available values
@@ -197,6 +246,8 @@ def create_ingest_command(ingestor_name: str, meta: IngestorMeta):  # noqa: C901
             init_kwargs["document_mode"] = document_mode
 
         # 4. Create ingestor with embedding model
+        from autorag_research.data.base import MultiModalEmbeddingDataIngestor, TextEmbeddingDataIngestor
+
         ingestor_class = meta.ingestor_class
         if issubclass(ingestor_class, TextEmbeddingDataIngestor):
             ingestor = ingestor_class(embed_model, **init_kwargs)
@@ -319,18 +370,6 @@ def _create_session_factory_and_schema(
     return session_factory, schema
 
 
-def _register_ingestor_commands() -> None:
-    """Register all discovered ingestors as subcommands."""
-    ingestors = discover_ingestors()
-    for name, meta in ingestors.items():
-        command_func = create_ingest_command(name, meta)
-        ingest_app.command(name=name, help=meta.description)(command_func)
-
-
-# Register ingestors at module load time
-_register_ingestor_commands()
-
-
 @ingest_app.callback(invoke_without_command=True)
 def ingest_callback(ctx: typer.Context) -> None:
     """Ingest datasets into PostgreSQL.
@@ -345,6 +384,8 @@ def ingest_callback(ctx: typer.Context) -> None:
       autorag-research ingest beir --dataset-name=scifact --skip-embedding
     """
     if ctx.invoked_subcommand is None:
+        from autorag_research.data.registry import get_ingestor_help
+
         typer.echo(ctx.get_help())
         typer.echo("\n" + get_ingestor_help())
 

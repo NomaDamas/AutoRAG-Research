@@ -12,9 +12,9 @@ from autorag_research.cli.configs.db import DatabaseConfig
 class IngestConfig:
     """Configuration for the ingest command."""
 
+    dataset: str
+    embedding_model: str
     db: Any = field(default_factory=DatabaseConfig)
-    dataset: str = ""  # Dataset name (e.g., beir_scifact)
-    embedding_model: str = "text-embedding-3-small"
     embedding_dim: int = 1536
     skip_embedding: bool = False
 
