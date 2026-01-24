@@ -1,0 +1,4 @@
+_target_: autorag_research.evaluation.metrics.generation.BertScoreConfig
+description: "BERTScore - Evaluates text generation using BERT"
+lang: en # Language for BERTScore
+batch: 128

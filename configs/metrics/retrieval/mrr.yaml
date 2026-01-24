@@ -1,0 +1,2 @@
+_target_: autorag_research.evaluation.metrics.retrieval.MRRConfig
+description: "MRR@k - Mean Reciprocal Rank"

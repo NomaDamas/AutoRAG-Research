@@ -1,7 +1,0 @@
-# F1 Score Metric Configuration
-#
-# Token-level F1 score for generation evaluation.
-# Measures overlap between generated and reference answers.
-#
-_target_: autorag_research.metrics.generation.f1.F1Config
-description: "F1 Score - Token-level F1 for generation"

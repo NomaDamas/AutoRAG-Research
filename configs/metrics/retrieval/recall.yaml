@@ -1,0 +1,2 @@
+_target_: autorag_research.evaluation.metrics.retrieval.RecallConfig
+description: "Recall@k - Retrieval recall"

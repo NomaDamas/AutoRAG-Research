@@ -1,0 +1,5 @@
+_target_: autorag_research.evaluation.metrics.generation.RougeConfig
+description: "ROUGE-L - Longest common subsequence"
+rouge_type: rougeL
+use_stemmer: false
+split_summaries: false
