@@ -4,13 +4,10 @@ Unit tests for helper functions.
 Integration tests use real data subsets against PostgreSQL.
 """
 
-import base64
-
 import pytest
 
 from autorag_research.data.open_ragbench import (
     OpenRAGBenchIngestor,
-    extract_image_from_data_uri,
     make_caption_id,
     make_chunk_id,
     make_image_chunk_id,
@@ -81,71 +78,6 @@ class TestMakeImageChunkId:
         result = make_image_chunk_id("2309.00001", 1, "2")
         assert result == "2309.00001_section_1_img_2"
 
-
-class TestExtractImageFromDataUri:
-    def test_extract_image_from_data_uri_jpeg(self):
-        # Create minimal valid JPEG header bytes
-        jpeg_header = bytes([
-            0xFF,
-            0xD8,
-            0xFF,
-            0xE0,
-            0x00,
-            0x10,
-            0x4A,
-            0x46,
-            0x49,
-            0x46,
-            0x00,
-            0x01,
-            0x01,
-            0x00,
-            0x00,
-            0x01,
-            0x00,
-            0x01,
-            0x00,
-            0x00,
-        ])
-        encoded = base64.b64encode(jpeg_header).decode("utf-8")
-        data_uri = f"data:image/jpeg;base64,{encoded}"
-
-        img_bytes, mimetype = extract_image_from_data_uri(data_uri)
-
-        assert mimetype == "image/jpeg"
-        assert isinstance(img_bytes, bytes)
-        assert img_bytes == jpeg_header
-
-    def test_extract_image_from_data_uri_png(self):
-        # Create minimal PNG header bytes
-        png_header = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
-        encoded = base64.b64encode(png_header).decode("utf-8")
-        data_uri = f"data:image/png;base64,{encoded}"
-
-        img_bytes, mimetype = extract_image_from_data_uri(data_uri)
-
-        assert mimetype == "image/png"
-        assert isinstance(img_bytes, bytes)
-        assert img_bytes == png_header
-
-    def test_extract_image_from_data_uri_gif(self):
-        gif_header = b"GIF89a"
-        encoded = base64.b64encode(gif_header).decode("utf-8")
-        data_uri = f"data:image/gif;base64,{encoded}"
-
-        img_bytes, mimetype = extract_image_from_data_uri(data_uri)
-
-        assert mimetype == "image/gif"
-        assert img_bytes == gif_header
-
-    def test_extract_image_from_data_uri_preserves_bytes(self):
-        test_data = b"\x00\x01\x02\xff\xfe\xfd"
-        encoded = base64.b64encode(test_data).decode("utf-8")
-        data_uri = f"data:image/png;base64,{encoded}"
-
-        img_bytes, _ = extract_image_from_data_uri(data_uri)
-
-        assert img_bytes == test_data
 
 
 # ==================== Integration Tests ====================
