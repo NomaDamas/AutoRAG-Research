@@ -173,15 +173,3 @@ Remind user to delete intermediate files (DO NOT commit these):
 | 3 | pipeline-test-writer | test_[name]_pipeline.py | **YES** |
 | 4 | pipeline-implementer | [name].py + config | No |
 | 5 | pipeline-validator | Validation report | **YES** |
-
-## Example Usage
-
-User: `/implement-pipeline https://arxiv.org/abs/2212.10496`
-
-The workflow will:
-1. Analyze the HyDE paper
-2. Design architecture (wait for approval)
-3. Write tests (wait for approval)
-4. Implement pipeline
-5. Validate (wait for approval)
-6. Ready for commit/PR

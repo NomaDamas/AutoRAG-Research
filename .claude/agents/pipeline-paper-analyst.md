@@ -55,7 +55,6 @@ Focus on:
 - **Core steps** in execution order
 - **Parameters** with descriptions and types
 - **Dependencies** (libraries, models, external services)
-- **Method signatures** required for implementation
 
 ### Step 3: Generate Output
 Create `Pipeline_Analysis.json` in the project root (DO NOT commit this file).
@@ -76,11 +75,6 @@ Create `Pipeline_Analysis.json` in the project root (DO NOT commit this file).
     "param_name": "Description (type, default if any)"
   },
   "dependencies": ["llama_index.llms", "llama_index.embeddings"],
-  "method_signatures": {
-    "_get_retrieval_func": "Returns retrieval function (for retrieval pipelines)",
-    "_get_pipeline_config": "Returns config dict with type and parameters",
-    "_generate": "Core generation logic (for generation pipelines)"
-  },
   "notes": "Any important implementation considerations"
 }
 ```
@@ -92,13 +86,15 @@ Create `Pipeline_Analysis.json` in the project root (DO NOT commit this file).
 | **Retrieval** | Vector search, BM25, re-ranking, query expansion, document retrieval |
 | **Generation** | LLM calls, answer synthesis, prompt templates, context formatting |
 
+The Major differences between retrieval and generation pipelines are in their output.
+The Generation Pipeline's output is generated text responses, but the Retrieval Pipeline's output is retrieved chunks or retrieved image chunks.
+
 ## Rules
 
-1. **Be thorough**: Extract ALL parameters mentioned in the paper
-2. **Be precise**: Use exact terminology from the paper
-3. **Identify dependencies**: List all external libraries needed
-4. **Note edge cases**: Document any special handling mentioned
-5. **Keep it local**: Output file is for development only, never commit
+1. **Be precise**: Use exact terminology from the paper
+2. **Identify dependencies**: List all external libraries needed
+3. **Note edge cases**: Document any special handling mentioned
+4. **Keep it local**: Output file is for development only, never commit
 
 ## What This Agent Does NOT Do
 
