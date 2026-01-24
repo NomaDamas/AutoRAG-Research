@@ -6,12 +6,29 @@ from datasets import load_dataset
 from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from autorag_research.data.base import QueryMetadata, TextEmbeddingDataIngestor
+from autorag_research.data.registry import register_ingestor
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import or_all
 
 logger = logging.getLogger("AutoRAG-Research")
 
 RANDOM_SEED = 42
+
+# BRIGHT available domains
+BRIGHT_DOMAINS_LITERAL = Literal[
+    "biology",
+    "earth_science",
+    "economics",
+    "psychology",
+    "robotics",
+    "stackoverflow",
+    "sustainable_living",
+    "pony",
+    "leetcode",
+    "aops",
+    "theoremqa_theorems",
+    "theoremqa_questions",
+]
 
 BRIGHT_DOMAINS = [
     "biology",
@@ -46,6 +63,10 @@ DocumentMode = Literal["short", "long"]
 BATCH_SIZE = 1000
 
 
+@register_ingestor(
+    name="bright",
+    description="BRIGHT benchmark for reasoning-intensive retrieval",
+)
 class BRIGHTIngestor(TextEmbeddingDataIngestor):
     def __init__(
         self,

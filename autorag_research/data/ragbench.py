@@ -12,6 +12,22 @@ from autorag_research.util import normalize_string
 
 logger = logging.getLogger("AutoRAG-Research")
 
+# RAGBench available configs
+RAGBENCH_CONFIGS_LITERAL = Literal[
+    "covidqa",
+    "cuad",
+    "delucionqa",
+    "emanual",
+    "expertqa",
+    "finqa",
+    "hagrid",
+    "hotpotqa",
+    "msmarco",
+    "pubmedqa",
+    "tatqa",
+    "techqa",
+]
+
 RAGBENCH_CONFIGS = [
     "covidqa",
     "cuad",
@@ -60,6 +76,14 @@ def _make_query_id(config: str, split: str, example_id: str) -> str:
     return f"{config}_{split}_{example_id}"
 
 
+# Import here to avoid circular import at module level
+from autorag_research.data.registry import register_ingestor  # noqa: E402
+
+
+@register_ingestor(
+    name="ragbench",
+    description="RAGBench benchmark for RAG evaluation",
+)
 class RAGBenchIngestor(TextEmbeddingDataIngestor):
     def __init__(
         self,

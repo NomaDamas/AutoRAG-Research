@@ -9,15 +9,42 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from autorag_research.data import USER_DATA_DIR
 from autorag_research.data.base import TextEmbeddingDataIngestor
+from autorag_research.data.registry import register_ingestor
 from autorag_research.exceptions import ServiceNotSetError
 
 logger = logging.getLogger("AutoRAG-Research")
 
 RANDOM_SEED = 42
 
+# BEIR available datasets
+BEIR_DATASETS = Literal[
+    "msmarco",
+    "trec-covid",
+    "nfcorpus",
+    "nq",
+    "hotpotqa",
+    "fiqa",
+    "arguana",
+    "webis-touche2020",
+    "cqadupstack",
+    "quora",
+    "dbpedia-entity",
+    "scidocs",
+    "fever",
+    "climate-fever",
+    "scifact",
+    "germanquad",
+    "robust04",
+    "signal1m",
+]
 
+
+@register_ingestor(
+    name="beir",
+    description="BEIR benchmark datasets for information retrieval",
+)
 class BEIRIngestor(TextEmbeddingDataIngestor):
-    def __init__(self, embedding_model: BaseEmbedding, dataset_name: str):
+    def __init__(self, embedding_model: BaseEmbedding, dataset_name: BEIR_DATASETS):
         super().__init__(embedding_model)
         self.dataset_name = dataset_name
         url = f"https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{self.dataset_name}.zip"

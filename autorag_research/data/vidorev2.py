@@ -26,12 +26,20 @@ from llama_index.core.embeddings import MultiModalEmbedding
 from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
+from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
 from autorag_research.orm.models import image, or_all
 from autorag_research.util import pil_image_to_bytes
 
 RANDOM_SEED = 42
+
+# ViDoReV2 available datasets
+VIDOREV2_DATASETS = Literal[
+    "esg_reports_v2",
+    "biomedical_lectures_v2",
+    "economics_reports_v2",
+]
 
 
 class ViDoReV2DatasetName(str, Enum):
@@ -42,6 +50,10 @@ class ViDoReV2DatasetName(str, Enum):
     ECONOMICS_REPORTS_V2 = "economics_reports_v2"
 
 
+@register_ingestor(
+    name="vidorev2",
+    description="ViDoRe v2 visual document retrieval benchmark",
+)
 class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
     """Ingestor for ViDoReV2 datasets using streaming.
 

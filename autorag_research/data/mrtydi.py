@@ -6,11 +6,27 @@ from datasets import load_dataset
 from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from autorag_research.data.base import TextEmbeddingDataIngestor
+from autorag_research.data.registry import register_ingestor
 from autorag_research.exceptions import ServiceNotSetError, UnsupportedLanguageError
 
 logger = logging.getLogger("AutoRAG-Research")
 
 RANDOM_SEED = 42
+
+# Mr. TyDi supported languages
+MRTYDI_LANGUAGES = Literal[
+    "arabic",
+    "bengali",
+    "english",
+    "finnish",
+    "indonesian",
+    "japanese",
+    "korean",
+    "russian",
+    "swahili",
+    "telugu",
+    "thai",
+]
 
 # Language to directory name mapping (for URL construction)
 LANGUAGE_DIR_MAP = {
@@ -31,6 +47,10 @@ MRTYDI_BASE_URL = "https://huggingface.co/datasets/castorini/mr-tydi/resolve/mai
 MRTYDI_CORPUS_BASE_URL = "https://huggingface.co/datasets/castorini/mr-tydi-corpus/resolve/main"
 
 
+@register_ingestor(
+    name="mrtydi",
+    description="Mr. TyDi multilingual retrieval benchmark",
+)
 class MrTyDiIngestor(TextEmbeddingDataIngestor):
     """Ingestor for Mr. TyDi multilingual retrieval benchmark dataset.
 
@@ -41,7 +61,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
     Corpus: https://huggingface.co/datasets/castorini/mr-tydi-corpus
     """
 
-    def __init__(self, embedding_model: BaseEmbedding, language: str = "english"):
+    def __init__(self, embedding_model: BaseEmbedding, language: MRTYDI_LANGUAGES = "english"):
         """Initialize Mr. TyDi ingestor.
 
         Args:

@@ -1,8 +1,8 @@
 """Tests for CLI configuration modules."""
 
-from autorag_research.cli.configs.datasets import AVAILABLE_DATASETS
 from autorag_research.cli.configs.db import DatabaseConfig
 from autorag_research.cli.utils import discover_metrics, discover_pipelines
+from autorag_research.data.registry import discover_ingestors
 
 
 class TestDatabaseConfig:
@@ -33,12 +33,39 @@ class TestDatabaseConfig:
 class TestAvailableResources:
     """Tests for available resource dictionaries."""
 
-    def test_available_datasets_not_empty(self):
-        """Test that available datasets dictionary is populated."""
-        assert len(AVAILABLE_DATASETS) > 0
-        # Now uses ingestor names instead of individual datasets
-        assert "beir" in AVAILABLE_DATASETS
-        assert "mrtydi" in AVAILABLE_DATASETS
+    def test_discover_ingestors_not_empty(self):
+        """Test that ingestors are discovered via decorator registration."""
+        ingestors = discover_ingestors()
+        assert len(ingestors) > 0
+        # Check expected ingestors are registered
+        assert "beir" in ingestors
+        assert "mrtydi" in ingestors
+        assert "ragbench" in ingestors
+        assert "mteb" in ingestors
+        assert "bright" in ingestors
+        assert "vidore" in ingestors
+        assert "vidorev2" in ingestors
+
+    def test_ingestor_has_params(self):
+        """Test that ingestors have auto-extracted parameters."""
+        ingestors = discover_ingestors()
+
+        # BEIR should have dataset_name param with Literal choices
+        beir = ingestors["beir"]
+        assert beir.description == "BEIR benchmark datasets for information retrieval"
+        assert len(beir.params) > 0
+        dataset_param = beir.params[0]
+        assert dataset_param.name == "dataset_name"
+        assert dataset_param.choices is not None
+        assert "msmarco" in dataset_param.choices
+        assert "scifact" in dataset_param.choices
+
+        # MrTyDi should have language param with default
+        mrtydi = ingestors["mrtydi"]
+        language_param = mrtydi.params[0]
+        assert language_param.name == "language"
+        assert language_param.default == "english"
+        assert not language_param.required
 
     def test_available_pipelines_not_empty(self):
         """Test that available pipelines are discovered from YAML configs."""

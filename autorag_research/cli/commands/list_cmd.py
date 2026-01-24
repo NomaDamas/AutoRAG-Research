@@ -6,18 +6,26 @@ from typing import Annotated, Literal
 
 import typer
 
-from autorag_research.cli.configs.datasets import AVAILABLE_DATASETS
 from autorag_research.cli.utils import discover_metrics, discover_pipelines, load_db_config_from_yaml
+from autorag_research.data.registry import discover_ingestors
 
 logger = logging.getLogger("AutoRAG-Research")
 
-ResourceType = Literal["datasets", "pipelines", "metrics", "databases"]
+ResourceType = Literal["datasets", "ingestors", "pipelines", "metrics", "databases"]
+
+
+RESOURCE_HANDLERS = {
+    "datasets": lambda **_: print_ingestors(),  # Alias for backward compatibility
+    "ingestors": lambda **_: print_ingestors(),
+    "pipelines": lambda **_: print_pipelines(),
+    "metrics": lambda **_: print_metrics(),
+}
 
 
 def list_resources(
     resource: Annotated[
         ResourceType,
-        typer.Argument(help="Resource type to list: datasets, pipelines, metrics, or databases"),
+        typer.Argument(help="Resource type to list: datasets, ingestors, pipelines, metrics, or databases"),
     ],
     db_host: Annotated[
         str | None, typer.Option("--db-host", help="Database host (default: from configs/db/default.yaml)")
@@ -38,46 +46,66 @@ def list_resources(
     """List available resources.
 
     RESOURCE types:
-      datasets   - Available datasets for ingestion
+      datasets   - Available datasets for ingestion (alias for ingestors)
+      ingestors  - Available data ingestors with their parameters
       pipelines  - Available pipeline configurations
       metrics    - Available evaluation metrics
       databases  - Database schemas (uses configs/db/default.yaml)
 
     Examples:
       autorag-research list datasets
+      autorag-research list ingestors
       autorag-research list pipelines
       autorag-research list metrics
       autorag-research list databases
     """
-    if resource == "datasets":
-        print_datasets()
-    elif resource == "pipelines":
-        print_pipelines()
-    elif resource == "metrics":
-        print_metrics()
+    if resource in RESOURCE_HANDLERS:
+        RESOURCE_HANDLERS[resource]()
     elif resource == "databases":
-        # Load from yaml, then override with CLI options if provided
-        db_config = load_db_config_from_yaml()
-        if db_host is not None:
-            db_config.host = db_host
-        if db_port is not None:
-            db_config.port = db_port
-        if db_user is not None:
-            db_config.user = db_user
-        if db_password is not None:
-            db_config.password = db_password
-        if db_database is not None:
-            db_config.database = db_database
-        print_databases(db_config.host, db_config.port, db_config.user, db_config.password, db_config.database)
+        _print_databases_with_config(db_host, db_port, db_user, db_password, db_database)
 
 
-def print_datasets() -> None:
-    """Print available datasets."""
-    typer.echo("\nAvailable Datasets:")
+def _print_databases_with_config(
+    db_host: str | None,
+    db_port: int | None,
+    db_user: str | None,
+    db_password: str | None,
+    db_database: str | None,
+) -> None:
+    """Load DB config with CLI overrides and print databases."""
+    db_config = load_db_config_from_yaml()
+    if db_host is not None:
+        db_config.host = db_host
+    if db_port is not None:
+        db_config.port = db_port
+    if db_user is not None:
+        db_config.user = db_user
+    if db_password is not None:
+        db_config.password = db_password
+    if db_database is not None:
+        db_config.database = db_database
+    print_databases(db_config.host, db_config.port, db_config.user, db_config.password, db_config.database)
+
+
+def print_ingestors() -> None:
+    """Print available ingestors and their parameters."""
+    ingestors = discover_ingestors()
+    typer.echo("\nAvailable Ingestors:")
     typer.echo("-" * 60)
-    for name, description in sorted(AVAILABLE_DATASETS.items()):
-        typer.echo(f"  {name:<25} {description}")
-    typer.echo("\nUsage: autorag-research ingest <ingestor> --dataset=<name>")
+    for name, meta in sorted(ingestors.items()):
+        typer.echo(f"\n  {name}: {meta.description}")
+        if meta.params:
+            for param in meta.params:
+                default_str = f" (default: {param.default})" if not param.required else " (required)"
+                choices_str = ""
+                if param.choices:
+                    choices_preview = param.choices[:3]
+                    if len(param.choices) > 3:
+                        choices_str = f" [{', '.join(choices_preview)}...]"
+                    else:
+                        choices_str = f" [{', '.join(param.choices)}]"
+                typer.echo(f"    --{param.cli_option}{default_str}{choices_str}")
+    typer.echo("\nUsage: autorag-research ingest <ingestor> --<option>=<value>")
 
 
 def print_pipelines() -> None:
