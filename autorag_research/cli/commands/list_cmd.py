@@ -6,9 +6,8 @@ from typing import Annotated, Literal
 
 import typer
 
-from autorag_research.cli.commands.ingest import load_db_config_from_yaml
 from autorag_research.cli.configs.datasets import AVAILABLE_DATASETS
-from autorag_research.cli.utils import discover_metrics, discover_pipelines
+from autorag_research.cli.utils import discover_metrics, discover_pipelines, load_db_config_from_yaml
 
 logger = logging.getLogger("AutoRAG-Research")
 

@@ -1,6 +1,7 @@
 """CLI utility functions."""
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from omegaconf import DictConfig, OmegaConf
 from platformdirs import user_data_dir
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+
+from autorag_research.cli.configs.db import DatabaseConfig
 
 logger = logging.getLogger(__name__)
 
@@ -171,3 +174,36 @@ def setup_logging(verbose: bool = False) -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+
+
+def load_db_config_from_yaml() -> DatabaseConfig:
+    """Load database config from configs/db/default.yaml if exists."""
+    import autorag_research.cli as cli
+
+    config_dir = cli.CONFIG_PATH or Path.cwd() / "configs"
+    yaml_path = config_dir / "db" / "default.yaml"
+
+    defaults = DatabaseConfig()
+
+    if not yaml_path.exists():
+        return defaults
+
+    try:
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f) or {}
+
+        # Handle OmegaConf-style env var: ${oc.env:PGPASSWORD,postgres}
+        password = data.get("password", defaults.password)
+        if isinstance(password, str) and password.startswith("${"):
+            password = os.environ.get("PGPASSWORD", "postgres")
+
+        return DatabaseConfig(
+            host=data.get("host", defaults.host),
+            port=data.get("port", defaults.port),
+            user=data.get("user", defaults.user),
+            password=password,
+            database=data.get("database", defaults.database),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to load DB config from YAML: {e}")
+        return defaults

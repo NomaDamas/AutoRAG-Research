@@ -1,14 +1,12 @@
 """ingest command - Ingest datasets into PostgreSQL using Typer CLI."""
 
 import logging
-import os
 import sys
 import tempfile
 from pathlib import Path
 from typing import Annotated
 
 import typer
-import yaml
 from huggingface_hub import hf_hub_download
 
 from autorag_research.cli.configs.db import DatabaseConfig
@@ -18,10 +16,11 @@ from autorag_research.cli.configs.ingestors import (
     generate_db_name,
     get_ingestor_help,
 )
+from autorag_research.cli.utils import load_db_config_from_yaml
 
 logger = logging.getLogger(__name__)
 
-HF_REPO_ID = "vkehfdl1/autorag-research-datasets"
+HF_REPO_ID = "NomaDamas/autorag-research-datasets"
 
 # Create ingest sub-app
 ingest_app = typer.Typer(
@@ -29,39 +28,6 @@ ingest_app = typer.Typer(
     help="Ingest datasets into PostgreSQL.",
     no_args_is_help=True,
 )
-
-
-def load_db_config_from_yaml() -> DatabaseConfig:
-    """Load database config from configs/db/default.yaml if exists."""
-    import autorag_research.cli as cli
-
-    config_dir = cli.CONFIG_PATH or Path.cwd() / "configs"
-    yaml_path = config_dir / "db" / "default.yaml"
-
-    defaults = DatabaseConfig()
-
-    if not yaml_path.exists():
-        return defaults
-
-    try:
-        with open(yaml_path) as f:
-            data = yaml.safe_load(f) or {}
-
-        # Handle OmegaConf-style env var: ${oc.env:PGPASSWORD,postgres}
-        password = data.get("password", defaults.password)
-        if isinstance(password, str) and password.startswith("${"):
-            password = os.environ.get("PGPASSWORD", "postgres")
-
-        return DatabaseConfig(
-            host=data.get("host", defaults.host),
-            port=data.get("port", defaults.port),
-            user=data.get("user", defaults.user),
-            password=password,
-            database=data.get("database", defaults.database),
-        )
-    except Exception as e:
-        logger.warning(f"Failed to load DB config from YAML: {e}")
-        return defaults
 
 
 def create_ingest_command(ingestor_name: str, spec: IngestorSpec):  # noqa: C901
