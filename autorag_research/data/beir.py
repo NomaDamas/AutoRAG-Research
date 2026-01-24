@@ -18,7 +18,7 @@ RANDOM_SEED = 42
 
 # BEIR available datasets
 BEIR_DATASETS = Literal[
-    "msmarco",
+    # "msmarco",
     "trec-covid",
     "nfcorpus",
     "nq",
@@ -33,9 +33,6 @@ BEIR_DATASETS = Literal[
     "fever",
     "climate-fever",
     "scifact",
-    "germanquad",
-    "robust04",
-    "signal1m",
 ]
 
 
