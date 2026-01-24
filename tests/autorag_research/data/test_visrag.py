@@ -238,7 +238,7 @@ class TestVisRAGIngestorIntegration:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=config.expected_query_count,
-                corpus_limit=config.expected_image_chunk_count,
+                min_corpus_cnt=config.expected_image_chunk_count,
             )
 
             verifier = IngestorTestVerifier(service, db.schema, config)
@@ -269,7 +269,7 @@ class TestVisRAGIngestorDatasetSpecific:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=config.expected_query_count,
-                corpus_limit=config.expected_image_chunk_count,
+                min_corpus_cnt=config.expected_image_chunk_count,
             )
 
             with service._create_uow() as uow:
@@ -299,7 +299,7 @@ class TestVisRAGIngestorDatasetSpecific:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=config.expected_query_count,
-                corpus_limit=config.expected_image_chunk_count,
+                min_corpus_cnt=config.expected_image_chunk_count,
             )
 
             with service._create_uow() as uow:
@@ -328,7 +328,7 @@ class TestVisRAGIngestorDatasetSpecific:
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=config.expected_query_count,
-                corpus_limit=config.expected_query_count,  # Forces minimal corpus
+                min_corpus_cnt=config.expected_query_count,  # Forces minimal corpus
             )
 
             # Verify all queries have valid retrieval relations

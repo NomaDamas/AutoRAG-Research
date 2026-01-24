@@ -113,7 +113,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
     Example:
         >>> ingestor = VisRAGIngestor(VisRAGDatasetName.CHART_QA)
         >>> ingestor.set_service(service)
-        >>> ingestor.ingest(query_limit=100, corpus_limit=500)
+        >>> ingestor.ingest(query_limit=100, min_corpus_cnt=500)
     """
 
     def __init__(
@@ -220,7 +220,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         self,
         all_corpus_ids: list[str],
         gold_corpus_ids: set[str],
-        corpus_limit: int | None,
+        min_corpus_cnt: int | None,
         rng: random.Random,
     ) -> list[str]:
         """Filter corpus to include gold IDs plus random samples.
@@ -228,15 +228,15 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         Args:
             all_corpus_ids: All corpus IDs.
             gold_corpus_ids: Gold corpus IDs that must be included.
-            corpus_limit: Maximum corpus size.
+            min_corpus_cnt: Maximum corpus size.
             rng: Random number generator.
 
         Returns:
             List of selected corpus IDs.
         """
-        if corpus_limit is not None and corpus_limit < len(all_corpus_ids):
+        if min_corpus_cnt is not None and min_corpus_cnt < len(all_corpus_ids):
             non_gold_ids = [cid for cid in all_corpus_ids if cid not in gold_corpus_ids]
-            remaining_slots = max(0, corpus_limit - len(gold_corpus_ids))
+            remaining_slots = max(0, min_corpus_cnt - len(gold_corpus_ids))
 
             if remaining_slots > 0 and len(non_gold_ids) > remaining_slots:
                 sampled_non_gold = rng.sample(non_gold_ids, remaining_slots)
@@ -400,7 +400,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         self,
         subset: Literal["train", "dev", "test"] = "train",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
         """Ingest VisRAG dataset.
 
@@ -410,10 +410,10 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         Args:
             subset: Dataset split (ignored - always uses 'train').
             query_limit: Maximum number of queries to ingest.
-            corpus_limit: Maximum number of corpus images to ingest.
+            min_corpus_cnt: Maximum number of corpus images to ingest.
                          Gold IDs from selected queries are always included.
         """
-        super().ingest(subset, query_limit, corpus_limit)
+        super().ingest(subset, query_limit, min_corpus_cnt)
 
         if self.service is None:
             raise ServiceNotSetError
@@ -431,7 +431,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         # Sample and filter
         selected_query_ids = self._sample_queries(query_index, qrels, query_limit, rng)
         gold_corpus_ids = self._collect_gold_corpus_ids(selected_query_ids, qrels)
-        selected_corpus_ids = self._filter_corpus(list(corpus_index.keys()), gold_corpus_ids, corpus_limit, rng)
+        selected_corpus_ids = self._filter_corpus(list(corpus_index.keys()), gold_corpus_ids, min_corpus_cnt, rng)
 
         # Ingest data
         corpus_id_to_pk, skipped = self._ingest_corpus(selected_corpus_ids, corpus_index)
