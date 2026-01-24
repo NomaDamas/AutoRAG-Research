@@ -11,7 +11,6 @@ from autorag_research.cli.commands.ingest import ingest_app
 from autorag_research.cli.commands.init_config import init_config
 from autorag_research.cli.commands.list_cmd import list_resources
 from autorag_research.cli.commands.run import run_command
-from autorag_research.cli.configs import register_configs
 
 # Configure logging for CLI output
 logging.basicConfig(
@@ -46,7 +45,6 @@ def main_callback(
     """
     # Set global config path (default: ./configs)
     cli.CONFIG_PATH = (config_path or Path.cwd() / "configs").resolve()
-    register_configs()
 
 
 # Add ingest as a sub-app

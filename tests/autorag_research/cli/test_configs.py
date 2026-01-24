@@ -1,7 +1,6 @@
 """Tests for CLI configuration modules."""
 
-from autorag_research.cli.configs.db import DatabaseConfig
-from autorag_research.cli.utils import discover_metrics, discover_pipelines
+from autorag_research.cli.utils import DatabaseConfig, discover_metrics, discover_pipelines
 from autorag_research.data.registry import discover_ingestors
 
 

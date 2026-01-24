@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -11,8 +12,6 @@ from omegaconf import DictConfig, OmegaConf
 from platformdirs import user_data_dir
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-
-from autorag_research.cli.configs.db import DatabaseConfig
 
 if TYPE_CHECKING:
     from llama_index.core.base.embeddings.base import BaseEmbedding
@@ -178,6 +177,17 @@ def setup_logging(verbose: bool = False) -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+
+
+@dataclass
+class DatabaseConfig:
+    """Database connection configuration."""
+
+    host: str = "localhost"
+    port: int = 5432
+    user: str = "postgres"
+    password: str = "${oc.env:PGPASSWORD,postgres}"  # noqa: S105
+    database: str = "autorag_research"
 
 
 def load_db_config_from_yaml(
