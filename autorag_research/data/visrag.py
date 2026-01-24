@@ -27,7 +27,7 @@ from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
+from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.util import pil_image_to_bytes
 
 RANDOM_SEED = 42
@@ -488,43 +488,3 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
             )
 
         logger.info(f"Added {len(qrels_items)} qrel entries")
-
-    def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        """Embed all queries and image chunks with single-vector embeddings."""
-        if self.embedding_model is None:
-            raise EmbeddingNotSetError
-        if self.service is None:
-            raise ServiceNotSetError
-
-        self.service.embed_all_queries(
-            self.embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-        self.service.embed_all_image_chunks(
-            self.embedding_model.aget_image_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-
-    def embed_all_late_interaction(
-        self,
-        max_concurrency: int = 16,
-        batch_size: int = 128,
-    ) -> None:
-        """Embed all queries and image chunks with multi-vector embeddings."""
-        if self.late_interaction_embedding_model is None:
-            raise EmbeddingNotSetError
-        if self.service is None:
-            raise ServiceNotSetError
-
-        self.service.embed_all_queries_multi_vector(
-            self.late_interaction_embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-        self.service.embed_all_image_chunks_multi_vector(
-            self.late_interaction_embedding_model.aget_image_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
