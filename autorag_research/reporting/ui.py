@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import gradio as gr
 import pandas as pd
 
 from autorag_research.reporting.service import ReportingService
+
 
 # === Service Management ===
 class _ServiceManager:
@@ -48,7 +51,7 @@ def fetch_datasets() -> list[str]:
         return []
 
 
-def fetch_metrics(db_name: str, metric_type: str) -> list[str]:
+def fetch_metrics(db_name: str, metric_type: Literal["retrieval", "generation"]) -> list[str]:
     """Fetch metrics for a dataset filtered by type."""
     if not db_name:
         return []
@@ -135,14 +138,14 @@ def fetch_borda_ranking(db_names: list[str], metrics: list[str]) -> pd.DataFrame
 # === UI Update Handlers ===
 
 
-def on_dataset_change(db_name: str, metric_type: str) -> tuple[dict, dict]:
+def on_dataset_change(db_name: str, metric_type: Literal["retrieval", "generation"]) -> tuple[dict, dict]:
     """Handle dataset selection change."""
     metrics = fetch_metrics(db_name, metric_type)
     stats = fetch_dataset_stats(db_name)
     return gr.update(choices=metrics, value=metrics[0] if metrics else None), gr.update(value=stats)
 
 
-def on_metric_type_change(db_name: str, metric_type: str) -> dict:
+def on_metric_type_change(db_name: str, metric_type: Literal["retrieval", "generation"]) -> dict:
     """Handle metric type selection change."""
     metrics = fetch_metrics(db_name, metric_type)
     return gr.update(choices=metrics, value=metrics[0] if metrics else None)

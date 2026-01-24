@@ -209,7 +209,7 @@ class ReportingService:
                 ).df()
                 if result["cnt"].iloc[0] > 0:
                     valid_datasets.append(db_name)
-            except Exception:  # noqa: S112
+            except Exception:
                 logger.warning(f"Skipping {db_name}")
                 continue
 
