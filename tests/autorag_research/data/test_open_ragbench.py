@@ -10,6 +10,7 @@ from autorag_research.data.open_ragbench import (
     OpenRAGBenchIngestor,
     make_caption_id,
     make_chunk_id,
+    make_file_id,
     make_image_chunk_id,
     make_page_id,
 )
@@ -79,6 +80,19 @@ class TestMakeImageChunkId:
         assert result == "2309.00001_section_1_img_2"
 
 
+class TestMakeFileId:
+    def test_make_file_id_basic(self):
+        result = make_file_id("2401.12345")
+        assert result == "2401.12345_file"
+
+    def test_make_file_id_with_version(self):
+        result = make_file_id("2401.12345v2")
+        assert result == "2401.12345v2_file"
+
+    def test_make_file_id_different_prefix(self):
+        result = make_file_id("2309.00001")
+        assert result == "2309.00001_file"
+
 
 # ==================== Integration Tests ====================
 
@@ -89,8 +103,11 @@ OPENRAGBENCH_CONFIG = IngestorTestConfig(
     expected_image_chunk_count=5,  # Some sections have images (figures/tables)
     chunk_count_is_minimum=True,  # Gold sections always included, may have more
     # Full hierarchy checks:
+    #   - File: stores arxiv pdf_url
     #   - Chunk: Document -> Page -> Caption -> Chunk
     #   - ImageChunk: Document -> Page -> ImageChunk
+    check_files=True,
+    expected_file_count=10,  # One file per document (arxiv pdf_url)
     check_documents=True,
     expected_document_count=10,  # One document per query's gold section (unique doc_ids)
     check_pages=True,
@@ -119,3 +136,19 @@ class TestOpenRAGBenchIngestorIntegration:
 
             verifier = IngestorTestVerifier(service, db.schema, OPENRAGBENCH_CONFIG)
             verifier.verify_all()
+
+    def test_file_document_connection(self):
+        """Verify File records are created and linked to Documents."""
+        with create_test_database(OPENRAGBENCH_CONFIG) as db:
+            service = MultiModalIngestionService(db.session_factory, schema=db.schema)
+            ingestor = OpenRAGBenchIngestor()
+            ingestor.set_service(service)
+            ingestor.ingest(query_limit=OPENRAGBENCH_CONFIG.expected_query_count)
+
+            with service._create_uow() as uow:
+                doc = uow.documents.get_all(limit=1)[0]
+                assert doc.path == make_file_id(doc.id)
+
+                file = uow.files.get_by_id(doc.path)
+                assert file is not None
+                assert file.path.startswith("http")

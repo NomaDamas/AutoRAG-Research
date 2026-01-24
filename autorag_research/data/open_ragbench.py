@@ -38,6 +38,11 @@ def make_table_chunk_id(doc_id: str, section_id: int, table_key: str) -> str:
     return f"{doc_id}_section_{section_id}_table_{table_key}"
 
 
+def make_file_id(doc_id: str) -> str:
+    """Generate File ID from document ID."""
+    return f"{doc_id}_file"
+
+
 class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,
@@ -88,12 +93,8 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
 
         logger.info(f"OpenRAGBench ingestion complete: {len(query_ids)} queries, {len(required_doc_ids)} documents")
 
-    def _ingest_documents(self, doc_ids: set[str]) -> dict[str, list[str]]:
-        """Ingest documents with proper hierarchy: Document -> Page -> Caption -> Chunk.
-
-        Each section becomes a Page, with its text stored as Caption and Chunk.
-        Images (figures/tables) become ImageChunks linked to the Page.
-        """
+    def _ingest_documents(self, doc_ids: set[str]) -> dict[str, list[str]]:  # noqa: C901
+        """Ingest documents with proper hierarchy: File -> Document -> Page -> Caption -> Chunk."""
         if self.service is None:
             raise ServiceNotSetError
 
@@ -109,24 +110,27 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
 
             pdf_url = pdf_urls_data.get(doc_id)
 
-            doc_metadata = {
-                "abstract": doc.get("abstract"),
-                "categories": doc.get("categories", []),
-                "published": doc.get("published"),
-                "updated": doc.get("updated"),
-                "pdf_url": pdf_url,
-            }
+            # 1. Create File record (path = pdf_url)
+            file_id = None
+            if pdf_url:
+                file_id = make_file_id(doc_id)
+                self.service.add_files([{"id": file_id, "type": "raw", "path": pdf_url}])
 
+            # 2. Create Document (linked to File via path)
             authors = doc.get("authors", [])
-            author_str = ", ".join(authors) if authors else None
-
-            # 1. Create Document
             self.service.add_documents([
                 {
                     "id": doc_id,
+                    "path": file_id,
                     "title": doc.get("title"),
-                    "author": author_str,
-                    "doc_metadata": doc_metadata,
+                    "author": ", ".join(authors) if authors else None,
+                    "doc_metadata": {
+                        "abstract": doc.get("abstract"),
+                        "categories": doc.get("categories", []),
+                        "published": doc.get("published"),
+                        "updated": doc.get("updated"),
+                        "pdf_url": pdf_url,
+                    },
                 }
             ])
 
@@ -143,63 +147,38 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                 caption_id = make_caption_id(doc_id, section_id)
                 chunk_id = make_chunk_id(doc_id, section_id)
 
-                # 2. Create Page for each section
-                self.service.add_pages([
-                    {
-                        "id": page_id,
-                        "document_id": doc_id,
-                        "page_num": section_id,
-                    }
-                ])
+                # 3. Create Page for each section
+                self.service.add_pages([{"id": page_id, "document_id": doc_id, "page_num": section_id}])
 
-                # 3. Create ImageChunks for figures/tables (linked to Page)
+                # 4. Create ImageChunks for figures (linked to Page)
                 image_chunk_ids: list[str] = []
                 for img_key, img_data_uri in images.items():
                     try:
                         img_bytes, mimetype = extract_image_from_data_uri(img_data_uri)
                         img_chunk_id = make_image_chunk_id(doc_id, section_id, img_key)
                         self.service.add_image_chunks([
-                            {
-                                "id": img_chunk_id,
-                                "contents": img_bytes,
-                                "mimetype": mimetype,
-                                "parent_page": page_id,
-                            }
+                            {"id": img_chunk_id, "contents": img_bytes, "mimetype": mimetype, "parent_page": page_id}
                         ])
                         image_chunk_ids.append(img_chunk_id)
                     except Exception as e:
                         logger.warning(f"Failed to extract image {img_key} from section {section_id}: {e}")
-                        continue
 
                 if section_text:
-                    # 4. Create Caption for section text (linked to Page)
-                    self.service.add_captions([
-                        {
-                            "id": caption_id,
-                            "page_id": page_id,
-                            "contents": section_text,
-                        }
-                    ])
-
-                    # 5. Create Chunk (linked to Caption)
+                    # 5. Create Caption for section text (linked to Page)
+                    self.service.add_captions([{"id": caption_id, "page_id": page_id, "contents": section_text}])
+                    # 6. Create Chunk (linked to Caption)
                     self.service.add_chunks([
-                        {
-                            "id": chunk_id,
-                            "contents": section_text,
-                            "parent_caption": caption_id,
-                            "is_table": False,
-                        }
+                        {"id": chunk_id, "contents": section_text, "parent_caption": caption_id, "is_table": False}
                     ])
                     chunk_id_map[chunk_id] = image_chunk_ids
 
-                # 6. Create Table Chunks (is_table=True)
+                # 7. Create Table Chunks (is_table=True)
                 for table_key, table_data in tables.items():
                     table_chunk_id = make_table_chunk_id(doc_id, section_id, table_key)
-                    table_contents = str(table_data)
                     self.service.add_chunks([
                         {
                             "id": table_chunk_id,
-                            "contents": table_contents,
+                            "contents": str(table_data),
                             "parent_caption": caption_id if section_text else None,
                             "is_table": True,
                             "table_type": "html",  # OpenRAGBench uses HTML tables
