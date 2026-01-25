@@ -67,7 +67,6 @@ def run_command(
       autorag-research run --db-name=beir_scifact_test
       autorag-research run --db-name=beir_scifact_test --max-retries=5
       autorag-research run --db-name=beir_scifact_test --config-name=my_experiment
-      autorag-research run --db-name=test pipelines.0.k1=1.2  # Hydra override
     """
     setup_logging(verbose=verbose)
 

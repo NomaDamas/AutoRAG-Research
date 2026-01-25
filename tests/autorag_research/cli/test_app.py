@@ -68,7 +68,7 @@ class TestAppStructure:
         result = cli_runner.invoke(app, [])
 
         # no_args_is_help shows help but exits with code 2 (not 0)
-        assert "AutoRAG-Research CLI" in result.stdout or "Usage:" in result.stdout
+        assert "AutoRAG-Research CLI" in result.stdout and "Usage:" in result.stdout
 
     def test_help_flag_shows_help(self, cli_runner: CliRunner) -> None:
         """--help flag displays help text."""
@@ -83,29 +83,36 @@ class TestAppStructure:
         result = cli_runner.invoke(app, ["list", "--help"])
 
         assert result.exit_code == 0
-        assert "list" in result.stdout.lower() or "resources" in result.stdout.lower()
+        assert "list" in result.stdout.lower() and "resources" in result.stdout.lower()
 
     def test_app_has_ingest_command(self, cli_runner: CliRunner) -> None:
         """App has 'ingest' command registered."""
         result = cli_runner.invoke(app, ["ingest", "--help"])
 
         assert result.exit_code == 0
+        assert "Usage:" in result.stdout
+        assert "--name" in result.stdout
 
     def test_app_has_init_config_command(self, cli_runner: CliRunner) -> None:
         """App has 'init-config' command registered."""
         result = cli_runner.invoke(app, ["init-config", "--help"])
 
         assert result.exit_code == 0
+        assert "Usage:" in result.stdout
+        assert "init-config" in result.stdout
 
     def test_app_has_run_command(self, cli_runner: CliRunner) -> None:
         """App has 'run' command registered."""
         result = cli_runner.invoke(app, ["run", "--help"])
 
         assert result.exit_code == 0
+        assert "Usage:" in result.stdout
+        assert "run" in result.stdout
+        assert "--db-name" in result.stdout
 
     def test_unknown_command_shows_error(self, cli_runner: CliRunner) -> None:
         """Unknown command shows error message."""
-        result = cli_runner.invoke(app, ["nonexistent-command"])
+        result = cli_runner.invoke(app, ["havertz"])
 
         assert result.exit_code != 0
         assert "No such command" in result.stdout or "Error" in result.stdout or result.exit_code == 2

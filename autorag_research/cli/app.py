@@ -21,7 +21,7 @@ logging.basicConfig(
 # Main Typer app
 app = typer.Typer(
     name="autorag-research",
-    help="AutoRAG-Research CLI - Automate your RAG research workflows",
+    help="AutoRAG-Research CLI - RAG research on steroids.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -39,7 +39,7 @@ def main_callback(
         ),
     ] = None,
 ) -> None:
-    """AutoRAG-Research CLI - Automate your RAG research workflows.
+    """AutoRAG-Research CLI - RAG research on steroids.
 
     Global options are processed before any command.
     """
