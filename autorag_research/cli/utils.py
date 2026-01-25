@@ -53,32 +53,46 @@ def discover_configs(config_dir: Path) -> dict[str, str]:
     return result
 
 
-def discover_pipelines() -> dict[str, str]:
+def discover_pipelines() -> dict[str, dict[str, str]]:
     """Discover available pipelines from configs/pipelines/.
 
     Returns:
-        Dictionary mapping pipeline name to description.
+        Nested dict: {subdir: {name: description}}
+        Example: {"retrieval": {"bm25": "BM25 retrieval..."}, "generation": {...}}
     """
-    # Internal configs from working directory
-    internal = discover_configs(get_config_dir() / "pipelines")
-    # TODO (Phase 3): Add external plugin entry_points discovery here
-    # external = _discover_plugin_configs("autorag_research.pipelines")
-    # return {**internal, **external}
-    return internal
+    config_dir = get_config_dir() / "pipelines"
+    result: dict[str, dict[str, str]] = {}
+
+    if not config_dir.exists():
+        logger.warning(f"Config directory not found: {config_dir}")
+        return result
+
+    for subdir in sorted(config_dir.iterdir()):
+        if subdir.is_dir():
+            result[subdir.name] = discover_configs(subdir)
+
+    return result
 
 
-def discover_metrics() -> dict[str, str]:
+def discover_metrics() -> dict[str, dict[str, str]]:
     """Discover available metrics from configs/metrics/.
 
     Returns:
-        Dictionary mapping metric name to description.
+        Nested dict: {subdir: {name: description}}
+        Example: {"retrieval": {"recall": "Recall@k..."}, "generation": {...}}
     """
-    # Internal configs from working directory
-    internal = discover_configs(get_config_dir() / "metrics")
-    # TODO (Phase 3): Add external plugin entry_points discovery here
-    # external = _discover_plugin_configs("autorag_research.metrics")
-    # return {**internal, **external}
-    return internal
+    config_dir = get_config_dir() / "metrics"
+    result: dict[str, dict[str, str]] = {}
+
+    if not config_dir.exists():
+        logger.warning(f"Config directory not found: {config_dir}")
+        return result
+
+    for subdir in sorted(config_dir.iterdir()):
+        if subdir.is_dir():
+            result[subdir.name] = discover_configs(subdir)
+
+    return result
 
 
 # =============================================================================

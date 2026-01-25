@@ -101,11 +101,16 @@ def print_pipelines() -> None:
     typer.echo("\nAvailable Pipelines:")
     typer.echo("-" * 60)
     if pipelines:
-        for name, description in sorted(pipelines.items()):
-            typer.echo(f"  {name:<20} {description}")
+        for subdir, configs in sorted(pipelines.items()):
+            typer.echo(f"\n  [{subdir}]")
+            for name, description in sorted(configs.items()):
+                typer.echo(f"    {name:<18} {description}")
     else:
         typer.echo("  No pipelines found. Run 'autorag-research init-config' first.")
-    typer.echo("\nSee configs/pipelines/ for configuration options")
+    typer.echo("\nUsage in experiment.yaml:")
+    typer.echo("  pipelines:")
+    typer.echo("    retrieval: [bm25]")
+    typer.echo("    generation: [basic_rag]")
 
 
 def print_metrics() -> None:
@@ -114,11 +119,16 @@ def print_metrics() -> None:
     typer.echo("\nAvailable Metrics:")
     typer.echo("-" * 60)
     if metrics:
-        for name, description in sorted(metrics.items()):
-            typer.echo(f"  {name:<15} {description}")
+        for subdir, configs in sorted(metrics.items()):
+            typer.echo(f"\n  [{subdir}]")
+            for name, description in sorted(configs.items()):
+                typer.echo(f"    {name:<13} {description}")
     else:
         typer.echo("  No metrics found. Run 'autorag-research init-config' first.")
-    typer.echo("\nSee configs/metrics/ for configuration options")
+    typer.echo("\nUsage in experiment.yaml:")
+    typer.echo("  metrics:")
+    typer.echo("    retrieval: [recall, ndcg]")
+    typer.echo("    generation: [rouge]")
 
 
 def print_databases(host: str, port: int, user: str, password: str, database: str) -> None:

@@ -5,18 +5,9 @@
 #
 # Usage:
 #   autorag-research run                           # Run this config
-#   autorag-research run pipelines.0.k1=1.2       # Override parameter
-#   autorag-research run -m pipelines.0.k1=0.5,0.9,1.2  # Multirun
+#   autorag-research run --db-name=my_db          # Override db_name
+#   autorag-research run --max-retries=5          # Override max_retries
 #
-
-defaults:
-  - db: default
-  # Include pipeline configs
-  - pipelines/bm25_baseline@pipelines.0
-  # Include metric configs
-  - metrics/recall@metrics.0
-  - metrics/ndcg@metrics.1
-  - _self_
 
 # Target database name (created by ingest command)
 db_name: beir_scifact_test
@@ -27,3 +18,15 @@ embedding_dim: 1536
 # Executor settings
 max_retries: 3
 eval_batch_size: 100
+
+# Pipeline configurations
+# YAML key = folder path under configs/pipelines/
+pipelines:
+  retrieval: [bm25]           # → configs/pipelines/retrieval/bm25.yaml
+  generation: [basic_rag]   # → configs/pipelines/generation/basic_rag.yaml
+
+# Metric configurations
+# YAML key = folder path under configs/metrics/
+metrics:
+  retrieval: [recall, ndcg]   # → configs/metrics/retrieval/*.yaml
+  generation: [rouge]       # → configs/metrics/generation/rouge.yaml

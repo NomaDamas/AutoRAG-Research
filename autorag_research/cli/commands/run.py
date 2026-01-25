@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -92,17 +93,135 @@ def run_command(
         typer.echo("Error: config path not set", err=True)
         raise typer.Exit(1)
 
-    # Clear any existing Hydra state
-    GlobalHydra.instance().clear()
+    # Load and resolve configuration
+    cfg = _load_experiment_config(
+        config_path=config_path,
+        config_name=config_name,
+        hydra_overrides=hydra_overrides,
+        db_name=db_name,
+        max_retries=max_retries,
+        eval_batch_size=eval_batch_size,
+        embedding_dim=embedding_dim,
+    )
 
     try:
-        with initialize_config_dir(config_dir=str(config_path), version_base=None):
-            cfg = compose(config_name=config_name, overrides=hydra_overrides)
-            _run_experiment(cfg)
+        _run_experiment(cfg)
+    except typer.Exit:
+        raise
     except Exception as e:
         logger.exception("Failed to run experiment")
         typer.echo(f"\nError: {e}", err=True)
         raise typer.Exit(1) from None
+
+
+def _load_experiment_config(
+    config_path: Path,
+    config_name: str,
+    hydra_overrides: list[str],
+    db_name: str | None,
+    max_retries: int | None,
+    eval_batch_size: int | None,
+    embedding_dim: int | None,
+) -> DictConfig:
+    """Load experiment config, detecting dict vs Hydra syntax."""
+    experiment_yaml_path = config_path / f"{config_name}.yaml"
+    if not experiment_yaml_path.exists():
+        typer.echo(f"Error: Config file not found: {experiment_yaml_path}", err=True)
+        raise typer.Exit(1)
+
+    experiment_cfg = OmegaConf.load(experiment_yaml_path)
+
+    # Ensure we have a DictConfig (not a list)
+    if not isinstance(experiment_cfg, DictConfig):
+        typer.echo("Error: experiment config must be a YAML mapping, not a list", err=True)
+        raise typer.Exit(1)
+
+    # Check if using new dict-based syntax
+    if _is_dict_syntax(experiment_cfg):
+        return _build_config_from_dict(
+            experiment_cfg=experiment_cfg,
+            config_path=config_path,
+            db_name=db_name,
+            max_retries=max_retries,
+            eval_batch_size=eval_batch_size,
+            embedding_dim=embedding_dim,
+        )
+
+    # Legacy Hydra defaults syntax
+    GlobalHydra.instance().clear()
+    with initialize_config_dir(config_dir=str(config_path), version_base=None):
+        return compose(config_name=config_name, overrides=hydra_overrides)
+
+
+def _is_dict_syntax(cfg: DictConfig) -> bool:
+    """Check if config uses the new dict-based syntax.
+
+    New syntax has pipelines as a dict with subdirectory keys:
+        pipelines:
+          retrieval: [bm25]
+          generation: [basic_rag]
+
+    Legacy syntax has pipelines as a list with _target_ in each item.
+    """
+    from omegaconf import ListConfig
+
+    pipelines = cfg.get("pipelines", {})
+    # New syntax: pipelines is a dict with string keys (subdirectories)
+    if isinstance(pipelines, DictConfig):
+        # Check if any value is a list of strings (names) or string rather than having _target_
+        for value in pipelines.values():
+            # OmegaConf creates ListConfig for lists, not Python list
+            if isinstance(value, (list, tuple, ListConfig, str)):
+                return True
+            if isinstance(value, DictConfig) and not hasattr(value, "_target_"):
+                return True
+    return False
+
+
+def _build_config_from_dict(
+    experiment_cfg: DictConfig,
+    config_path: Path,
+    db_name: str | None,
+    max_retries: int | None,
+    eval_batch_size: int | None,
+    embedding_dim: int | None,
+) -> DictConfig:
+    """Build config from dict-based syntax using ConfigResolver.
+
+    Args:
+        experiment_cfg: Raw experiment YAML config.
+        config_path: Path to configs directory.
+        db_name: Override for db_name.
+        max_retries: Override for max_retries.
+        eval_batch_size: Override for eval_batch_size.
+        embedding_dim: Override for embedding_dim.
+
+    Returns:
+        Resolved DictConfig with all configs loaded.
+    """
+    from autorag_research.cli.config_resolver import ConfigResolver
+
+    resolver = ConfigResolver(config_dir=config_path)
+
+    # Load database config
+    db_cfg = resolver.load_db_config("default")
+
+    # Resolve pipeline and metric configs
+    pipeline_cfgs = resolver.resolve_pipelines(experiment_cfg.get("pipelines", {}))
+    metric_cfgs = resolver.resolve_metrics(experiment_cfg.get("metrics", {}))
+
+    # Build final config with CLI overrides taking precedence
+    return OmegaConf.create({
+        "db": db_cfg,
+        "db_name": db_name or experiment_cfg.get("db_name"),
+        "embedding_dim": embedding_dim or experiment_cfg.get("embedding_dim", 1536),
+        "max_retries": max_retries if max_retries is not None else experiment_cfg.get("max_retries", 3),
+        "eval_batch_size": eval_batch_size
+        if eval_batch_size is not None
+        else experiment_cfg.get("eval_batch_size", 100),
+        "pipelines": pipeline_cfgs,
+        "metrics": metric_cfgs,
+    })
 
 
 def _validate_config(cfg: DictConfig) -> tuple[str, list, list]:
