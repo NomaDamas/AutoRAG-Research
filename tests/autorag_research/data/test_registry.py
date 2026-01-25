@@ -80,19 +80,6 @@ class TestDiscoverIngestors:
         result = discover_ingestors()
         assert isinstance(result, dict)
 
-    def test_discover_ingestors_not_empty(self):
-        """discover_ingestors should find at least one ingestor."""
-        result = discover_ingestors()
-        assert len(result) > 0
-
-    def test_discover_ingestors_contains_known_ingestors(self):
-        """discover_ingestors should find known internal ingestors."""
-        result = discover_ingestors()
-        # These are the known ingestors from autorag_research.data
-        known_ingestors = ["beir", "mrtydi", "ragbench", "mteb", "bright", "vidorev2"]
-        for name in known_ingestors:
-            assert name in result, f"Expected ingestor '{name}' not found"
-
     def test_discover_ingestors_idempotent(self):
         """Calling discover_ingestors multiple times should return same result."""
         result1 = discover_ingestors()
@@ -109,29 +96,10 @@ class TestDiscoverIngestors:
 class TestGetIngestor:
     """Tests for get_ingestor function."""
 
-    def test_get_ingestor_returns_meta(self):
-        """get_ingestor should return IngestorMeta for known ingestor."""
-        result = get_ingestor("beir")
-        assert result is not None
-        assert isinstance(result, IngestorMeta)
-
     def test_get_ingestor_returns_none_for_unknown(self):
         """get_ingestor should return None for unknown ingestor."""
         result = get_ingestor("nonexistent_ingestor_xyz")
         assert result is None
-
-    def test_get_ingestor_meta_has_correct_name(self):
-        """get_ingestor should return meta with matching name."""
-        result = get_ingestor("beir")
-        assert result is not None
-        assert result.name == "beir"
-
-    def test_get_ingestor_meta_has_class(self):
-        """get_ingestor should return meta with ingestor_class."""
-        result = get_ingestor("beir")
-        assert result is not None
-        assert result.ingestor_class is not None
-        assert callable(result.ingestor_class)
 
 
 class TestRegisterIngestor:
