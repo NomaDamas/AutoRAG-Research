@@ -469,6 +469,11 @@ class Executor:
         if not isinstance(config, BaseGenerationPipelineConfig):
             return
 
+        # Skip if retrieval pipeline already injected (programmatic usage)
+        if config._retrieval_pipeline is not None:
+            logger.debug(f"Retrieval pipeline already injected for {config.name}")
+            return
+
         # Skip if no retrieval pipeline dependency
         name: str = config.retrieval_pipeline_name
         if not name:
