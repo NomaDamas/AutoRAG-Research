@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
 from importlib.metadata import entry_points
+from types import UnionType
 from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
 
 logger = logging.getLogger("AutoRAG-Research")
@@ -196,7 +197,7 @@ def _is_list_type(hint) -> bool:
         return True
 
     # Handle Union (e.g., list[str] | None)
-    if origin is Union:
+    if origin is UnionType:
         args = get_args(hint)
         for arg in args:
             if get_origin(arg) is list:
@@ -256,19 +257,3 @@ def _load_plugin_ingestors() -> None:
                 logger.warning(f"Failed to load ingestor plugin {ep.name}: {e}")
     except Exception as e:
         logger.warning(f"Failed to query ingestor entry_points: {e}")
-
-
-def get_ingestor_help() -> str:
-    """Generate help text showing available ingestors and their parameters."""
-    ingestors = discover_ingestors()
-    lines = ["Available ingestors:"]
-
-    for name, meta in sorted(ingestors.items()):
-        lines.append(f"\n  {name}: {meta.description}")
-        if meta.params:
-            for param in meta.params:
-                default_str = f" (default: {param.default})" if not param.required else " (required)"
-                choices_str = f" choices: {param.choices}" if param.choices else ""
-                lines.append(f"    --{param.cli_option}{default_str}{choices_str}")
-
-    return "\n".join(lines)

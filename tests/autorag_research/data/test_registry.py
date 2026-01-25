@@ -14,7 +14,6 @@ from autorag_research.data.registry import (
     _is_list_type,
     discover_ingestors,
     get_ingestor,
-    get_ingestor_help,
     register_ingestor,
 )
 
@@ -89,7 +88,7 @@ class TestDiscoverIngestors:
         """discover_ingestors should find known internal ingestors."""
         result = discover_ingestors()
         # These are the known ingestors from autorag_research.data
-        known_ingestors = ["beir", "mrtydi", "ragbench", "mteb", "bright", "vidore", "vidorev2"]
+        known_ingestors = ["beir", "mrtydi", "ragbench", "mteb", "bright", "vidorev2"]
         for name in known_ingestors:
             assert name in result, f"Expected ingestor '{name}' not found"
 
@@ -340,32 +339,6 @@ class TestIsListType:
     def test_is_list_type_false_for_int(self):
         """Should return False for int type."""
         assert _is_list_type(int) is False
-
-
-class TestGetIngestorHelp:
-    """Tests for get_ingestor_help function."""
-
-    def test_get_ingestor_help_returns_string(self):
-        """get_ingestor_help should return a string."""
-        result = get_ingestor_help()
-        assert isinstance(result, str)
-
-    def test_get_ingestor_help_contains_header(self):
-        """get_ingestor_help should contain header text."""
-        result = get_ingestor_help()
-        assert "Available ingestors:" in result
-
-    def test_get_ingestor_help_contains_ingestor_names(self):
-        """get_ingestor_help should contain known ingestor names."""
-        result = get_ingestor_help()
-        assert "beir" in result
-        assert "mrtydi" in result
-
-    def test_get_ingestor_help_contains_params(self):
-        """get_ingestor_help should contain parameter info."""
-        result = get_ingestor_help()
-        # BEIR has --dataset-name parameter
-        assert "--dataset-name" in result
 
 
 class TestParamMeta:

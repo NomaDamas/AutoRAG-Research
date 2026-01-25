@@ -88,8 +88,10 @@ class TestDiscoverPipelines:
         """discover_pipelines finds bm25 and basic_rag in real configs/pipelines/."""
         result = discover_pipelines()
 
-        assert "bm25" in result
-        assert "basic_rag" in result
+        assert "generation" in result
+        assert "retrieval" in result
+        assert "bm25" in result["retrieval"]
+        assert "basic_rag" in result["generation"]
 
 
 class TestDiscoverMetrics:
@@ -99,8 +101,10 @@ class TestDiscoverMetrics:
         """discover_metrics finds ndcg and recall in real configs/metrics/."""
         result = discover_metrics()
 
-        assert "ndcg" in result
-        assert "recall" in result
+        assert "generation" in result
+        assert "retrieval" in result
+        assert "ndcg" in result["retrieval"]
+        assert "rouge" in result["generation"]
 
 
 class TestDiscoverEmbeddingConfigs:

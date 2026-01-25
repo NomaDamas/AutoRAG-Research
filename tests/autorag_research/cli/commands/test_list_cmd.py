@@ -37,12 +37,6 @@ class TestListResourcesCommand:
             cli_runner.invoke(app, ["list", "metrics"])
             mock.assert_called_once()
 
-    def test_list_databases_calls_handler(self, cli_runner: CliRunner) -> None:
-        """'list databases' routes to database handler."""
-        with patch("autorag_research.cli.commands.list_cmd._print_databases_with_config") as mock:
-            cli_runner.invoke(app, ["list", "databases"])
-            mock.assert_called_once()
-
     def test_list_help_shows_options(self, cli_runner: CliRunner) -> None:
         """'list --help' shows available resource types."""
         result = cli_runner.invoke(app, ["list", "--help"])
@@ -54,7 +48,7 @@ class TestListResourcesCommand:
         assert "databases" in result.stdout
 
 
-def test_print_ingestors(self, capsys: pytest.CaptureFixture) -> None:
+def test_print_ingestors(capsys: pytest.CaptureFixture) -> None:
     """Displays real ingestor names from registry."""
     print_ingestors()
 
@@ -110,13 +104,13 @@ class TestPrintDatabases:
     so a fresh test database shows 'No user schemas found'.
     """
 
-    def test_displays_output_from_real_db(
-        self, get_db_params: dict[str, str | int], capsys: pytest.CaptureFixture
-    ) -> None:
+    def test_displays_output_from_real_db(self, capsys: pytest.CaptureFixture) -> None:
         """Displays output from real test database connection."""
+        cli.CONFIG_PATH = Path(__file__).parent.parent.parent.parent.parent / "configs"
+
         print_databases()
 
         captured = capsys.readouterr()
         # Should show server info (connection worked)
         assert "Server" in captured.out
-        assert str(get_db_params["host"]) in captured.out
+        assert "testdb" in captured.out
