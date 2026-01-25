@@ -119,30 +119,29 @@ class TestPrintDatabases:
             port=test_db_params["port"],
             user=test_db_params["user"],
             password=test_db_params["password"],
-            database=test_db_params["database"],
         )
 
         captured = capsys.readouterr()
-        # Should show database info (connection worked)
-        assert "Database" in captured.out
-        assert test_db_params["database"] in captured.out
+        # Should show server info (connection worked)
+        assert "Server" in captured.out
+        assert str(test_db_params["host"]) in captured.out
 
-    @patch("autorag_research.cli.utils.list_schemas_with_connection")
-    def test_empty_schemas_shows_message(self, mock_list_schemas: MagicMock, capsys: pytest.CaptureFixture) -> None:
-        """Shows message when no schemas found (excluding system schemas)."""
-        mock_list_schemas.return_value = []
+    @patch("autorag_research.cli.utils.list_databases_with_connection")
+    def test_empty_databases_shows_message(self, mock_list_dbs: MagicMock, capsys: pytest.CaptureFixture) -> None:
+        """Shows message when no databases found."""
+        mock_list_dbs.return_value = []
 
-        print_databases("localhost", 5432, "postgres", "pass", "testdb")
+        print_databases("localhost", 5432, "postgres", "pass")
 
         captured = capsys.readouterr()
-        assert "No" in captured.out or "schemas" in captured.out.lower()
+        assert "No" in captured.out or "databases" in captured.out.lower()
 
-    @patch("autorag_research.cli.utils.list_schemas_with_connection")
-    def test_connection_error_exits(self, mock_list_schemas: MagicMock) -> None:
+    @patch("autorag_research.cli.utils.list_databases_with_connection")
+    def test_connection_error_exits(self, mock_list_dbs: MagicMock) -> None:
         """Exits with code 1 on database connection error."""
-        mock_list_schemas.side_effect = Exception("Connection refused")
+        mock_list_dbs.side_effect = Exception("Connection refused")
 
         with pytest.raises(SystemExit) as exc_info:
-            print_databases("localhost", 5432, "postgres", "pass", "testdb")
+            print_databases("localhost", 5432, "postgres", "pass")
 
         assert exc_info.value.code == 1

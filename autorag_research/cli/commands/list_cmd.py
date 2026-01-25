@@ -38,9 +38,6 @@ def list_resources(
     db_password: Annotated[
         str | None, typer.Option("--db-password", help="Database password (default: from configs/db.yaml)")
     ] = None,
-    db_database: Annotated[
-        str | None, typer.Option("--db-database", help="Database name (default: from configs/db.yaml)")
-    ] = None,
 ) -> None:
     """List available resources.
 
@@ -48,7 +45,6 @@ def list_resources(
       ingestors  - Available data ingestors with their parameters
       pipelines  - Available pipeline configurations
       metrics    - Available evaluation metrics
-      databases  - Database schemas (uses configs/db.yaml)
 
     Examples:
       autorag-research list ingestors
@@ -59,7 +55,7 @@ def list_resources(
     if resource in RESOURCE_HANDLERS:
         RESOURCE_HANDLERS[resource]()
     elif resource == "databases":
-        _print_databases_with_config(db_host, db_port, db_user, db_password, db_database)
+        _print_databases_with_config(db_host, db_port, db_user, db_password)
 
 
 def _print_databases_with_config(
@@ -67,11 +63,10 @@ def _print_databases_with_config(
     db_port: int | None,
     db_user: str | None,
     db_password: str | None,
-    db_database: str | None,
 ) -> None:
     """Load DB config with CLI overrides and print databases."""
-    db_config = load_db_config_from_yaml(db_host, db_port, db_user, db_password, db_database)
-    print_databases(db_config.host, db_config.port, db_config.user, db_config.password, db_config.database)
+    db_config = load_db_config_from_yaml(db_host, db_port, db_user, db_password)
+    print_databases(db_config.host, db_config.port, db_config.user, db_config.password)
 
 
 def print_ingestors() -> None:
@@ -131,20 +126,20 @@ def print_metrics() -> None:
     typer.echo("    generation: [rouge]")
 
 
-def print_databases(host: str, port: int, user: str, password: str, database: str) -> None:
-    """Print database schemas."""
-    from autorag_research.cli.utils import list_schemas_with_connection
+def print_databases(host: str, port: int, user: str, password: str) -> None:
+    """Print available databases on the PostgreSQL server."""
+    from autorag_research.cli.utils import list_databases_with_connection
 
-    typer.echo("\nDatabase Schemas:")
+    typer.echo("\nAvailable Databases:")
     typer.echo("-" * 60)
     try:
-        schemas = list_schemas_with_connection(host, port, user, password, database)
-        if schemas:
-            for schema in schemas:
-                typer.echo(f"  {schema}")
+        databases = list_databases_with_connection(host, port, user, password)
+        if databases:
+            for db in databases:
+                typer.echo(f"  {db}")
         else:
-            typer.echo("  No user schemas found.")
-        typer.echo(f"\nDatabase: {host}:{port}/{database}")
+            typer.echo("  No databases found.")
+        typer.echo(f"\nServer: {host}:{port}")
     except Exception:
         logger.exception("Error connecting to database. Make sure PostgreSQL is running and credentials are correct.")
         sys.exit(1)

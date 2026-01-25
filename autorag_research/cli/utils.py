@@ -9,14 +9,12 @@ from typing import TYPE_CHECKING
 
 import yaml
 from omegaconf import DictConfig, OmegaConf
-from platformdirs import user_data_dir
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
 
 if TYPE_CHECKING:
     from llama_index.core.base.embeddings.base import BaseEmbedding
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("AutoRAG-Research")
 
 
 # =============================================================================
@@ -28,17 +26,16 @@ def discover_configs(config_dir: Path) -> dict[str, str]:
     """Scan YAML configs and return {name: description} dict.
 
     Args:
-        config_dir: Directory containing YAML config files.
+        config_dir: Directory containing YAML config files (searches recursively).
 
     Returns:
         Dictionary mapping config name (filename without .yaml) to description.
     """
     result = {}
     if not config_dir.exists():
-        logger.warning(f"Config directory not found: {config_dir}")
-        return result
+        raise FileNotFoundError
 
-    for yaml_file in sorted(config_dir.glob("*.yaml")):
+    for yaml_file in sorted(config_dir.glob("**/*.yaml")):
         try:
             with open(yaml_file) as f:
                 cfg = yaml.safe_load(f)
@@ -99,14 +96,6 @@ def discover_metrics() -> dict[str, dict[str, str]]:
 # Path and Config Utilities
 # =============================================================================
 
-APP_NAME = "autorag-research"
-CONFIG_REPO_URL = "https://raw.githubusercontent.com/vkehfdl1/AutoRAG-Research/main/configs"
-
-
-def get_user_data_dir() -> Path:
-    """Get user data directory for AutoRAG-Research."""
-    return Path(user_data_dir(APP_NAME))
-
 
 def get_config_dir() -> Path:
     """Get the configs directory.
@@ -123,64 +112,14 @@ def get_db_url(cfg: DictConfig) -> str:
     return f"postgresql+psycopg://{cfg.db.user}:{cfg.db.password}@{cfg.db.host}:{cfg.db.port}/{cfg.db.database}"
 
 
-def create_session_factory(cfg: DictConfig) -> sessionmaker:
-    """Create SQLAlchemy session factory from config."""
-    engine = create_engine(get_db_url(cfg))
-    return sessionmaker(bind=engine)
-
-
-def print_config(cfg: DictConfig) -> None:
-    """Print resolved configuration for debugging."""
-    print(OmegaConf.to_yaml(cfg))
-
-
-def list_schemas(cfg: DictConfig) -> list[str]:
-    """List all user-created schemas in the database (excluding system schemas)."""
-    return list_schemas_with_connection(
-        host=cfg.db.host,
-        port=cfg.db.port,
-        user=cfg.db.user,
-        password=cfg.db.password,
-        database=cfg.db.database,
-    )
-
-
-def list_schemas_with_connection(host: str, port: int, user: str, password: str, database: str) -> list[str]:
-    """List all user-created schemas in the database (excluding system schemas)."""
-    system_schemas = {"information_schema", "pg_catalog", "pg_toast", "public"}
-    db_url = f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
+def list_databases_with_connection(host: str, port: int, user: str, password: str) -> list[str]:
+    """List all user-created databases on the PostgreSQL server (excluding template databases)."""
+    db_url = f"postgresql+psycopg://{user}:{password}@{host}:{port}"
     engine = create_engine(db_url)
     with engine.connect() as conn:
-        result = conn.execute(text("SELECT schema_name FROM information_schema.schemata"))
-        schemas = [row[0] for row in result if row[0] not in system_schemas]
-    return sorted(schemas)
-
-
-def get_schema_info(cfg: DictConfig, schema_name: str) -> dict:
-    """Get detailed information about a schema."""
-    engine = create_engine(get_db_url(cfg))
-    tables_info: dict[str, dict] = {}
-    info: dict = {"name": schema_name, "tables": tables_info}
-
-    with engine.connect() as conn:
-        # Get table names and row counts
-        tables_result = conn.execute(
-            text("""
-                SELECT table_name
-                FROM information_schema.tables
-                WHERE table_schema = :schema
-                AND table_type = 'BASE TABLE'
-            """),
-            {"schema": schema_name},
-        )
-        tables = [row[0] for row in tables_result]
-
-        for table in tables:
-            count_result = conn.execute(text(f'SELECT COUNT(*) FROM "{schema_name}"."{table}"'))  # noqa: S608
-            count = count_result.scalar()
-            tables_info[table] = {"row_count": count}
-
-    return info
+        result = conn.execute(text("SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"))
+        databases = [row[0] for row in result]
+    return databases
 
 
 def setup_logging(verbose: bool = False) -> None:

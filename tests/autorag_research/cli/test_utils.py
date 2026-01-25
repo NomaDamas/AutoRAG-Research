@@ -7,52 +7,18 @@ import pytest
 
 import autorag_research.cli as cli
 from autorag_research.cli.utils import (
-    APP_NAME,
-    DatabaseConfig,
     discover_configs,
     discover_embedding_configs,
     discover_metrics,
     discover_pipelines,
     get_config_dir,
     get_db_url,
-    get_user_data_dir,
     health_check_embedding,
-    list_schemas_with_connection,
+    list_databases_with_connection,
     load_db_config_from_yaml,
     load_embedding_model,
     setup_logging,
 )
-
-
-class TestDatabaseConfig:
-    """Tests for DatabaseConfig dataclass."""
-
-    def test_default_values(self) -> None:
-        """DatabaseConfig has sensible default values."""
-        config = DatabaseConfig()
-
-        assert config.host == "localhost"
-        assert config.port == 5432
-        assert config.user == "postgres"
-        # password default is OmegaConf template for env var
-        assert "PGPASSWORD" in config.password or config.password == "postgres"  # noqa: S105
-        assert config.database == "autorag_research"
-
-    def test_custom_values(self) -> None:
-        """DatabaseConfig accepts custom values."""
-        config = DatabaseConfig(
-            host="db.example.com",
-            port=5433,
-            user="myuser",
-            password="mypass",  # noqa: S106
-            database="mydb",
-        )
-
-        assert config.host == "db.example.com"
-        assert config.port == 5433
-        assert config.user == "myuser"
-        assert config.password == "mypass"  # noqa: S105
-        assert config.database == "mydb"
 
 
 class TestDiscoverConfigs:
@@ -68,9 +34,8 @@ class TestDiscoverConfigs:
         """Returns empty dict for non-existent directory."""
         nonexistent = tmp_path / "does_not_exist"
 
-        result = discover_configs(nonexistent)
-
-        assert result == {}
+        with pytest.raises(FileNotFoundError):
+            discover_configs(nonexistent)
 
     def test_yaml_with_description(self, tmp_path: Path) -> None:
         """Uses description field from YAML file."""
@@ -131,23 +96,10 @@ class TestDiscoverPipelines:
 
 
 class TestDiscoverMetrics:
-    """Tests for discover_metrics function.
+    """Tests for discover_metrics function using real configs."""
 
-    Note: Real configs have metrics in subdirectories (retrieval/, generation/),
-    but discover_metrics only looks at top-level *.yaml files.
-    We use tmp_path to test the function logic.
-    """
-
-    def test_discover_metrics_uses_config_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """discover_metrics looks in metrics/ subdirectory."""
-        # Create metrics directory with YAML files at top level
-        metrics_dir = tmp_path / "metrics"
-        metrics_dir.mkdir()
-        (metrics_dir / "ndcg.yaml").write_text("description: NDCG metric")
-        (metrics_dir / "recall.yaml").write_text("description: Recall metric")
-
-        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
-
+    def test_discover_metrics_finds_real_configs(self, real_config_path: Path) -> None:
+        """discover_metrics finds ndcg and recall in real configs/metrics/."""
         result = discover_metrics()
 
         assert "ndcg" in result
@@ -164,22 +116,6 @@ class TestDiscoverEmbeddingConfigs:
         assert "openai-small" in result
         assert "openai-large" in result
         assert "openai-like" in result
-
-
-class TestGetUserDataDir:
-    """Tests for get_user_data_dir function."""
-
-    def test_returns_path(self) -> None:
-        """Returns a Path object."""
-        result = get_user_data_dir()
-
-        assert isinstance(result, Path)
-
-    def test_contains_app_name(self) -> None:
-        """Path contains app name."""
-        result = get_user_data_dir()
-
-        assert APP_NAME.lower() in str(result).lower() or "autorag" in str(result).lower()
 
 
 class TestGetConfigDir:
@@ -274,6 +210,14 @@ class TestLoadEmbeddingModel:
         with pytest.raises(TypeError, match="BaseEmbedding"):
             load_embedding_model("openai-small")
 
+    def test_returns_embedding_instance(self, real_config_path: Path) -> None:
+        """Returns BaseEmbedding instance when config is valid."""
+        from llama_index.core.base.embeddings.base import BaseEmbedding
+
+        result = load_embedding_model("mock")
+
+        assert isinstance(result, BaseEmbedding)
+
 
 class TestHealthCheckEmbedding:
     """Tests for health_check_embedding function.
@@ -283,13 +227,13 @@ class TestHealthCheckEmbedding:
 
     def test_returns_dimension_on_success(self) -> None:
         """Returns embedding dimension on success."""
-        mock_model = MagicMock()
-        mock_model.get_text_embedding.return_value = [0.1] * 384
+        from llama_index.core.embeddings.mock_embed_model import MockEmbedding
 
-        result = health_check_embedding(mock_model)
+        mock_embedding = MockEmbedding(384)
+
+        result = health_check_embedding(mock_embedding)
 
         assert result == 384
-        mock_model.get_text_embedding.assert_called_once()
 
     def test_raises_on_embedding_failure(self) -> None:
         """Raises EmbeddingNotSetError when embedding fails."""
@@ -333,51 +277,27 @@ class TestSetupLogging:
         assert root_logger.level == logging.INFO
 
 
-class TestListSchemasWithConnection:
-    """Tests for list_schemas_with_connection function using real database.
+class TestListDatabasesWithConnection:
+    """Tests for list_databases_with_connection function using real database.
 
-    Note: The function excludes system schemas including 'public',
-    so a fresh test database returns an empty list of user schemas.
+    Note: The function excludes template databases,
+    so it returns user-created databases on the PostgreSQL server.
     """
 
     def test_returns_list_from_real_db(self, test_db_params: dict[str, str | int]) -> None:
-        """Returns list of schemas from real test database (excludes public)."""
-        result = list_schemas_with_connection(
+        """Returns list of databases from real PostgreSQL server."""
+        result = list_databases_with_connection(
             host=test_db_params["host"],
             port=test_db_params["port"],
             user=test_db_params["user"],
             password=test_db_params["password"],
-            database=test_db_params["database"],
         )
 
-        # Result should be a list of strings (may be empty if only public exists)
+        # Result should be a list of strings
         assert isinstance(result, list)
-        # Function explicitly excludes 'public' as it's considered a system schema
-        assert "public" not in result
-
-    def test_excludes_system_schemas(self, test_db_params: dict[str, str | int]) -> None:
-        """System schemas (pg_*, information_schema) are excluded."""
-        result = list_schemas_with_connection(
-            host=test_db_params["host"],
-            port=test_db_params["port"],
-            user=test_db_params["user"],
-            password=test_db_params["password"],
-            database=test_db_params["database"],
-        )
-
-        # All pg_* schemas should be filtered out
-        pg_schemas = [s for s in result if s.startswith("pg_")]
-        assert pg_schemas == []
-        assert "information_schema" not in result
-
-    def test_returns_sorted_list(self, test_db_params: dict[str, str | int]) -> None:
-        """Returns schemas sorted alphabetically."""
-        result = list_schemas_with_connection(
-            host=test_db_params["host"],
-            port=test_db_params["port"],
-            user=test_db_params["user"],
-            password=test_db_params["password"],
-            database=test_db_params["database"],
-        )
-
+        # Should contain at least 'postgres' system database
+        assert "postgres" in result
+        assert "testdb" in result  # test database created for testing
+        assert "template0" not in result
+        assert "template1" not in result
         assert result == sorted(result)
