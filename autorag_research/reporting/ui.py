@@ -194,18 +194,20 @@ def on_datasets_select_for_pipelines(db_names: list[str]) -> dict:
     """Update pipeline dropdown when datasets are selected."""
     if not db_names:
         return gr.update(choices=[], value=None)
-    # Get pipelines from first selected dataset
-    pipelines = fetch_pipelines(db_names[0])
-    return gr.update(choices=pipelines, value=pipelines[0] if pipelines else None)
+    # Get pipelines common to all selected datasets (intersection)
+    pipeline_sets = [set(fetch_pipelines(db_name)) for db_name in db_names]
+    common_pipelines = sorted(set.intersection(*pipeline_sets)) if pipeline_sets else []
+    return gr.update(choices=common_pipelines, value=common_pipelines[0] if common_pipelines else None)
 
 
 def on_datasets_select_for_metrics(db_names: list[str]) -> dict:
     """Update metrics checkbox when datasets are selected."""
     if not db_names:
         return gr.update(choices=[], value=[])
-    # Get metrics from first selected dataset
-    metrics = fetch_all_metrics(db_names[0])
-    return gr.update(choices=metrics, value=[])
+    # Get metrics common to all selected datasets (intersection)
+    metric_sets = [set(fetch_all_metrics(db_name)) for db_name in db_names]
+    common_metrics = sorted(set.intersection(*metric_sets)) if metric_sets else []
+    return gr.update(choices=common_metrics, value=[])
 
 
 # === UI Component Builders ===

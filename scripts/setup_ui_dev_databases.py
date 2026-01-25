@@ -36,10 +36,22 @@ PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
 
 # Common pipelines for all datasets
 PIPELINES = [
-    (1, "bm25_baseline", '{"type": "bm25", "k1": 1.2, "b": 0.75}'),
-    (2, "dense_retriever", '{"type": "dense", "model": "sentence-transformers/all-MiniLM-L6-v2"}'),
-    (3, "hybrid_fusion", '{"type": "hybrid", "alpha": 0.5, "dense_weight": 0.6, "sparse_weight": 0.4}'),
-    (4, "colbert_v2", '{"type": "colbert", "model": "colbert-ir/colbertv2.0", "max_doc_len": 180}'),
+    (1, "bm25_baseline", '{"pipeline_type": "retrieval", "type": "bm25", "k1": 1.2, "b": 0.75}'),
+    (
+        2,
+        "dense_retriever",
+        '{"pipeline_type": "retrieval", "type": "dense", "model": "sentence-transformers/all-MiniLM-L6-v2"}',
+    ),
+    (
+        3,
+        "hybrid_fusion",
+        '{"pipeline_type": "retrieval", "type": "hybrid", "alpha": 0.5, "dense_weight": 0.6, "sparse_weight": 0.4}',
+    ),
+    (
+        4,
+        "colbert_v2",
+        '{"pipeline_type": "retrieval", "type": "colbert", "model": "colbert-ir/colbertv2.0", "max_doc_len": 180}',
+    ),
 ]
 
 # Common metrics for all datasets
