@@ -8,17 +8,7 @@ import pytest
 
 from autorag_research.reporting.ui import (
     create_leaderboard_app,
-    fetch_all_metrics,
-    fetch_all_metrics_leaderboard,
-    fetch_borda_ranking,
-    fetch_cross_dataset,
-    fetch_cross_dataset_all_metrics,
-    fetch_dataset_stats,
-    fetch_datasets,
-    fetch_leaderboard,
-    fetch_metrics,
-    fetch_pipeline_type,
-    fetch_pipelines,
+    format_dataset_stats,
     get_service,
     on_dataset_change,
     on_datasets_select_for_metrics,
@@ -63,8 +53,8 @@ class TestServiceManagement:
             mock_service.close.assert_called_once()
 
 
-class TestDataFetchers:
-    """Tests for data fetching functions."""
+class TestFormatDatasetStats:
+    """Tests for format_dataset_stats function."""
 
     @pytest.fixture(autouse=True)
     def setup_mock_service(self):
@@ -76,158 +66,22 @@ class TestDataFetchers:
             yield
         reset_service()
 
-    def test_fetch_datasets_returns_list(self):
-        """Test fetch_datasets returns available datasets."""
-        self.mock_service.list_available_datasets.return_value = ["db1", "db2"]
-        result = fetch_datasets()
-        assert result == ["db1", "db2"]
-
-    def test_fetch_datasets_handles_error(self):
-        """Test fetch_datasets returns empty list on error."""
-        self.mock_service.list_available_datasets.side_effect = Exception("Connection failed")
-        result = fetch_datasets()
-        assert result == []
-
-    def test_fetch_metrics_returns_filtered_list(self):
-        """Test fetch_metrics returns metrics filtered by type."""
-        self.mock_service.list_metrics_by_type.return_value = ["recall@5", "ndcg@10"]
-        result = fetch_metrics("test_db", "retrieval")
-        assert result == ["recall@5", "ndcg@10"]
-        self.mock_service.list_metrics_by_type.assert_called_once_with("test_db", "retrieval")
-
-    def test_fetch_metrics_empty_db_returns_empty(self):
-        """Test fetch_metrics returns empty list when db_name is empty."""
-        result = fetch_metrics("", "retrieval")
-        assert result == []
-
-    def test_fetch_metrics_handles_error(self):
-        """Test fetch_metrics returns empty list on error."""
-        self.mock_service.list_metrics_by_type.side_effect = Exception("Error")
-        result = fetch_metrics("test_db", "retrieval")
-        assert result == []
-
-    def test_fetch_pipelines_returns_list(self):
-        """Test fetch_pipelines returns pipeline names."""
-        self.mock_service.list_pipelines.return_value = ["pipeline1", "pipeline2"]
-        result = fetch_pipelines("test_db")
-        assert result == ["pipeline1", "pipeline2"]
-
-    def test_fetch_pipelines_empty_db_returns_empty(self):
-        """Test fetch_pipelines returns empty list when db_name is empty."""
-        result = fetch_pipelines("")
-        assert result == []
-
-    def test_fetch_all_metrics_returns_list(self):
-        """Test fetch_all_metrics returns all metrics."""
-        self.mock_service.list_metrics.return_value = ["metric1", "metric2"]
-        result = fetch_all_metrics("test_db")
-        assert result == ["metric1", "metric2"]
-
-    def test_fetch_all_metrics_empty_db_returns_empty(self):
-        """Test fetch_all_metrics returns empty list when db_name is empty."""
-        result = fetch_all_metrics("")
-        assert result == []
-
-    def test_fetch_pipeline_type_returns_type(self):
-        """Test fetch_pipeline_type returns pipeline type."""
-        self.mock_service.get_pipeline_type.return_value = "retrieval"
-        result = fetch_pipeline_type("test_db", "bm25_pipeline")
-        assert result == "retrieval"
-        self.mock_service.get_pipeline_type.assert_called_once_with("test_db", "bm25_pipeline")
-
-    def test_fetch_pipeline_type_empty_inputs_returns_none(self):
-        """Test fetch_pipeline_type returns None for empty inputs."""
-        result = fetch_pipeline_type("", "pipeline")
-        assert result is None
-        result = fetch_pipeline_type("test_db", "")
-        assert result is None
-
-    def test_fetch_pipeline_type_handles_error(self):
-        """Test fetch_pipeline_type returns None on error."""
-        self.mock_service.get_pipeline_type.side_effect = Exception("Error")
-        result = fetch_pipeline_type("test_db", "pipeline")
-        assert result is None
-
-    def test_fetch_leaderboard_returns_dataframe(self):
-        """Test fetch_leaderboard returns DataFrame."""
-        expected_df = pd.DataFrame({
-            "rank": [1, 2],
-            "pipeline": ["p1", "p2"],
-            "score": [0.85, 0.80],
-            "time_ms": [100, 120],
-        })
-        self.mock_service.get_leaderboard.return_value = expected_df
-        result = fetch_leaderboard("test_db", "recall@5")
-        pd.testing.assert_frame_equal(result, expected_df)
-
-    def test_fetch_leaderboard_empty_inputs_returns_empty(self):
-        """Test fetch_leaderboard returns empty DataFrame for empty inputs."""
-        result = fetch_leaderboard("", "recall@5")
-        assert result.empty
-        result = fetch_leaderboard("test_db", "")
-        assert result.empty
-
-    def test_fetch_leaderboard_handles_error(self):
-        """Test fetch_leaderboard returns empty DataFrame on error."""
-        self.mock_service.get_leaderboard.side_effect = Exception("Error")
-        result = fetch_leaderboard("test_db", "recall@5")
-        assert result.empty
-
-    def test_fetch_dataset_stats_returns_formatted_string(self):
-        """Test fetch_dataset_stats returns formatted stats string."""
+    def test_format_dataset_stats_returns_formatted_string(self):
+        """Test format_dataset_stats returns formatted stats string."""
         self.mock_service.get_dataset_stats.return_value = {
             "query_count": 1000,
             "chunk_count": 50000,
             "document_count": 500,
         }
-        result = fetch_dataset_stats("test_db")
+        result = format_dataset_stats("test_db")
         assert "1000 queries" in result
         assert "50000 chunks" in result
         assert "500 documents" in result
 
-    def test_fetch_dataset_stats_empty_db_returns_empty(self):
-        """Test fetch_dataset_stats returns empty string for empty db."""
-        result = fetch_dataset_stats("")
+    def test_format_dataset_stats_empty_db_returns_empty(self):
+        """Test format_dataset_stats returns empty string for empty db."""
+        result = format_dataset_stats("")
         assert result == ""
-
-    def test_fetch_cross_dataset_returns_dataframe(self):
-        """Test fetch_cross_dataset returns comparison DataFrame."""
-        expected_df = pd.DataFrame({
-            "dataset": ["db1", "db2"],
-            "score": [0.85, 0.80],
-            "time_ms": [100, 120],
-        })
-        self.mock_service.compare_across_datasets.return_value = expected_df
-        result = fetch_cross_dataset(["db1", "db2"], "pipeline1", "recall@5")
-        pd.testing.assert_frame_equal(result, expected_df)
-
-    def test_fetch_cross_dataset_empty_inputs_returns_empty(self):
-        """Test fetch_cross_dataset returns empty DataFrame for empty inputs."""
-        result = fetch_cross_dataset([], "pipeline1", "recall@5")
-        assert result.empty
-        result = fetch_cross_dataset(["db1"], "", "recall@5")
-        assert result.empty
-        result = fetch_cross_dataset(["db1"], "pipeline1", "")
-        assert result.empty
-
-    def test_fetch_borda_ranking_returns_dataframe(self):
-        """Test fetch_borda_ranking returns Borda ranking DataFrame."""
-        expected_df = pd.DataFrame({
-            "pipeline": ["p1", "p2"],
-            "total_rank": [12, 18],
-            "avg_rank": [1.5, 2.25],
-            "num_rankings": [8, 8],
-        })
-        self.mock_service.get_borda_count_leaderboard.return_value = expected_df
-        result = fetch_borda_ranking(["db1", "db2"], ["recall@5", "ndcg@10"])
-        pd.testing.assert_frame_equal(result, expected_df)
-
-    def test_fetch_borda_ranking_empty_inputs_returns_empty(self):
-        """Test fetch_borda_ranking returns empty DataFrame for empty inputs."""
-        result = fetch_borda_ranking([], ["recall@5"])
-        assert result.empty
-        result = fetch_borda_ranking(["db1"], [])
-        assert result.empty
 
 
 class TestUIUpdateHandlers:
@@ -264,6 +118,12 @@ class TestUIUpdateHandlers:
         pd.testing.assert_frame_equal(df, expected_df)
         assert "100 queries" in stats_update["value"]
 
+    def test_on_dataset_change_empty_db_returns_empty(self):
+        """Test on_dataset_change returns empty for empty db_name."""
+        df, stats_update = on_dataset_change("", "retrieval")
+        assert df.empty
+        assert stats_update["value"] == ""
+
     def test_on_metric_type_change_returns_leaderboard(self):
         """Test on_metric_type_change returns leaderboard DataFrame."""
         expected_df = pd.DataFrame({
@@ -278,6 +138,11 @@ class TestUIUpdateHandlers:
         result = on_metric_type_change("test_db", "generation")
 
         pd.testing.assert_frame_equal(result, expected_df)
+
+    def test_on_metric_type_change_empty_db_returns_empty(self):
+        """Test on_metric_type_change returns empty for empty db_name."""
+        result = on_metric_type_change("", "retrieval")
+        assert result.empty
 
     def test_on_refresh_leaderboard_returns_data_and_stats(self):
         """Test on_refresh_leaderboard returns leaderboard and stats."""
@@ -298,6 +163,12 @@ class TestUIUpdateHandlers:
 
         pd.testing.assert_frame_equal(df, expected_df)
         assert "100 queries" in stats_update["value"]
+
+    def test_on_refresh_leaderboard_empty_db_returns_empty(self):
+        """Test on_refresh_leaderboard returns empty for empty db_name."""
+        df, stats_update = on_refresh_leaderboard("", "retrieval")
+        assert df.empty
+        assert stats_update["value"] == ""
 
     def test_on_datasets_select_for_pipelines_updates_dropdown(self):
         """Test on_datasets_select_for_pipelines returns updated pipeline dropdown."""
@@ -330,75 +201,6 @@ class TestUIUpdateHandlers:
 
         assert result["choices"] == []
         assert result["value"] == []
-
-
-class TestNewFetchFunctions:
-    """Tests for new multi-metric fetch functions."""
-
-    @pytest.fixture(autouse=True)
-    def setup_mock_service(self):
-        """Setup mock service for each test."""
-        reset_service()
-        with patch("autorag_research.reporting.ui.get_service") as mock_get:
-            self.mock_service = MagicMock()
-            mock_get.return_value = self.mock_service
-            yield
-        reset_service()
-
-    def test_fetch_all_metrics_leaderboard_returns_dataframe(self):
-        """Test fetch_all_metrics_leaderboard returns DataFrame with all metrics."""
-        expected_df = pd.DataFrame({
-            "rank": [1, 2],
-            "pipeline": ["bm25", "vector"],
-            "recall@5": [0.85, 0.80],
-            "ndcg@10": [0.75, 0.70],
-            "Average": [0.80, 0.75],
-        })
-        self.mock_service.get_all_metrics_leaderboard.return_value = expected_df
-
-        result = fetch_all_metrics_leaderboard("test_db", "retrieval")
-
-        pd.testing.assert_frame_equal(result, expected_df)
-        self.mock_service.get_all_metrics_leaderboard.assert_called_once_with("test_db", "retrieval")
-
-    def test_fetch_all_metrics_leaderboard_empty_db_returns_empty(self):
-        """Test fetch_all_metrics_leaderboard returns empty DataFrame for empty db."""
-        result = fetch_all_metrics_leaderboard("", "retrieval")
-        assert result.empty
-
-    def test_fetch_all_metrics_leaderboard_handles_error(self):
-        """Test fetch_all_metrics_leaderboard returns empty DataFrame on error."""
-        self.mock_service.get_all_metrics_leaderboard.side_effect = Exception("Error")
-        result = fetch_all_metrics_leaderboard("test_db", "retrieval")
-        assert result.empty
-
-    def test_fetch_cross_dataset_all_metrics_returns_dataframe(self):
-        """Test fetch_cross_dataset_all_metrics returns DataFrame with all metrics."""
-        expected_df = pd.DataFrame({
-            "dataset": ["db1", "db2"],
-            "recall@5": [0.85, 0.80],
-            "ndcg@10": [0.75, 0.70],
-            "Average": [0.80, 0.75],
-        })
-        self.mock_service.compare_pipeline_all_metrics.return_value = expected_df
-
-        result = fetch_cross_dataset_all_metrics(["db1", "db2"], "bm25")
-
-        pd.testing.assert_frame_equal(result, expected_df)
-        self.mock_service.compare_pipeline_all_metrics.assert_called_once_with(["db1", "db2"], "bm25")
-
-    def test_fetch_cross_dataset_all_metrics_empty_inputs_returns_empty(self):
-        """Test fetch_cross_dataset_all_metrics returns empty DataFrame for empty inputs."""
-        result = fetch_cross_dataset_all_metrics([], "bm25")
-        assert result.empty
-        result = fetch_cross_dataset_all_metrics(["db1"], "")
-        assert result.empty
-
-    def test_fetch_cross_dataset_all_metrics_handles_error(self):
-        """Test fetch_cross_dataset_all_metrics returns empty DataFrame on error."""
-        self.mock_service.compare_pipeline_all_metrics.side_effect = Exception("Error")
-        result = fetch_cross_dataset_all_metrics(["db1"], "bm25")
-        assert result.empty
 
 
 class TestAppCreation:
@@ -436,4 +238,4 @@ class TestAppCreation:
             app = create_leaderboard_app()
 
             assert isinstance(app, gr.Blocks)
-            assert app.title == "AutoRAG Leaderboard"
+            assert app.title == "AutoRAG-Research Leaderboard"

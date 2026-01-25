@@ -41,131 +41,12 @@ def reset_service() -> None:
     _ServiceManager.reset()
 
 
-# === Data Fetchers (Event Handlers) ===
-def fetch_datasets() -> list[str]:
-    """Fetch list of available datasets."""
-    try:
-        return get_service().list_available_datasets()
-    except Exception as e:
-        gr.Warning(f"Failed to fetch datasets: {e}")
-        return []
-
-
-def fetch_metrics(db_name: str, metric_type: Literal["retrieval", "generation"]) -> list[str]:
-    """Fetch metrics for a dataset filtered by type."""
-    if not db_name:
-        return []
-    try:
-        result = get_service().list_metrics_by_type(db_name, metric_type)
-    except Exception as e:
-        gr.Warning(f"Failed to fetch metrics: {e}")
-        print(f"[ERROR] fetch_metrics({db_name}, {metric_type}) failed: {e}")  # Terminal log
-        return []
-    if not result:
-        gr.Warning(f"No metrics found for type '{metric_type}' in {db_name}")
-    return result
-
-
-def fetch_pipelines(db_name: str) -> list[str]:
-    """Fetch pipelines for a dataset."""
-    if not db_name:
-        return []
-    try:
-        return get_service().list_pipelines(db_name)
-    except Exception as e:
-        gr.Warning(f"Failed to fetch pipelines: {e}")
-        return []
-
-
-def fetch_all_metrics(db_name: str) -> list[str]:
-    """Fetch all metrics for a dataset."""
-    if not db_name:
-        return []
-    try:
-        return get_service().list_metrics(db_name)
-    except Exception as e:
-        gr.Warning(f"Failed to fetch metrics: {e}")
-        return []
-
-
-def fetch_pipeline_type(db_name: str, pipeline_name: str) -> Literal["retrieval", "generation"] | None:
-    """Fetch the type of a pipeline."""
-    if not db_name or not pipeline_name:
-        return None
-    try:
-        return get_service().get_pipeline_type(db_name, pipeline_name)
-    except Exception as e:
-        gr.Warning(f"Failed to fetch pipeline type: {e}")
-        return None
-
-
-def fetch_leaderboard(db_name: str, metric_name: str) -> pd.DataFrame:
-    """Fetch leaderboard data for a dataset and metric."""
-    if not db_name or not metric_name:
-        return pd.DataFrame()
-    try:
-        return get_service().get_leaderboard(db_name, metric_name)
-    except Exception as e:
-        gr.Warning(f"Failed to fetch leaderboard: {e}")
-        return pd.DataFrame()
-
-
-def fetch_dataset_stats(db_name: str) -> str:
-    """Fetch dataset statistics and format as string."""
+def format_dataset_stats(db_name: str) -> str:
+    """Format dataset statistics as display string."""
     if not db_name:
         return ""
-    try:
-        stats = get_service().get_dataset_stats(db_name)
-        return (
-            f"📊 {stats['query_count']} queries | {stats['chunk_count']} chunks | {stats['document_count']} documents"
-        )
-    except Exception as e:
-        gr.Warning(f"Failed to fetch stats: {e}")
-        return ""
-
-
-def fetch_cross_dataset(db_names: list[str], pipeline: str, metric: str) -> pd.DataFrame:
-    """Fetch cross-dataset comparison data."""
-    if not db_names or not pipeline or not metric:
-        return pd.DataFrame()
-    try:
-        return get_service().compare_across_datasets(db_names, pipeline, metric)
-    except Exception as e:
-        gr.Warning(f"Failed to fetch cross-dataset comparison: {e}")
-        return pd.DataFrame()
-
-
-def fetch_borda_ranking(db_names: list[str], metrics: list[str]) -> pd.DataFrame:
-    """Fetch Borda count leaderboard."""
-    if not db_names or not metrics:
-        return pd.DataFrame()
-    try:
-        return get_service().get_borda_count_leaderboard(db_names, metrics)
-    except Exception as e:
-        gr.Warning(f"Failed to fetch Borda ranking: {e}")
-        return pd.DataFrame()
-
-
-def fetch_all_metrics_leaderboard(db_name: str, metric_type: Literal["retrieval", "generation"]) -> pd.DataFrame:
-    """Fetch leaderboard with all metrics as columns."""
-    if not db_name:
-        return pd.DataFrame()
-    try:
-        return get_service().get_all_metrics_leaderboard(db_name, metric_type)
-    except Exception as e:
-        gr.Warning(f"Failed to fetch leaderboard: {e}")
-        return pd.DataFrame()
-
-
-def fetch_cross_dataset_all_metrics(db_names: list[str], pipeline_name: str) -> pd.DataFrame:
-    """Fetch cross-dataset comparison with all metrics as columns."""
-    if not db_names or not pipeline_name:
-        return pd.DataFrame()
-    try:
-        return get_service().compare_pipeline_all_metrics(db_names, pipeline_name)
-    except Exception as e:
-        gr.Warning(f"Failed to fetch cross-dataset comparison: {e}")
-        return pd.DataFrame()
+    stats = get_service().get_dataset_stats(db_name)
+    return f"📊 {stats['query_count']} queries | {stats['chunk_count']} chunks | {stats['document_count']} documents"
 
 
 # === UI Update Handlers ===
@@ -173,20 +54,26 @@ def fetch_cross_dataset_all_metrics(db_names: list[str], pipeline_name: str) -> 
 
 def on_dataset_change(db_name: str, metric_type: Literal["retrieval", "generation"]) -> tuple[pd.DataFrame, dict]:
     """Handle dataset selection change - returns leaderboard DataFrame and stats."""
-    df = fetch_all_metrics_leaderboard(db_name, metric_type)
-    stats = fetch_dataset_stats(db_name)
+    if not db_name:
+        return pd.DataFrame(), gr.update(value="")
+    df = get_service().get_all_metrics_leaderboard(db_name, metric_type)
+    stats = format_dataset_stats(db_name)
     return df, gr.update(value=stats)
 
 
 def on_metric_type_change(db_name: str, metric_type: Literal["retrieval", "generation"]) -> pd.DataFrame:
     """Handle metric type selection change - returns leaderboard DataFrame."""
-    return fetch_all_metrics_leaderboard(db_name, metric_type)
+    if not db_name:
+        return pd.DataFrame()
+    return get_service().get_all_metrics_leaderboard(db_name, metric_type)
 
 
 def on_refresh_leaderboard(db_name: str, metric_type: Literal["retrieval", "generation"]) -> tuple[pd.DataFrame, dict]:
     """Refresh leaderboard data."""
-    df = fetch_all_metrics_leaderboard(db_name, metric_type)
-    stats = fetch_dataset_stats(db_name)
+    if not db_name:
+        return pd.DataFrame(), gr.update(value="")
+    df = get_service().get_all_metrics_leaderboard(db_name, metric_type)
+    stats = format_dataset_stats(db_name)
     return df, gr.update(value=stats)
 
 
@@ -195,7 +82,8 @@ def on_datasets_select_for_pipelines(db_names: list[str]) -> dict:
     if not db_names:
         return gr.update(choices=[], value=None)
     # Get pipelines common to all selected datasets (intersection)
-    pipeline_sets = [set(fetch_pipelines(db_name)) for db_name in db_names]
+    service = get_service()
+    pipeline_sets = [set(service.list_pipelines(db_name)) for db_name in db_names]
     common_pipelines = sorted(set.intersection(*pipeline_sets)) if pipeline_sets else []
     return gr.update(choices=common_pipelines, value=common_pipelines[0] if common_pipelines else None)
 
@@ -205,7 +93,8 @@ def on_datasets_select_for_metrics(db_names: list[str]) -> dict:
     if not db_names:
         return gr.update(choices=[], value=[])
     # Get metrics common to all selected datasets (intersection)
-    metric_sets = [set(fetch_all_metrics(db_name)) for db_name in db_names]
+    service = get_service()
+    metric_sets = [set(service.list_metrics(db_name)) for db_name in db_names]
     common_metrics = sorted(set.intersection(*metric_sets)) if metric_sets else []
     return gr.update(choices=common_metrics, value=[])
 
@@ -297,7 +186,7 @@ def build_cross_dataset_tab(all_datasets: list[str]) -> tuple[gr.Tab, gr.Checkbo
             outputs=[pipeline_dropdown],
         )
         compare_btn.click(
-            fn=fetch_cross_dataset_all_metrics,
+            fn=lambda dbs, p: get_service().compare_pipeline_all_metrics(dbs, p) if dbs and p else pd.DataFrame(),
             inputs=[datasets_checkbox, pipeline_dropdown],
             outputs=[comparison_table],
         )
@@ -335,7 +224,7 @@ def build_borda_ranking_tab(all_datasets: list[str]) -> tuple[gr.Tab, gr.Checkbo
             outputs=[metrics_checkbox],
         )
         compute_btn.click(
-            fn=fetch_borda_ranking,
+            fn=lambda dbs, ms: get_service().get_borda_count_leaderboard(dbs, ms) if dbs and ms else pd.DataFrame(),
             inputs=[datasets_checkbox, metrics_checkbox],
             outputs=[borda_table],
         )
@@ -349,10 +238,10 @@ def build_borda_ranking_tab(all_datasets: list[str]) -> tuple[gr.Tab, gr.Checkbo
 def create_leaderboard_app() -> gr.Blocks:
     """Create the Gradio leaderboard application."""
     # Pre-fetch available datasets
-    datasets = fetch_datasets()
+    datasets = get_service().list_available_datasets()
 
-    with gr.Blocks(title="AutoRAG Leaderboard") as app:
-        gr.Markdown("# 🏆 AutoRAG Leaderboard")
+    with gr.Blocks(title="AutoRAG-Research Leaderboard") as app:
+        gr.Markdown("# 🏆 AutoRAG-Research Leaderboard")
 
         with gr.Tabs():
             (
