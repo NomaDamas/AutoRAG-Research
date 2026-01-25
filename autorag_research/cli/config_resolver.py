@@ -67,7 +67,11 @@ class ConfigResolver:
         if not path.exists():
             msg = f"Config not found: {path}"
             raise FileNotFoundError(msg)
-        return OmegaConf.load(path)
+        config = OmegaConf.load(path)
+        if not isinstance(config, DictConfig):
+            msg = f"Config must be a YAML mapping, not a list: {path}"
+            raise TypeError(msg)
+        return config
 
     def resolve_pipelines(self, pipelines_cfg: DictConfig) -> list[DictConfig]:
         """Resolve pipeline configs from YAML dict.
