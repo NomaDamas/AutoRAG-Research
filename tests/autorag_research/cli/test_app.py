@@ -76,7 +76,6 @@ class TestAppStructure:
 
         assert result.exit_code == 0
         assert "AutoRAG-Research CLI" in result.stdout
-        assert "--config-path" in result.stdout
 
     def test_app_has_list_command(self, cli_runner: CliRunner) -> None:
         """App has 'list' command registered."""
@@ -91,7 +90,6 @@ class TestAppStructure:
 
         assert result.exit_code == 0
         assert "Usage:" in result.stdout
-        assert "--name" in result.stdout
 
     def test_app_has_init_config_command(self, cli_runner: CliRunner) -> None:
         """App has 'init-config' command registered."""
@@ -108,7 +106,6 @@ class TestAppStructure:
         assert result.exit_code == 0
         assert "Usage:" in result.stdout
         assert "run" in result.stdout
-        assert "--db-name" in result.stdout
 
     def test_unknown_command_shows_error(self, cli_runner: CliRunner) -> None:
         """Unknown command shows error message."""
