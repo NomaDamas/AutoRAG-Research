@@ -12,10 +12,7 @@ from autorag_research.cli.utils import (
     discover_metrics,
     discover_pipelines,
     get_config_dir,
-    get_db_url,
     health_check_embedding,
-    list_databases_with_connection,
-    load_db_config_from_yaml,
     load_embedding_model,
     setup_logging,
 )
@@ -138,60 +135,6 @@ class TestGetConfigDir:
         assert result == Path.cwd() / "configs"
 
 
-class TestGetDbUrl:
-    """Tests for get_db_url function."""
-
-    def test_formats_url_correctly(self) -> None:
-        """Constructs correct PostgreSQL URL."""
-        from omegaconf import OmegaConf
-
-        cfg = OmegaConf.create({
-            "db": {
-                "host": "localhost",
-                "port": 5432,
-                "user": "testuser",
-                "password": "testpass",
-                "database": "testdb",
-            }
-        })
-
-        result = get_db_url(cfg)
-
-        assert result == "postgresql+psycopg://testuser:testpass@localhost:5432/testdb"
-
-
-class TestLoadDbConfigFromYaml:
-    """Tests for load_db_config_from_yaml function using real configs."""
-
-    def test_returns_defaults_when_no_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Returns default DatabaseConfig when db.yaml doesn't exist."""
-        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
-
-        result = load_db_config_from_yaml()
-
-        assert result.host == "localhost"
-        assert result.port == 5432
-
-    def test_loads_values_from_real_yaml(self, real_config_path: Path) -> None:
-        """Loads values from real db.yaml file."""
-        result = load_db_config_from_yaml()
-
-        # Real db.yaml values
-        assert result.host == "localhost"
-        assert result.port == 5432
-        assert result.user == "postgres"
-        assert result.database == "autorag_research"
-
-    def test_cli_args_override_yaml(self, real_config_path: Path) -> None:
-        """CLI arguments override YAML values."""
-        result = load_db_config_from_yaml(host="override.example.com", port=5433)
-
-        assert result.host == "override.example.com"
-        assert result.port == 5433
-        # Non-overridden values come from real YAML
-        assert result.user == "postgres"
-
-
 class TestLoadEmbeddingModel:
     """Tests for load_embedding_model function."""
 
@@ -275,29 +218,3 @@ class TestSetupLogging:
         setup_logging(verbose=False)
 
         assert root_logger.level == logging.INFO
-
-
-class TestListDatabasesWithConnection:
-    """Tests for list_databases_with_connection function using real database.
-
-    Note: The function excludes template databases,
-    so it returns user-created databases on the PostgreSQL server.
-    """
-
-    def test_returns_list_from_real_db(self, get_db_params) -> None:
-        """Returns list of databases from real PostgreSQL server."""
-        result = list_databases_with_connection(
-            host=get_db_params["host"],
-            port=get_db_params["port"],
-            user=get_db_params["user"],
-            password=get_db_params["password"],
-        )
-
-        # Result should be a list of strings
-        assert isinstance(result, list)
-        # Should contain at least 'postgres' system database
-        assert "postgres" in result
-        assert "testdb" in result  # test database created for testing
-        assert "template0" not in result
-        assert "template1" not in result
-        assert result == sorted(result)
