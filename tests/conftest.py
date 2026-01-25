@@ -20,17 +20,35 @@ _env_path = Path(__file__).parent.parent / "postgresql" / ".env"
 load_dotenv(_env_path)
 
 
+def _get_db_params() -> dict[str, str | int]:
+    """Get database connection parameters from environment variables."""
+    return {
+        "host": os.getenv("POSTGRES_HOST", "localhost"),
+        "port": int(os.getenv("PG_PORT", os.getenv("POSTGRES_PORT", "5432"))),
+        "user": os.getenv("POSTGRES_USER"),
+        "password": os.getenv("POSTGRES_PASSWORD"),
+        "database": os.getenv("TEST_DB_NAME", os.getenv("POSTGRES_DB")),
+    }
+
+
+@pytest.fixture
+def test_db_params() -> dict[str, str | int]:
+    """Return test database connection parameters from environment variables."""
+    return _get_db_params()
+
+
 @pytest.fixture(scope="session")
 def db_engine():
     """Create a database engine for the test session.
 
     Reads configuration from postgresql/.env file.
     """
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    user = os.getenv("POSTGRES_USER")
-    pwd = os.getenv("POSTGRES_PASSWORD")
-    port = int(os.getenv("PG_PORT", os.getenv("POSTGRES_PORT", "5432")))
-    db_name = os.getenv("TEST_DB_NAME", os.getenv("POSTGRES_DB"))
+    params = _get_db_params()
+    host = params["host"]
+    user = params["user"]
+    pwd = params["password"]
+    port = params["port"]
+    db_name = params["database"]
     if not all([host, user, pwd, port, db_name]):
         raise EnvNotFoundError(  # noqa: TRY003
             "POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_PORT, and TEST_DB_NAME must be set"

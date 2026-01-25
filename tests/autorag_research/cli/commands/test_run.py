@@ -175,14 +175,17 @@ class TestBuildExecutorConfig:
 
 
 class TestCreateSessionFactory:
-    """Tests for create_session_factory function using real database."""
+    """Tests for create_session_factory function using real database.
+
+    Note: create_session_factory returns (sessionmaker, db_url) tuple.
+    """
 
     def test_creates_working_session_factory(self, real_db_cfg: OmegaConf) -> None:
         """Creates a session factory that can connect to real test database."""
-        factory = create_session_factory(real_db_cfg)
+        factory, _ = create_session_factory(real_db_cfg)
 
-        # Factory should be a sessionmaker
-        assert isinstance(factory, type) or callable(factory)
+        # Factory should be callable (sessionmaker)
+        assert callable(factory)
 
         # Should be able to create a session
         session = factory()
@@ -196,12 +199,15 @@ class TestCreateSessionFactory:
         finally:
             session.close()
 
-    def test_returns_sessionmaker_instance(self, real_db_cfg: OmegaConf) -> None:
-        """Returns a sessionmaker bound to engine."""
-        factory = create_session_factory(real_db_cfg)
+    def test_returns_sessionmaker_and_db_url(self, real_db_cfg: OmegaConf) -> None:
+        """Returns a tuple of (sessionmaker, db_url)."""
+        result = create_session_factory(real_db_cfg)
 
-        # Should be a sessionmaker class
-        assert hasattr(factory, "kw") or hasattr(factory, "class_")
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        factory, db_url = result
+        assert callable(factory)
+        assert "postgresql" in db_url
 
     def test_handles_env_var_password(
         self, test_db_params: dict[str, str | int], monkeypatch: pytest.MonkeyPatch
@@ -219,7 +225,7 @@ class TestCreateSessionFactory:
             }
         })
 
-        factory = create_session_factory(cfg)
+        factory, _ = create_session_factory(cfg)
         session = factory()
         try:
             # Should connect successfully with env-resolved password

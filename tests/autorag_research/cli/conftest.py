@@ -30,21 +30,6 @@ def reset_config_path(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def test_db_params() -> dict[str, str | int]:
-    """Return actual test database connection parameters.
-
-    These match postgresql/.env settings used by Docker container.
-    """
-    return {
-        "host": "localhost",
-        "port": 5432,
-        "user": "postgres",
-        "password": "postgres",
-        "database": "testdb",
-    }
-
-
-@pytest.fixture
 def real_ingestor_meta():
     """Return the real beir ingestor metadata from the registry."""
     from autorag_research.data.registry import discover_ingestors
