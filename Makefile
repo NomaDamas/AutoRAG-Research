@@ -108,14 +108,14 @@ help:
 
 ui-setup: ## Setup UI development databases (dataset_alpha, dataset_beta, dataset_gamma)
 	@echo "🎨 Setting up UI development databases..."
-	@set -a && . postgresql/.env && set +a && POSTGRES_PORT=$$PG_PORT uv run python scripts/setup_ui_dev_databases.py
+	@set -a && . postgresql/.env && set +a && uv run python scripts/setup_ui_dev_databases.py
 
 ui-launch: docker-up docker-wait ui-setup ## Launch UI with full setup (Docker + databases + UI)
 	@echo "🚀 Launching AutoRAG Leaderboard UI..."
-	@set -a && . postgresql/.env && set +a && POSTGRES_PORT=$$PG_PORT uv run python -m autorag_research.reporting.ui
+	@set -a && . postgresql/.env && set +a && uv run python -m autorag_research.reporting.ui
 
 ui-restart: ## Restart UI only (assumes databases already exist)
 	@echo "🔄 Restarting AutoRAG Leaderboard UI..."
-	@set -a && . postgresql/.env && set +a && POSTGRES_PORT=$$PG_PORT uv run python -m autorag_research.reporting.ui
+	@set -a && . postgresql/.env && set +a && uv run python -m autorag_research.reporting.ui
 
 .DEFAULT_GOAL := help

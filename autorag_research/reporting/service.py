@@ -46,7 +46,8 @@ class ReportingService:
         if db_name not in self._attached_dbs:
             self.config.database = db_name
             # Use double-quoted identifier to allow any valid PostgreSQL database name
-            self._conn.execute(f"ATTACH '{self.config.db_url}' AS \"{db_name}\" (TYPE POSTGRES, READ_ONLY)")
+            # Use duckdb_url (without +psycopg driver) for DuckDB PostgreSQL extension compatibility
+            self._conn.execute(f"ATTACH '{self.config.duckdb_url}' AS \"{db_name}\" (TYPE POSTGRES, READ_ONLY)")
             self._attached_dbs.add(db_name)
         return db_name
 
