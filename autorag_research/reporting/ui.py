@@ -200,7 +200,9 @@ def build_single_dataset_tab() -> tuple[gr.Tab, gr.Dropdown, gr.Dropdown, gr.Tex
             metric_dropdown = gr.Dropdown(
                 label="Metric",
                 choices=[],
+                value=None,
                 interactive=True,
+                preserved_by_key=None,  # Disable browser state restoration for dynamic choices
                 scale=2,
             )
             refresh_btn = gr.Button("🔄 Refresh", scale=1)
@@ -256,13 +258,17 @@ def build_cross_dataset_tab(all_datasets: list[str]) -> tuple[gr.Tab, gr.Checkbo
             pipeline_dropdown = gr.Dropdown(
                 label="Pipeline",
                 choices=[],
+                value=None,
                 interactive=True,
+                preserved_by_key=None,  # Disable browser state restoration for dynamic choices
                 scale=1,
             )
             metric_dropdown = gr.Dropdown(
                 label="Metric",
                 choices=[],
+                value=None,
                 interactive=True,
+                preserved_by_key=None,  # Disable browser state restoration for dynamic choices
                 scale=1,
             )
             compare_btn = gr.Button("🔄 Compare", scale=1)
