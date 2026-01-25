@@ -12,9 +12,6 @@
 # Target database name (created by ingest command)
 db_name: beir_scifact_test
 
-# Embedding dimension (must match ingested data)
-embedding_dim: 1536
-
 # Executor settings
 max_retries: 3
 eval_batch_size: 100

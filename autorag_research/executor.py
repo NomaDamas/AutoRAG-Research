@@ -176,12 +176,11 @@ class Executor:
 
     @staticmethod
     def _resolve_config_dir() -> Path:
-        """Resolve config directory from CLI, Hydra, or fallback to CWD/configs.
+        """Resolve config directory from CLI or fallback to CWD/configs.
 
         Priority:
         1. CLI config path (if set)
-        2. Hydra's runtime config (if initialized)
-        3. Fallback to CWD/configs
+        2. Fallback to CWD/configs
 
         Returns:
             Path to the config directory.
@@ -194,21 +193,6 @@ class Executor:
                 return cli.CONFIG_PATH
         except ImportError:
             pass
-
-        # Then try Hydra
-        try:
-            from hydra.core.global_hydra import GlobalHydra
-
-            gh = GlobalHydra.instance()
-            if gh.is_initialized():
-                # Get the original working directory (where CLI was invoked)
-                from hydra.core.hydra_config import HydraConfig
-
-                runtime_cfg = HydraConfig.get()
-                original_cwd = runtime_cfg.runtime.cwd
-                return Path(original_cwd) / "configs"
-        except Exception:
-            logger.debug("Hydra not initialized, using CWD/configs as fallback")
 
         # Fallback to CWD/configs
         return Path.cwd() / "configs"
@@ -506,39 +490,30 @@ class Executor:
         logger.info(f"Loaded and injected retrieval pipeline: {name}")
 
     def _load_pipeline_config(self, config_name: str) -> "DictConfig":
-        """Load pipeline config using Hydra compose API or fallback to direct YAML load.
+        """Load pipeline config from YAML file.
 
         Args:
-            config_name: Config name relative to search path (e.g., "pipelines/retrieval/bm25")
+            config_name: Config name relative to config_dir (e.g., "pipelines/retrieval/bm25")
 
         Returns:
             OmegaConf DictConfig object.
 
         Raises:
             FileNotFoundError: If config cannot be found.
+            TypeError: If config is not a mapping (dict).
         """
-        import yaml
-        from omegaconf import OmegaConf
+        from omegaconf import DictConfig, OmegaConf
 
-        # Try Hydra compose API first (uses configured search paths)
-        try:
-            from hydra import compose
-            from hydra.core.global_hydra import GlobalHydra
-
-            if GlobalHydra.instance().is_initialized():
-                logger.debug(f"Loading config via Hydra compose: {config_name}")
-                return compose(config_name=config_name)
-        except Exception:
-            logger.debug("Hydra compose not available, falling back to direct YAML load")
-
-        # Fallback: direct YAML load from config_dir
         yaml_path = self._config_dir / f"{config_name}.yaml"
         if not yaml_path.exists():
             msg = f"Pipeline config not found: {yaml_path}"
             raise FileNotFoundError(msg)
 
         logger.debug(f"Loading config from file: {yaml_path}")
-        with open(yaml_path) as f:
-            cfg_dict = yaml.safe_load(f)
+        cfg = OmegaConf.load(yaml_path)
 
-        return OmegaConf.create(cfg_dict)
+        if not isinstance(cfg, DictConfig):
+            msg = f"Pipeline config must be a mapping, not a list: {yaml_path}"
+            raise TypeError(msg)
+
+        return cfg

@@ -6,27 +6,15 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from hydra import compose, initialize_config_dir
-from hydra.core.global_hydra import GlobalHydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
-import autorag_research.cli as cli
-from autorag_research.cli.utils import setup_logging
+from autorag_research.cli.utils import get_config_dir, setup_logging
 from autorag_research.config import ExecutorConfig
 from autorag_research.executor import Executor
 from autorag_research.orm.schema_factory import create_schema
 
 logger = logging.getLogger("AutoRAG-Research")
-
-# Hydra overrides to disable output directory and log file creation
-HYDRA_OVERRIDES = [
-    "hydra.run.dir=.",
-    "hydra.output_subdir=null",
-    "hydra.job.chdir=False",
-    "hydra/job_logging=none",
-    "hydra/hydra_logging=none",
-]
 
 
 def run_command(
@@ -50,15 +38,10 @@ def run_command(
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
     ] = False,
-    overrides: Annotated[
-        list[str] | None,
-        typer.Argument(help="Additional Hydra overrides (e.g., pipelines.0.k1=1.2)"),
-    ] = None,
 ) -> None:
     """Run experiment pipelines with metrics evaluation.
 
     Configuration is loaded from configs/experiment.yaml (or specified --config-name).
-    Pipelines and metrics are instantiated via _target_ in YAML.
 
     Examples:
       autorag-research run --db-name=beir_scifact_test
@@ -67,22 +50,8 @@ def run_command(
     """
     setup_logging(verbose=verbose)
 
-    # Build Hydra overrides from Typer options
-    hydra_overrides = list(HYDRA_OVERRIDES)
-
-    if db_name:
-        hydra_overrides.append(f"db_name={db_name}")
-    if max_retries is not None:
-        hydra_overrides.append(f"max_retries={max_retries}")
-    if eval_batch_size is not None:
-        hydra_overrides.append(f"eval_batch_size={eval_batch_size}")
-
-    # Add user-provided Hydra overrides
-    if overrides:
-        hydra_overrides.extend(overrides)
-
     # Get config path
-    config_path = cli.CONFIG_PATH
+    config_path = get_config_dir()
     if config_path is None:
         typer.echo("Error: config path not set", err=True)
         raise typer.Exit(1)
@@ -91,7 +60,6 @@ def run_command(
     cfg = _load_experiment_config(
         config_path=config_path,
         config_name=config_name,
-        hydra_overrides=hydra_overrides,
         db_name=db_name,
         max_retries=max_retries,
         eval_batch_size=eval_batch_size,
@@ -110,12 +78,22 @@ def run_command(
 def _load_experiment_config(
     config_path: Path,
     config_name: str,
-    hydra_overrides: list[str],
     db_name: str | None,
     max_retries: int | None,
     eval_batch_size: int | None,
 ) -> DictConfig:
-    """Load experiment config, detecting dict vs Hydra syntax."""
+    """Load experiment config from YAML file.
+
+    Args:
+        config_path: Path to configs directory.
+        config_name: Config file name without .yaml extension.
+        db_name: Override for db_name.
+        max_retries: Override for max_retries.
+        eval_batch_size: Override for eval_batch_size.
+
+    Returns:
+        Resolved DictConfig with all pipeline and metric configs loaded.
+    """
     experiment_yaml_path = config_path / f"{config_name}.yaml"
     if not experiment_yaml_path.exists():
         typer.echo(f"Error: Config file not found: {experiment_yaml_path}", err=True)
@@ -128,45 +106,13 @@ def _load_experiment_config(
         typer.echo("Error: experiment config must be a YAML mapping, not a list", err=True)
         raise typer.Exit(1)
 
-    # Check if using new dict-based syntax
-    if _is_dict_syntax(experiment_cfg):
-        return _build_config_from_dict(
-            experiment_cfg=experiment_cfg,
-            config_path=config_path,
-            db_name=db_name,
-            max_retries=max_retries,
-            eval_batch_size=eval_batch_size,
-        )
-
-    # Legacy Hydra defaults syntax
-    GlobalHydra.instance().clear()
-    with initialize_config_dir(config_dir=str(config_path), version_base=None):
-        return compose(config_name=config_name, overrides=hydra_overrides)
-
-
-def _is_dict_syntax(cfg: DictConfig) -> bool:
-    """Check if config uses the new dict-based syntax.
-
-    New syntax has pipelines as a dict with subdirectory keys:
-        pipelines:
-          retrieval: [bm25]
-          generation: [basic_rag]
-
-    Legacy syntax has pipelines as a list with _target_ in each item.
-    """
-    from omegaconf import ListConfig
-
-    pipelines = cfg.get("pipelines", {})
-    # New syntax: pipelines is a dict with string keys (subdirectories)
-    if isinstance(pipelines, DictConfig):
-        # Check if any value is a list of strings (names) or string rather than having _target_
-        for value in pipelines.values():
-            # OmegaConf creates ListConfig for lists, not Python list
-            if isinstance(value, (list, tuple, ListConfig, str)):
-                return True
-            if isinstance(value, DictConfig) and not hasattr(value, "_target_"):
-                return True
-    return False
+    return _build_config_from_dict(
+        experiment_cfg=experiment_cfg,
+        config_path=config_path,
+        db_name=db_name,
+        max_retries=max_retries,
+        eval_batch_size=eval_batch_size,
+    )
 
 
 def _build_config_from_dict(
