@@ -1,6 +1,7 @@
 """run command - Execute experiment pipelines with metrics evaluation."""
 
 import logging
+import os
 from typing import Annotated
 
 import typer
@@ -12,6 +13,9 @@ from autorag_research.cli.utils import get_config_dir, setup_logging
 from autorag_research.config import ExecutorConfig
 from autorag_research.executor import Executor
 from autorag_research.orm.connection import DBConnection
+
+# Register hydra resolver for standalone use (outside Hydra main context)
+OmegaConf.register_new_resolver("hydra", lambda x: os.getcwd() if x == "runtime.cwd" else None, replace=True)
 
 logger = logging.getLogger("AutoRAG-Research")
 
