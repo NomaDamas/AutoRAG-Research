@@ -1,18 +1,11 @@
 import logging
-import re
 from types import TracebackType
 from typing import Literal
 
 import duckdb
 import pandas as pd
 
-from autorag_research.reporting.config import DatabaseConfig
-
-# Valid SQL identifier pattern (letters, digits, underscores, starting with letter/underscore)
-_VALID_IDENTIFIER_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-
-# Valid aggregation functions for pandas
-VALID_AGGREGATIONS = frozenset({"mean", "median", "min", "max", "sum", "std"})
+from autorag_research.orm.connection import DBConnection
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -25,13 +18,13 @@ class ReportingService:
     extension for efficient cross-database analytics.
     """
 
-    def __init__(self, config: DatabaseConfig | None = None):
+    def __init__(self, config: DBConnection | None = None):
         """Initialize the reporting service.
 
         Args:
             config: Database connection configuration. If None, loads from environment.
         """
-        self.config = config or DatabaseConfig.from_env()
+        self.config = config or DBConnection.from_env()
         self._conn = duckdb.connect()
         try:
             self._conn.install_extension("postgres")
@@ -41,30 +34,21 @@ class ReportingService:
             raise
         self._attached_dbs: set[str] = set()
 
-    def attach_dataset(self, db_name: str, alias: str | None = None) -> str:
+    def attach_dataset(self, db_name: str) -> str:
         """Attach a PostgreSQL database to DuckDB.
 
         Args:
             db_name: Name of the PostgreSQL database.
-            alias: Optional alias for the database. Defaults to db_name with hyphens replaced.
 
         Returns:
-            The alias used for the attached database.
-
-        Raises:
-            ValueError: If the alias is not a valid SQL identifier.
+            The database name (used as quoted identifier in queries).
         """
-        alias = alias or db_name.replace("-", "_")
-        if not _VALID_IDENTIFIER_PATTERN.match(alias):
-            raise ValueError(  # noqa: TRY003
-                f"Invalid alias: '{alias}'. Must be a valid SQL identifier "
-                "(letters, digits, underscores, starting with letter or underscore)."
-            )
-        if alias not in self._attached_dbs:
-            conn_str = self.config.get_duckdb_connection_string(db_name)
-            self._conn.execute(f"ATTACH '{conn_str}' AS {alias} (TYPE POSTGRES, READ_ONLY)")
-            self._attached_dbs.add(alias)
-        return alias
+        if db_name not in self._attached_dbs:
+            self.config.database = db_name
+            # Use double-quoted identifier to allow any valid PostgreSQL database name
+            self._conn.execute(f"ATTACH '{self.config.db_url}' AS \"{db_name}\" (TYPE POSTGRES, READ_ONLY)")
+            self._attached_dbs.add(db_name)
+        return db_name
 
     # === Single Dataset Queries ===
 
@@ -80,62 +64,25 @@ class ReportingService:
         Returns:
             DataFrame with columns: rank, pipeline, score, time_ms
         """
-        alias = self.attach_dataset(db_name)
+        db = self.attach_dataset(db_name)
         order = "ASC" if ascending else "DESC"
-        # S608: alias is validated by attach_dataset, order is hardcoded
+        # S608: db is from attach_dataset (user-controlled but quoted), order is hardcoded
         return self._conn.execute(
-            f"""
+            f'''
             SELECT
                 ROW_NUMBER() OVER (ORDER BY s.metric_result {order}) as rank,
                 p.name as pipeline,
                 s.metric_result as score,
                 s.execution_time as time_ms
-            FROM {alias}.summary s
-            JOIN {alias}.pipeline p ON s.pipeline_id = p.id
-            JOIN {alias}.metric m ON s.metric_id = m.id
+            FROM "{db}".summary s
+            JOIN "{db}".pipeline p ON s.pipeline_id = p.id
+            JOIN "{db}".metric m ON s.metric_id = m.id
             WHERE m.name = $1
             ORDER BY s.metric_result {order}
             LIMIT $2
-            """,  # noqa: S608
+            ''',  # noqa: S608
             [metric_name, limit],
         ).df()
-
-    def compare_pipelines(self, db_name: str, pipeline_names: list[str], metric_names: list[str]) -> pd.DataFrame:
-        """Compare multiple pipelines across multiple metrics (pivot table).
-
-        Args:
-            db_name: Name of the PostgreSQL database.
-            pipeline_names: List of pipeline names to compare.
-            metric_names: List of metric names to include.
-
-        Returns:
-            DataFrame with pipelines as rows and metrics as columns.
-        """
-        if not pipeline_names or not metric_names:
-            return pd.DataFrame()
-
-        alias = self.attach_dataset(db_name)
-
-        # Create parameterized placeholders
-        pipeline_placeholders = ", ".join(f"${i + 1}" for i in range(len(pipeline_names)))
-        metric_placeholders = ", ".join(f"${i + 1 + len(pipeline_names)}" for i in range(len(metric_names)))
-
-        # S608: alias is validated by attach_dataset
-        df = self._conn.execute(
-            f"""
-            SELECT p.name as pipeline, m.name as metric, s.metric_result as score
-            FROM {alias}.summary s
-            JOIN {alias}.pipeline p ON s.pipeline_id = p.id
-            JOIN {alias}.metric m ON s.metric_id = m.id
-            WHERE p.name IN ({pipeline_placeholders}) AND m.name IN ({metric_placeholders})
-            """,  # noqa: S608
-            [*pipeline_names, *metric_names],
-        ).df()
-
-        if df.empty:
-            return df
-
-        return df.pivot(index="pipeline", columns="metric", values="score")
 
     def list_pipelines(self, db_name: str) -> list[str]:
         """List all pipelines in a database.
@@ -146,8 +93,8 @@ class ReportingService:
         Returns:
             List of pipeline names.
         """
-        alias = self.attach_dataset(db_name)
-        return self._conn.execute(f"SELECT name FROM {alias}.pipeline").df()["name"].tolist()  # noqa: S608
+        db = self.attach_dataset(db_name)
+        return self._conn.execute(f'SELECT name FROM "{db}".pipeline').df()["name"].tolist()  # noqa: S608
 
     def list_metrics(self, db_name: str) -> list[str]:
         """List all metrics in a database.
@@ -158,8 +105,8 @@ class ReportingService:
         Returns:
             List of metric names.
         """
-        alias = self.attach_dataset(db_name)
-        return self._conn.execute(f"SELECT name FROM {alias}.metric").df()["name"].tolist()  # noqa: S608
+        db = self.attach_dataset(db_name)
+        return self._conn.execute(f'SELECT name FROM "{db}".metric').df()["name"].tolist()  # noqa: S608
 
     # === Dataset Discovery ===
 
@@ -174,20 +121,19 @@ class ReportingService:
         """
         # First, get all non-template databases from PostgreSQL
         # We need to connect to 'postgres' database to query pg_database
-        postgres_alias = self.attach_dataset("postgres", alias="pg_catalog_db")
+        pg = self.attach_dataset("postgres")
 
         # Query pg_database for all user databases (excluding templates)
-        # Note: pg_database is in pg_catalog schema, must use fully qualified path
-        # S608: postgres_alias is validated by attach_dataset
+        # S608: pg is from attach_dataset, quoted identifier
         all_dbs = (
             self._conn.execute(
-                f"""
+                f'''
             SELECT datname
-            FROM {postgres_alias}.pg_catalog.pg_database
+            FROM "{pg}".pg_catalog.pg_database
             WHERE datistemplate = false
               AND datname NOT IN ('postgres')
             ORDER BY datname
-            """  # noqa: S608
+            '''  # noqa: S608
             )
             .df()["datname"]
             .tolist()
@@ -197,15 +143,15 @@ class ReportingService:
         valid_datasets = []
         for db_name in all_dbs:
             try:
-                alias = self.attach_dataset(db_name)
+                db = self.attach_dataset(db_name)
                 # Check if summary table exists by querying information_schema
-                # S608: alias is validated by attach_dataset
+                # S608: db is from attach_dataset, quoted identifier
                 result = self._conn.execute(
-                    f"""
+                    f'''
                     SELECT COUNT(*) as cnt
-                    FROM {alias}.information_schema.tables
+                    FROM "{db}".information_schema.tables
                     WHERE table_schema = 'public' AND table_name = 'summary'
-                    """  # noqa: S608
+                    '''  # noqa: S608
                 ).df()
                 if result["cnt"].iloc[0] > 0:
                     valid_datasets.append(db_name)
@@ -231,42 +177,15 @@ class ReportingService:
         if metric_type not in ("retrieval", "generation"):
             raise ValueError(f"Invalid metric_type: '{metric_type}'. Must be 'retrieval' or 'generation'.")  # noqa: TRY003
 
-        alias = self.attach_dataset(db_name)
+        db = self.attach_dataset(db_name)
         # Embed validated metric_type directly to avoid DuckDB PostgreSQL extension
         # parameter pushdown issues with ATTACH'ed databases
-        # S608: alias validated by attach_dataset, metric_type validated above
+        # S608: db from attach_dataset (quoted), metric_type validated above
         return (
-            self._conn.execute(f"SELECT name FROM {alias}.metric WHERE type = '{metric_type}' ORDER BY name")  # noqa: S608
+            self._conn.execute(f"SELECT name FROM \"{db}\".metric WHERE type = '{metric_type}' ORDER BY name")  # noqa: S608
             .df()["name"]
             .tolist()
         )
-
-    def get_pipeline_details(self, db_name: str, pipeline_name: str) -> dict:
-        """Get pipeline config JSONB for metadata display/filtering.
-
-        Args:
-            db_name: Name of the PostgreSQL database.
-            pipeline_name: Name of the pipeline.
-
-        Returns:
-            Dictionary containing pipeline id, name, and config.
-            Returns empty dict if pipeline not found.
-        """
-        alias = self.attach_dataset(db_name)
-        df = self._conn.execute(
-            f"SELECT id, name, config FROM {alias}.pipeline WHERE name = $1",  # noqa: S608
-            [pipeline_name],
-        ).df()
-
-        if df.empty:
-            return {}
-
-        row = df.iloc[0]
-        return {
-            "id": int(row["id"]),
-            "name": row["name"],
-            "config": row["config"],
-        }
 
     def get_dataset_stats(self, db_name: str) -> dict:
         """Return dataset statistics including query, chunk, and document counts.
@@ -277,15 +196,15 @@ class ReportingService:
         Returns:
             Dictionary with keys: query_count, chunk_count, document_count.
         """
-        alias = self.attach_dataset(db_name)
+        db = self.attach_dataset(db_name)
 
         # Query counts from each table
         stats = {}
 
-        # S608: alias validated by attach_dataset, table names are hardcoded
+        # S608: db from attach_dataset (quoted), table names are hardcoded
         for table, key in [("query", "query_count"), ("chunk", "chunk_count"), ("document", "document_count")]:
             try:
-                result = self._conn.execute(f"SELECT COUNT(*) as cnt FROM {alias}.{table}").df()  # noqa: S608
+                result = self._conn.execute(f'SELECT COUNT(*) as cnt FROM "{db}".{table}').df()  # noqa: S608
                 stats[key] = int(result["cnt"].iloc[0])
             except Exception:
                 stats[key] = 0
@@ -310,60 +229,17 @@ class ReportingService:
 
         results = []
         for db_name in db_names:
-            alias = self.attach_dataset(db_name)
-            # S608: alias is validated by attach_dataset
+            db = self.attach_dataset(db_name)
+            # S608: db is from attach_dataset (quoted)
             df = self._conn.execute(
-                f"""
+                f'''
                 SELECT $1 as dataset, s.metric_result as score, s.execution_time as time_ms
-                FROM {alias}.summary s
-                JOIN {alias}.pipeline p ON s.pipeline_id = p.id
-                JOIN {alias}.metric m ON s.metric_id = m.id
+                FROM "{db}".summary s
+                JOIN "{db}".pipeline p ON s.pipeline_id = p.id
+                JOIN "{db}".metric m ON s.metric_id = m.id
                 WHERE p.name = $2 AND m.name = $3
-                """,  # noqa: S608
+                ''',  # noqa: S608
                 [db_name, pipeline_name, metric_name],
-            ).df()
-            results.append(df)
-
-        return pd.concat(results, ignore_index=True) if results else pd.DataFrame()
-
-    def generate_benchmark_report(
-        self, db_names: list[str], pipeline_names: list[str], metric_names: list[str]
-    ) -> pd.DataFrame:
-        """Generate a comprehensive benchmark report (dataset x pipeline x metric).
-
-        Args:
-            db_names: List of database names (each representing a dataset).
-            pipeline_names: List of pipeline names to include.
-            metric_names: List of metric names to include.
-
-        Returns:
-            DataFrame with columns: dataset, pipeline, metric, score
-        """
-        if not db_names or not pipeline_names or not metric_names:
-            return pd.DataFrame()
-
-        results = []
-        for db_name in db_names:
-            alias = self.attach_dataset(db_name)
-
-            # Create parameterized placeholders (starting at $2 because $1 is db_name)
-            pipeline_placeholders = ", ".join(f"${i + 2}" for i in range(len(pipeline_names)))
-            metric_placeholders = ", ".join(f"${i + 2 + len(pipeline_names)}" for i in range(len(metric_names)))
-
-            # S608: alias is validated by attach_dataset
-            df = self._conn.execute(
-                f"""
-                SELECT
-                    $1 as dataset,
-                    p.name as pipeline,
-                    m.name as metric,
-                    s.metric_result as score
-                FROM {alias}.summary s
-                JOIN {alias}.pipeline p ON s.pipeline_id = p.id
-                JOIN {alias}.metric m ON s.metric_id = m.id
-                WHERE p.name IN ({pipeline_placeholders}) AND m.name IN ({metric_placeholders})
-                """,  # noqa: S608
-                [db_name, *pipeline_names, *metric_names],
             ).df()
             results.append(df)
 
@@ -404,24 +280,24 @@ class ReportingService:
         all_rankings: list[pd.DataFrame] = []
 
         for db_name in db_names:
-            alias = self.attach_dataset(db_name)
+            db = self.attach_dataset(db_name)
 
             for metric_name in metric_names:
                 # Determine sort order for this metric
                 ascending = metric_name in ascending_metrics
                 order = "ASC" if ascending else "DESC"
 
-                # S608: alias validated by attach_dataset, order is hardcoded
+                # S608: db from attach_dataset (quoted), order is hardcoded
                 df = self._conn.execute(
-                    f"""
+                    f'''
                     SELECT
                         p.name as pipeline,
                         RANK() OVER (ORDER BY s.metric_result {order}) as rank
-                    FROM {alias}.summary s
-                    JOIN {alias}.pipeline p ON s.pipeline_id = p.id
-                    JOIN {alias}.metric m ON s.metric_id = m.id
+                    FROM "{db}".summary s
+                    JOIN "{db}".pipeline p ON s.pipeline_id = p.id
+                    JOIN "{db}".metric m ON s.metric_id = m.id
                     WHERE m.name = $1
-                    """,  # noqa: S608
+                    ''',  # noqa: S608
                     [metric_name],
                 ).df()
 
@@ -448,57 +324,6 @@ class ReportingService:
         result = result.sort_values("total_rank").reset_index(drop=True)
 
         return result[["pipeline", "total_rank", "avg_rank", "num_rankings"]]
-
-    def get_aggregated_leaderboard(
-        self, db_names: list[str], metric_name: str, aggregation: str = "mean"
-    ) -> pd.DataFrame:
-        """Get pipeline rankings aggregated across multiple datasets.
-
-        Args:
-            db_names: List of database names (each representing a dataset).
-            metric_name: Name of the metric to rank by.
-            aggregation: Aggregation function ('mean', 'median', 'min', 'max', 'sum', 'std').
-
-        Returns:
-            DataFrame with columns: pipeline, score (aggregated)
-
-        Raises:
-            ValueError: If aggregation is not a valid function name.
-        """
-        if aggregation not in VALID_AGGREGATIONS:
-            raise ValueError(f"Invalid aggregation: '{aggregation}'. Must be one of {sorted(VALID_AGGREGATIONS)}.")  # noqa: TRY003
-
-        if not db_names:
-            return pd.DataFrame()
-
-        results = []
-        for db_name in db_names:
-            alias = self.attach_dataset(db_name)
-            # S608: alias is validated by attach_dataset
-            df = self._conn.execute(
-                f"""
-                SELECT $1 as dataset, p.name as pipeline, s.metric_result as score
-                FROM {alias}.summary s
-                JOIN {alias}.pipeline p ON s.pipeline_id = p.id
-                JOIN {alias}.metric m ON s.metric_id = m.id
-                WHERE m.name = $2
-                """,  # noqa: S608
-                [db_name, metric_name],
-            ).df()
-            results.append(df)
-
-        df = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
-
-        if df.empty:
-            return df
-
-        return (
-            df.groupby("pipeline")["score"]
-            .agg(aggregation)
-            .sort_values(ascending=False)
-            .reset_index()
-            .rename(columns={"score": f"score_{aggregation}"})
-        )
 
     def close(self) -> None:
         """Close the DuckDB connection."""
