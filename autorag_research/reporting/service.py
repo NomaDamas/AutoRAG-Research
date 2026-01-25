@@ -97,6 +97,31 @@ class ReportingService:
         db = self.attach_dataset(db_name)
         return self._conn.execute(f'SELECT name FROM "{db}".pipeline').df()["name"].tolist()  # noqa: S608
 
+    def get_pipeline_type(self, db_name: str, pipeline_name: str) -> Literal["retrieval", "generation"] | None:
+        """Get the type of a pipeline from its config.
+
+        Args:
+            db_name: Name of the PostgreSQL database.
+            pipeline_name: Name of the pipeline.
+
+        Returns:
+            Pipeline type ('retrieval' or 'generation'), or None if not found.
+        """
+        db = self.attach_dataset(db_name)
+        # Query config JSONB field for pipeline_type
+        # S608: db from attach_dataset (quoted)
+        result = self._conn.execute(
+            f"""
+            SELECT config->>'pipeline_type' as pipeline_type
+            FROM "{db}".pipeline
+            WHERE name = $1
+            """,  # noqa: S608
+            [pipeline_name],
+        ).df()
+        if result.empty or result["pipeline_type"].iloc[0] is None:
+            return None
+        return result["pipeline_type"].iloc[0]
+
     def list_metrics(self, db_name: str) -> list[str]:
         """List all metrics in a database.
 
@@ -245,6 +270,100 @@ class ReportingService:
             results.append(df)
 
         return pd.concat(results, ignore_index=True) if results else pd.DataFrame()
+
+    def get_all_metrics_leaderboard(
+        self, db_name: str, metric_type: Literal["retrieval", "generation"]
+    ) -> pd.DataFrame:
+        """Get leaderboard with all metrics as columns.
+
+        Args:
+            db_name: Name of the PostgreSQL database.
+            metric_type: One of 'retrieval' or 'generation'.
+
+        Returns:
+            DataFrame with columns: rank, pipeline, <metric1>, <metric2>, ..., Average
+            Sorted by Average descending.
+        """
+        if metric_type not in ("retrieval", "generation"):
+            raise ValueError(f"Invalid metric_type: '{metric_type}'. Must be 'retrieval' or 'generation'.")  # noqa: TRY003
+
+        db = self.attach_dataset(db_name)
+        # S608: db from attach_dataset (quoted), metric_type validated above
+        df = self._conn.execute(
+            f"""
+            SELECT p.name as pipeline, m.name as metric, s.metric_result as score
+            FROM "{db}".summary s
+            JOIN "{db}".pipeline p ON s.pipeline_id = p.id
+            JOIN "{db}".metric m ON s.metric_id = m.id
+            WHERE m.type = '{metric_type}'
+            """,  # noqa: S608
+        ).df()
+
+        if df.empty:
+            return pd.DataFrame()
+
+        # Pivot: rows=pipeline, columns=metric, values=score
+        pivoted = df.pivot(index="pipeline", columns="metric", values="score")
+        pivoted["Average"] = pivoted.mean(axis=1)
+        pivoted = pivoted.sort_values("Average", ascending=False).reset_index()
+        pivoted.insert(0, "rank", range(1, len(pivoted) + 1))
+
+        # Round numeric columns for display
+        numeric_cols = pivoted.select_dtypes(include=["float64"]).columns
+        pivoted[numeric_cols] = pivoted[numeric_cols].round(3)
+
+        return pivoted
+
+    def compare_pipeline_all_metrics(self, db_names: list[str], pipeline_name: str) -> pd.DataFrame:
+        """Compare pipeline across datasets with all metrics.
+
+        Args:
+            db_names: List of database names (each representing a dataset).
+            pipeline_name: Name of the pipeline to compare.
+
+        Returns:
+            DataFrame with columns: dataset, <metric1>, <metric2>, ..., Average
+        """
+        if not db_names or not pipeline_name:
+            return pd.DataFrame()
+
+        # Get pipeline type from first dataset
+        pipeline_type = self.get_pipeline_type(db_names[0], pipeline_name)
+        if not pipeline_type:
+            return pd.DataFrame()
+
+        results = []
+        for db_name in db_names:
+            db = self.attach_dataset(db_name)
+            # S608: db from attach_dataset (quoted), pipeline_type from get_pipeline_type (validated)
+            df = self._conn.execute(
+                f"""
+                SELECT $1 as dataset, m.name as metric, s.metric_result as score
+                FROM "{db}".summary s
+                JOIN "{db}".pipeline p ON s.pipeline_id = p.id
+                JOIN "{db}".metric m ON s.metric_id = m.id
+                WHERE p.name = $2 AND m.type = '{pipeline_type}'
+                """,  # noqa: S608
+                [db_name, pipeline_name],
+            ).df()
+            results.append(df)
+
+        if not results:
+            return pd.DataFrame()
+
+        combined = pd.concat(results, ignore_index=True)
+        if combined.empty:
+            return pd.DataFrame()
+
+        pivoted = combined.pivot(index="dataset", columns="metric", values="score")
+        pivoted["Average"] = pivoted.mean(axis=1)
+        pivoted = pivoted.reset_index()
+
+        # Round numeric columns for display
+        numeric_cols = pivoted.select_dtypes(include=["float64"]).columns
+        pivoted[numeric_cols] = pivoted[numeric_cols].round(3)
+
+        return pivoted
 
     def get_borda_count_leaderboard(
         self,

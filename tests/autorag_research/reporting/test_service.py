@@ -115,6 +115,38 @@ class TestReportingService:
         metrics = service.list_metrics("test-db")
         assert metrics == ["recall@10", "ndcg@10", "mrr"]
 
+    def test_get_pipeline_type_retrieval(self, service_with_mock):
+        """Test get_pipeline_type returns 'retrieval' for retrieval pipeline."""
+        service, mock_conn = service_with_mock
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame({"pipeline_type": ["retrieval"]})
+
+        result = service.get_pipeline_type("test-db", "bm25_pipeline")
+        assert result == "retrieval"
+
+    def test_get_pipeline_type_generation(self, service_with_mock):
+        """Test get_pipeline_type returns 'generation' for generation pipeline."""
+        service, mock_conn = service_with_mock
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame({"pipeline_type": ["generation"]})
+
+        result = service.get_pipeline_type("test-db", "naive_rag_pipeline")
+        assert result == "generation"
+
+    def test_get_pipeline_type_not_found(self, service_with_mock):
+        """Test get_pipeline_type returns None when pipeline not found."""
+        service, mock_conn = service_with_mock
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame()
+
+        result = service.get_pipeline_type("test-db", "nonexistent_pipeline")
+        assert result is None
+
+    def test_get_pipeline_type_null_value(self, service_with_mock):
+        """Test get_pipeline_type returns None when pipeline_type is null in config."""
+        service, mock_conn = service_with_mock
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame({"pipeline_type": [None]})
+
+        result = service.get_pipeline_type("test-db", "legacy_pipeline")
+        assert result is None
+
     def test_compare_across_datasets(self, service_with_mock):
         """Test cross-dataset comparison."""
         service, mock_conn = service_with_mock
@@ -300,3 +332,182 @@ class TestReportingService:
 
         df = service.get_borda_count_leaderboard(["db1"], ["metric"])
         assert df.empty
+
+    # === Tests for Multi-Metric Leaderboard Methods ===
+
+    def test_get_all_metrics_leaderboard(self, service_with_mock):
+        """Test get_all_metrics_leaderboard returns pivoted DataFrame with Average."""
+        service, mock_conn = service_with_mock
+
+        def execute_side_effect(query, params=None):
+            result = MagicMock()
+            if "ATTACH" in query:
+                return result
+            # Return data for pivoting
+            result.df.return_value = pd.DataFrame({
+                "pipeline": ["bm25", "bm25", "vector", "vector"],
+                "metric": ["recall@10", "mrr", "recall@10", "mrr"],
+                "score": [0.8, 0.7, 0.9, 0.6],
+            })
+            return result
+
+        mock_conn.execute.side_effect = execute_side_effect
+
+        df = service.get_all_metrics_leaderboard("test-db", "retrieval")
+
+        # Check column structure
+        assert "rank" in df.columns
+        assert "pipeline" in df.columns
+        assert "Average" in df.columns
+        # Check sorting by Average (vector has avg 0.75, bm25 has avg 0.75 but different)
+        assert not df.empty
+
+    def test_get_all_metrics_leaderboard_retrieval_query(self, service_with_mock):
+        """Test that retrieval type is used in query."""
+        service, mock_conn = service_with_mock
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame()
+
+        service.get_all_metrics_leaderboard("test-db", "retrieval")
+
+        call_args = mock_conn.execute.call_args_list[-1]
+        query = call_args[0][0]
+        assert "retrieval" in query
+
+    def test_get_all_metrics_leaderboard_generation_query(self, service_with_mock):
+        """Test that generation type is used in query."""
+        service, mock_conn = service_with_mock
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame()
+
+        service.get_all_metrics_leaderboard("test-db", "generation")
+
+        call_args = mock_conn.execute.call_args_list[-1]
+        query = call_args[0][0]
+        assert "generation" in query
+
+    def test_get_all_metrics_leaderboard_empty_result(self, service_with_mock):
+        """Test get_all_metrics_leaderboard returns empty DataFrame when no data."""
+        service, mock_conn = service_with_mock
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame()
+
+        df = service.get_all_metrics_leaderboard("test-db", "retrieval")
+        assert df.empty
+
+    def test_get_all_metrics_leaderboard_invalid_type(self, service_with_mock):
+        """Test that invalid metric type raises ValueError."""
+        service, _ = service_with_mock
+        with pytest.raises(ValueError, match="Invalid metric_type"):
+            service.get_all_metrics_leaderboard("test-db", "invalid")
+
+    def test_get_all_metrics_leaderboard_rounds_values(self, service_with_mock):
+        """Test that numeric values are rounded to 3 decimal places."""
+        service, mock_conn = service_with_mock
+
+        def execute_side_effect(query, params=None):
+            result = MagicMock()
+            if "ATTACH" in query:
+                return result
+            result.df.return_value = pd.DataFrame({
+                "pipeline": ["bm25", "bm25"],
+                "metric": ["recall@10", "mrr"],
+                "score": [0.123456789, 0.987654321],
+            })
+            return result
+
+        mock_conn.execute.side_effect = execute_side_effect
+
+        df = service.get_all_metrics_leaderboard("test-db", "retrieval")
+
+        # Check that values are rounded
+        for col in df.select_dtypes(include=["float64"]).columns:
+            for val in df[col]:
+                # Values should be rounded to at most 3 decimal places
+                assert round(val, 3) == val
+
+    def test_compare_pipeline_all_metrics(self, service_with_mock):
+        """Test compare_pipeline_all_metrics returns pivoted DataFrame with Average."""
+        service, mock_conn = service_with_mock
+
+        # Track which dataset we're querying
+        dataset_index = [0]
+        datasets = ["db1", "db2"]
+
+        def execute_side_effect(query, params=None):
+            result = MagicMock()
+            if "ATTACH" in query:
+                return result
+            # First call: get_pipeline_type
+            if "config" in query:
+                result.df.return_value = pd.DataFrame({"pipeline_type": ["retrieval"]})
+            # Subsequent calls: metric data for each dataset
+            else:
+                # Use the actual dataset name from params
+                current_dataset = params[0] if params else datasets[dataset_index[0] % 2]
+                result.df.return_value = pd.DataFrame({
+                    "dataset": [current_dataset] * 2,
+                    "metric": ["recall@10", "mrr"],
+                    "score": [0.8, 0.7],
+                })
+                dataset_index[0] += 1
+            return result
+
+        mock_conn.execute.side_effect = execute_side_effect
+
+        df = service.compare_pipeline_all_metrics(["db1", "db2"], "bm25")
+
+        assert "dataset" in df.columns
+        assert "Average" in df.columns
+        assert not df.empty
+
+    def test_compare_pipeline_all_metrics_empty_db_names(self, service_with_mock):
+        """Test compare_pipeline_all_metrics with empty db_names returns empty DataFrame."""
+        service, _ = service_with_mock
+        assert service.compare_pipeline_all_metrics([], "pipeline").empty
+
+    def test_compare_pipeline_all_metrics_empty_pipeline_name(self, service_with_mock):
+        """Test compare_pipeline_all_metrics with empty pipeline_name returns empty DataFrame."""
+        service, _ = service_with_mock
+        assert service.compare_pipeline_all_metrics(["db1"], "").empty
+
+    def test_compare_pipeline_all_metrics_pipeline_type_not_found(self, service_with_mock):
+        """Test compare_pipeline_all_metrics returns empty when pipeline type not found."""
+        service, mock_conn = service_with_mock
+
+        def execute_side_effect(query, params=None):
+            result = MagicMock()
+            if "ATTACH" in query:
+                return result
+            # Return empty for pipeline type query
+            result.df.return_value = pd.DataFrame()
+            return result
+
+        mock_conn.execute.side_effect = execute_side_effect
+
+        df = service.compare_pipeline_all_metrics(["db1"], "nonexistent")
+        assert df.empty
+
+    def test_compare_pipeline_all_metrics_rounds_values(self, service_with_mock):
+        """Test that numeric values are rounded to 3 decimal places."""
+        service, mock_conn = service_with_mock
+
+        def execute_side_effect(query, params=None):
+            result = MagicMock()
+            if "ATTACH" in query:
+                return result
+            if "config" in query:
+                result.df.return_value = pd.DataFrame({"pipeline_type": ["retrieval"]})
+            else:
+                result.df.return_value = pd.DataFrame({
+                    "dataset": ["db1"],
+                    "metric": ["recall@10"],
+                    "score": [0.123456789],
+                })
+            return result
+
+        mock_conn.execute.side_effect = execute_side_effect
+
+        df = service.compare_pipeline_all_metrics(["db1"], "bm25")
+
+        if not df.empty:
+            for col in df.select_dtypes(include=["float64"]).columns:
+                for val in df[col]:
+                    assert round(val, 3) == val

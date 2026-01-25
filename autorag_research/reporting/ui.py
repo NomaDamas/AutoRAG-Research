@@ -88,6 +88,17 @@ def fetch_all_metrics(db_name: str) -> list[str]:
         return []
 
 
+def fetch_pipeline_type(db_name: str, pipeline_name: str) -> Literal["retrieval", "generation"] | None:
+    """Fetch the type of a pipeline."""
+    if not db_name or not pipeline_name:
+        return None
+    try:
+        return get_service().get_pipeline_type(db_name, pipeline_name)
+    except Exception as e:
+        gr.Warning(f"Failed to fetch pipeline type: {e}")
+        return None
+
+
 def fetch_leaderboard(db_name: str, metric_name: str) -> pd.DataFrame:
     """Fetch leaderboard data for a dataset and metric."""
     if not db_name or not metric_name:
@@ -135,25 +146,46 @@ def fetch_borda_ranking(db_names: list[str], metrics: list[str]) -> pd.DataFrame
         return pd.DataFrame()
 
 
+def fetch_all_metrics_leaderboard(db_name: str, metric_type: Literal["retrieval", "generation"]) -> pd.DataFrame:
+    """Fetch leaderboard with all metrics as columns."""
+    if not db_name:
+        return pd.DataFrame()
+    try:
+        return get_service().get_all_metrics_leaderboard(db_name, metric_type)
+    except Exception as e:
+        gr.Warning(f"Failed to fetch leaderboard: {e}")
+        return pd.DataFrame()
+
+
+def fetch_cross_dataset_all_metrics(db_names: list[str], pipeline_name: str) -> pd.DataFrame:
+    """Fetch cross-dataset comparison with all metrics as columns."""
+    if not db_names or not pipeline_name:
+        return pd.DataFrame()
+    try:
+        return get_service().compare_pipeline_all_metrics(db_names, pipeline_name)
+    except Exception as e:
+        gr.Warning(f"Failed to fetch cross-dataset comparison: {e}")
+        return pd.DataFrame()
+
+
 # === UI Update Handlers ===
 
 
-def on_dataset_change(db_name: str, metric_type: Literal["retrieval", "generation"]) -> tuple[dict, dict]:
-    """Handle dataset selection change."""
-    metrics = fetch_metrics(db_name, metric_type)
+def on_dataset_change(db_name: str, metric_type: Literal["retrieval", "generation"]) -> tuple[pd.DataFrame, dict]:
+    """Handle dataset selection change - returns leaderboard DataFrame and stats."""
+    df = fetch_all_metrics_leaderboard(db_name, metric_type)
     stats = fetch_dataset_stats(db_name)
-    return gr.update(choices=metrics, value=metrics[0] if metrics else None), gr.update(value=stats)
+    return df, gr.update(value=stats)
 
 
-def on_metric_type_change(db_name: str, metric_type: Literal["retrieval", "generation"]) -> dict:
-    """Handle metric type selection change."""
-    metrics = fetch_metrics(db_name, metric_type)
-    return gr.update(choices=metrics, value=metrics[0] if metrics else None)
+def on_metric_type_change(db_name: str, metric_type: Literal["retrieval", "generation"]) -> pd.DataFrame:
+    """Handle metric type selection change - returns leaderboard DataFrame."""
+    return fetch_all_metrics_leaderboard(db_name, metric_type)
 
 
-def on_refresh_leaderboard(db_name: str, metric_name: str) -> tuple[pd.DataFrame, dict]:
+def on_refresh_leaderboard(db_name: str, metric_type: Literal["retrieval", "generation"]) -> tuple[pd.DataFrame, dict]:
     """Refresh leaderboard data."""
-    df = fetch_leaderboard(db_name, metric_name)
+    df = fetch_all_metrics_leaderboard(db_name, metric_type)
     stats = fetch_dataset_stats(db_name)
     return df, gr.update(value=stats)
 
@@ -179,7 +211,7 @@ def on_datasets_select_for_metrics(db_names: list[str]) -> dict:
 # === UI Component Builders ===
 
 
-def build_single_dataset_tab() -> tuple[gr.Tab, gr.Dropdown, gr.Dropdown, gr.Textbox]:
+def build_single_dataset_tab() -> tuple[gr.Tab, gr.Dropdown, gr.Dropdown, gr.Dataframe, gr.Textbox]:
     """Build the single dataset leaderboard tab."""
     with gr.Tab("Single Dataset") as tab:
         with gr.Row():
@@ -196,20 +228,10 @@ def build_single_dataset_tab() -> tuple[gr.Tab, gr.Dropdown, gr.Dropdown, gr.Tex
                 interactive=True,
                 scale=1,
             )
-        with gr.Row():
-            metric_dropdown = gr.Dropdown(
-                label="Metric",
-                choices=[],
-                value=None,
-                interactive=True,
-                preserved_by_key=None,  # Disable browser state restoration for dynamic choices
-                scale=2,
-            )
             refresh_btn = gr.Button("🔄 Refresh", scale=1)
 
         leaderboard_table = gr.Dataframe(
             label="Leaderboard",
-            headers=["rank", "pipeline", "score", "time_ms"],
             interactive=False,
         )
 
@@ -223,25 +245,20 @@ def build_single_dataset_tab() -> tuple[gr.Tab, gr.Dropdown, gr.Dropdown, gr.Tex
         dataset_dropdown.change(
             fn=on_dataset_change,
             inputs=[dataset_dropdown, metric_type_dropdown],
-            outputs=[metric_dropdown, stats_display],
+            outputs=[leaderboard_table, stats_display],
         )
         metric_type_dropdown.change(
             fn=on_metric_type_change,
             inputs=[dataset_dropdown, metric_type_dropdown],
-            outputs=[metric_dropdown],
-        )
-        metric_dropdown.change(
-            fn=fetch_leaderboard,
-            inputs=[dataset_dropdown, metric_dropdown],
             outputs=[leaderboard_table],
         )
         refresh_btn.click(
             fn=on_refresh_leaderboard,
-            inputs=[dataset_dropdown, metric_dropdown],
+            inputs=[dataset_dropdown, metric_type_dropdown],
             outputs=[leaderboard_table, stats_display],
         )
 
-    return tab, dataset_dropdown, metric_dropdown, stats_display
+    return tab, dataset_dropdown, metric_type_dropdown, leaderboard_table, stats_display
 
 
 def build_cross_dataset_tab(all_datasets: list[str]) -> tuple[gr.Tab, gr.CheckboxGroup]:
@@ -261,41 +278,25 @@ def build_cross_dataset_tab(all_datasets: list[str]) -> tuple[gr.Tab, gr.Checkbo
                 value=None,
                 interactive=True,
                 preserved_by_key=None,  # Disable browser state restoration for dynamic choices
-                scale=1,
-            )
-            metric_dropdown = gr.Dropdown(
-                label="Metric",
-                choices=[],
-                value=None,
-                interactive=True,
-                preserved_by_key=None,  # Disable browser state restoration for dynamic choices
-                scale=1,
+                scale=2,
             )
             compare_btn = gr.Button("🔄 Compare", scale=1)
 
         comparison_table = gr.Dataframe(
             label="Cross-Dataset Comparison",
-            headers=["dataset", "score", "time_ms"],
             interactive=False,
         )
 
         # Event handlers
+        # When datasets change -> update pipelines
         datasets_checkbox.change(
             fn=on_datasets_select_for_pipelines,
             inputs=[datasets_checkbox],
             outputs=[pipeline_dropdown],
         )
-        datasets_checkbox.change(
-            fn=lambda dbs: gr.update(
-                choices=fetch_all_metrics(dbs[0]) if dbs else [],
-                value=None,
-            ),
-            inputs=[datasets_checkbox],
-            outputs=[metric_dropdown],
-        )
         compare_btn.click(
-            fn=fetch_cross_dataset,
-            inputs=[datasets_checkbox, pipeline_dropdown, metric_dropdown],
+            fn=fetch_cross_dataset_all_metrics,
+            inputs=[datasets_checkbox, pipeline_dropdown],
             outputs=[comparison_table],
         )
 
@@ -352,9 +353,13 @@ def create_leaderboard_app() -> gr.Blocks:
         gr.Markdown("# 🏆 AutoRAG Leaderboard")
 
         with gr.Tabs():
-            _single_tab, single_dataset_dropdown, single_metric_dropdown, single_stats_display = (
-                build_single_dataset_tab()
-            )
+            (
+                _single_tab,
+                single_dataset_dropdown,
+                _single_metric_type_dropdown,
+                single_leaderboard_table,
+                single_stats_display,
+            ) = build_single_dataset_tab()
             _cross_tab, _cross_datasets_checkbox = build_cross_dataset_tab(datasets)
             _borda_tab, _borda_datasets_checkbox, _borda_metrics_checkbox = build_borda_ranking_tab(datasets)
 
@@ -364,11 +369,11 @@ def create_leaderboard_app() -> gr.Blocks:
             outputs=[single_dataset_dropdown],
         )
 
-        # Auto-load metrics when app starts if datasets exist
+        # Auto-load leaderboard when app starts if datasets exist
         if datasets:
             app.load(
                 fn=lambda: on_dataset_change(datasets[0], "retrieval"),
-                outputs=[single_metric_dropdown, single_stats_display],
+                outputs=[single_leaderboard_table, single_stats_display],
             )
 
     return app

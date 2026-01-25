@@ -9,12 +9,15 @@ import pytest
 from autorag_research.reporting.ui import (
     create_leaderboard_app,
     fetch_all_metrics,
+    fetch_all_metrics_leaderboard,
     fetch_borda_ranking,
     fetch_cross_dataset,
+    fetch_cross_dataset_all_metrics,
     fetch_dataset_stats,
     fetch_datasets,
     fetch_leaderboard,
     fetch_metrics,
+    fetch_pipeline_type,
     fetch_pipelines,
     get_service,
     on_dataset_change,
@@ -125,6 +128,26 @@ class TestDataFetchers:
         result = fetch_all_metrics("")
         assert result == []
 
+    def test_fetch_pipeline_type_returns_type(self):
+        """Test fetch_pipeline_type returns pipeline type."""
+        self.mock_service.get_pipeline_type.return_value = "retrieval"
+        result = fetch_pipeline_type("test_db", "bm25_pipeline")
+        assert result == "retrieval"
+        self.mock_service.get_pipeline_type.assert_called_once_with("test_db", "bm25_pipeline")
+
+    def test_fetch_pipeline_type_empty_inputs_returns_none(self):
+        """Test fetch_pipeline_type returns None for empty inputs."""
+        result = fetch_pipeline_type("", "pipeline")
+        assert result is None
+        result = fetch_pipeline_type("test_db", "")
+        assert result is None
+
+    def test_fetch_pipeline_type_handles_error(self):
+        """Test fetch_pipeline_type returns None on error."""
+        self.mock_service.get_pipeline_type.side_effect = Exception("Error")
+        result = fetch_pipeline_type("test_db", "pipeline")
+        assert result is None
+
     def test_fetch_leaderboard_returns_dataframe(self):
         """Test fetch_leaderboard returns DataFrame."""
         expected_df = pd.DataFrame({
@@ -220,41 +243,58 @@ class TestUIUpdateHandlers:
             yield
         reset_service()
 
-    def test_on_dataset_change_updates_metrics_and_stats(self):
-        """Test on_dataset_change returns updated metrics and stats."""
-        self.mock_service.list_metrics_by_type.return_value = ["recall@5", "ndcg@10"]
+    def test_on_dataset_change_returns_leaderboard_and_stats(self):
+        """Test on_dataset_change returns leaderboard DataFrame and stats."""
+        expected_df = pd.DataFrame({
+            "rank": [1, 2],
+            "pipeline": ["bm25", "vector"],
+            "recall@5": [0.85, 0.80],
+            "ndcg@10": [0.75, 0.70],
+            "Average": [0.80, 0.75],
+        })
+        self.mock_service.get_all_metrics_leaderboard.return_value = expected_df
         self.mock_service.get_dataset_stats.return_value = {
             "query_count": 100,
             "chunk_count": 1000,
             "document_count": 50,
         }
 
-        metric_update, stats_update = on_dataset_change("test_db", "retrieval")
+        df, stats_update = on_dataset_change("test_db", "retrieval")
 
-        assert metric_update["choices"] == ["recall@5", "ndcg@10"]
-        assert metric_update["value"] == "recall@5"
+        pd.testing.assert_frame_equal(df, expected_df)
         assert "100 queries" in stats_update["value"]
 
-    def test_on_metric_type_change_updates_metrics(self):
-        """Test on_metric_type_change returns updated metrics."""
-        self.mock_service.list_metrics_by_type.return_value = ["bleu", "rouge"]
+    def test_on_metric_type_change_returns_leaderboard(self):
+        """Test on_metric_type_change returns leaderboard DataFrame."""
+        expected_df = pd.DataFrame({
+            "rank": [1],
+            "pipeline": ["naive_rag"],
+            "bleu": [0.45],
+            "rouge": [0.55],
+            "Average": [0.50],
+        })
+        self.mock_service.get_all_metrics_leaderboard.return_value = expected_df
 
         result = on_metric_type_change("test_db", "generation")
 
-        assert result["choices"] == ["bleu", "rouge"]
-        assert result["value"] == "bleu"
+        pd.testing.assert_frame_equal(result, expected_df)
 
     def test_on_refresh_leaderboard_returns_data_and_stats(self):
         """Test on_refresh_leaderboard returns leaderboard and stats."""
-        expected_df = pd.DataFrame({"rank": [1], "pipeline": ["p1"], "score": [0.9], "time_ms": [50]})
-        self.mock_service.get_leaderboard.return_value = expected_df
+        expected_df = pd.DataFrame({
+            "rank": [1],
+            "pipeline": ["p1"],
+            "recall@5": [0.9],
+            "Average": [0.9],
+        })
+        self.mock_service.get_all_metrics_leaderboard.return_value = expected_df
         self.mock_service.get_dataset_stats.return_value = {
             "query_count": 100,
             "chunk_count": 1000,
             "document_count": 50,
         }
 
-        df, stats_update = on_refresh_leaderboard("test_db", "recall@5")
+        df, stats_update = on_refresh_leaderboard("test_db", "retrieval")
 
         pd.testing.assert_frame_equal(df, expected_df)
         assert "100 queries" in stats_update["value"]
@@ -292,6 +332,75 @@ class TestUIUpdateHandlers:
         assert result["value"] == []
 
 
+class TestNewFetchFunctions:
+    """Tests for new multi-metric fetch functions."""
+
+    @pytest.fixture(autouse=True)
+    def setup_mock_service(self):
+        """Setup mock service for each test."""
+        reset_service()
+        with patch("autorag_research.reporting.ui.get_service") as mock_get:
+            self.mock_service = MagicMock()
+            mock_get.return_value = self.mock_service
+            yield
+        reset_service()
+
+    def test_fetch_all_metrics_leaderboard_returns_dataframe(self):
+        """Test fetch_all_metrics_leaderboard returns DataFrame with all metrics."""
+        expected_df = pd.DataFrame({
+            "rank": [1, 2],
+            "pipeline": ["bm25", "vector"],
+            "recall@5": [0.85, 0.80],
+            "ndcg@10": [0.75, 0.70],
+            "Average": [0.80, 0.75],
+        })
+        self.mock_service.get_all_metrics_leaderboard.return_value = expected_df
+
+        result = fetch_all_metrics_leaderboard("test_db", "retrieval")
+
+        pd.testing.assert_frame_equal(result, expected_df)
+        self.mock_service.get_all_metrics_leaderboard.assert_called_once_with("test_db", "retrieval")
+
+    def test_fetch_all_metrics_leaderboard_empty_db_returns_empty(self):
+        """Test fetch_all_metrics_leaderboard returns empty DataFrame for empty db."""
+        result = fetch_all_metrics_leaderboard("", "retrieval")
+        assert result.empty
+
+    def test_fetch_all_metrics_leaderboard_handles_error(self):
+        """Test fetch_all_metrics_leaderboard returns empty DataFrame on error."""
+        self.mock_service.get_all_metrics_leaderboard.side_effect = Exception("Error")
+        result = fetch_all_metrics_leaderboard("test_db", "retrieval")
+        assert result.empty
+
+    def test_fetch_cross_dataset_all_metrics_returns_dataframe(self):
+        """Test fetch_cross_dataset_all_metrics returns DataFrame with all metrics."""
+        expected_df = pd.DataFrame({
+            "dataset": ["db1", "db2"],
+            "recall@5": [0.85, 0.80],
+            "ndcg@10": [0.75, 0.70],
+            "Average": [0.80, 0.75],
+        })
+        self.mock_service.compare_pipeline_all_metrics.return_value = expected_df
+
+        result = fetch_cross_dataset_all_metrics(["db1", "db2"], "bm25")
+
+        pd.testing.assert_frame_equal(result, expected_df)
+        self.mock_service.compare_pipeline_all_metrics.assert_called_once_with(["db1", "db2"], "bm25")
+
+    def test_fetch_cross_dataset_all_metrics_empty_inputs_returns_empty(self):
+        """Test fetch_cross_dataset_all_metrics returns empty DataFrame for empty inputs."""
+        result = fetch_cross_dataset_all_metrics([], "bm25")
+        assert result.empty
+        result = fetch_cross_dataset_all_metrics(["db1"], "")
+        assert result.empty
+
+    def test_fetch_cross_dataset_all_metrics_handles_error(self):
+        """Test fetch_cross_dataset_all_metrics returns empty DataFrame on error."""
+        self.mock_service.compare_pipeline_all_metrics.side_effect = Exception("Error")
+        result = fetch_cross_dataset_all_metrics(["db1"], "bm25")
+        assert result.empty
+
+
 class TestAppCreation:
     """Tests for app creation."""
 
@@ -311,7 +420,12 @@ class TestAppCreation:
         with patch("autorag_research.reporting.ui.get_service") as mock_get:
             mock_service = MagicMock()
             mock_service.list_available_datasets.return_value = ["test_db1", "test_db2"]
-            mock_service.list_metrics_by_type.return_value = ["recall@5"]
+            mock_service.get_all_metrics_leaderboard.return_value = pd.DataFrame({
+                "rank": [1],
+                "pipeline": ["bm25"],
+                "recall@5": [0.85],
+                "Average": [0.85],
+            })
             mock_service.get_dataset_stats.return_value = {
                 "query_count": 100,
                 "chunk_count": 1000,
