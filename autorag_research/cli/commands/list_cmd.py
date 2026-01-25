@@ -6,8 +6,9 @@ from typing import Annotated, Literal
 
 import typer
 
-from autorag_research.cli.utils import discover_metrics, discover_pipelines, load_db_config_from_yaml
+from autorag_research.cli.utils import discover_metrics, discover_pipelines
 from autorag_research.data.registry import discover_ingestors
+from autorag_research.orm.connection import DBConnection
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -18,6 +19,7 @@ RESOURCE_HANDLERS = {
     "ingestors": lambda **_: print_ingestors(),
     "pipelines": lambda **_: print_pipelines(),
     "metrics": lambda **_: print_metrics(),
+    "databases": lambda **_: print_databases(),
 }
 
 
@@ -26,18 +28,6 @@ def list_resources(
         ResourceType,
         typer.Argument(help="Resource type to list: datasets, ingestors, pipelines, metrics, or databases"),
     ],
-    db_host: Annotated[
-        str | None, typer.Option("--db-host", help="Database host (default: from configs/db.yaml)")
-    ] = None,
-    db_port: Annotated[
-        int | None, typer.Option("--db-port", help="Database port (default: from configs/db.yaml)")
-    ] = None,
-    db_user: Annotated[
-        str | None, typer.Option("--db-user", help="Database user (default: from configs/db.yaml)")
-    ] = None,
-    db_password: Annotated[
-        str | None, typer.Option("--db-password", help="Database password (default: from configs/db.yaml)")
-    ] = None,
 ) -> None:
     """List available resources.
 
@@ -52,21 +42,7 @@ def list_resources(
       autorag-research list metrics
       autorag-research list databases
     """
-    if resource in RESOURCE_HANDLERS:
-        RESOURCE_HANDLERS[resource]()
-    elif resource == "databases":
-        _print_databases_with_config(db_host, db_port, db_user, db_password)
-
-
-def _print_databases_with_config(
-    db_host: str | None,
-    db_port: int | None,
-    db_user: str | None,
-    db_password: str | None,
-) -> None:
-    """Load DB config with CLI overrides and print databases."""
-    db_config = load_db_config_from_yaml(db_host, db_port, db_user, db_password)
-    print_databases(db_config.host, db_config.port, db_config.user, db_config.password)
+    RESOURCE_HANDLERS[resource]()
 
 
 def print_ingestors() -> None:
@@ -126,20 +102,20 @@ def print_metrics() -> None:
     typer.echo("    generation: [rouge]")
 
 
-def print_databases(host: str, port: int, user: str, password: str) -> None:
+def print_databases() -> None:
     """Print available databases on the PostgreSQL server."""
-    from autorag_research.cli.utils import list_databases_with_connection
+    db_conn = DBConnection.from_config()
 
     typer.echo("\nAvailable Databases:")
     typer.echo("-" * 60)
     try:
-        databases = list_databases_with_connection(host, port, user, password)
+        databases = db_conn.get_database_names()
         if databases:
             for db in databases:
                 typer.echo(f"  {db}")
         else:
             typer.echo("  No databases found.")
-        typer.echo(f"\nServer: {host}:{port}")
+        typer.echo(f"\nServer: {db_conn.host}:{db_conn.port}")
     except Exception:
         logger.exception("Error connecting to database. Make sure PostgreSQL is running and credentials are correct.")
         sys.exit(1)

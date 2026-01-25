@@ -226,16 +226,8 @@ class TestDetectEmbeddingDimension:
         """
         from autorag_research.util import detect_embedding_dimension
 
-        dimension = detect_embedding_dimension(db_engine, "public")
+        dimension = detect_embedding_dimension(db_engine)
         # The seed data uses 768-dimensional embeddings
-        assert dimension == 768
-
-    def test_detect_dimension_with_engine_url(self, db_engine):
-        """Test detecting dimension using engine URL."""
-        from autorag_research.util import detect_embedding_dimension
-
-        # Use the engine directly - URL string conversion masks password
-        dimension = detect_embedding_dimension(db_engine, "public")
         assert dimension == 768
 
     def test_detect_dimension_nonexistent_schema(self, db_engine):
@@ -252,3 +244,19 @@ class TestDetectEmbeddingDimension:
         # Invalid URL should return None, not raise
         dimension = detect_embedding_dimension("postgresql+psycopg://invalid:invalid@localhost:9999/invalid", "test")
         assert dimension is None
+
+
+class TestDetectPrimaryKeyType:
+    """Test detect_primary_key_type function."""
+
+    def test_detect_int_type_from_existing_schema(self, db_engine):
+        """Test detecting integer primary key type from existing schema.
+
+        The seed data in 002-seed.sql creates a 'public' schema with query table
+        that uses integer primary keys.
+        """
+        from autorag_research.util import detect_primary_key_type
+
+        pk_type = detect_primary_key_type(db_engine)
+        # The seed data uses integer primary keys
+        assert pk_type == "bigint"

@@ -4,43 +4,27 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
 import autorag_research.cli as cli
 from autorag_research.cli.app import app
 from autorag_research.cli.commands.run import (
+    _load_experiment_config,
     build_executor_config,
     create_session_factory,
     print_results,
 )
+from autorag_research.config import ExecutorConfig
+
+# Register mock hydra resolver for tests (handles ${hydra:runtime.cwd} etc.)
+if not OmegaConf.has_resolver("hydra"):
+    OmegaConf.register_new_resolver("hydra", lambda key: "./test_indices" if key == "runtime.cwd" else "")
 
 
 @pytest.fixture
-def mock_cfg() -> MagicMock:
-    """Create mock DictConfig for testing."""
-    return OmegaConf.create({
-        "db": {
-            "host": "localhost",
-            "port": 5432,
-            "user": "testuser",
-            "password": "testpass",
-            "database": "testdb",
-        },
-        "db_name": "test_schema",
-        "pipelines": [
-            {"_target_": "some.module.Pipeline1", "name": "pipeline1"},
-            {"_target_": "some.module.Pipeline2", "name": "pipeline2"},
-        ],
-        "metrics": [{"_target_": "some.module.Metric1", "name": "metric1"}],
-        "max_retries": 3,
-        "eval_batch_size": 32,
-    })
-
-
-@pytest.fixture
-def real_db_cfg(test_db_params: dict[str, str | int]) -> OmegaConf:
+def real_db_cfg(test_db_params: dict[str, str | int]) -> DictConfig:
     """Create OmegaConf config using real test database parameters."""
     return OmegaConf.create({
         "db": {
@@ -56,7 +40,7 @@ def real_db_cfg(test_db_params: dict[str, str | int]) -> OmegaConf:
 
 @pytest.fixture
 def mock_result() -> MagicMock:
-    """Create mock executor result for testing."""
+    """Create mock executor result for testing print_results."""
     result = MagicMock()
     result.pipeline_results = [
         MagicMock(pipeline_name="pipeline1", success=True, error=None),
@@ -81,31 +65,23 @@ class TestRunCommand:
         assert "--max-retries" in result.stdout
 
     @patch("autorag_research.cli.commands.run._run_experiment")
-    @patch("autorag_research.cli.commands.run.compose")
-    @patch("autorag_research.cli.commands.run.initialize_config_dir")
-    @patch("autorag_research.cli.commands.run.GlobalHydra")
-    def test_run_with_config_path(
+    def test_run_with_real_config(
         self,
-        mock_global_hydra: MagicMock,
-        mock_init_config: MagicMock,
-        mock_compose: MagicMock,
         mock_run_experiment: MagicMock,
         cli_runner: CliRunner,
-        tmp_path: Path,
+        real_config_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """run command uses cli.CONFIG_PATH."""
-        config_dir = tmp_path / "configs"
-        config_dir.mkdir()
-        monkeypatch.setattr(cli, "CONFIG_PATH", config_dir)
-
-        mock_compose.return_value = OmegaConf.create({"db_name": "test"})
-        mock_init_config.return_value.__enter__ = MagicMock()
-        mock_init_config.return_value.__exit__ = MagicMock()
+        """run command loads real experiment.yaml and calls _run_experiment."""
+        monkeypatch.setattr(cli, "CONFIG_PATH", real_config_path)
 
         cli_runner.invoke(app, ["run", "--db-name", "test_db"])
 
+        # Should call _run_experiment (we mock it to avoid actual execution)
         mock_run_experiment.assert_called_once()
+        # The config passed should have our db_name override
+        call_args = mock_run_experiment.call_args[0][0]
+        assert isinstance(call_args, DictConfig)
 
     def test_run_without_config_path_exits(self, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
         """run command exits if CONFIG_PATH is None."""
@@ -115,61 +91,155 @@ class TestRunCommand:
 
         assert result.exit_code == 1
 
+    def test_run_with_missing_config_file_exits(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """run command exits if config file doesn't exist."""
+        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
+
+        result = cli_runner.invoke(app, ["run", "--config-name", "nonexistent"])
+
+        assert result.exit_code == 1
+        # Error message may be in stdout or output
+        output = result.stdout + (result.output if hasattr(result, "output") else "")
+        assert "not found" in output.lower()
+
+
+class TestLoadExperimentConfig:
+    """Tests for _load_experiment_config function using real config files."""
+
+    def test_loads_real_experiment_config(self, real_config_path: Path) -> None:
+        """Loads and resolves real experiment.yaml."""
+        cfg = _load_experiment_config(
+            config_path=real_config_path,
+            config_name="experiment",
+            db_name=None,
+            max_retries=None,
+            eval_batch_size=None,
+        )
+
+        assert isinstance(cfg, DictConfig)
+        assert "pipelines" in cfg
+        assert "metrics" in cfg
+        assert "db" in cfg
+
+    def test_db_name_override(self, real_config_path: Path) -> None:
+        """CLI db_name overrides config value."""
+        cfg = _load_experiment_config(
+            config_path=real_config_path,
+            config_name="experiment",
+            db_name="override_db",
+            max_retries=None,
+            eval_batch_size=None,
+        )
+
+        assert cfg.db_name == "override_db"
+
+    def test_max_retries_override(self, real_config_path: Path) -> None:
+        """CLI max_retries overrides config value."""
+        cfg = _load_experiment_config(
+            config_path=real_config_path,
+            config_name="experiment",
+            db_name=None,
+            max_retries=10,
+            eval_batch_size=None,
+        )
+
+        assert cfg.max_retries == 10
+
+    def test_eval_batch_size_override(self, real_config_path: Path) -> None:
+        """CLI eval_batch_size overrides config value."""
+        cfg = _load_experiment_config(
+            config_path=real_config_path,
+            config_name="experiment",
+            db_name=None,
+            max_retries=None,
+            eval_batch_size=50,
+        )
+
+        assert cfg.eval_batch_size == 50
+
+    def test_resolves_pipeline_configs(self, real_config_path: Path) -> None:
+        """Resolves pipeline names to full configs with _target_."""
+        cfg = _load_experiment_config(
+            config_path=real_config_path,
+            config_name="experiment",
+            db_name=None,
+            max_retries=None,
+            eval_batch_size=None,
+        )
+
+        # Pipelines should be resolved to list-like structure with _target_
+        assert len(cfg.pipelines) > 0
+        # Each pipeline config should have _target_
+        for pipeline_cfg in cfg.pipelines:
+            assert "_target_" in pipeline_cfg
+
+    def test_resolves_metric_configs(self, real_config_path: Path) -> None:
+        """Resolves metric names to full configs with _target_."""
+        cfg = _load_experiment_config(
+            config_path=real_config_path,
+            config_name="experiment",
+            db_name=None,
+            max_retries=None,
+            eval_batch_size=None,
+        )
+
+        # Metrics should be resolved to list-like structure with _target_
+        assert len(cfg.metrics) > 0
+        # Each metric config should have _target_
+        for metric_cfg in cfg.metrics:
+            assert "_target_" in metric_cfg
+
 
 class TestBuildExecutorConfig:
     """Tests for build_executor_config function.
 
-    Uses mock instantiate to avoid loading real pipeline/metric classes.
+    Note: Uses mock instantiate because YAML configs may have extra fields
+    (like 'description') that dataclasses don't accept.
     """
 
+    @pytest.fixture
+    def sample_cfg(self) -> DictConfig:
+        """Create sample DictConfig for testing."""
+        return OmegaConf.create({
+            "db": {"host": "localhost", "port": 5432, "user": "test", "password": "test"},
+            "db_name": "test_schema",
+            "pipelines": [
+                {"_target_": "some.module.Pipeline1", "name": "pipeline1"},
+                {"_target_": "some.module.Pipeline2", "name": "pipeline2"},
+            ],
+            "metrics": [{"_target_": "some.module.Metric1", "name": "metric1"}],
+            "max_retries": 3,
+            "eval_batch_size": 32,
+        })
+
     @patch("autorag_research.cli.commands.run.instantiate")
-    def test_instantiates_pipelines(self, mock_instantiate: MagicMock, mock_cfg: MagicMock) -> None:
-        """Instantiates each pipeline config."""
+    def test_builds_executor_config(self, mock_instantiate: MagicMock, sample_cfg: DictConfig) -> None:
+        """Builds ExecutorConfig by instantiating each pipeline and metric."""
         mock_instantiate.return_value = MagicMock()
 
-        build_executor_config(mock_cfg)
-
-        # Should be called for each pipeline and metric
-        assert mock_instantiate.call_count >= 2  # At least 2 pipelines
-
-    @patch("autorag_research.cli.commands.run.instantiate")
-    def test_instantiates_metrics(self, mock_instantiate: MagicMock, mock_cfg: MagicMock) -> None:
-        """Instantiates each metric config."""
-        mock_instantiate.return_value = MagicMock()
-
-        build_executor_config(mock_cfg)
-
-        # Should be called for metrics too
-        assert mock_instantiate.call_count >= 3  # 2 pipelines + 1 metric
-
-    @patch("autorag_research.cli.commands.run.instantiate")
-    def test_returns_executor_config(self, mock_instantiate: MagicMock, mock_cfg: MagicMock) -> None:
-        """Returns an ExecutorConfig object."""
-        from autorag_research.config import ExecutorConfig
-
-        mock_pipeline = MagicMock()
-        mock_metric = MagicMock()
-        mock_instantiate.side_effect = [mock_pipeline, mock_pipeline, mock_metric]
-
-        result = build_executor_config(mock_cfg)
+        result = build_executor_config(sample_cfg)
 
         assert isinstance(result, ExecutorConfig)
+        # 2 pipelines + 1 metric = 3 instantiate calls
+        assert mock_instantiate.call_count == 3
 
     @patch("autorag_research.cli.commands.run.instantiate")
-    def test_uses_config_max_retries(self, mock_instantiate: MagicMock, mock_cfg: MagicMock) -> None:
-        """Uses max_retries from config."""
+    def test_preserves_max_retries(self, mock_instantiate: MagicMock, sample_cfg: DictConfig) -> None:
+        """Preserves max_retries from config."""
         mock_instantiate.return_value = MagicMock()
 
-        result = build_executor_config(mock_cfg)
+        result = build_executor_config(sample_cfg)
 
         assert result.max_retries == 3
 
     @patch("autorag_research.cli.commands.run.instantiate")
-    def test_uses_config_eval_batch_size(self, mock_instantiate: MagicMock, mock_cfg: MagicMock) -> None:
-        """Uses eval_batch_size from config."""
+    def test_preserves_eval_batch_size(self, mock_instantiate: MagicMock, sample_cfg: DictConfig) -> None:
+        """Preserves eval_batch_size from config."""
         mock_instantiate.return_value = MagicMock()
 
-        result = build_executor_config(mock_cfg)
+        result = build_executor_config(sample_cfg)
 
         assert result.eval_batch_size == 32
 
@@ -180,18 +250,15 @@ class TestCreateSessionFactory:
     Note: create_session_factory returns (sessionmaker, db_url) tuple.
     """
 
-    def test_creates_working_session_factory(self, real_db_cfg: OmegaConf) -> None:
+    def test_creates_working_session_factory(self, real_db_cfg: DictConfig) -> None:
         """Creates a session factory that can connect to real test database."""
         factory, _ = create_session_factory(real_db_cfg)
 
-        # Factory should be callable (sessionmaker)
         assert callable(factory)
 
-        # Should be able to create a session
         session = factory()
         try:
             assert isinstance(session, Session)
-            # Simple query to verify connection works
             from sqlalchemy import text
 
             result = session.execute(text("SELECT 1"))
@@ -199,7 +266,7 @@ class TestCreateSessionFactory:
         finally:
             session.close()
 
-    def test_returns_sessionmaker_and_db_url(self, real_db_cfg: OmegaConf) -> None:
+    def test_returns_sessionmaker_and_db_url(self, real_db_cfg: DictConfig) -> None:
         """Returns a tuple of (sessionmaker, db_url)."""
         result = create_session_factory(real_db_cfg)
 
@@ -228,7 +295,6 @@ class TestCreateSessionFactory:
         factory, _ = create_session_factory(cfg)
         session = factory()
         try:
-            # Should connect successfully with env-resolved password
             from sqlalchemy import text
 
             result = session.execute(text("SELECT 1"))
@@ -267,7 +333,6 @@ class TestPrintResults:
 
         captured = capsys.readouterr()
         assert "metric1" in captured.out
-        # Score should be present (0.85 or formatted version)
         assert "0.85" in captured.out or "85" in captured.out
 
     def test_prints_summary(self, mock_result: MagicMock, capsys: pytest.CaptureFixture) -> None:
@@ -275,5 +340,4 @@ class TestPrintResults:
         print_results(mock_result)
 
         captured = capsys.readouterr()
-        # Should show some form of "2/2" or "2 of 2" completion
         assert "2" in captured.out

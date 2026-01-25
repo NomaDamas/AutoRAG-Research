@@ -1,15 +1,12 @@
 """CLI utility functions."""
 
 import logging
-import os
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
-from omegaconf import DictConfig, OmegaConf
-from sqlalchemy import create_engine, text
+from omegaconf import OmegaConf
 
 if TYPE_CHECKING:
     from llama_index.core.base.embeddings.base import BaseEmbedding
@@ -107,21 +104,6 @@ def get_config_dir() -> Path:
     return cli.CONFIG_PATH or Path.cwd() / "configs"
 
 
-def get_db_url(cfg: DictConfig) -> str:
-    """Build PostgreSQL connection URL from config."""
-    return f"postgresql+psycopg://{cfg.db.user}:{cfg.db.password}@{cfg.db.host}:{cfg.db.port}/{cfg.db.database}"
-
-
-def list_databases_with_connection(host: str, port: int, user: str, password: str) -> list[str]:
-    """List all user-created databases on the PostgreSQL server (excluding template databases)."""
-    db_url = f"postgresql+psycopg://{user}:{password}@{host}:{port}"
-    engine = create_engine(db_url)
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"))
-        databases = [row[0] for row in result]
-    return databases
-
-
 def setup_logging(verbose: bool = False) -> None:
     """Configure logging for CLI."""
     level = logging.DEBUG if verbose else logging.INFO
@@ -130,59 +112,6 @@ def setup_logging(verbose: bool = False) -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
-
-
-@dataclass
-class DatabaseConfig:
-    """Database connection configuration."""
-
-    host: str = "localhost"
-    port: int = 5432
-    user: str = "postgres"
-    password: str = "${oc.env:PGPASSWORD,postgres}"  # noqa: S105
-    database: str = "autorag_research"
-
-
-def load_db_config_from_yaml(
-    host: str | None = None,
-    port: int | None = None,
-    user: str | None = None,
-    password: str | None = None,
-    database: str | None = None,
-) -> DatabaseConfig:
-    """
-    Load database config from configs/db.yaml if exists.
-    The parameters can be overridden via function arguments.
-    """
-    import autorag_research.cli as cli
-
-    config_dir = cli.CONFIG_PATH or Path.cwd() / "configs"
-    yaml_path = config_dir / "db.yaml"
-
-    defaults = DatabaseConfig()
-
-    if not yaml_path.exists():
-        return defaults
-
-    try:
-        with open(yaml_path) as f:
-            data = yaml.safe_load(f) or {}
-
-        # Handle OmegaConf-style env var: ${oc.env:PGPASSWORD,postgres}
-        loaded_password = data.get("password", defaults.password)
-        if isinstance(loaded_password, str) and loaded_password.startswith("${"):
-            loaded_password = os.environ.get("PGPASSWORD", "postgres")
-
-        return DatabaseConfig(
-            host=host or data.get("host", defaults.host),
-            port=port or data.get("port", defaults.port),
-            user=user or data.get("user", defaults.user),
-            password=password or loaded_password,
-            database=database or data.get("database", defaults.database),
-        )
-    except Exception as e:
-        logger.warning(f"Failed to load DB config from YAML: {e}")
-        return defaults
 
 
 # =============================================================================

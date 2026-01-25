@@ -75,26 +75,3 @@ class ConfigResolver:
             List of loaded metric DictConfig objects.
         """
         return self.resolve_configs("metrics", metrics_cfg)
-
-    def load_db_config(self, db_name: str = "default") -> DictConfig:
-        """Load database config by name.
-
-        Args:
-            db_name: Database config name (default: "default").
-
-        Returns:
-            Loaded database DictConfig.
-
-        Raises:
-            FileNotFoundError: If db config doesn't exist.
-            TypeError: If config is not a dict.
-        """
-        path = self.config_dir / "db" / f"{db_name}.yaml"
-        if not path.exists():
-            msg = f"DB config not found: {path}"
-            raise FileNotFoundError(msg)
-        cfg = OmegaConf.load(path)
-        if not isinstance(cfg, DictConfig):
-            msg = f"DB config must be a mapping, not a list: {path}"
-            raise TypeError(msg)
-        return cfg

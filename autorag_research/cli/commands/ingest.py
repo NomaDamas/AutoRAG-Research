@@ -18,17 +18,14 @@ import logging
 from typing import TYPE_CHECKING, Annotated, Literal
 
 import typer
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 from autorag_research.cli.utils import (
-    DatabaseConfig,
     discover_embedding_configs,
     health_check_embedding,
-    load_db_config_from_yaml,
     load_embedding_model,
 )
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+from autorag_research.orm.connection import DBConnection
 
 if TYPE_CHECKING:
     from autorag_research.data.registry import IngestorMeta
@@ -128,25 +125,6 @@ def generate_db_name(ingestor_name: str, params: dict, subset: str, embedding_mo
     return "_".join(parts)
 
 
-def _create_session_factory_and_schema(
-    db_config: DatabaseConfig,
-    schema_name: str,
-    embedding_dim: int,
-    primary_key_type: Literal["bigint", "string"],
-):
-    """Create SQLAlchemy session factory and ORM schema."""
-    from autorag_research.orm.schema_factory import create_schema
-
-    schema = create_schema(embedding_dim, primary_key_type)
-    db_url = (
-        f"postgresql+psycopg://{db_config.user}:{db_config.password}@{db_config.host}:{db_config.port}/{schema_name}"
-    )
-    engine = create_engine(db_url, pool_pre_ping=True)
-    schema.Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine)
-    return session_factory, schema
-
-
 @ingest_app.callback(invoke_without_command=True)
 def ingest(  # noqa: C901
     ctx: typer.Context,
@@ -179,7 +157,7 @@ def ingest(  # noqa: C901
         int | None, typer.Option("--min-corpus-cnt", help="Minimum number of corpus documents to ingest")
     ] = None,
     db_name: Annotated[
-        str | None, typer.Option("--db-name", help="Custom database schema name (auto-generated if not specified)")
+        str | None, typer.Option("--db-name", help="Custom database name (auto-generated if not specified)")
     ] = None,
     # Embedding options
     embedding_model: Annotated[
@@ -190,22 +168,6 @@ def ingest(  # noqa: C901
     skip_embedding: Annotated[
         bool, typer.Option("--skip-embedding", help="Skip embedding step (ingest data only)")
     ] = False,
-    # Database connection options
-    db_host: Annotated[
-        str | None, typer.Option("--db-host", help="Database host (default: from configs/db.yaml)")
-    ] = None,
-    db_port: Annotated[
-        int | None, typer.Option("--db-port", help="Database port (default: from configs/db.yaml)")
-    ] = None,
-    db_user: Annotated[
-        str | None, typer.Option("--db-user", help="Database user (default: from configs/db.yaml)")
-    ] = None,
-    db_password: Annotated[
-        str | None, typer.Option("--db-password", help="Database password (or set PGPASSWORD)")
-    ] = None,
-    db_database: Annotated[
-        str | None, typer.Option("--db-database", help="Database name (default: from configs/db.yaml)")
-    ] = None,
 ) -> None:
     """Ingest a dataset into PostgreSQL.
 
@@ -255,7 +217,8 @@ def ingest(  # noqa: C901
     final_db_name = db_name or generate_db_name(name, init_kwargs, subset, embedding_model)
 
     # Load DB config from YAML first, then override with CLI options
-    db_config = load_db_config_from_yaml(db_host, db_port, db_user, db_password, db_database)
+    db_conn = DBConnection.from_config()
+    db_conn.database = final_db_name
 
     typer.echo(f"\nIngesting dataset: {name}")
     for param in meta.params:
@@ -263,8 +226,7 @@ def ingest(  # noqa: C901
         if param_value is not None:
             typer.echo(f"  {param.cli_option}: {param_value}")
     typer.echo(f"  subset: {subset}")
-    typer.echo(f"  target schema: {final_db_name}")
-    typer.echo(f"  database: {db_config.host}:{db_config.port}/{db_config.database}")
+    typer.echo(f"  database: {db_conn.host}:{db_conn.port}/{final_db_name}")
     typer.echo(f"  embedding model: {embedding_model}")
     typer.echo("=" * 60)
 
@@ -318,27 +280,11 @@ def ingest(  # noqa: C901
 
     # 9. Create database and schema
     typer.echo(f"\nCreating database schema: {final_db_name}")
-    from autorag_research.orm.util import create_database, install_vector_extensions
-
-    create_database(
-        db_config.host,
-        db_config.user,
-        db_config.password,
-        final_db_name,
-        port=db_config.port,
-    )
-    install_vector_extensions(
-        db_config.host,
-        db_config.user,
-        db_config.password,
-        final_db_name,
-        port=db_config.port,
-    )
+    db_conn.create_database()
 
     # 10. Create session factory and service
-    session_factory, schema = _create_session_factory_and_schema(
-        db_config, final_db_name, embedding_dim, detected_pkey_type
-    )
+    session_factory = db_conn.get_session_factory()
+    schema = db_conn.create_schema(embedding_dim, detected_pkey_type)
 
     if issubclass(ingestor_class, TextEmbeddingDataIngestor):
         from autorag_research.orm.service.text_ingestion import TextDataIngestionService
@@ -349,7 +295,7 @@ def ingest(  # noqa: C901
         from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 
         mm_service = MultiModalIngestionService(session_factory, schema)
-        ingestor.set_service(mm_service)  # ty: ignore[invalid-argument-type]
+        ingestor.set_service(mm_service)
 
     # 11. Ingest data
     typer.echo(f"\nIngesting {name} dataset...")

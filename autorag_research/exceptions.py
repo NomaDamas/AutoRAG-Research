@@ -168,3 +168,10 @@ class UnsupportedLanguageError(Exception):
             )
         else:
             super().__init__(f"Unsupported language code '{language_code}' specified.")
+
+
+class MissingDBNameError(Exception):
+    """Raised when the database name is missing in the configuration."""
+
+    def __init__(self):
+        super().__init__("Database name is missing in the configuration.")
