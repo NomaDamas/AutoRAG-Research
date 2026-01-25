@@ -52,6 +52,23 @@ class ConfigResolver:
                 configs.append(OmegaConf.load(path))
         return configs
 
+    def resolve_config(self, dirs: list[str], name: str) -> DictConfig:
+        """Resolve a single config given a list of directories and a name.
+
+        Args:
+            dirs: List of directory names leading to the config file.
+            name: Config file name without .yaml extension.
+
+        Returns:
+            Loaded DictConfig object.
+
+        """
+        path = self.config_dir.joinpath(*dirs, f"{name}.yaml")
+        if not path.exists():
+            msg = f"Config not found: {path}"
+            raise FileNotFoundError(msg)
+        return OmegaConf.load(path)
+
     def resolve_pipelines(self, pipelines_cfg: DictConfig) -> list[DictConfig]:
         """Resolve pipeline configs from YAML dict.
 

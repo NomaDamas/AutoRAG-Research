@@ -9,9 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from omegaconf import DictConfig
 from sqlalchemy.orm import Session, sessionmaker
 
+from autorag_research.cli.config_resolver import ConfigResolver
+from autorag_research.cli.utils import get_config_dir
 from autorag_research.config import (
     BaseMetricConfig,
     BasePipelineConfig,
@@ -162,7 +163,8 @@ class Executor:
         self.session_factory = session_factory
         self.config = config
         self._schema = schema
-        self._config_dir = config_dir or self._resolve_config_dir()
+        self._config_dir = config_dir or get_config_dir()
+        self._config_resolver = ConfigResolver(self._config_dir)
 
         # Initialize evaluation services
         self._retrieval_eval_service = RetrievalEvaluationService(session_factory, schema)
@@ -173,29 +175,6 @@ class Executor:
 
         logger.info(f"Executor initialized with {len(config.pipelines)} pipelines and {len(config.metrics)} metrics")
         logger.debug(f"Config directory: {self._config_dir}")
-
-    @staticmethod
-    def _resolve_config_dir() -> Path:
-        """Resolve config directory from CLI or fallback to CWD/configs.
-
-        Priority:
-        1. CLI config path (if set)
-        2. Fallback to CWD/configs
-
-        Returns:
-            Path to the config directory.
-        """
-        # First, try CLI config path
-        try:
-            import autorag_research.cli as cli
-
-            if cli.CONFIG_PATH:
-                return cli.CONFIG_PATH
-        except ImportError:
-            pass
-
-        # Fallback to CWD/configs
-        return Path.cwd() / "configs"
 
     def run(self) -> ExecutorResult:
         """Run all configured pipelines and evaluate metrics.
@@ -472,7 +451,7 @@ class Executor:
             return
 
         # Load pipeline config from pipelines/retrieval/ directory
-        pipeline_cfg = self._load_pipeline_config(f"pipelines/retrieval/{name}")
+        pipeline_cfg = self._config_resolver.resolve_config(["pipelines", "retrieval"], name)
         pipeline_config = instantiate(pipeline_cfg)
 
         # Instantiate the retrieval pipeline
@@ -488,32 +467,3 @@ class Executor:
         self._dependency_pipelines[name] = retrieval_pipeline
         config.inject_retrieval_pipeline(retrieval_pipeline)
         logger.info(f"Loaded and injected retrieval pipeline: {name}")
-
-    def _load_pipeline_config(self, config_name: str) -> "DictConfig":
-        """Load pipeline config from YAML file.
-
-        Args:
-            config_name: Config name relative to config_dir (e.g., "pipelines/retrieval/bm25")
-
-        Returns:
-            OmegaConf DictConfig object.
-
-        Raises:
-            FileNotFoundError: If config cannot be found.
-            TypeError: If config is not a mapping (dict).
-        """
-        from omegaconf import DictConfig, OmegaConf
-
-        yaml_path = self._config_dir / f"{config_name}.yaml"
-        if not yaml_path.exists():
-            msg = f"Pipeline config not found: {yaml_path}"
-            raise FileNotFoundError(msg)
-
-        logger.debug(f"Loading config from file: {yaml_path}")
-        cfg = OmegaConf.load(yaml_path)
-
-        if not isinstance(cfg, DictConfig):
-            msg = f"Pipeline config must be a mapping, not a list: {yaml_path}"
-            raise TypeError(msg)
-
-        return cfg
