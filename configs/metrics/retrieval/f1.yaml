@@ -1,0 +1,2 @@
+_target_: autorag_research.evaluation.metrics.retrieval.F1Config
+description: "F1@k"

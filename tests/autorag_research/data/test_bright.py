@@ -93,7 +93,7 @@ class TestBRIGHTIngestorIntegration:
 
             ingestor = BRIGHTIngestor(
                 mock_embedding_model,
-                domains=["biology"],
+                domain="biology",
                 document_mode="short",
             )
             ingestor.set_service(service)
@@ -103,35 +103,6 @@ class TestBRIGHTIngestorIntegration:
             )
 
             verifier = IngestorTestVerifier(service, db.schema, BRIGHT_INTEGRATION_CONFIG)
-            verifier.verify_all()
-
-    def test_ingest_multiple_domains(self, mock_embedding_model):
-        """Test ingestion of multiple domains."""
-        config = IngestorTestConfig(
-            expected_query_count=6,  # 3 per domain x 2 domains
-            expected_chunk_count=20,  # 10 per domain x 2 domains
-            chunk_count_is_minimum=True,
-            check_retrieval_relations=True,
-            check_generation_gt=True,
-            primary_key_type="string",
-            db_name="bright_multi_domain_test",
-        )
-
-        with create_test_database(config) as db:
-            service = TextDataIngestionService(db.session_factory, schema=db.schema)
-
-            ingestor = BRIGHTIngestor(
-                mock_embedding_model,
-                domains=["biology", "economics"],
-                document_mode="short",
-            )
-            ingestor.set_service(service)
-            ingestor.ingest(
-                query_limit=3,  # Per domain
-                min_corpus_cnt=10,  # Per domain
-            )
-
-            verifier = IngestorTestVerifier(service, db.schema, config)
             verifier.verify_all()
 
     def test_ingest_long_documents(self, mock_embedding_model):
@@ -151,7 +122,7 @@ class TestBRIGHTIngestorIntegration:
 
             ingestor = BRIGHTIngestor(
                 mock_embedding_model,
-                domains=["biology"],
+                domain="biology",
                 document_mode="long",
             )
             ingestor.set_service(service)

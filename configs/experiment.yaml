@@ -1,0 +1,30 @@
+# Experiment configuration
+#
+# This file defines an experiment with pipelines and metrics.
+# Edit this file to configure your RAG experiment.
+#
+# Usage:
+#   autorag-research run                           # Run this config
+#   autorag-research run --db-name=my_db          # Override db_name
+#   autorag-research run --max-retries=5          # Override max_retries
+#
+
+# Target database name (created by ingest command)
+# Recommend to override via CLI argument --db-name
+db_name: beir_scifact_test
+
+# Executor settings
+max_retries: 3
+eval_batch_size: 100
+
+# Pipeline configurations
+# YAML key = folder path under configs/pipelines/
+pipelines:
+  retrieval: [bm25]           # → configs/pipelines/retrieval/bm25.yaml
+  generation: [basic_rag]   # → configs/pipelines/generation/basic_rag.yaml
+
+# Metric configurations
+# YAML key = folder path under configs/metrics/
+metrics:
+  retrieval: [recall, ndcg]   # → configs/metrics/retrieval/*.yaml
+  generation: [rouge]       # → configs/metrics/generation/rouge.yaml

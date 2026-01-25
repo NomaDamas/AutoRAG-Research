@@ -6,10 +6,13 @@ and metric evaluation with retry logic, completion verification, and logging.
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from autorag_research.cli.config_resolver import ConfigResolver
+from autorag_research.cli.utils import get_config_dir
 from autorag_research.config import (
     BaseMetricConfig,
     BasePipelineConfig,
@@ -19,6 +22,7 @@ from autorag_research.config import (
 )
 from autorag_research.orm.service.generation_evaluation import GenerationEvaluationService
 from autorag_research.orm.service.retrieval_evaluation import RetrievalEvaluationService
+from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -145,6 +149,7 @@ class Executor:
         session_factory: sessionmaker[Session],
         config: ExecutorConfig,
         schema: Any | None = None,
+        config_dir: Path | None = None,
     ):
         """Initialize Executor.
 
@@ -152,16 +157,24 @@ class Executor:
             session_factory: SQLAlchemy sessionmaker for database connections.
             config: Executor configuration.
             schema: Schema namespace from create_schema(). If None, uses default schema.
+            config_dir: Directory containing pipeline YAML configs. If None, attempts to
+                use Hydra's config path if initialized, otherwise falls back to CWD/configs.
         """
         self.session_factory = session_factory
         self.config = config
         self._schema = schema
+        self._config_dir = config_dir or get_config_dir()
+        self._config_resolver = ConfigResolver(self._config_dir)
 
         # Initialize evaluation services
         self._retrieval_eval_service = RetrievalEvaluationService(session_factory, schema)
         self._generation_eval_service = GenerationEvaluationService(session_factory, schema)
 
+        # Cache for dependency retrieval pipelines (loaded from YAML)
+        self._dependency_pipelines: dict[str, BaseRetrievalPipeline] = {}
+
         logger.info(f"Executor initialized with {len(config.pipelines)} pipelines and {len(config.metrics)} metrics")
+        logger.debug(f"Config directory: {self._config_dir}")
 
     def run(self) -> ExecutorResult:
         """Run all configured pipelines and evaluate metrics.
@@ -178,6 +191,10 @@ class Executor:
 
         for pipeline_config in self.config.pipelines:
             logger.info(f"=== Starting pipeline: {pipeline_config.name} ===")
+
+            # Step 0: Resolve dependencies for generation pipelines
+            if pipeline_config.pipeline_type == PipelineType.GENERATION:
+                self._resolve_dependencies(pipeline_config)
 
             # Step 1: Run pipeline with retry
             pipeline_result = self._run_pipeline_with_retry(pipeline_config)
@@ -393,3 +410,60 @@ class Executor:
                 success=False,
                 error_message=error_msg,
             )
+
+    def _resolve_dependencies(self, config: BasePipelineConfig) -> None:
+        """Resolve dependencies for a generation pipeline config.
+
+        Checks for `retrieval_pipeline_name` attribute and loads/instantiates
+        the referenced retrieval pipeline, then injects it into the config.
+
+        Uses Hydra's compose API when available to leverage configured search paths,
+        with fallback to direct YAML loading from config_dir.
+
+        Args:
+            config: Pipeline configuration (processes any BaseGenerationPipelineConfig
+                with a non-empty retrieval_pipeline_name).
+        """
+        from hydra.utils import instantiate
+
+        from autorag_research.config import BaseGenerationPipelineConfig
+
+        # Only process generation pipeline configs
+        if not isinstance(config, BaseGenerationPipelineConfig):
+            return
+
+        # Skip if retrieval pipeline already injected (programmatic usage)
+        if config._retrieval_pipeline is not None:
+            logger.debug(f"Retrieval pipeline already injected for {config.name}")
+            return
+
+        # Skip if no retrieval pipeline dependency
+        name: str = config.retrieval_pipeline_name
+        if not name:
+            return
+
+        logger.info(f"Resolving retrieval pipeline dependency: {name}")
+
+        # Return cached pipeline if already loaded
+        if name in self._dependency_pipelines:
+            logger.debug(f"Using cached retrieval pipeline: {name}")
+            config.inject_retrieval_pipeline(self._dependency_pipelines[name])
+            return
+
+        # Load pipeline config from pipelines/retrieval/ directory
+        pipeline_cfg = self._config_resolver.resolve_config(["pipelines", "retrieval"], name)
+        pipeline_config = instantiate(pipeline_cfg)
+
+        # Instantiate the retrieval pipeline
+        pipeline_class = pipeline_config.get_pipeline_class()
+        retrieval_pipeline = pipeline_class(
+            session_factory=self.session_factory,
+            name=pipeline_config.name,
+            schema=self._schema,
+            **pipeline_config.get_pipeline_kwargs(),
+        )
+
+        # Cache and inject
+        self._dependency_pipelines[name] = retrieval_pipeline
+        config.inject_retrieval_pipeline(retrieval_pipeline)
+        logger.info(f"Loaded and injected retrieval pipeline: {name}")

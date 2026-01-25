@@ -1,0 +1,2 @@
+_target_: autorag_research.evaluation.metrics.retrieval.NDCGConfig
+description: "NDCG@k - Normalized Discounted Cumulative Gain"

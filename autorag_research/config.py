@@ -61,6 +61,7 @@ class BasePipelineConfig(ABC):
     """
 
     name: str
+    description: str = ""
     pipeline_type: PipelineType = field(init=False)
     top_k: int = 10
     batch_size: int = 100
@@ -123,6 +124,9 @@ class BaseGenerationPipelineConfig(BasePipelineConfig, ABC):
     """
 
     pipeline_type: PipelineType = field(default=PipelineType.GENERATION, init=False)
+    retrieval_pipeline_name: str = ""
+    # Runtime injection (Executor sets this)
+    _retrieval_pipeline: "BaseRetrievalPipeline | None" = field(default=None, repr=False)
 
     def get_run_kwargs(self) -> dict[str, Any]:
         """Return kwargs for pipeline.run() method.
@@ -131,6 +135,16 @@ class BaseGenerationPipelineConfig(BasePipelineConfig, ABC):
             Dictionary of keyword arguments for the run method.
         """
         return {"top_k": self.top_k, "batch_size": self.batch_size}
+
+    def inject_retrieval_pipeline(self, pipeline: "BaseRetrievalPipeline") -> None:
+        """Inject the retrieval pipeline instance.
+
+        Called by Executor after loading and instantiating the retrieval pipeline.
+
+        Args:
+            pipeline: The instantiated retrieval pipeline.
+        """
+        self._retrieval_pipeline = pipeline
 
 
 @dataclass
@@ -158,6 +172,7 @@ class BaseMetricConfig(ABC):
         ```
     """
 
+    description: str = ""
     metric_type: MetricType = field(init=False)
 
     def get_metric_name(self) -> str:

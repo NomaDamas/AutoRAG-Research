@@ -6,6 +6,7 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.embeddings import MultiModalEmbedding
 
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 
@@ -49,14 +50,27 @@ class DataIngestor(ABC):
 
 
 class TextEmbeddingDataIngestor(DataIngestor, ABC):
-    def __init__(self, embedding_model: BaseEmbedding):
+    def __init__(self, embedding_model: BaseEmbedding, **kwargs):
         super().__init__()
-        self.service = None
+        self.service: TextDataIngestionService | None = None
         self.embedding_model = embedding_model
 
-    @abstractmethod
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        pass
+        """Embed all queries and text chunks."""
+        if self.service is None:
+            raise ServiceNotSetError
+        if self.embedding_model is None:
+            raise EmbeddingNotSetError
+        self.service.embed_all_queries(
+            self.embedding_model.aget_query_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )
+        self.service.embed_all_chunks(
+            self.embedding_model.aget_text_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )
 
     def set_service(self, service: TextDataIngestionService) -> None:
         self.service = service
@@ -67,19 +81,46 @@ class MultiModalEmbeddingDataIngestor(DataIngestor, ABC):
         self,
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
+        **kwargs,
     ):
         super().__init__()
-        self.service = None
+        self.service: MultiModalIngestionService | None = None
         self.embedding_model = embedding_model
         self.late_interaction_embedding_model = late_interaction_embedding_model
 
     def set_service(self, service: MultiModalIngestionService) -> None:
         self.service = service
 
-    @abstractmethod
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        pass
+        """Embed all queries and image chunks using single-vector embedding model."""
+        if self.embedding_model is None:
+            raise EmbeddingNotSetError
+        if self.service is None:
+            raise ServiceNotSetError
+        self.service.embed_all_queries(
+            self.embedding_model.aget_query_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )
+        self.service.embed_all_image_chunks(
+            self.embedding_model.aget_image_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )
 
-    @abstractmethod
     def embed_all_late_interaction(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        pass
+        """Embed all queries and image chunks using multi-vector embedding model."""
+        if self.late_interaction_embedding_model is None:
+            raise EmbeddingNotSetError
+        if self.service is None:
+            raise ServiceNotSetError
+        self.service.embed_all_queries_multi_vector(
+            self.late_interaction_embedding_model.aget_query_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )
+        self.service.embed_all_image_chunks_multi_vector(
+            self.late_interaction_embedding_model.aget_image_embedding,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+        )

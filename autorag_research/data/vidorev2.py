@@ -17,7 +17,6 @@ Available Datasets:
 - esg_reports_human_labeled_v2: Human-labeled ESG reports (52 queries, 1538 pages)
 """
 
-from enum import Enum
 from typing import Any, Literal
 
 import pandas as pd
@@ -26,22 +25,26 @@ from llama_index.core.embeddings import MultiModalEmbedding
 from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
+from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
+from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import image, or_all
 from autorag_research.util import pil_image_to_bytes
 
 RANDOM_SEED = 42
 
+# ViDoReV2 available datasets
+VIDOREV2_DATASETS = Literal[
+    "esg_reports_v2",
+    "biomedical_lectures_v2",
+    "economics_reports_v2",
+]
 
-class ViDoReV2DatasetName(str, Enum):
-    """Available ViDoReV2 dataset names."""
 
-    ESG_REPORTS_V2 = "esg_reports_v2"
-    BIOMEDICAL_LECTURES_V2 = "biomedical_lectures_v2"
-    ECONOMICS_REPORTS_V2 = "economics_reports_v2"
-
-
+@register_ingestor(
+    name="vidorev2",
+    description="ViDoRe v2 visual document retrieval benchmark",
+)
 class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
     """Ingestor for ViDoReV2 datasets using streaming.
 
@@ -58,7 +61,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         from autorag_research.data.vidorev2 import ViDoReV2Ingestor, ViDoReV2DatasetName
         from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 
-        ingestor = ViDoReV2Ingestor(ViDoReV2DatasetName.ESG_REPORTS_V2)
+        ingestor = ViDoReV2Ingestor("esg_reports_v2")
         ingestor.set_service(service)
         ingestor.ingest(query_limit=10, min_corpus_cnt=50)
         ```
@@ -66,7 +69,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
 
     def __init__(
         self,
-        dataset_name: ViDoReV2DatasetName,
+        dataset_name: VIDOREV2_DATASETS,
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
@@ -103,10 +106,10 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         if subset != "test":
             raise ValueError("ViDoReV2 datasets only have 'test' split.")  # noqa: TRY003
 
-        dataset_path = f"vidore/{self.dataset_name.value}"
+        dataset_path = f"vidore/{self.dataset_name.value}"  # ty: ignore[possibly-missing-attribute]
 
         # Step 1: Load qrels into pandas and process with groupby
-        qrels_df: pd.DataFrame = load_dataset(dataset_path, "qrels", streaming=False, split=subset).to_pandas()  # ty: ignore[invalid-assignment]
+        qrels_df: pd.DataFrame = load_dataset(dataset_path, "qrels", streaming=False, split=subset).to_pandas()  # ty: ignore[possibly-missing-attribute, invalid-assignment]
         qrels_df["query-id"] = qrels_df["query-id"].astype(int)
         qrels_df["corpus-id"] = qrels_df["corpus-id"].astype(int)
 
@@ -271,59 +274,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
             if valid_corpus_pks:
                 # Use or_all with image wrapper for multiple relevant image chunks
                 self.service.add_retrieval_gt(
-                    query_pk,
+                    query_pk,  # ty: ignore[invalid-argument-type]
                     or_all(valid_corpus_pks, image),
                     chunk_type="image",
                 )
-
-    def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        """Embed all queries and image chunks using single-vector embedding model.
-
-        Args:
-            max_concurrency: Maximum number of concurrent embedding operations.
-            batch_size: Number of items to process per batch.
-
-        Raises:
-            EmbeddingNotSetError: If embedding_model is not set.
-        """
-        if self.embedding_model is None:
-            raise EmbeddingNotSetError
-        if self.service is None:
-            raise ServiceNotSetError
-
-        self.service.embed_all_queries(
-            self.embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-        self.service.embed_all_image_chunks(
-            self.embedding_model.aget_image_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-
-    def embed_all_late_interaction(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
-        """Embed all queries and image chunks using multi-vector embedding model.
-
-        Args:
-            max_concurrency: Maximum number of concurrent embedding operations.
-            batch_size: Number of items to process per batch.
-
-        Raises:
-            EmbeddingNotSetError: If late_interaction_embedding_model is not set.
-        """
-        if self.late_interaction_embedding_model is None:
-            raise EmbeddingNotSetError
-        if self.service is None:
-            raise ServiceNotSetError
-
-        self.service.embed_all_queries_multi_vector(
-            self.late_interaction_embedding_model.aget_query_embedding,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
-        self.service.embed_all_image_chunks_multi_vector(
-            self.late_interaction_embedding_model.aget_image_embedding,  # ty: ignore[invalid-argument-type]
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-        )
