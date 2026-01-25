@@ -46,10 +46,6 @@ def run_command(
         int | None,
         typer.Option("--eval-batch-size", help="Batch size for evaluation"),
     ] = None,
-    embedding_dim: Annotated[
-        int | None,
-        typer.Option("--embedding-dim", help="Embedding dimension for vector operations"),
-    ] = None,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
@@ -80,8 +76,6 @@ def run_command(
         hydra_overrides.append(f"max_retries={max_retries}")
     if eval_batch_size is not None:
         hydra_overrides.append(f"eval_batch_size={eval_batch_size}")
-    if embedding_dim is not None:
-        hydra_overrides.append(f"embedding_dim={embedding_dim}")
 
     # Add user-provided Hydra overrides
     if overrides:
@@ -101,7 +95,6 @@ def run_command(
         db_name=db_name,
         max_retries=max_retries,
         eval_batch_size=eval_batch_size,
-        embedding_dim=embedding_dim,
     )
 
     try:
@@ -121,7 +114,6 @@ def _load_experiment_config(
     db_name: str | None,
     max_retries: int | None,
     eval_batch_size: int | None,
-    embedding_dim: int | None,
 ) -> DictConfig:
     """Load experiment config, detecting dict vs Hydra syntax."""
     experiment_yaml_path = config_path / f"{config_name}.yaml"
@@ -144,7 +136,6 @@ def _load_experiment_config(
             db_name=db_name,
             max_retries=max_retries,
             eval_batch_size=eval_batch_size,
-            embedding_dim=embedding_dim,
         )
 
     # Legacy Hydra defaults syntax
@@ -184,7 +175,6 @@ def _build_config_from_dict(
     db_name: str | None,
     max_retries: int | None,
     eval_batch_size: int | None,
-    embedding_dim: int | None,
 ) -> DictConfig:
     """Build config from dict-based syntax using ConfigResolver.
 
@@ -194,7 +184,6 @@ def _build_config_from_dict(
         db_name: Override for db_name.
         max_retries: Override for max_retries.
         eval_batch_size: Override for eval_batch_size.
-        embedding_dim: Override for embedding_dim.
 
     Returns:
         Resolved DictConfig with all configs loaded.
@@ -214,7 +203,6 @@ def _build_config_from_dict(
     return OmegaConf.create({
         "db": db_cfg,
         "db_name": db_name or experiment_cfg.get("db_name"),
-        "embedding_dim": embedding_dim or experiment_cfg.get("embedding_dim", 1536),
         "max_retries": max_retries if max_retries is not None else experiment_cfg.get("max_retries", 3),
         "eval_batch_size": eval_batch_size
         if eval_batch_size is not None
@@ -270,18 +258,13 @@ def _print_config_summary(cfg: DictConfig, db_name: str, pipelines_cfg: list, me
     typer.echo(f"  eval_batch_size: {cfg.get('eval_batch_size', 100)}")
 
 
-def _determine_embedding_dim(cfg: DictConfig, db_url: str, db_name: str) -> int:
-    """Determine embedding dimension from config or auto-detect from DB.
+def _determine_embedding_dim(db_url: str, db_name: str) -> int:
+    """Auto-detect embedding dimension from DB.
 
     Returns:
         Embedding dimension to use.
     """
     from autorag_research.util import detect_embedding_dimension
-
-    embedding_dim = cfg.get("embedding_dim")
-    if embedding_dim is not None:
-        typer.echo(f"  embedding_dim: {embedding_dim}")
-        return embedding_dim
 
     detected_dim = detect_embedding_dimension(db_url, db_name)
     if detected_dim is not None:
@@ -313,7 +296,7 @@ def _run_experiment(cfg: DictConfig) -> None:
         typer.echo(f"\nError connecting to database: {e}")
         raise typer.Exit(1) from None
 
-    embedding_dim = _determine_embedding_dim(cfg, db_url, db_name)
+    embedding_dim = _determine_embedding_dim(db_url, db_name)
     schema = create_schema(dim=embedding_dim)
 
     typer.echo("\n" + "-" * 60)
