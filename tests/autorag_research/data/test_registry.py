@@ -28,6 +28,7 @@ class TestAutoImportDataModules:
 
         registry_module._discovery_done = False
         registry_module._INGESTOR_REGISTRY.clear()
+        discover_ingestors.cache_clear()  # Clear lru_cache to avoid stale cached results
 
         # Run auto-import
         _auto_import_data_modules()
