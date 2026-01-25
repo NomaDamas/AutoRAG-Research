@@ -10,6 +10,7 @@
 #
 
 # Target database name (created by ingest command)
+# Recommend to override via CLI argument --db-name
 db_name: beir_scifact_test
 
 # Executor settings

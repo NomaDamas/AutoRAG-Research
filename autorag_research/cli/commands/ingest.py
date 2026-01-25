@@ -295,7 +295,7 @@ def ingest(  # noqa: C901
         from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 
         mm_service = MultiModalIngestionService(session_factory, schema)
-        ingestor.set_service(mm_service)
+        ingestor.set_service(mm_service)  # ty: ignore[invalid-argument-type]
 
     # 11. Ingest data
     typer.echo(f"\nIngesting {name} dataset...")
@@ -311,7 +311,7 @@ def ingest(  # noqa: C901
     if not skip_embedding:
         typer.echo(f"\nEmbedding all data (batch_size={embed_batch_size}, concurrency={embed_concurrency})...")
         if isinstance(embed_model, MultiVectorMultiModalEmbedding):
-            ingestor.embed_all_late_interaction(max_concurrency=embed_concurrency, batch_size=embed_batch_size)
+            ingestor.embed_all_late_interaction(max_concurrency=embed_concurrency, batch_size=embed_batch_size)  # ty: ignore[possibly-missing-attribute]
         else:
             ingestor.embed_all(max_concurrency=embed_concurrency, batch_size=embed_batch_size)
         typer.echo("Embedding complete.")

@@ -20,7 +20,7 @@ _env_path = Path(__file__).parent.parent / "postgresql" / ".env"
 load_dotenv(_env_path)
 
 
-def _get_db_params() -> dict[str, str | int]:
+def get_db_params() -> dict[str, str | int]:
     """Get database connection parameters from environment variables."""
     return {
         "host": os.getenv("POSTGRES_HOST", "localhost"),
@@ -31,19 +31,13 @@ def _get_db_params() -> dict[str, str | int]:
     }
 
 
-@pytest.fixture
-def test_db_params() -> dict[str, str | int]:
-    """Return test database connection parameters from environment variables."""
-    return _get_db_params()
-
-
 @pytest.fixture(scope="session")
 def db_engine():
     """Create a database engine for the test session.
 
     Reads configuration from postgresql/.env file.
     """
-    params = _get_db_params()
+    params = get_db_params()
     host = params["host"]
     user = params["user"]
     pwd = params["password"]

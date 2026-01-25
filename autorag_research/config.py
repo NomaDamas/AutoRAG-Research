@@ -61,6 +61,7 @@ class BasePipelineConfig(ABC):
     """
 
     name: str
+    description: str = ""
     pipeline_type: PipelineType = field(init=False)
     top_k: int = 10
     batch_size: int = 100
@@ -123,7 +124,7 @@ class BaseGenerationPipelineConfig(BasePipelineConfig, ABC):
     """
 
     pipeline_type: PipelineType = field(default=PipelineType.GENERATION, init=False)
-    retrieval_pipeline_name: str = field(default="", init=False)
+    retrieval_pipeline_name: str = ""
     # Runtime injection (Executor sets this)
     _retrieval_pipeline: "BaseRetrievalPipeline | None" = field(default=None, repr=False)
 
@@ -171,6 +172,7 @@ class BaseMetricConfig(ABC):
         ```
     """
 
+    description: str = ""
     metric_type: MetricType = field(init=False)
 
     def get_metric_name(self) -> str:

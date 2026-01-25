@@ -1,23 +1,22 @@
 """run command - Execute experiment pipelines with metrics evaluation."""
 
 import logging
-from pathlib import Path
 from typing import Annotated
 
 import typer
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
+from autorag_research.cli.config_resolver import ConfigResolver
 from autorag_research.cli.utils import get_config_dir, setup_logging
 from autorag_research.config import ExecutorConfig
 from autorag_research.executor import Executor
 from autorag_research.orm.connection import DBConnection
-from autorag_research.orm.schema_factory import create_schema
 
 logger = logging.getLogger("AutoRAG-Research")
 
 
-def run_command(
+def run_command(  # noqa: C901
     db_name: Annotated[
         str | None,
         typer.Option("--db-name", "-d", help="Database schema name (required)"),
@@ -26,14 +25,6 @@ def run_command(
         str,
         typer.Option("--config-name", "-cn", help="Config file name without .yaml extension"),
     ] = "experiment",
-    max_retries: Annotated[
-        int | None,
-        typer.Option("--max-retries", help="Maximum retries for failed operations"),
-    ] = None,
-    eval_batch_size: Annotated[
-        int | None,
-        typer.Option("--eval-batch-size", help="Batch size for evaluation"),
-    ] = None,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
@@ -45,192 +36,89 @@ def run_command(
 
     Examples:
       autorag-research run --db-name=beir_scifact_test
-      autorag-research run --db-name=beir_scifact_test --max-retries=5
+      autorag-research run --db-name=beir_scifact_test --verbose
       autorag-research run --db-name=beir_scifact_test --config-name=my_experiment
     """
     setup_logging(verbose=verbose)
 
-    # Get config path
+    # 1. Get config path
     config_path = get_config_dir()
     if config_path is None:
         typer.echo("Error: config path not set", err=True)
         raise typer.Exit(1)
 
-    # Load and resolve configuration
-    cfg = _load_experiment_config(
-        config_path=config_path,
-        config_name=config_name,
-        db_name=db_name,
-        max_retries=max_retries,
-        eval_batch_size=eval_batch_size,
-    )
-
-    try:
-        _run_experiment(cfg)
-    except typer.Exit:
-        raise
-    except Exception as e:
-        logger.exception("Failed to run experiment")
-        typer.echo(f"\nError: {e}", err=True)
-        raise typer.Exit(1) from None
-
-
-def _load_experiment_config(
-    config_path: Path,
-    config_name: str,
-    db_name: str | None,
-    max_retries: int | None,
-    eval_batch_size: int | None,
-) -> DictConfig:
-    """Load experiment config from YAML file.
-
-    Args:
-        config_path: Path to configs directory.
-        config_name: Config file name without .yaml extension.
-        db_name: Override for db_name.
-        max_retries: Override for max_retries.
-        eval_batch_size: Override for eval_batch_size.
-
-    Returns:
-        Resolved DictConfig with all pipeline and metric configs loaded.
-    """
+    # 2. Load experiment YAML
     experiment_yaml_path = config_path / f"{config_name}.yaml"
     if not experiment_yaml_path.exists():
         typer.echo(f"Error: Config file not found: {experiment_yaml_path}", err=True)
         raise typer.Exit(1)
 
     experiment_cfg = OmegaConf.load(experiment_yaml_path)
-
-    # Ensure we have a DictConfig (not a list)
     if not isinstance(experiment_cfg, DictConfig):
         typer.echo("Error: experiment config must be a YAML mapping, not a list", err=True)
         raise typer.Exit(1)
 
-    return _build_config_from_dict(
-        experiment_cfg=experiment_cfg,
-        config_path=config_path,
-        db_name=db_name,
-        max_retries=max_retries,
-        eval_batch_size=eval_batch_size,
-    )
-
-
-def _build_config_from_dict(
-    experiment_cfg: DictConfig,
-    config_path: Path,
-    db_name: str | None,
-    max_retries: int | None,
-    eval_batch_size: int | None,
-) -> DictConfig:
-    """Build config from dict-based syntax using ConfigResolver.
-
-    Args:
-        experiment_cfg: Raw experiment YAML config.
-        config_path: Path to configs directory.
-        db_name: Override for db_name.
-        max_retries: Override for max_retries.
-        eval_batch_size: Override for eval_batch_size.
-
-    Returns:
-        Resolved DictConfig with all configs loaded.
-    """
-    from autorag_research.cli.config_resolver import ConfigResolver
-
-    resolver = ConfigResolver(config_dir=config_path)
-
-    # Load database config
-    db_conn = DBConnection.from_config(config_path=config_path)
-    db_conn.database = db_name or experiment_cfg.get("db_name")
-
-    # Resolve pipeline and metric configs
-    pipeline_cfgs = resolver.resolve_pipelines(experiment_cfg.get("pipelines", {}))
-    metric_cfgs = resolver.resolve_metrics(experiment_cfg.get("metrics", {}))
-
-    # Build final config with CLI overrides taking precedence
-    return OmegaConf.create({
-        "db": db_conn,
-        "db_name": db_name or experiment_cfg.get("db_name"),
-        "max_retries": max_retries if max_retries is not None else experiment_cfg.get("max_retries", 3),
-        "eval_batch_size": eval_batch_size
-        if eval_batch_size is not None
-        else experiment_cfg.get("eval_batch_size", 100),
-        "pipelines": pipeline_cfgs,
-        "metrics": metric_cfgs,
-    })
-
-
-def _validate_config(cfg: DictConfig) -> tuple[str, list, list]:
-    """Validate configuration and return db_name, pipelines, and metrics.
-
-    Raises:
-        typer.Exit: If validation fails.
-    """
-    db_name = cfg.get("db_name", "")
-    if not db_name:
+    # 3. Resolve db_name (CLI override takes precedence)
+    resolved_db_name = db_name or experiment_cfg.get("db_name")
+    if not resolved_db_name:
         typer.echo("Error: db_name is required in config")
         typer.echo("Add 'db_name: <db_name>' to your experiment YAML or pass --db-name=xxx")
         raise typer.Exit(1)
 
-    pipelines_cfg = cfg.get("pipelines", [])
-    if not pipelines_cfg:
+    # 4. Database connection
+    db_conn = DBConnection.from_config(config_path)
+    db_conn.database = resolved_db_name
+
+    # 5. Resolve pipeline and metric configs
+    resolver = ConfigResolver(config_dir=config_path)
+    pipeline_cfgs = resolver.resolve_pipelines(experiment_cfg.get("pipelines", {}))
+    metric_cfgs = resolver.resolve_metrics(experiment_cfg.get("metrics", {}))
+
+    if not pipeline_cfgs:
         typer.echo("Error: at least one pipeline is required")
         typer.echo("Add pipelines to your experiment YAML using defaults")
         raise typer.Exit(1)
 
-    return db_name, pipelines_cfg, cfg.get("metrics", [])
-
-
-def _print_config_summary(cfg: DictConfig, db_name: str, pipelines_cfg: list, metrics_cfg: list) -> None:
-    """Print configuration summary to console."""
     typer.echo("\nAutoRAG-Research Experiment Runner")
     typer.echo("=" * 60)
 
     typer.echo(f"\nDatabase name: {db_name}")
-    typer.echo(f"Database: {cfg.db.host}:{cfg.db.port}/{cfg.db.database}")
+    typer.echo(f"Database: {db_conn.host}:{db_conn.port}/{db_conn.database}")
 
     typer.echo("\nPipelines:")
-    for i, p in enumerate(pipelines_cfg):
+    for i, p in enumerate(pipeline_cfgs):
         if hasattr(p, "_target_"):
             typer.echo(f"  [{i}] {p._target_.split('.')[-1]}")
         typer.echo(f"       {OmegaConf.to_yaml(p).strip()}")
 
     typer.echo("\nMetrics:")
-    for i, m in enumerate(metrics_cfg):
+    for i, m in enumerate(metric_cfgs):
         if hasattr(m, "_target_"):
             typer.echo(f"  [{i}] {m._target_.split('.')[-1]}")
         typer.echo(f"       {OmegaConf.to_yaml(m).strip()}")
 
+    resolved_max_retries = experiment_cfg.get("max_retries", 3)
+    resolved_eval_batch_size = experiment_cfg.get("eval_batch_size", 100)
+
     typer.echo("\nConfiguration:")
-    typer.echo(f"  max_retries: {cfg.get('max_retries', 3)}")
-    typer.echo(f"  eval_batch_size: {cfg.get('eval_batch_size', 100)}")
+    typer.echo(f"  max_retries: {resolved_max_retries}")
+    typer.echo(f"  eval_batch_size: {resolved_eval_batch_size}")
 
+    # 7. Build ExecutorConfig
+    executor_config = build_executor_config(
+        pipeline_cfgs, metric_cfgs, max_retries=resolved_max_retries, eval_batch_size=resolved_eval_batch_size
+    )
 
-def _run_experiment(cfg: DictConfig) -> None:
-    """Execute the experiment with the given configuration."""
-    db_name, pipelines_cfg, metrics_cfg = _validate_config(cfg)
-    _print_config_summary(cfg, db_name, pipelines_cfg, metrics_cfg)
-
-    # Build executor config using instantiate
+    # 8. Get schema and session factory (using new get_schema method)
     try:
-        executor_config = build_executor_config(cfg)
-    except Exception as e:
-        logger.exception("Failed to build executor config")
-        typer.echo(f"\nError building configuration: {e}")
-        raise typer.Exit(1) from None
-
-    # Create database session
-    try:
-        db_url = cfg.db.db_url
-        session_factory = cfg.db.get_session_factory()
+        schema = db_conn.get_schema()
+        session_factory = db_conn.get_session_factory()
     except Exception as e:
         logger.exception("Failed to connect to database")
-        typer.echo(f"\nError connecting to database: {e}")
+        typer.echo(f"\nError connecting to database: {e}", err=True)
         raise typer.Exit(1) from None
 
-    embedding_dim = cfg.db.detect_embedding_dimension(db_url)
-    pkey_type = cfg.db.detect_primray_key_type(db_url)
-    schema = create_schema(embedding_dim=embedding_dim, primary_key_type=pkey_type)
-
+    # 9. Run experiment
     typer.echo("\n" + "-" * 60)
     typer.echo("Starting experiment...")
     typer.echo("-" * 60)
@@ -245,30 +133,29 @@ def _run_experiment(cfg: DictConfig) -> None:
         print_results(result)
     except Exception as e:
         logger.exception("Experiment failed")
-        typer.echo(f"\nExperiment failed: {e}")
+        typer.echo(f"\nExperiment failed: {e}", err=True)
         raise typer.Exit(1) from None
 
 
-def build_executor_config(cfg: DictConfig) -> ExecutorConfig:
+def build_executor_config(
+    pipelines: list, metrics: list, max_retries: int = 3, eval_batch_size: int = 100
+) -> ExecutorConfig:
     """Build ExecutorConfig from Hydra configuration using instantiate."""
-    pipelines = []
-    metrics = []
-
     # Instantiate pipeline configs via _target_
-    for p_cfg in cfg.get("pipelines", []):
+    for p_cfg in pipelines:
         pipeline_config = instantiate(p_cfg)
         pipelines.append(pipeline_config)
 
     # Instantiate metric configs via _target_
-    for m_cfg in cfg.get("metrics", []):
+    for m_cfg in metrics:
         metric_config = instantiate(m_cfg)
         metrics.append(metric_config)
 
     return ExecutorConfig(
         pipelines=pipelines,
         metrics=metrics,
-        max_retries=cfg.get("max_retries", 3),
-        eval_batch_size=cfg.get("eval_batch_size", 100),
+        max_retries=max_retries,
+        eval_batch_size=eval_batch_size,
     )
 
 

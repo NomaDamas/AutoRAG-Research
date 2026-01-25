@@ -60,6 +60,8 @@ class DBConnection:
             with engine.connect() as conn:
                 result = conn.execute(query, {"schema": schema_name})
                 row = result.fetchone()
+                if row is None:
+                    raise ValueError(f"Primary key type not found in {schema_name}.query")  # noqa: TRY003
                 typname = row[0].lower()
 
                 if typname in ("int2", "int4", "int8", "integer", "bigint", "serial", "bigserial"):
@@ -69,6 +71,8 @@ class DBConnection:
                 if typname in ("text", "varchar", "char", "bpchar", "name", "uuid"):
                     logger.info(f"Detected primary key type: str (pg type: {typname})")
                     return "string"
+
+                raise ValueError(f"Unknown primary key type: {typname}")  # noqa: TRY003
         finally:
             engine.dispose()
 
@@ -110,6 +114,21 @@ class DBConnection:
         schema = create_schema(embedding_dim, primary_key_type)
         schema.Base.metadata.create_all(self.get_engine())
         return schema
+
+    def get_schema(self, schema_name: str = "public"):
+        """Auto-detect embedding dimension and primary key type, then create schema.
+
+        Args:
+            schema_name: Database schema name to detect types from.
+
+        Returns:
+            Schema object with auto-detected embedding dimension and primary key type.
+        """
+        from autorag_research.orm.schema_factory import create_schema
+
+        embedding_dim = self.detect_embedding_dimension(schema_name)
+        pkey_type = self.detect_primary_key_type(schema_name)
+        return create_schema(embedding_dim, pkey_type)
 
     def create_database(self):
         if self.database is None:
@@ -160,12 +179,17 @@ class DBConnection:
         Returns:
             DBConnection instance with loaded configuration.
         """
-        from omegaconf import OmegaConf
+        from omegaconf import DictConfig, OmegaConf
 
         from autorag_research import cli
 
-        config_path = config_path or cli.CONFIG_PATH
-        cfg = OmegaConf.load(config_path / "db.yaml")
+        resolved_path = config_path or cli.CONFIG_PATH
+        if resolved_path is None:
+            raise ValueError("Config path not provided and CONFIG_PATH is not set.")  # noqa: TRY003
+
+        cfg = OmegaConf.load(resolved_path / "db.yaml")
+        if not isinstance(cfg, DictConfig):
+            raise TypeError("db.yaml must be a YAML mapping.")  # noqa: TRY003
 
         password = os.environ.get("POSTGRES_PASSWORD", cfg.get("password"))
         if password is None:

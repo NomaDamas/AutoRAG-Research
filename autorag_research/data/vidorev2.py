@@ -106,7 +106,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         if subset != "test":
             raise ValueError("ViDoReV2 datasets only have 'test' split.")  # noqa: TRY003
 
-        dataset_path = f"vidore/{self.dataset_name.value}"
+        dataset_path = f"vidore/{self.dataset_name.value}"  # ty: ignore[possibly-missing-attribute]
 
         # Step 1: Load qrels into pandas and process with groupby
         qrels_df: pd.DataFrame = load_dataset(dataset_path, "qrels", streaming=False, split=subset).to_pandas()  # ty: ignore[possibly-missing-attribute, invalid-assignment]

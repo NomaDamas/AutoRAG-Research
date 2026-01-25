@@ -284,13 +284,13 @@ class TestListDatabasesWithConnection:
     so it returns user-created databases on the PostgreSQL server.
     """
 
-    def test_returns_list_from_real_db(self, test_db_params: dict[str, str | int]) -> None:
+    def test_returns_list_from_real_db(self, get_db_params) -> None:
         """Returns list of databases from real PostgreSQL server."""
         result = list_databases_with_connection(
-            host=test_db_params["host"],
-            port=test_db_params["port"],
-            user=test_db_params["user"],
-            password=test_db_params["password"],
+            host=get_db_params["host"],
+            port=get_db_params["port"],
+            user=get_db_params["user"],
+            password=get_db_params["password"],
         )
 
         # Result should be a list of strings
