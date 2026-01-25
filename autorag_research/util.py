@@ -214,3 +214,50 @@ def normalize_string(s: str) -> str:
         return text.lower()
 
     return white_space_fix(remove_articles(remove_punc(lower(s))))
+
+
+def detect_embedding_dimension(engine_or_url, schema_name: str) -> int | None:
+    """Detect embedding dimension from existing pgvector column in schema.
+
+    Uses pg_attribute.atttypmod to get dimension from schema definition.
+    Works even if the table is empty.
+
+    Args:
+        engine_or_url: SQLAlchemy Engine or database URL string.
+        schema_name: PostgreSQL schema name to inspect.
+
+    Returns:
+        Embedding dimension if detected, None otherwise.
+    """
+    from sqlalchemy import create_engine, text
+
+    if isinstance(engine_or_url, str):
+        engine = create_engine(engine_or_url)
+        should_dispose = True
+    else:
+        engine = engine_or_url
+        should_dispose = False
+
+    query = text("""
+        SELECT a.atttypmod AS dimension
+        FROM pg_attribute a
+        JOIN pg_class c ON a.attrelid = c.oid
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE n.nspname = :schema AND c.relname = 'chunk' AND a.attname = 'embedding'
+    """)
+
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(query, {"schema": schema_name})
+            row = result.fetchone()
+            if row and row[0] and row[0] > 0:
+                dimension = row[0]
+                logger.info(f"Auto-detected embedding dimension: {dimension} from schema '{schema_name}'")
+                return dimension
+            return None
+    except Exception as e:
+        logger.warning(f"Failed to detect embedding dimension: {e}")
+        return None
+    finally:
+        if should_dispose:
+            engine.dispose()

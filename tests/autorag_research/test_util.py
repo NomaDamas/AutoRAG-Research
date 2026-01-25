@@ -213,3 +213,42 @@ class TestPilImagesToBytes:
         img_bytes, mimetype = pil_image_to_bytes(img_p)
         assert mimetype == "image/png"
         assert isinstance(img_bytes, bytes)
+
+
+class TestDetectEmbeddingDimension:
+    """Test detect_embedding_dimension function."""
+
+    def test_detect_dimension_from_existing_schema(self, db_engine):
+        """Test detecting embedding dimension from existing schema.
+
+        The seed data in 002-seed.sql creates a 'public' schema with chunk table.
+        The embedding dimension is 768 (all-MiniLM-L6-v2).
+        """
+        from autorag_research.util import detect_embedding_dimension
+
+        dimension = detect_embedding_dimension(db_engine, "public")
+        # The seed data uses 768-dimensional embeddings
+        assert dimension == 768
+
+    def test_detect_dimension_with_engine_url(self, db_engine):
+        """Test detecting dimension using engine URL."""
+        from autorag_research.util import detect_embedding_dimension
+
+        # Use the engine directly - URL string conversion masks password
+        dimension = detect_embedding_dimension(db_engine, "public")
+        assert dimension == 768
+
+    def test_detect_dimension_nonexistent_schema(self, db_engine):
+        """Test that None is returned for a nonexistent schema."""
+        from autorag_research.util import detect_embedding_dimension
+
+        dimension = detect_embedding_dimension(db_engine, "nonexistent_schema_xyz")
+        assert dimension is None
+
+    def test_detect_dimension_invalid_url(self):
+        """Test graceful handling of invalid database URL."""
+        from autorag_research.util import detect_embedding_dimension
+
+        # Invalid URL should return None, not raise
+        dimension = detect_embedding_dimension("postgresql+psycopg://invalid:invalid@localhost:9999/invalid", "test")
+        assert dimension is None

@@ -106,8 +106,12 @@ def run_command(
         raise typer.Exit(1) from None
 
 
-def _run_experiment(cfg: DictConfig) -> None:
-    """Execute the experiment with the given configuration."""
+def _validate_config(cfg: DictConfig) -> tuple[str, list, list]:
+    """Validate configuration and return db_name, pipelines, and metrics.
+
+    Raises:
+        typer.Exit: If validation fails.
+    """
     db_name = cfg.get("db_name", "")
     if not db_name:
         typer.echo("Error: db_name is required in config")
@@ -115,13 +119,16 @@ def _run_experiment(cfg: DictConfig) -> None:
         raise typer.Exit(1)
 
     pipelines_cfg = cfg.get("pipelines", [])
-    metrics_cfg = cfg.get("metrics", [])
-
     if not pipelines_cfg:
         typer.echo("Error: at least one pipeline is required")
         typer.echo("Add pipelines to your experiment YAML using defaults")
         raise typer.Exit(1)
 
+    return db_name, pipelines_cfg, cfg.get("metrics", [])
+
+
+def _print_config_summary(cfg: DictConfig, db_name: str, pipelines_cfg: list, metrics_cfg: list) -> None:
+    """Print configuration summary to console."""
     typer.echo("\nAutoRAG-Research Experiment Runner")
     typer.echo("=" * 60)
 
@@ -144,6 +151,34 @@ def _run_experiment(cfg: DictConfig) -> None:
     typer.echo(f"  max_retries: {cfg.get('max_retries', 3)}")
     typer.echo(f"  eval_batch_size: {cfg.get('eval_batch_size', 100)}")
 
+
+def _determine_embedding_dim(cfg: DictConfig, db_url: str, db_name: str) -> int:
+    """Determine embedding dimension from config or auto-detect from DB.
+
+    Returns:
+        Embedding dimension to use.
+    """
+    from autorag_research.util import detect_embedding_dimension
+
+    embedding_dim = cfg.get("embedding_dim")
+    if embedding_dim is not None:
+        typer.echo(f"  embedding_dim: {embedding_dim}")
+        return embedding_dim
+
+    detected_dim = detect_embedding_dimension(db_url, db_name)
+    if detected_dim is not None:
+        typer.echo(f"  embedding_dim: {detected_dim} (auto-detected from DB)")
+        return detected_dim
+
+    typer.echo("  embedding_dim: 1536 (default)")
+    return 1536
+
+
+def _run_experiment(cfg: DictConfig) -> None:
+    """Execute the experiment with the given configuration."""
+    db_name, pipelines_cfg, metrics_cfg = _validate_config(cfg)
+    _print_config_summary(cfg, db_name, pipelines_cfg, metrics_cfg)
+
     # Build executor config using instantiate
     try:
         executor_config = build_executor_config(cfg)
@@ -154,14 +189,14 @@ def _run_experiment(cfg: DictConfig) -> None:
 
     # Create database session
     try:
-        session_factory = create_session_factory(cfg)
+        session_factory, db_url = create_session_factory(cfg)
     except Exception as e:
         logger.exception("Failed to connect to database")
         typer.echo(f"\nError connecting to database: {e}")
         raise typer.Exit(1) from None
 
-    # Create schema object
-    schema = create_schema(dim=cfg.get("embedding_dim", 1536))
+    embedding_dim = _determine_embedding_dim(cfg, db_url, db_name)
+    schema = create_schema(dim=embedding_dim)
 
     typer.echo("\n" + "-" * 60)
     typer.echo("Starting experiment...")
@@ -204,8 +239,12 @@ def build_executor_config(cfg: DictConfig) -> ExecutorConfig:
     )
 
 
-def create_session_factory(cfg: DictConfig):
-    """Create SQLAlchemy session factory from config."""
+def create_session_factory(cfg: DictConfig) -> tuple:
+    """Create SQLAlchemy session factory from config.
+
+    Returns:
+        Tuple of (session_factory, db_url) for use in session creation and dimension detection.
+    """
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -215,7 +254,7 @@ def create_session_factory(cfg: DictConfig):
 
     db_url = f"postgresql+psycopg://{cfg.db.user}:{password}@{cfg.db.host}:{cfg.db.port}/{cfg.db.database}"
     engine = create_engine(db_url)
-    return sessionmaker(bind=engine)
+    return sessionmaker(bind=engine), db_url
 
 
 def print_results(result) -> None:

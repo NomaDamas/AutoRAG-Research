@@ -133,7 +133,7 @@ def bm25_index_path(session_factory):
         "--storeRaw",
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)  # noqa: S603
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         shutil.rmtree(temp_dir)
         pytest.fail(f"Failed to build BM25 index: {result.stderr}")
