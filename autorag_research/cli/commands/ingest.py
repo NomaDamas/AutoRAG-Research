@@ -379,5 +379,4 @@ def ingest(  # noqa: C901
     typer.echo(f"  Embedding dimension: {embedding_dim}")
     typer.echo(f"  Primary key type: {detected_pkey_type}")
     typer.echo("\nNext steps:")
-    typer.echo(f"  autorag-research list --schema={final_db_name}")
     typer.echo(f"  autorag-research run --db-name={final_db_name}")

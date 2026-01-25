@@ -47,7 +47,8 @@ class ConfigResolver:
             for name in names:
                 path = self.config_dir / base_dir / subdir / f"{name}.yaml"
                 if not path.exists():
-                    raise FileNotFoundError(f"Config not found: {path}")
+                    msg = f"Config not found: {path}"
+                    raise FileNotFoundError(msg)
                 configs.append(OmegaConf.load(path))
         return configs
 
@@ -90,8 +91,10 @@ class ConfigResolver:
         """
         path = self.config_dir / "db" / f"{db_name}.yaml"
         if not path.exists():
-            raise FileNotFoundError(f"DB config not found: {path}")
+            msg = f"DB config not found: {path}"
+            raise FileNotFoundError(msg)
         cfg = OmegaConf.load(path)
         if not isinstance(cfg, DictConfig):
-            raise TypeError(f"DB config must be a mapping, not a list: {path}")
+            msg = f"DB config must be a mapping, not a list: {path}"
+            raise TypeError(msg)
         return cfg

@@ -458,17 +458,22 @@ class Executor:
         with fallback to direct YAML loading from config_dir.
 
         Args:
-            config: Pipeline configuration (only processes BasicRAGPipelineConfig).
+            config: Pipeline configuration (processes any BaseGenerationPipelineConfig
+                with a non-empty retrieval_pipeline_name).
         """
         from hydra.utils import instantiate
 
-        from autorag_research.pipelines.generation.basic_rag import BasicRAGPipelineConfig
+        from autorag_research.config import BaseGenerationPipelineConfig
 
-        # Only process BasicRAGPipelineConfig which has retrieval_pipeline_name
-        if not isinstance(config, BasicRAGPipelineConfig):
+        # Only process generation pipeline configs
+        if not isinstance(config, BaseGenerationPipelineConfig):
             return
 
+        # Skip if no retrieval pipeline dependency
         name: str = config.retrieval_pipeline_name
+        if not name:
+            return
+
         logger.info(f"Resolving retrieval pipeline dependency: {name}")
 
         # Return cached pipeline if already loaded
@@ -477,8 +482,8 @@ class Executor:
             config.inject_retrieval_pipeline(self._dependency_pipelines[name])
             return
 
-        # Load pipeline config using Hydra's compose API or fallback to direct YAML load
-        pipeline_cfg = self._load_pipeline_config(f"pipelines/{name}")
+        # Load pipeline config from pipelines/retrieval/ directory
+        pipeline_cfg = self._load_pipeline_config(f"pipelines/retrieval/{name}")
         pipeline_config = instantiate(pipeline_cfg)
 
         # Instantiate the retrieval pipeline
@@ -499,7 +504,7 @@ class Executor:
         """Load pipeline config using Hydra compose API or fallback to direct YAML load.
 
         Args:
-            config_name: Config name relative to search path (e.g., "pipelines/bm25_baseline")
+            config_name: Config name relative to search path (e.g., "pipelines/retrieval/bm25")
 
         Returns:
             OmegaConf DictConfig object.

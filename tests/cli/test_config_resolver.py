@@ -14,9 +14,7 @@ class TestConfigResolver:
         # Setup: Create config directory structure
         (tmp_path / "pipelines" / "retrieval").mkdir(parents=True)
         (tmp_path / "pipelines" / "retrieval" / "bm25.yaml").write_text(
-            "_target_: autorag_research.pipelines.retrieval.bm25.BM25PipelineConfig\n"
-            "name: bm25\n"
-            "top_k: 10\n"
+            "_target_: autorag_research.pipelines.retrieval.bm25.BM25PipelineConfig\nname: bm25\ntop_k: 10\n"
         )
 
         resolver = ConfigResolver(config_dir=tmp_path)
@@ -33,9 +31,7 @@ class TestConfigResolver:
         # Setup
         (tmp_path / "pipelines" / "retrieval").mkdir(parents=True)
         (tmp_path / "pipelines" / "generation").mkdir(parents=True)
-        (tmp_path / "pipelines" / "retrieval" / "bm25.yaml").write_text(
-            "name: bm25\ntop_k: 10\n"
-        )
+        (tmp_path / "pipelines" / "retrieval" / "bm25.yaml").write_text("name: bm25\ntop_k: 10\n")
         (tmp_path / "pipelines" / "generation" / "basic_rag.yaml").write_text(
             "name: basic_rag\nllm_model: gpt-4o-mini\n"
         )
@@ -55,12 +51,8 @@ class TestConfigResolver:
     def test_resolve_configs_multiple_in_same_subdir(self, tmp_path):
         """Test resolving multiple configs from the same subdirectory."""
         (tmp_path / "metrics" / "retrieval").mkdir(parents=True)
-        (tmp_path / "metrics" / "retrieval" / "recall.yaml").write_text(
-            "name: recall\nk: 10\n"
-        )
-        (tmp_path / "metrics" / "retrieval" / "ndcg.yaml").write_text(
-            "name: ndcg\nk: 10\n"
-        )
+        (tmp_path / "metrics" / "retrieval" / "recall.yaml").write_text("name: recall\nk: 10\n")
+        (tmp_path / "metrics" / "retrieval" / "ndcg.yaml").write_text("name: ndcg\nk: 10\n")
 
         resolver = ConfigResolver(config_dir=tmp_path)
         config_dict = OmegaConf.create({"retrieval": ["recall", "ndcg"]})
@@ -86,9 +78,7 @@ class TestConfigResolver:
     def test_resolve_configs_single_string_value(self, tmp_path):
         """Test resolving when value is a single string instead of list."""
         (tmp_path / "pipelines" / "retrieval").mkdir(parents=True)
-        (tmp_path / "pipelines" / "retrieval" / "bm25.yaml").write_text(
-            "name: bm25\n"
-        )
+        (tmp_path / "pipelines" / "retrieval" / "bm25.yaml").write_text("name: bm25\n")
 
         resolver = ConfigResolver(config_dir=tmp_path)
         # Single string instead of list
@@ -102,9 +92,7 @@ class TestConfigResolver:
     def test_resolve_pipelines_convenience_method(self, tmp_path):
         """Test resolve_pipelines convenience method."""
         (tmp_path / "pipelines" / "retrieval").mkdir(parents=True)
-        (tmp_path / "pipelines" / "retrieval" / "bm25.yaml").write_text(
-            "name: bm25\n"
-        )
+        (tmp_path / "pipelines" / "retrieval" / "bm25.yaml").write_text("name: bm25\n")
 
         resolver = ConfigResolver(config_dir=tmp_path)
         config_dict = OmegaConf.create({"retrieval": ["bm25"]})
@@ -117,9 +105,7 @@ class TestConfigResolver:
     def test_resolve_metrics_convenience_method(self, tmp_path):
         """Test resolve_metrics convenience method."""
         (tmp_path / "metrics" / "retrieval").mkdir(parents=True)
-        (tmp_path / "metrics" / "retrieval" / "recall.yaml").write_text(
-            "name: recall\n"
-        )
+        (tmp_path / "metrics" / "retrieval" / "recall.yaml").write_text("name: recall\n")
 
         resolver = ConfigResolver(config_dir=tmp_path)
         config_dict = OmegaConf.create({"retrieval": ["recall"]})
@@ -132,11 +118,7 @@ class TestConfigResolver:
     def test_load_db_config(self, tmp_path):
         """Test loading database config."""
         (tmp_path / "db").mkdir(parents=True)
-        (tmp_path / "db" / "default.yaml").write_text(
-            "host: localhost\n"
-            "port: 5432\n"
-            "database: test_db\n"
-        )
+        (tmp_path / "db" / "default.yaml").write_text("host: localhost\nport: 5432\ndatabase: test_db\n")
 
         resolver = ConfigResolver(config_dir=tmp_path)
 
