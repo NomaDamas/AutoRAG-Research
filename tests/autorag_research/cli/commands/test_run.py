@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from omegaconf import OmegaConf
+from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
 import autorag_research.cli as cli
@@ -14,12 +15,6 @@ from autorag_research.cli.commands.run import (
     create_session_factory,
     print_results,
 )
-
-
-@pytest.fixture
-def cli_runner() -> CliRunner:
-    """Return a Typer CliRunner for testing commands."""
-    return CliRunner()
 
 
 @pytest.fixture
@@ -41,6 +36,21 @@ def mock_cfg() -> MagicMock:
         "metrics": [{"_target_": "some.module.Metric1", "name": "metric1"}],
         "max_retries": 3,
         "eval_batch_size": 32,
+    })
+
+
+@pytest.fixture
+def real_db_cfg(test_db_params: dict[str, str | int]) -> OmegaConf:
+    """Create OmegaConf config using real test database parameters."""
+    return OmegaConf.create({
+        "db": {
+            "host": test_db_params["host"],
+            "port": test_db_params["port"],
+            "user": test_db_params["user"],
+            "password": test_db_params["password"],
+            "database": test_db_params["database"],
+        },
+        "db_name": "public",
     })
 
 
@@ -107,7 +117,10 @@ class TestRunCommand:
 
 
 class TestBuildExecutorConfig:
-    """Tests for build_executor_config function."""
+    """Tests for build_executor_config function.
+
+    Uses mock instantiate to avoid loading real pipeline/metric classes.
+    """
 
     @patch("autorag_research.cli.commands.run.instantiate")
     def test_instantiates_pipelines(self, mock_instantiate: MagicMock, mock_cfg: MagicMock) -> None:
@@ -162,62 +175,60 @@ class TestBuildExecutorConfig:
 
 
 class TestCreateSessionFactory:
-    """Tests for create_session_factory function."""
+    """Tests for create_session_factory function using real database."""
 
-    @patch("sqlalchemy.orm.sessionmaker")
-    @patch("sqlalchemy.create_engine")
-    def test_creates_engine_with_correct_url(
-        self, mock_create_engine: MagicMock, mock_sessionmaker: MagicMock, mock_cfg: MagicMock
-    ) -> None:
-        """Creates engine with correct connection URL."""
-        create_session_factory(mock_cfg)
+    def test_creates_working_session_factory(self, real_db_cfg: OmegaConf) -> None:
+        """Creates a session factory that can connect to real test database."""
+        factory = create_session_factory(real_db_cfg)
 
-        # Check that create_engine was called with correct URL format
-        call_args = mock_create_engine.call_args
-        url = call_args[0][0]
-        assert "postgresql+psycopg" in url
-        assert "testuser" in url
-        assert "localhost" in url
-        assert "5432" in str(url)
-        assert "testdb" in url
+        # Factory should be a sessionmaker
+        assert isinstance(factory, type) or callable(factory)
 
-    @patch("sqlalchemy.orm.sessionmaker")
-    @patch("sqlalchemy.create_engine")
-    def test_returns_sessionmaker(
-        self, mock_create_engine: MagicMock, mock_sessionmaker: MagicMock, mock_cfg: MagicMock
-    ) -> None:
-        """Returns sessionmaker bound to engine."""
-        mock_engine = MagicMock()
-        mock_create_engine.return_value = mock_engine
+        # Should be able to create a session
+        session = factory()
+        try:
+            assert isinstance(session, Session)
+            # Simple query to verify connection works
+            from sqlalchemy import text
 
-        create_session_factory(mock_cfg)
+            result = session.execute(text("SELECT 1"))
+            assert result.scalar() == 1
+        finally:
+            session.close()
 
-        mock_sessionmaker.assert_called_once_with(bind=mock_engine)
+    def test_returns_sessionmaker_instance(self, real_db_cfg: OmegaConf) -> None:
+        """Returns a sessionmaker bound to engine."""
+        factory = create_session_factory(real_db_cfg)
 
-    @patch("sqlalchemy.orm.sessionmaker")
-    @patch("sqlalchemy.create_engine")
+        # Should be a sessionmaker class
+        assert hasattr(factory, "kw") or hasattr(factory, "class_")
+
     def test_handles_env_var_password(
-        self, mock_create_engine: MagicMock, mock_sessionmaker: MagicMock, monkeypatch: pytest.MonkeyPatch
+        self, test_db_params: dict[str, str | int], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Handles ${env:...} password pattern by falling back to PGPASSWORD."""
-        monkeypatch.setenv("PGPASSWORD", "env_password")
+        """Handles ${oc.env:...} password pattern by resolving from environment."""
+        monkeypatch.setenv("PGPASSWORD", str(test_db_params["password"]))
 
         cfg = OmegaConf.create({
             "db": {
-                "host": "localhost",
-                "port": 5432,
-                "user": "testuser",
+                "host": test_db_params["host"],
+                "port": test_db_params["port"],
+                "user": test_db_params["user"],
                 "password": "${oc.env:PGPASSWORD}",
-                "database": "testdb",
+                "database": test_db_params["database"],
             }
         })
 
-        create_session_factory(cfg)
+        factory = create_session_factory(cfg)
+        session = factory()
+        try:
+            # Should connect successfully with env-resolved password
+            from sqlalchemy import text
 
-        # Password should be resolved from env
-        call_args = mock_create_engine.call_args
-        url = call_args[0][0]
-        assert "env_password" in url
+            result = session.execute(text("SELECT 1"))
+            assert result.scalar() == 1
+        finally:
+            session.close()
 
 
 class TestPrintResults:

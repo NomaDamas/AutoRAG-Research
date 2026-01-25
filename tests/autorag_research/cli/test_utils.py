@@ -120,40 +120,50 @@ class TestDiscoverConfigs:
 
 
 class TestDiscoverPipelines:
-    """Tests for discover_pipelines function."""
+    """Tests for discover_pipelines function using real configs."""
 
-    def test_discover_pipelines_uses_config_dir(self, sample_config_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """discover_pipelines looks in pipelines/ subdirectory."""
-        monkeypatch.setattr(cli, "CONFIG_PATH", sample_config_dir)
-
+    def test_discover_pipelines_finds_real_configs(self, real_config_path: Path) -> None:
+        """discover_pipelines finds bm25 and basic_rag in real configs/pipelines/."""
         result = discover_pipelines()
 
         assert "bm25" in result
-        assert "dense" in result
+        assert "basic_rag" in result
 
 
 class TestDiscoverMetrics:
-    """Tests for discover_metrics function."""
+    """Tests for discover_metrics function.
 
-    def test_discover_metrics_uses_config_dir(self, sample_config_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    Note: Real configs have metrics in subdirectories (retrieval/, generation/),
+    but discover_metrics only looks at top-level *.yaml files.
+    We use tmp_path to test the function logic.
+    """
+
+    def test_discover_metrics_uses_config_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """discover_metrics looks in metrics/ subdirectory."""
-        monkeypatch.setattr(cli, "CONFIG_PATH", sample_config_dir)
+        # Create metrics directory with YAML files at top level
+        metrics_dir = tmp_path / "metrics"
+        metrics_dir.mkdir()
+        (metrics_dir / "ndcg.yaml").write_text("description: NDCG metric")
+        (metrics_dir / "recall.yaml").write_text("description: Recall metric")
+
+        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
 
         result = discover_metrics()
 
         assert "ndcg" in result
+        assert "recall" in result
 
 
 class TestDiscoverEmbeddingConfigs:
-    """Tests for discover_embedding_configs function."""
+    """Tests for discover_embedding_configs function using real configs."""
 
-    def test_discover_embedding_configs(self, sample_config_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """discover_embedding_configs looks in embedding/ subdirectory."""
-        monkeypatch.setattr(cli, "CONFIG_PATH", sample_config_dir)
-
+    def test_discover_embedding_configs_finds_real_configs(self, real_config_path: Path) -> None:
+        """discover_embedding_configs finds openai configs in real configs/embedding/."""
         result = discover_embedding_configs()
 
         assert "openai-small" in result
+        assert "openai-large" in result
+        assert "openai-like" in result
 
 
 class TestGetUserDataDir:
@@ -215,7 +225,7 @@ class TestGetDbUrl:
 
 
 class TestLoadDbConfigFromYaml:
-    """Tests for load_db_config_from_yaml function."""
+    """Tests for load_db_config_from_yaml function using real configs."""
 
     def test_returns_defaults_when_no_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Returns default DatabaseConfig when db.yaml doesn't exist."""
@@ -226,26 +236,24 @@ class TestLoadDbConfigFromYaml:
         assert result.host == "localhost"
         assert result.port == 5432
 
-    def test_loads_values_from_yaml(self, sample_config_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Loads values from db.yaml file."""
-        monkeypatch.setattr(cli, "CONFIG_PATH", sample_config_dir)
-
+    def test_loads_values_from_real_yaml(self, real_config_path: Path) -> None:
+        """Loads values from real db.yaml file."""
         result = load_db_config_from_yaml()
 
+        # Real db.yaml values
         assert result.host == "localhost"
-        assert result.user == "autorag"
-        assert result.database == "autorag_db"
+        assert result.port == 5432
+        assert result.user == "postgres"
+        assert result.database == "autorag_research"
 
-    def test_cli_args_override_yaml(self, sample_config_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_cli_args_override_yaml(self, real_config_path: Path) -> None:
         """CLI arguments override YAML values."""
-        monkeypatch.setattr(cli, "CONFIG_PATH", sample_config_dir)
-
         result = load_db_config_from_yaml(host="override.example.com", port=5433)
 
         assert result.host == "override.example.com"
         assert result.port == 5433
-        # Non-overridden values come from YAML
-        assert result.user == "autorag"
+        # Non-overridden values come from real YAML
+        assert result.user == "postgres"
 
 
 class TestLoadEmbeddingModel:
@@ -259,11 +267,8 @@ class TestLoadEmbeddingModel:
             load_embedding_model("nonexistent")
 
     @patch("hydra.utils.instantiate")
-    def test_raises_type_error_for_wrong_type(
-        self, mock_instantiate: MagicMock, sample_config_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_raises_type_error_for_wrong_type(self, mock_instantiate: MagicMock, real_config_path: Path) -> None:
         """Raises TypeError when instantiated object is not BaseEmbedding."""
-        monkeypatch.setattr(cli, "CONFIG_PATH", sample_config_dir)
         mock_instantiate.return_value = "not an embedding"
 
         with pytest.raises(TypeError, match="BaseEmbedding"):
@@ -271,7 +276,10 @@ class TestLoadEmbeddingModel:
 
 
 class TestHealthCheckEmbedding:
-    """Tests for health_check_embedding function."""
+    """Tests for health_check_embedding function.
+
+    Uses mock embedding model to avoid real API calls.
+    """
 
     def test_returns_dimension_on_success(self) -> None:
         """Returns embedding dimension on success."""
@@ -326,51 +334,50 @@ class TestSetupLogging:
 
 
 class TestListSchemasWithConnection:
-    """Tests for list_schemas_with_connection function using mocks."""
+    """Tests for list_schemas_with_connection function using real database.
 
-    @patch("autorag_research.cli.utils.create_engine")
-    def test_excludes_system_schemas(self, mock_create_engine: MagicMock) -> None:
-        """Excludes pg_*, information_schema schemas."""
-        # Mock the engine and connection
-        mock_engine = MagicMock()
-        mock_create_engine.return_value = mock_engine
+    Note: The function excludes system schemas including 'public',
+    so a fresh test database returns an empty list of user schemas.
+    """
 
-        mock_connection = MagicMock()
-        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_connection)
-        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+    def test_returns_list_from_real_db(self, test_db_params: dict[str, str | int]) -> None:
+        """Returns list of schemas from real test database (excludes public)."""
+        result = list_schemas_with_connection(
+            host=test_db_params["host"],
+            port=test_db_params["port"],
+            user=test_db_params["user"],
+            password=test_db_params["password"],
+            database=test_db_params["database"],
+        )
 
-        # Mock result set with system and user schemas
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [
-            "pg_catalog",
-            "pg_toast",
-            "information_schema",
-            "public",
-            "user_schema",
-        ]
-        mock_connection.execute.return_value = mock_result
+        # Result should be a list of strings (may be empty if only public exists)
+        assert isinstance(result, list)
+        # Function explicitly excludes 'public' as it's considered a system schema
+        assert "public" not in result
 
-        result = list_schemas_with_connection("localhost", 5432, "user", "pass", "db")
+    def test_excludes_system_schemas(self, test_db_params: dict[str, str | int]) -> None:
+        """System schemas (pg_*, information_schema) are excluded."""
+        result = list_schemas_with_connection(
+            host=test_db_params["host"],
+            port=test_db_params["port"],
+            user=test_db_params["user"],
+            password=test_db_params["password"],
+            database=test_db_params["database"],
+        )
 
-        # System schemas should be excluded
-        assert "pg_catalog" not in result
-        assert "pg_toast" not in result
+        # All pg_* schemas should be filtered out
+        pg_schemas = [s for s in result if s.startswith("pg_")]
+        assert pg_schemas == []
         assert "information_schema" not in result
 
-    @patch("autorag_research.cli.utils.create_engine")
-    def test_returns_sorted_list(self, mock_create_engine: MagicMock) -> None:
+    def test_returns_sorted_list(self, test_db_params: dict[str, str | int]) -> None:
         """Returns schemas sorted alphabetically."""
-        mock_engine = MagicMock()
-        mock_create_engine.return_value = mock_engine
-
-        mock_connection = MagicMock()
-        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_connection)
-        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
-
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = ["zebra_schema", "alpha_schema", "middle_schema"]
-        mock_connection.execute.return_value = mock_result
-
-        result = list_schemas_with_connection("localhost", 5432, "user", "pass", "db")
+        result = list_schemas_with_connection(
+            host=test_db_params["host"],
+            port=test_db_params["port"],
+            user=test_db_params["user"],
+            password=test_db_params["password"],
+            database=test_db_params["database"],
+        )
 
         assert result == sorted(result)

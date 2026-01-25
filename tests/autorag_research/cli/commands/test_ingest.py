@@ -1,7 +1,5 @@
 """Tests for autorag_research.cli.commands.ingest module."""
 
-from unittest.mock import MagicMock, patch
-
 import pytest
 import typer
 from typer.testing import CliRunner
@@ -13,63 +11,27 @@ from autorag_research.cli.commands.ingest import (
     _validate_required_params,
     generate_db_name,
 )
-from autorag_research.data.registry import IngestorMeta, ParamMeta
+from autorag_research.data.registry import IngestorMeta, ParamMeta, discover_ingestors
 
 
 @pytest.fixture
-def cli_runner() -> CliRunner:
-    """Return a Typer CliRunner for testing commands."""
-    return CliRunner()
+def beir_ingestor_meta() -> IngestorMeta:
+    """Return the real beir ingestor metadata."""
+    return discover_ingestors()["beir"]
 
 
 @pytest.fixture
-def mock_param_meta_string() -> ParamMeta:
-    """Create mock ParamMeta for string type."""
-    return ParamMeta(
-        name="dataset_name",
-        cli_option="dataset-name",
-        param_type=str,
-        choices=None,
-        required=True,
-        default=None,
-        help="Dataset name",
-        is_list=False,
-    )
+def mteb_ingestor_meta() -> IngestorMeta:
+    """Return the real mteb ingestor metadata."""
+    return discover_ingestors()["mteb"]
 
 
 @pytest.fixture
-def mock_param_meta_int() -> ParamMeta:
-    """Create mock ParamMeta for int type."""
-    return ParamMeta(
-        name="batch_size",
-        cli_option="batch-size",
-        param_type=int,
-        choices=None,
-        required=False,
-        default=100,
-        help="Batch size",
-        is_list=False,
-    )
+def param_meta_list() -> ParamMeta:
+    """Create ParamMeta for list type testing.
 
-
-@pytest.fixture
-def mock_param_meta_bool() -> ParamMeta:
-    """Create mock ParamMeta for bool type."""
-    return ParamMeta(
-        name="include_images",
-        cli_option="include-images",
-        param_type=bool,
-        choices=None,
-        required=False,
-        default=False,
-        help="Include images",
-        is_list=False,
-    )
-
-
-@pytest.fixture
-def mock_param_meta_list() -> ParamMeta:
-    """Create mock ParamMeta for list type."""
+    Note: No real ingestors currently have list params, so we create a mock.
+    """
     return ParamMeta(
         name="configs",
         cli_option="configs",
@@ -79,38 +41,6 @@ def mock_param_meta_list() -> ParamMeta:
         default=None,
         help="Config names",
         is_list=True,
-    )
-
-
-@pytest.fixture
-def mock_ingestor_meta() -> IngestorMeta:
-    """Create mock IngestorMeta for testing."""
-    return IngestorMeta(
-        name="test_ingestor",
-        ingestor_class=MagicMock,
-        description="Test ingestor",
-        params=[
-            ParamMeta(
-                name="dataset_name",
-                cli_option="dataset-name",
-                param_type=str,
-                choices=["option_a", "option_b"],
-                required=True,
-                default=None,
-                help="Dataset name",
-                is_list=False,
-            ),
-            ParamMeta(
-                name="batch_size",
-                cli_option="batch-size",
-                param_type=int,
-                choices=None,
-                required=False,
-                default=100,
-                help="Batch size",
-                is_list=False,
-            ),
-        ],
     )
 
 
@@ -124,15 +54,12 @@ class TestIngestCommand:
         assert result.exit_code == 0
         assert "--name" in result.stdout or "-n" in result.stdout
 
-    def test_ingest_without_name_shows_help(self, cli_runner: CliRunner) -> None:
-        """'ingest' without --name shows available ingestors or help."""
-        with patch("autorag_research.data.registry.discover_ingestors") as mock_discover:
-            mock_discover.return_value = {"beir": MagicMock(description="BEIR datasets")}
+    def test_ingest_without_name_shows_ingestors(self, cli_runner: CliRunner) -> None:
+        """'ingest' without --name shows available ingestors."""
+        result = cli_runner.invoke(app, ["ingest"])
 
-            result = cli_runner.invoke(app, ["ingest"])
-
-            # Should show ingestors, embedding configs, or help (exit code 0 is acceptable)
-            assert result.exit_code == 0 or "embedding" in result.stdout.lower() or "ingestor" in result.stdout.lower()
+        # Should show ingestors, embedding configs, or help (exit code 0 is acceptable)
+        assert result.exit_code == 0 or "embedding" in result.stdout.lower() or "ingestor" in result.stdout.lower()
 
 
 class TestParseExtraParams:
@@ -176,71 +103,85 @@ class TestParseExtraParams:
 
 
 class TestValidateRequiredParams:
-    """Tests for _validate_required_params function."""
+    """Tests for _validate_required_params function using real ingestors."""
 
-    def test_all_required_present_passes(self, mock_ingestor_meta: IngestorMeta) -> None:
+    def test_all_required_present_passes(self, beir_ingestor_meta: IngestorMeta) -> None:
         """Passes when all required params are provided."""
+        # beir requires dataset_name
         extra_params = {"dataset_name": "scifact"}
 
         # Should not raise
-        _validate_required_params(mock_ingestor_meta, extra_params)
+        _validate_required_params(beir_ingestor_meta, extra_params)
 
-    def test_missing_required_raises_exit(self, mock_ingestor_meta: IngestorMeta) -> None:
+    def test_missing_required_raises_exit(self, beir_ingestor_meta: IngestorMeta) -> None:
         """Raises typer.Exit when required param is missing."""
         import click.exceptions
 
-        extra_params = {}  # Missing dataset_name
+        extra_params = {}  # Missing dataset_name which is required for beir
 
         with pytest.raises((SystemExit, click.exceptions.Exit)):
-            _validate_required_params(mock_ingestor_meta, extra_params)
+            _validate_required_params(beir_ingestor_meta, extra_params)
 
-    def test_optional_missing_passes(self, mock_ingestor_meta: IngestorMeta) -> None:
+    def test_optional_missing_passes(self, mteb_ingestor_meta: IngestorMeta) -> None:
         """Passes when optional params are missing."""
-        extra_params = {"dataset_name": "scifact"}  # batch_size is optional
+        # mteb requires task_name, but score_threshold and include_instruction are optional
+        extra_params = {"task_name": "test_task"}
 
         # Should not raise
-        _validate_required_params(mock_ingestor_meta, extra_params)
+        _validate_required_params(mteb_ingestor_meta, extra_params)
 
 
 class TestConvertParamValue:
-    """Tests for _convert_param_value function."""
+    """Tests for _convert_param_value function using real param types."""
 
-    def test_string_type_returns_string(self, mock_param_meta_string: ParamMeta) -> None:
+    def test_string_type_returns_string(self, beir_ingestor_meta: IngestorMeta) -> None:
         """String type returns value as-is."""
-        result = _convert_param_value("hello", mock_param_meta_string)
+        # beir's dataset_name is a string param
+        dataset_name_param = beir_ingestor_meta.params[0]
 
-        assert result == "hello"
+        result = _convert_param_value("scifact", dataset_name_param)
+
+        assert result == "scifact"
         assert isinstance(result, str)
 
-    def test_int_type_converts_to_int(self, mock_param_meta_int: ParamMeta) -> None:
+    def test_int_type_converts_to_int(self, mteb_ingestor_meta: IngestorMeta) -> None:
         """Int type converts string to int."""
-        result = _convert_param_value("42", mock_param_meta_int)
+        # mteb's score_threshold is an int param
+        score_threshold_param = next(p for p in mteb_ingestor_meta.params if p.name == "score_threshold")
+
+        result = _convert_param_value("42", score_threshold_param)
 
         assert result == 42
         assert isinstance(result, int)
 
-    def test_bool_type_true_values(self, mock_param_meta_bool: ParamMeta) -> None:
+    def test_bool_type_true_values(self, mteb_ingestor_meta: IngestorMeta) -> None:
         """Bool type recognizes true values."""
+        # mteb's include_instruction is a bool param
+        include_instruction_param = next(p for p in mteb_ingestor_meta.params if p.name == "include_instruction")
+
         for true_val in ["true", "True", "1", "yes", "Yes"]:
-            result = _convert_param_value(true_val, mock_param_meta_bool)
+            result = _convert_param_value(true_val, include_instruction_param)
             assert result is True
 
-    def test_bool_type_false_values(self, mock_param_meta_bool: ParamMeta) -> None:
+    def test_bool_type_false_values(self, mteb_ingestor_meta: IngestorMeta) -> None:
         """Bool type treats other values as False."""
+        # mteb's include_instruction is a bool param
+        include_instruction_param = next(p for p in mteb_ingestor_meta.params if p.name == "include_instruction")
+
         for false_val in ["false", "False", "0", "no", "No", ""]:
-            result = _convert_param_value(false_val, mock_param_meta_bool)
+            result = _convert_param_value(false_val, include_instruction_param)
             assert result is False
 
-    def test_list_type_splits_comma(self, mock_param_meta_list: ParamMeta) -> None:
+    def test_list_type_splits_comma(self, param_meta_list: ParamMeta) -> None:
         """List type splits comma-separated values."""
-        result = _convert_param_value("a,b,c", mock_param_meta_list)
+        result = _convert_param_value("a,b,c", param_meta_list)
 
         assert result == ["a", "b", "c"]
         assert isinstance(result, list)
 
-    def test_list_type_strips_whitespace(self, mock_param_meta_list: ParamMeta) -> None:
+    def test_list_type_strips_whitespace(self, param_meta_list: ParamMeta) -> None:
         """List type strips whitespace around values."""
-        result = _convert_param_value("a, b, c", mock_param_meta_list)
+        result = _convert_param_value("a, b, c", param_meta_list)
 
         assert result == ["a", "b", "c"]
 

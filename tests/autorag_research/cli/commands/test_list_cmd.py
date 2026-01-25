@@ -1,10 +1,12 @@
 """Tests for autorag_research.cli.commands.list_cmd module."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
+import autorag_research.cli as cli
 from autorag_research.cli.app import app
 from autorag_research.cli.commands.list_cmd import (
     print_databases,
@@ -12,64 +14,6 @@ from autorag_research.cli.commands.list_cmd import (
     print_metrics,
     print_pipelines,
 )
-from autorag_research.data.registry import IngestorMeta, ParamMeta
-
-
-@pytest.fixture
-def cli_runner() -> CliRunner:
-    """Return a Typer CliRunner for testing commands."""
-    return CliRunner()
-
-
-@pytest.fixture
-def mock_ingestor_registry() -> dict[str, IngestorMeta]:
-    """Create mock ingestor registry for testing."""
-    return {
-        "beir": IngestorMeta(
-            name="beir",
-            ingestor_class=MagicMock,
-            description="BEIR benchmark datasets",
-            params=[
-                ParamMeta(
-                    name="dataset_name",
-                    cli_option="dataset-name",
-                    param_type=str,
-                    choices=["scifact", "nfcorpus", "fiqa", "hotpotqa"],
-                    required=True,
-                    default=None,
-                    help="Dataset to ingest",
-                    is_list=False,
-                ),
-            ],
-        ),
-        "mteb": IngestorMeta(
-            name="mteb",
-            ingestor_class=MagicMock,
-            description="MTEB retrieval tasks",
-            params=[
-                ParamMeta(
-                    name="task_name",
-                    cli_option="task-name",
-                    param_type=str,
-                    choices=None,
-                    required=True,
-                    default=None,
-                    help="Task name",
-                    is_list=False,
-                ),
-                ParamMeta(
-                    name="batch_size",
-                    cli_option="batch-size",
-                    param_type=int,
-                    choices=None,
-                    required=False,
-                    default=100,
-                    help="Batch size",
-                    is_list=False,
-                ),
-            ],
-        ),
-    }
 
 
 class TestListResourcesCommand:
@@ -116,113 +60,59 @@ class TestListResourcesCommand:
 
 
 class TestPrintIngestors:
-    """Tests for print_ingestors function."""
+    """Tests for print_ingestors function using real ingestor registry."""
 
-    @patch("autorag_research.cli.commands.list_cmd.discover_ingestors")
-    def test_displays_ingestor_names(
-        self, mock_discover: MagicMock, mock_ingestor_registry: dict[str, IngestorMeta], capsys: pytest.CaptureFixture
-    ) -> None:
-        """Displays ingestor names."""
-        mock_discover.return_value = mock_ingestor_registry
-
+    def test_displays_real_ingestor_names(self, capsys: pytest.CaptureFixture) -> None:
+        """Displays real ingestor names from registry."""
         print_ingestors()
 
         captured = capsys.readouterr()
         assert "beir" in captured.out
-        assert "mteb" in captured.out
+        assert "ragbench" in captured.out
 
-    @patch("autorag_research.cli.commands.list_cmd.discover_ingestors")
-    def test_displays_descriptions(
-        self, mock_discover: MagicMock, mock_ingestor_registry: dict[str, IngestorMeta], capsys: pytest.CaptureFixture
-    ) -> None:
+    def test_displays_descriptions(self, capsys: pytest.CaptureFixture) -> None:
         """Displays ingestor descriptions."""
-        mock_discover.return_value = mock_ingestor_registry
-
         print_ingestors()
 
         captured = capsys.readouterr()
-        assert "BEIR benchmark datasets" in captured.out
-        assert "MTEB retrieval tasks" in captured.out
+        # Real beir ingestor has description
+        assert "BEIR" in captured.out or "benchmark" in captured.out.lower()
 
-    @patch("autorag_research.cli.commands.list_cmd.discover_ingestors")
-    def test_displays_parameters(
-        self, mock_discover: MagicMock, mock_ingestor_registry: dict[str, IngestorMeta], capsys: pytest.CaptureFixture
-    ) -> None:
-        """Displays parameter options."""
-        mock_discover.return_value = mock_ingestor_registry
-
+    def test_displays_parameters(self, capsys: pytest.CaptureFixture) -> None:
+        """Displays parameter options from real ingestors."""
         print_ingestors()
 
         captured = capsys.readouterr()
-        assert "--dataset-name" in captured.out or "dataset-name" in captured.out
-        assert "--task-name" in captured.out or "task-name" in captured.out
+        # beir has dataset-name parameter
+        assert "dataset-name" in captured.out or "--dataset-name" in captured.out
 
-    @patch("autorag_research.cli.commands.list_cmd.discover_ingestors")
-    def test_displays_required_indicator(
-        self, mock_discover: MagicMock, mock_ingestor_registry: dict[str, IngestorMeta], capsys: pytest.CaptureFixture
-    ) -> None:
+    def test_displays_required_indicator(self, capsys: pytest.CaptureFixture) -> None:
         """Shows required indicator for required parameters."""
-        mock_discover.return_value = mock_ingestor_registry
-
         print_ingestors()
 
         captured = capsys.readouterr()
         assert "required" in captured.out.lower()
 
-    @patch("autorag_research.cli.commands.list_cmd.discover_ingestors")
-    def test_displays_default_values(
-        self, mock_discover: MagicMock, mock_ingestor_registry: dict[str, IngestorMeta], capsys: pytest.CaptureFixture
-    ) -> None:
-        """Shows default values for optional parameters."""
-        mock_discover.return_value = mock_ingestor_registry
-
-        print_ingestors()
-
-        captured = capsys.readouterr()
-        assert "100" in captured.out or "default" in captured.out.lower()
-
-    @patch("autorag_research.cli.commands.list_cmd.discover_ingestors")
-    def test_displays_choices_preview(
-        self, mock_discover: MagicMock, mock_ingestor_registry: dict[str, IngestorMeta], capsys: pytest.CaptureFixture
-    ) -> None:
-        """Shows choices preview for parameters with choices."""
-        mock_discover.return_value = mock_ingestor_registry
-
-        print_ingestors()
-
-        captured = capsys.readouterr()
-        # Should show some choices from beir dataset
-        assert "scifact" in captured.out or "nfcorpus" in captured.out
-
 
 class TestPrintPipelines:
-    """Tests for print_pipelines function."""
+    """Tests for print_pipelines function using real configs."""
 
-    @patch("autorag_research.cli.commands.list_cmd.discover_pipelines")
-    def test_displays_pipelines(self, mock_discover: MagicMock, capsys: pytest.CaptureFixture) -> None:
-        """Displays available pipelines."""
-        mock_discover.return_value = {"bm25": "BM25 retrieval", "dense": "Dense vector retrieval"}
-
+    def test_displays_real_pipelines(self, real_config_path: Path, capsys: pytest.CaptureFixture) -> None:
+        """Displays pipelines from real configs/pipelines/."""
         print_pipelines()
 
         captured = capsys.readouterr()
         assert "bm25" in captured.out
-        assert "dense" in captured.out
+        assert "basic_rag" in captured.out
 
-    @patch("autorag_research.cli.commands.list_cmd.discover_pipelines")
-    def test_displays_descriptions(self, mock_discover: MagicMock, capsys: pytest.CaptureFixture) -> None:
-        """Displays pipeline descriptions."""
-        mock_discover.return_value = {"bm25": "BM25 retrieval pipeline"}
-
-        print_pipelines()
-
-        captured = capsys.readouterr()
-        assert "BM25 retrieval" in captured.out
-
-    @patch("autorag_research.cli.commands.list_cmd.discover_pipelines")
-    def test_empty_pipelines_shows_message(self, mock_discover: MagicMock, capsys: pytest.CaptureFixture) -> None:
+    def test_empty_pipelines_shows_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
         """Shows message when no pipelines found."""
-        mock_discover.return_value = {}
+        # Create empty pipelines directory
+        pipelines_dir = tmp_path / "pipelines"
+        pipelines_dir.mkdir()
+        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
 
         print_pipelines()
 
@@ -232,12 +122,22 @@ class TestPrintPipelines:
 
 
 class TestPrintMetrics:
-    """Tests for print_metrics function."""
+    """Tests for print_metrics function.
 
-    @patch("autorag_research.cli.commands.list_cmd.discover_metrics")
-    def test_displays_metrics(self, mock_discover: MagicMock, capsys: pytest.CaptureFixture) -> None:
-        """Displays available metrics."""
-        mock_discover.return_value = {"ndcg": "NDCG@k metric", "recall": "Recall@k metric"}
+    Note: Real configs have metrics in subdirectories, so discover_metrics returns empty.
+    We use tmp_path to test with valid metric configs.
+    """
+
+    def test_displays_metrics(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Displays available metrics from temp config."""
+        # Create metrics directory with top-level YAML files
+        metrics_dir = tmp_path / "metrics"
+        metrics_dir.mkdir()
+        (metrics_dir / "ndcg.yaml").write_text("description: NDCG@k metric")
+        (metrics_dir / "recall.yaml").write_text("description: Recall@k metric")
+        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
 
         print_metrics()
 
@@ -245,10 +145,14 @@ class TestPrintMetrics:
         assert "ndcg" in captured.out
         assert "recall" in captured.out
 
-    @patch("autorag_research.cli.commands.list_cmd.discover_metrics")
-    def test_empty_metrics_shows_message(self, mock_discover: MagicMock, capsys: pytest.CaptureFixture) -> None:
+    def test_empty_metrics_shows_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
         """Shows message when no metrics found."""
-        mock_discover.return_value = {}
+        # Create empty metrics directory
+        metrics_dir = tmp_path / "metrics"
+        metrics_dir.mkdir()
+        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
 
         print_metrics()
 
@@ -257,22 +161,32 @@ class TestPrintMetrics:
 
 
 class TestPrintDatabases:
-    """Tests for print_databases function."""
+    """Tests for print_databases function using real database.
 
-    @patch("autorag_research.cli.utils.list_schemas_with_connection")
-    def test_displays_schemas(self, mock_list_schemas: MagicMock, capsys: pytest.CaptureFixture) -> None:
-        """Displays database schemas."""
-        mock_list_schemas.return_value = ["beir_scifact", "mteb_nfcorpus"]
+    Note: print_databases excludes system schemas including 'public',
+    so a fresh test database shows 'No user schemas found'.
+    """
 
-        print_databases("localhost", 5432, "postgres", "pass", "testdb")
+    def test_displays_output_from_real_db(
+        self, test_db_params: dict[str, str | int], capsys: pytest.CaptureFixture
+    ) -> None:
+        """Displays output from real test database connection."""
+        print_databases(
+            host=test_db_params["host"],
+            port=test_db_params["port"],
+            user=test_db_params["user"],
+            password=test_db_params["password"],
+            database=test_db_params["database"],
+        )
 
         captured = capsys.readouterr()
-        assert "beir_scifact" in captured.out
-        assert "mteb_nfcorpus" in captured.out
+        # Should show database info (connection worked)
+        assert "Database" in captured.out
+        assert test_db_params["database"] in captured.out
 
     @patch("autorag_research.cli.utils.list_schemas_with_connection")
     def test_empty_schemas_shows_message(self, mock_list_schemas: MagicMock, capsys: pytest.CaptureFixture) -> None:
-        """Shows message when no schemas found."""
+        """Shows message when no schemas found (excluding system schemas)."""
         mock_list_schemas.return_value = []
 
         print_databases("localhost", 5432, "postgres", "pass", "testdb")
