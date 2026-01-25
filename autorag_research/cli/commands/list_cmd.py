@@ -11,11 +11,10 @@ from autorag_research.data.registry import discover_ingestors
 
 logger = logging.getLogger("AutoRAG-Research")
 
-ResourceType = Literal["datasets", "ingestors", "pipelines", "metrics", "databases"]
+ResourceType = Literal["ingestors", "pipelines", "metrics", "databases"]
 
 
 RESOURCE_HANDLERS = {
-    "datasets": lambda **_: print_ingestors(),  # Alias for backward compatibility
     "ingestors": lambda **_: print_ingestors(),
     "pipelines": lambda **_: print_pipelines(),
     "metrics": lambda **_: print_metrics(),
@@ -46,14 +45,12 @@ def list_resources(
     """List available resources.
 
     RESOURCE types:
-      datasets   - Available datasets for ingestion (alias for ingestors)
       ingestors  - Available data ingestors with their parameters
       pipelines  - Available pipeline configurations
       metrics    - Available evaluation metrics
       databases  - Database schemas (uses configs/db.yaml)
 
     Examples:
-      autorag-research list datasets
       autorag-research list ingestors
       autorag-research list pipelines
       autorag-research list metrics

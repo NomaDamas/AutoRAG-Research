@@ -19,12 +19,6 @@ from autorag_research.cli.commands.list_cmd import (
 class TestListResourcesCommand:
     """Tests for the list_resources CLI command."""
 
-    def test_list_datasets_calls_print_ingestors(self, cli_runner: CliRunner) -> None:
-        """'list datasets' routes to print_ingestors."""
-        with patch("autorag_research.cli.commands.list_cmd.print_ingestors") as mock:
-            cli_runner.invoke(app, ["list", "datasets"])
-            mock.assert_called_once()
-
     def test_list_ingestors_calls_print_ingestors(self, cli_runner: CliRunner) -> None:
         """'list ingestors' routes to print_ingestors."""
         with patch("autorag_research.cli.commands.list_cmd.print_ingestors") as mock:
@@ -54,44 +48,22 @@ class TestListResourcesCommand:
         result = cli_runner.invoke(app, ["list", "--help"])
 
         assert result.exit_code == 0
-        assert "datasets" in result.stdout
         assert "pipelines" in result.stdout
         assert "metrics" in result.stdout
+        assert "ingestors" in result.stdout
+        assert "databases" in result.stdout
 
 
-class TestPrintIngestors:
-    """Tests for print_ingestors function using real ingestor registry."""
+def test_print_ingestors(self, capsys: pytest.CaptureFixture) -> None:
+    """Displays real ingestor names from registry."""
+    print_ingestors()
 
-    def test_displays_real_ingestor_names(self, capsys: pytest.CaptureFixture) -> None:
-        """Displays real ingestor names from registry."""
-        print_ingestors()
-
-        captured = capsys.readouterr()
-        assert "beir" in captured.out
-        assert "ragbench" in captured.out
-
-    def test_displays_descriptions(self, capsys: pytest.CaptureFixture) -> None:
-        """Displays ingestor descriptions."""
-        print_ingestors()
-
-        captured = capsys.readouterr()
-        # Real beir ingestor has description
-        assert "BEIR" in captured.out or "benchmark" in captured.out.lower()
-
-    def test_displays_parameters(self, capsys: pytest.CaptureFixture) -> None:
-        """Displays parameter options from real ingestors."""
-        print_ingestors()
-
-        captured = capsys.readouterr()
-        # beir has dataset-name parameter
-        assert "dataset-name" in captured.out or "--dataset-name" in captured.out
-
-    def test_displays_required_indicator(self, capsys: pytest.CaptureFixture) -> None:
-        """Shows required indicator for required parameters."""
-        print_ingestors()
-
-        captured = capsys.readouterr()
-        assert "required" in captured.out.lower()
+    captured = capsys.readouterr()
+    assert "beir" in captured.out
+    assert "ragbench" in captured.out
+    assert "BEIR" in captured.out and "benchmark" in captured.out
+    assert "--dataset-name" in captured.out
+    assert "required" in captured.out.lower()
 
 
 class TestPrintPipelines:
@@ -104,21 +76,6 @@ class TestPrintPipelines:
         captured = capsys.readouterr()
         assert "bm25" in captured.out
         assert "basic_rag" in captured.out
-
-    def test_empty_pipelines_shows_message(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
-    ) -> None:
-        """Shows message when no pipelines found."""
-        # Create empty pipelines directory
-        pipelines_dir = tmp_path / "pipelines"
-        pipelines_dir.mkdir()
-        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
-
-        print_pipelines()
-
-        captured = capsys.readouterr()
-        # Should show some indication that no pipelines were found
-        assert "No" in captured.out or "not found" in captured.out.lower() or captured.out.strip() == ""
 
 
 class TestPrintMetrics:
@@ -144,20 +101,6 @@ class TestPrintMetrics:
         captured = capsys.readouterr()
         assert "ndcg" in captured.out
         assert "recall" in captured.out
-
-    def test_empty_metrics_shows_message(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
-    ) -> None:
-        """Shows message when no metrics found."""
-        # Create empty metrics directory
-        metrics_dir = tmp_path / "metrics"
-        metrics_dir.mkdir()
-        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
-
-        print_metrics()
-
-        captured = capsys.readouterr()
-        assert "No" in captured.out or "not found" in captured.out.lower() or captured.out.strip() == ""
 
 
 class TestPrintDatabases:

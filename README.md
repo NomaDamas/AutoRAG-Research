@@ -123,8 +123,8 @@ autorag-research ingest beir --dataset=scifact \
 #### `list` - List Available Resources
 
 ```bash
-# List available ingestors/datasets
-autorag-research list datasets
+# List available ingestors
+autorag-research list ingestors
 
 # List available pipelines
 autorag-research list pipelines

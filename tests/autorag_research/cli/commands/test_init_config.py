@@ -12,12 +12,6 @@ from autorag_research.cli.commands.init_config import fetch_config_files_from_gi
 
 
 @pytest.fixture
-def cli_runner() -> CliRunner:
-    """Return a Typer CliRunner for testing commands."""
-    return CliRunner()
-
-
-@pytest.fixture
 def mock_github_api_response() -> list[dict]:
     """Create mock GitHub API response with files and directories."""
     return [
