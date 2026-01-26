@@ -61,9 +61,6 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
         with open(path) as f:
             return json.load(f)
 
-    def _load_corpus_document(self, doc_id: str) -> dict[str, Any]:
-        return self._download_json(f"corpus/{doc_id}.json")
-
     def ingest(
         self,
         subset: Literal["train", "dev", "test"] = "test",
@@ -103,7 +100,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
 
         for doc_id in doc_ids:
             try:
-                doc = self._load_corpus_document(doc_id)
+                doc = self._download_json(f"corpus/{doc_id}.json")
             except Exception:
                 logger.exception(f"Failed to load document {doc_id}")
                 continue
