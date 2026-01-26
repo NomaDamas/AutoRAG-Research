@@ -125,20 +125,23 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         super().__init__(embedding_model, late_interaction_embedding_model)
         self.dataset_name = dataset_name
         self._config = _DATASET_CONFIGS[dataset_name]
-        self._cache: dict[str, pd.DataFrame] = {}
+        self._df_cache: dict[str, pd.DataFrame] = {}
+        self._corpus_ds: list[dict] | None = None  # Raw corpus for image access
 
     def detect_primary_key_type(self) -> Literal["bigint"] | Literal["string"]:
         return "string"
 
     def _load(self, name: Literal["corpus", "queries", "qrels"]) -> pd.DataFrame:
         """Load dataset subset as DataFrame with caching."""
-        if name not in self._cache:
+        if name not in self._df_cache:
             logger.info(f"Loading {self._config.hf_path} {name}...")
             from datasets import load_dataset
 
             ds = load_dataset(self._config.hf_path, name=name, split="train")
-            self._cache[name] = ds.to_pandas()  # ty: ignore[possibly-missing-attribute,invalid-assignment]
-        return self._cache[name]
+            if name == "corpus":
+                self._corpus_ds = list(ds)  # Keep raw data for image access
+            self._df_cache[name] = ds.to_pandas()  # ty: ignore[possibly-missing-attribute,invalid-assignment]
+        return self._df_cache[name]
 
     def _sample_queries(
         self,
@@ -232,8 +235,8 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         query_text = row["query"]
         options = row.get("options")
 
-        if self._config.has_options and options:
-            return _format_query_with_options(query_text, options)
+        if self._config.has_options and options is not None and len(options) > 0:
+            return _format_query_with_options(query_text, list(options))
         return query_text
 
     def _extract_answers(self, row: dict) -> list[str]:
@@ -394,9 +397,9 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         qrels_df = self._load("qrels")
         rng = random.Random(RANDOM_SEED)  # noqa: S311
 
-        # Build indexes for row lookup (needed for image/query data access)
+        # Build indexes for row lookup
         query_index = {row["query-id"]: row.to_dict() for _, row in queries_df.iterrows()}
-        corpus_index = {row["corpus-id"]: row.to_dict() for _, row in corpus_df.iterrows()}
+        corpus_index = {row["corpus-id"]: row for row in self._corpus_ds or []}  # Use raw data for images
 
         # Sample and filter using DataFrames
         selected_query_ids = self._sample_queries(queries_df, query_limit, rng)
