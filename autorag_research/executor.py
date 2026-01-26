@@ -114,16 +114,14 @@ class Executor:
 
     Example:
         ```python
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
-
         from autorag_research.config import ExecutorConfig
         from autorag_research.executor import Executor
+        from autorag_research.orm.connection import DBConnection
         from autorag_research.pipelines.retrieval.bm25 import BM25PipelineConfig
         from autorag_research.evaluation.metrics.retrieval import RecallConfig, NDCGConfig
 
-        engine = create_engine("postgresql://...")
-        session_factory = sessionmaker(bind=engine)
+        db = DBConnection.from_config()  # or DBConnection.from_env()
+        session_factory = db.get_session_factory()
 
         config = ExecutorConfig(
             pipelines=[
