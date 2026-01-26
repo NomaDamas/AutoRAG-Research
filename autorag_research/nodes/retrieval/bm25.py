@@ -13,7 +13,7 @@ from autorag_research.nodes import BaseModule
 from autorag_research.orm.repository.chunk import ChunkRepository
 
 
-class BM25DBModule(BaseModule):
+class BM25Module(BaseModule):
     """
     BM25 retrieval module using VectorChord-BM25.
 
