@@ -82,12 +82,6 @@ _DATASET_CONFIGS: dict[VisRAGDatasetName, _DatasetConfig] = {
 }
 
 
-def _format_query_with_options(question: str, options: list[str]) -> str:
-    """Format query with question and multiple choice options."""
-    options_text = "\n".join(options)
-    return f"Given the following query and options, select the correct option.\n\nQuery: {question}\n\nOptions: {options_text}"
-
-
 class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
     """Unified ingestor for all VisRAG benchmark datasets.
 
@@ -102,7 +96,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         late_interaction_embedding_model: Multi-vector embedding model (e.g., ColPali).
 
     Example:
-        >>> ingestor = VisRAGIngestor(VisRAGDatasetName.CHART_QA)
+        >>> ingestor = VisRAGIngestor("ChartQA")
         >>> ingestor.set_service(service)
         >>> ingestor.ingest(query_limit=100, min_corpus_cnt=500)
     """
