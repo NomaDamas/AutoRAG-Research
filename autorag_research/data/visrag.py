@@ -18,7 +18,6 @@ import io
 import logging
 import random
 from dataclasses import dataclass
-from enum import Enum
 from typing import Literal
 
 import pandas as pd
@@ -36,15 +35,7 @@ BATCH_SIZE = 1000
 logger = logging.getLogger("AutoRAG-Research")
 
 
-class VisRAGDatasetName(str, Enum):
-    """Supported VisRAG benchmark datasets."""
-
-    ARXIV_QA = "ArxivQA"
-    CHART_QA = "ChartQA"
-    MP_DOCVQA = "MP-DocVQA"
-    INFO_VQA = "InfoVQA"
-    PLOT_QA = "PlotQA"
-    SLIDE_VQA = "SlideVQA"
+VisRAGDatasetName = Literal["ArxivQA", "ChartQA", "MP-DocVQA", "InfoVQA", "PlotQA", "SlideVQA"]
 
 
 @dataclass(frozen=True)
