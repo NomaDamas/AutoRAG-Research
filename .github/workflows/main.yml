@@ -72,9 +72,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Build BM25 test index
-        run: uv run python tests/resources/build_bm25_index.py
-
       - name: Initialize PostgreSQL database
         run: |
           PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U postgres -d testdb -f postgresql/db/init/001-schema.sql
