@@ -18,7 +18,6 @@ from autorag_research.data.visrag import (
     _DATASET_CONFIGS,
     VisRAGDatasetName,
     VisRAGIngestor,
-    _format_query_with_options,
 )
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
@@ -26,41 +25,6 @@ from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestVerifier,
     create_test_database,
 )
-
-# ==================== Unit Tests: Query Formatting ====================
-
-
-class TestFormatQueryWithOptions:
-    """Test _format_query_with_options function."""
-
-    def test_format_query_basic(self):
-        question = "What color is the sky?"
-        options = ["A. Red", "B. Blue", "C. Green", "D. Yellow"]
-        result = _format_query_with_options(question, options)
-
-        assert "Given the following query and options" in result
-        assert "Query: What color is the sky?" in result
-        assert "Options:" in result
-        assert "A. Red" in result
-        assert "B. Blue" in result
-        assert "C. Green" in result
-        assert "D. Yellow" in result
-
-    def test_format_query_with_five_options(self):
-        question = "Sample question?"
-        options = ["A. One", "B. Two", "C. Three", "D. Four", "E. Five"]
-        result = _format_query_with_options(question, options)
-
-        assert "E. Five" in result
-
-    def test_format_query_options_joined_with_newlines(self):
-        question = "Question?"
-        options = ["A. First", "B. Second"]
-        result = _format_query_with_options(question, options)
-
-        # Options should be on separate lines
-        assert "A. First\nB. Second" in result
-
 
 # ==================== Unit Tests: Dataset Configuration ====================
 

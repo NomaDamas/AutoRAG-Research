@@ -227,7 +227,8 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         options = row.get("options")
 
         if self._config.has_options and options is not None and len(options) > 0:
-            return _format_query_with_options(query_text, list(options))
+            options_text = "\n".join(list(options))
+            return f"Given the following query and options, select the correct option.\n\nQuery: {query_text}\n\nOptions: {options_text}"
         return query_text
 
     def _extract_answers(self, row: dict) -> list[str]:
