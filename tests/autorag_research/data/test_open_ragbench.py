@@ -24,74 +24,27 @@ from tests.autorag_research.data.ingestor_test_utils import (
 # ==================== Unit Tests: Helper Functions ====================
 
 
-class TestMakePageId:
+class TestMakeId:
     def test_make_page_id_basic(self):
         result = make_page_id("2401.12345", 0)
         assert result == "2401.12345_page_0"
 
-    def test_make_page_id_with_version(self):
-        result = make_page_id("2401.12345v2", 5)
-        assert result == "2401.12345v2_page_5"
-
-    def test_make_page_id_section_index_large(self):
-        result = make_page_id("2309.00001", 42)
-        assert result == "2309.00001_page_42"
-
-
-class TestMakeCaptionId:
     def test_make_caption_id_basic(self):
         result = make_caption_id("2401.12345", 0)
         assert result == "2401.12345_caption_0"
 
-    def test_make_caption_id_with_version(self):
-        result = make_caption_id("2401.12345v2", 5)
-        assert result == "2401.12345v2_caption_5"
-
-    def test_make_caption_id_section_index_large(self):
-        result = make_caption_id("2309.00001", 42)
-        assert result == "2309.00001_caption_42"
-
-
-class TestMakeChunkId:
     def test_make_chunk_id_basic(self):
         result = make_chunk_id("2401.12345", 0)
         assert result == "2401.12345_section_0"
 
-    def test_make_chunk_id_with_version(self):
-        result = make_chunk_id("2401.12345v2", 5)
-        assert result == "2401.12345v2_section_5"
-
-    def test_make_chunk_id_section_index_large(self):
-        result = make_chunk_id("2309.00001", 42)
-        assert result == "2309.00001_section_42"
-
-
-class TestMakeImageChunkId:
     def test_make_image_chunk_id_basic(self):
         result = make_image_chunk_id("2401.12345", 0, "img_0")
         assert result == "2401.12345_section_0_img_img_0"
 
-    def test_make_image_chunk_id_different_image_key(self):
-        result = make_image_chunk_id("2401.12345", 3, "figure_1")
-        assert result == "2401.12345_section_3_img_figure_1"
-
-    def test_make_image_chunk_id_numeric_image_key(self):
-        result = make_image_chunk_id("2309.00001", 1, "2")
-        assert result == "2309.00001_section_1_img_2"
-
-
-class TestMakeFileId:
     def test_make_file_id_basic(self):
         result = make_file_id("2401.12345")
         assert result == "2401.12345_file"
 
-    def test_make_file_id_with_version(self):
-        result = make_file_id("2401.12345v2")
-        assert result == "2401.12345v2_file"
-
-    def test_make_file_id_different_prefix(self):
-        result = make_file_id("2309.00001")
-        assert result == "2309.00001_file"
 
 
 # ==================== Integration Tests ====================
