@@ -62,14 +62,10 @@ gpu = [
     "torch>=2.8.0",
     "transformers>=4.57.1",
 ]
-search = [
-    "pyserini>=1.2.0",
-]
 all = [
     "colpali-engine>=0.3.13",
     "torch>=2.8.0",
     "transformers>=4.57.1",
-    "pyserini>=1.2.0",
 ]
 
 [dependency-groups]
