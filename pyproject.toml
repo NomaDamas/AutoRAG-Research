@@ -24,6 +24,7 @@ dependencies = [
     "mteb>=1.34.0",
     "bert-score>=0.3.13",
     "datasets<3.0.0",
+    "huggingface-hub>=0.28.0",
     "evaluate>=0.4.6",
     "huggingface-hub>=0.36.0",
     "llama-index>=0.12.52",
@@ -158,7 +159,7 @@ ignore = [
 preview = true
 
 [tool.deptry.per_rule_ignores]
-DEP002 = ["bert-score"]
+DEP002 = ["bert-score", "huggingface-hub"]
 
 [tool.deptry]
 exclude = ["tests/*", "scripts/*", ".venv/*", "venv/*"]
