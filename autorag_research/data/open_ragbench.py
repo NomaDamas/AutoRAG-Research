@@ -164,7 +164,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                             "contents": str(table_data),
                             "parent_caption": caption_id if section_text else None,
                             "is_table": True,
-                            "table_type": "html",
+                            "table_type": "markdown",
                         }
                     ])
                     table_chunk_ids.append(table_chunk_id)
