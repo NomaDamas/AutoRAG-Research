@@ -25,6 +25,7 @@ from llama_index.core.embeddings import MultiModalEmbedding
 from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
+from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.util import pil_image_to_bytes
@@ -82,6 +83,10 @@ _DATASET_CONFIGS: dict[VisRAGDatasetName, _DatasetConfig] = {
 }
 
 
+@register_ingestor(
+    name="visrag",
+    description="Datasets that used in the VisRAG paper for benchmarking",
+)
 class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
     """Unified ingestor for all VisRAG benchmark datasets.
 

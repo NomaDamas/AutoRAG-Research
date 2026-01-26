@@ -26,7 +26,7 @@ def make_id(*parts: str | int) -> str:
 
 
 @register_ingestor(
-    name="OpenRAGBench",
+    name="open-ragbench",
     description="The Open RAG Benchmark is a unique, high-quality Retrieval-Augmented Generation (RAG) dataset constructed directly from arXiv PDF documents, specifically designed for evaluating RAG systems with a focus on multimodal PDF understanding, made by Vectara.",
 )
 class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
