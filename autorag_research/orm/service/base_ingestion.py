@@ -225,6 +225,7 @@ class BaseIngestionService(BaseService, ABC):
         | TextMultiVectorEmbeddingFunc,
         batch_size: int,
         max_concurrency: int,
+        bm25_tokenizer: str | None = None,
     ) -> int:
         """Generic method to embed entities (queries, chunks, or image chunks) with single or multi-vector embeddings.
 
@@ -234,6 +235,8 @@ class BaseIngestionService(BaseService, ABC):
             embed_func: Async function that takes data and returns embedding.
             batch_size: Number of entities to process per batch.
             max_concurrency: Maximum concurrent embedding calls.
+            bm25_tokenizer: Tokenizer for BM25 tokens (only for chunks). If None, skip BM25.
+                           Common values: "bert", "simple", etc.
 
         Returns:
             Total number of entities successfully embedded.
@@ -293,14 +296,63 @@ class BaseIngestionService(BaseService, ABC):
 
             logger.info(f"Embedded {total_embedded} {display_name}{embedding_suffix} so far")
 
+        # Generate BM25 tokens for chunks/queries if tokenizer is specified
+        if entity_type in ("chunk", "query") and bm25_tokenizer is not None:
+            self._populate_bm25_tokens(bm25_tokenizer, entity_type=entity_type, batch_size=batch_size)
+
         logger.info(f"Total {display_name} embedded{embedding_suffix}: {total_embedded}")
         return total_embedded
+
+    def _populate_bm25_tokens(
+        self,
+        tokenizer: str,
+        entity_type: Literal["chunk", "query"] = "chunk",
+        batch_size: int = 1000,
+    ) -> int:
+        """Populate BM25 tokens for all chunks or queries that don't have them.
+
+        This is called automatically by _embed_entities when entity_type is "chunk" or "query"
+        and bm25_tokenizer is specified.
+
+        Args:
+            tokenizer: Tokenizer name (e.g., "bert", "simple").
+            entity_type: Type of entity to populate ("chunk" or "query").
+            batch_size: Number of entities to update per batch (default: 1000).
+
+        Returns:
+            Number of entities updated with BM25 tokens.
+        """
+        from autorag_research.orm.repository.chunk import ChunkRepository
+        from autorag_research.orm.repository.query import QueryRepository
+
+        # Get model class based on entity type
+        model_key = "Chunk" if entity_type == "chunk" else "Query"
+        model_cls = self._get_schema_classes().get(model_key)
+        if model_cls is None:
+            logger.warning(f"{model_key} model not found in schema, skipping BM25 token generation")
+            return 0
+
+        # Select appropriate repository class
+        repo_cls = ChunkRepository if entity_type == "chunk" else QueryRepository
+
+        try:
+            with self.session_factory() as session:
+                repo = repo_cls(session, model_cls)
+                # Note: repo.batch_update_bm25_tokens commits internally per batch
+                updated = repo.batch_update_bm25_tokens(tokenizer=tokenizer, batch_size=batch_size)
+                logger.info(f"Generated BM25 tokens for {updated} {entity_type}s using tokenizer '{tokenizer}'")
+                return updated
+        except Exception as e:
+            # VectorChord-BM25 extension may not be installed
+            logger.warning(f"Failed to generate BM25 tokens for {entity_type}s (extension may not be installed): {e}")
+            return 0
 
     def embed_all_queries(
         self,
         embed_func: TextEmbeddingFunc,
         batch_size: int = 100,
         max_concurrency: int = 10,
+        bm25_tokenizer: str | None = "bert",
     ) -> int:
         """Embed all queries that don't have embeddings.
 
@@ -308,17 +360,20 @@ class BaseIngestionService(BaseService, ABC):
             embed_func: Async function that takes query text and returns embedding vector.
             batch_size: Number of queries to process per batch.
             max_concurrency: Maximum concurrent embedding calls.
+            bm25_tokenizer: Tokenizer for BM25 sparse retrieval. Default "bert".
+                           Set to None to skip BM25 token generation.
 
         Returns:
             Total number of queries successfully embedded.
         """
-        return self._embed_entities("query", "single", embed_func, batch_size, max_concurrency)
+        return self._embed_entities("query", "single", embed_func, batch_size, max_concurrency, bm25_tokenizer)
 
     def embed_all_queries_multi_vector(
         self,
         embed_func: TextMultiVectorEmbeddingFunc,
         batch_size: int = 100,
         max_concurrency: int = 10,
+        bm25_tokenizer: str | None = "bert",
     ) -> int:
         """Embed all queries that don't have multi-vector embeddings.
 
@@ -326,17 +381,20 @@ class BaseIngestionService(BaseService, ABC):
             embed_func: Async function that takes query text and returns multi-vector embedding.
             batch_size: Number of queries to process per batch.
             max_concurrency: Maximum concurrent embedding calls.
+            bm25_tokenizer: Tokenizer for BM25 sparse retrieval. Default "bert".
+                           Set to None to skip BM25 token generation.
 
         Returns:
             Total number of queries successfully embedded.
         """
-        return self._embed_entities("query", "multi_vector", embed_func, batch_size, max_concurrency)
+        return self._embed_entities("query", "multi_vector", embed_func, batch_size, max_concurrency, bm25_tokenizer)
 
     def embed_all_chunks(
         self,
         embed_func: TextEmbeddingFunc,
         batch_size: int = 100,
         max_concurrency: int = 10,
+        bm25_tokenizer: str | None = "bert",
     ) -> int:
         """Embed all chunks that don't have embeddings.
 
@@ -344,17 +402,20 @@ class BaseIngestionService(BaseService, ABC):
             embed_func: Async function that takes chunk text and returns embedding vector.
             batch_size: Number of chunks to process per batch.
             max_concurrency: Maximum concurrent embedding calls.
+            bm25_tokenizer: Tokenizer for BM25 sparse retrieval. Default "bert".
+                           Set to None to skip BM25 token generation.
 
         Returns:
             Total number of chunks successfully embedded.
         """
-        return self._embed_entities("chunk", "single", embed_func, batch_size, max_concurrency)
+        return self._embed_entities("chunk", "single", embed_func, batch_size, max_concurrency, bm25_tokenizer)
 
     def embed_all_chunks_multi_vector(
         self,
         embed_func: TextMultiVectorEmbeddingFunc,
         batch_size: int = 100,
         max_concurrency: int = 10,
+        bm25_tokenizer: str | None = "bert",
     ) -> int:
         """Embed all chunks that don't have multi-vector embeddings.
 
@@ -362,11 +423,13 @@ class BaseIngestionService(BaseService, ABC):
             embed_func: Async function that takes chunk text and returns multi-vector embedding.
             batch_size: Number of chunks to process per batch.
             max_concurrency: Maximum concurrent embedding calls.
+            bm25_tokenizer: Tokenizer for BM25 sparse retrieval. Default "bert".
+                           Set to None to skip BM25 token generation.
 
         Returns:
             Total number of chunks successfully embedded.
         """
-        return self._embed_entities("chunk", "multi_vector", embed_func, batch_size, max_concurrency)
+        return self._embed_entities("chunk", "multi_vector", embed_func, batch_size, max_concurrency, bm25_tokenizer)
 
         # ==================== Retrieval Ground Truth Operations ====================
 
