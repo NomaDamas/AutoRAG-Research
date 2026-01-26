@@ -88,7 +88,7 @@ class TestExecutorWithRealDB:
         executor = Executor(session_factory, config)
 
         with patch(
-            "autorag_research.nodes.retrieval.bm25.BM25DBModule",
+            "autorag_research.nodes.retrieval.bm25.BM25Module",
             return_value=mock_bm25_module,
         ):
             result = executor.run()
@@ -130,7 +130,7 @@ class TestExecutorWithRealDB:
         executor = Executor(session_factory, config)
 
         with patch(
-            "autorag_research.nodes.retrieval.bm25.BM25DBModule",
+            "autorag_research.nodes.retrieval.bm25.BM25Module",
             return_value=mock_bm25_module,
         ):
             result = executor.run()
@@ -165,7 +165,7 @@ class TestExecutorWithRealDB:
         mock_module.run.side_effect = Exception("BM25 error")
 
         with patch(
-            "autorag_research.nodes.retrieval.bm25.BM25DBModule",
+            "autorag_research.nodes.retrieval.bm25.BM25Module",
             return_value=mock_module,
         ):
             result = executor.run()
