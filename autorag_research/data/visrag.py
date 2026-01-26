@@ -169,22 +169,20 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
     def _sample_queries(
         self,
         query_index: dict[str, dict],
-        qrels: dict[str, dict[str, int]],
         query_limit: int | None,
         rng: random.Random,
     ) -> list[str]:
-        """Sample queries that have valid qrels.
+        """Sample queries from the query index.
 
         Args:
             query_index: Dict mapping query_id to row data.
-            qrels: Dict mapping query_id -> {corpus_id: score}.
             query_limit: Maximum number of queries to sample.
             rng: Random number generator.
 
         Returns:
             List of selected query IDs.
         """
-        all_query_ids = [qid for qid in query_index if qrels.get(qid)]
+        all_query_ids = list(query_index.keys())
 
         if query_limit is not None and query_limit < len(all_query_ids):
             selected_query_ids = rng.sample(all_query_ids, query_limit)
@@ -429,7 +427,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         corpus_index = {row["corpus-id"]: row for row in corpus_ds}
 
         # Sample and filter
-        selected_query_ids = self._sample_queries(query_index, qrels, query_limit, rng)
+        selected_query_ids = self._sample_queries(query_index, query_limit, rng)
         gold_corpus_ids = self._collect_gold_corpus_ids(selected_query_ids, qrels)
         selected_corpus_ids = self._filter_corpus(list(corpus_index.keys()), gold_corpus_ids, min_corpus_cnt, rng)
 
