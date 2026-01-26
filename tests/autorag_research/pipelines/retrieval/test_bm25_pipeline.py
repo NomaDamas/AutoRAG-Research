@@ -1,4 +1,12 @@
+"""Test cases for BM25RetrievalPipeline.
+
+Tests the BM25 retrieval pipeline logic using mocked BM25 search.
+"""
+
+from unittest.mock import MagicMock, patch
+
 import pytest
+from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.pipelines.retrieval.bm25 import BM25RetrievalPipeline
@@ -8,11 +16,21 @@ from tests.autorag_research.pipelines.pipeline_test_utils import (
 )
 
 
+def _create_mock_chunk(chunk_id: int, contents: str) -> MagicMock:
+    """Create a mock Chunk object."""
+    mock = MagicMock()
+    mock.id = chunk_id
+    mock.contents = contents
+    return mock
+
+
 class TestBM25RetrievalPipeline:
+    """Tests for BM25RetrievalPipeline."""
+
     @pytest.fixture
-    def cleanup_pipeline_results(self, session_factory):
+    def cleanup_pipeline_results(self, session_factory: sessionmaker[Session]):
         """Cleanup fixture that deletes pipeline results after test."""
-        created_pipeline_ids = []
+        created_pipeline_ids: list[int] = []
 
         yield created_pipeline_ids
 
@@ -25,70 +43,151 @@ class TestBM25RetrievalPipeline:
         finally:
             session.close()
 
-    @pytest.fixture
-    def pipeline(self, session_factory, bm25_index_path, cleanup_pipeline_results):
-        """Create a BM25RetrievalPipeline with real index from seed data."""
+    def test_pipeline_creation(
+        self,
+        session_factory: sessionmaker[Session],
+        cleanup_pipeline_results: list[int],
+    ):
+        """Test that pipeline is created correctly."""
         pipeline = BM25RetrievalPipeline(
             session_factory=session_factory,
             name="test_bm25_pipeline",
-            index_path=bm25_index_path,
+            tokenizer="bert",
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
-        return pipeline
 
-    def test_pipeline_creation(self, pipeline, bm25_index_path):
-        """Test that pipeline is created correctly."""
         assert pipeline.pipeline_id > 0
-        assert pipeline.index_path == bm25_index_path
+        assert pipeline.tokenizer == "bert"
+        assert pipeline.index_name == "idx_chunk_bm25"
 
-    def test_pipeline_config(self, pipeline, bm25_index_path):
+    def test_pipeline_config(
+        self,
+        session_factory: sessionmaker[Session],
+        cleanup_pipeline_results: list[int],
+    ):
         """Test that pipeline config is correct."""
+        pipeline = BM25RetrievalPipeline(
+            session_factory=session_factory,
+            name="test_bm25_pipeline_config",
+            tokenizer="bert",
+            index_name="custom_index",
+        )
+        cleanup_pipeline_results.append(pipeline.pipeline_id)
+
         config = pipeline._get_pipeline_config()
         assert config["type"] == "bm25"
-        assert config["index_path"] == bm25_index_path
-        assert config["k1"] == 0.9
-        assert config["b"] == 0.4
+        assert config["tokenizer"] == "bert"
+        assert config["index_name"] == "custom_index"
 
-    def test_retrieve_single_query(self, pipeline):
-        """Test single query retrieval."""
-        # Use a query that matches seed data chunks
-        results = pipeline.retrieve("Chunk", top_k=3)
+    def test_retrieve_single_query(
+        self,
+        session_factory: sessionmaker[Session],
+        cleanup_pipeline_results: list[int],
+    ):
+        """Test single query retrieval with mocked BM25 search."""
+        # Mock BM25 search results: (chunk_obj, score)
+        mock_results = [
+            (_create_mock_chunk(1, "Machine learning content"), 0.95),
+            (_create_mock_chunk(2, "Deep learning content"), 0.85),
+            (_create_mock_chunk(3, "Neural network content"), 0.75),
+        ]
 
-        assert isinstance(results, list)
-        assert len(results) <= 3
-        for result in results:
-            assert "doc_id" in result
-            assert "score" in result
-            assert isinstance(result["doc_id"], int)
+        with patch("autorag_research.orm.repository.chunk.ChunkRepository.bm25_search") as mock_search:
+            mock_search.return_value = mock_results
 
-    def test_run(self, pipeline, session_factory):
-        """Test running the full pipeline with verification."""
-        # Seed data: 5 queries, 6 chunks
-        # BM25 may not return results for all queries if they don't match
-        result = pipeline.run(top_k=3)
+            pipeline = BM25RetrievalPipeline(
+                session_factory=session_factory,
+                name="test_bm25_retrieve",
+                tokenizer="bert",
+            )
+            cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        config = PipelineTestConfig(
-            pipeline_type="retrieval",
-            expected_total_queries=5,
-            expected_min_results=0,  # BM25 may return 0 if no match
-            check_persistence=True,
-        )
-        verifier = PipelineTestVerifier(result, pipeline.pipeline_id, session_factory, config)
-        verifier.verify_all()
+            results = pipeline.retrieve("machine learning", top_k=3)
 
-    def test_results_persisted_correctly(self, pipeline, session_factory):
+            assert isinstance(results, list)
+            assert len(results) == 3
+            for i, result in enumerate(results):
+                assert result["doc_id"] == mock_results[i][0].id
+                assert result["score"] == mock_results[i][1]
+
+            # Verify search was called with correct parameters
+            mock_search.assert_called_once()
+            call_kwargs = mock_search.call_args[1]
+            assert call_kwargs["query_text"] == "machine learning"
+            assert call_kwargs["limit"] == 3
+            assert call_kwargs["tokenizer"] == "bert"
+
+    def test_run_full_pipeline(
+        self,
+        session_factory: sessionmaker[Session],
+        cleanup_pipeline_results: list[int],
+    ):
+        """Test running the full pipeline with mocked BM25 search."""
+        # Mock returns results for each query (seed data has 5 queries)
+        mock_results = [
+            (_create_mock_chunk(1, "Content 1"), 0.9),
+            (_create_mock_chunk(2, "Content 2"), 0.8),
+        ]
+
+        with patch("autorag_research.orm.repository.chunk.ChunkRepository.bm25_search") as mock_search:
+            mock_search.return_value = mock_results
+
+            pipeline = BM25RetrievalPipeline(
+                session_factory=session_factory,
+                name="test_bm25_full_run",
+                tokenizer="bert",
+            )
+            cleanup_pipeline_results.append(pipeline.pipeline_id)
+
+            result = pipeline.run(top_k=3)
+
+            # Verify using test utilities
+            config = PipelineTestConfig(
+                pipeline_type="retrieval",
+                expected_total_queries=5,  # Seed data has 5 queries
+                expected_min_results=0,
+                check_persistence=True,
+            )
+            verifier = PipelineTestVerifier(result, pipeline.pipeline_id, session_factory, config)
+            verifier.verify_all()
+
+            # Verify search was called for each query
+            assert mock_search.call_count == 5
+
+    def test_results_persisted_correctly(
+        self,
+        session_factory: sessionmaker[Session],
+        cleanup_pipeline_results: list[int],
+    ):
         """Test that results are correctly persisted in database."""
-        pipeline.run(top_k=3)
+        mock_results = [
+            (_create_mock_chunk(1, "Content 1"), 0.95),
+            (_create_mock_chunk(2, "Content 2"), 0.85),
+        ]
 
-        session = session_factory()
-        try:
-            repo = ChunkRetrievedResultRepository(session)
-            results = repo.get_by_pipeline(pipeline.pipeline_id)
+        with patch("autorag_research.orm.repository.chunk.ChunkRepository.bm25_search") as mock_search:
+            mock_search.return_value = mock_results
 
-            # Verify all results have valid chunk IDs (1-6 from seed data)
-            valid_chunk_ids = {1, 2, 3, 4, 5, 6}
-            for r in results:
-                assert r.chunk_id in valid_chunk_ids
-                assert r.rel_score >= 0  # BM25 scores are non-negative
-        finally:
-            session.close()
+            pipeline = BM25RetrievalPipeline(
+                session_factory=session_factory,
+                name="test_bm25_persistence",
+                tokenizer="bert",
+            )
+            cleanup_pipeline_results.append(pipeline.pipeline_id)
+
+            pipeline.run(top_k=3)
+
+            # Verify persistence
+            session = session_factory()
+            try:
+                repo = ChunkRetrievedResultRepository(session)
+                results = repo.get_by_pipeline(pipeline.pipeline_id)
+
+                # Should have results persisted (5 queries * 2 results each = 10)
+                assert len(results) == 10
+
+                # All results should have valid scores
+                for r in results:
+                    assert r.rel_score >= 0
+            finally:
+                session.close()
