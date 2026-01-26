@@ -18,6 +18,21 @@ BEGIN
 	END;
 END $$;
 
+-- VectorChord-BM25 extensions for sparse retrieval
+DO $$
+BEGIN
+	BEGIN
+		CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;
+	EXCEPTION WHEN others THEN
+		PERFORM 1;
+	END;
+	BEGIN
+		CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;
+	EXCEPTION WHEN others THEN
+		PERFORM 1;
+	END;
+END $$;
+
 -- Schema DDL matching the provided design
 
 -- File
@@ -57,6 +72,7 @@ CREATE TABLE IF NOT EXISTS caption (
 
 -- Chunk
 -- embeddings column supports VectorChord's MaxSim operator (@#) for late interaction models
+-- bm25_index column supports VectorChord-BM25 sparse retrieval (added conditionally)
 CREATE TABLE IF NOT EXISTS chunk (
 	id BIGSERIAL PRIMARY KEY,
 	parent_caption BIGINT REFERENCES caption(id),
@@ -66,6 +82,19 @@ CREATE TABLE IF NOT EXISTS chunk (
 	is_table BOOLEAN DEFAULT FALSE,
 	table_type VARCHAR(255)
 );
+
+-- Add bm25_tokens column and index only if VectorChord-BM25 extension exists
+DO $$
+BEGIN
+	IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vchord_bm25') THEN
+		-- Add BM25 vector column (stores tokenized sparse vector for each chunk)
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chunk' AND column_name = 'bm25_tokens') THEN
+			EXECUTE 'ALTER TABLE chunk ADD COLUMN bm25_tokens bm25vector';
+		END IF;
+		-- Create BM25 index (stores global document frequency for IDF calculation)
+		EXECUTE 'CREATE INDEX IF NOT EXISTS idx_chunk_bm25 ON chunk USING bm25 (bm25_tokens bm25_ops)';
+	END IF;
+END $$;
 
 -- ImageChunk
 -- embeddings column supports VectorChord's MaxSim operator (@#) for late interaction models
@@ -95,6 +124,17 @@ CREATE TABLE IF NOT EXISTS query (
 	embedding VECTOR(768),
 	embeddings VECTOR(768)[]  -- Multi-vector for ColBERT/ColPali style retrieval
 );
+
+-- Add bm25_tokens column to query table only if VectorChord-BM25 extension exists
+-- Note: Query does NOT need a BM25 index - only pre-computed tokens for search
+DO $$
+BEGIN
+	IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vchord_bm25') THEN
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'query' AND column_name = 'bm25_tokens') THEN
+			EXECUTE 'ALTER TABLE query ADD COLUMN bm25_tokens bm25vector';
+		END IF;
+	END IF;
+END $$;
 
 -- RetrievalRelation
 CREATE TABLE IF NOT EXISTS retrieval_relation (
