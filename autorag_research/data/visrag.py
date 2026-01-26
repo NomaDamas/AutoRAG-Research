@@ -65,7 +65,7 @@ _DATASET_CONFIGS: dict[VisRAGDatasetName, _DatasetConfig] = {
     ),
     VisRAGDatasetName.CHART_QA: _DatasetConfig(
         hf_path="openbmb/VisRAG-Ret-Test-ChartQA",
-        has_options=True,
+        has_options=False,
         supports_multi_answer=False,
     ),
     VisRAGDatasetName.MP_DOCVQA: _DatasetConfig(
@@ -80,7 +80,7 @@ _DATASET_CONFIGS: dict[VisRAGDatasetName, _DatasetConfig] = {
     ),
     VisRAGDatasetName.PLOT_QA: _DatasetConfig(
         hf_path="openbmb/VisRAG-Ret-Test-PlotQA",
-        has_options=True,
+        has_options=False,
         supports_multi_answer=False,
     ),
     VisRAGDatasetName.SLIDE_VQA: _DatasetConfig(
