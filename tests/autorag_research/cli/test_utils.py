@@ -80,31 +80,84 @@ class TestDiscoverConfigs:
         assert "invalid" in result
         assert "Error" in result["invalid"] or "error" in result["invalid"].lower() or result["invalid"] != ""
 
+    def test_handles_stem_collision_with_prefix(self, tmp_path: Path) -> None:
+        """Adds parent directory prefix when files have same stem in different subdirs."""
+        # Create subdirectories with same-named files
+        (tmp_path / "retrieval").mkdir()
+        (tmp_path / "generation").mkdir()
+        (tmp_path / "retrieval" / "recall.yaml").write_text("description: Retrieval recall metric")
+        (tmp_path / "generation" / "recall.yaml").write_text("description: Generation recall metric")
+
+        result = discover_configs(tmp_path)
+
+        # Should have prefixed names, not plain "recall"
+        assert "recall" not in result
+        assert "retrieval/recall" in result
+        assert "generation/recall" in result
+        assert result["retrieval/recall"] == "Retrieval recall metric"
+        assert result["generation/recall"] == "Generation recall metric"
+
+    def test_no_prefix_when_no_collision(self, tmp_path: Path) -> None:
+        """Uses plain stem when no collision exists."""
+        (tmp_path / "subdir").mkdir()
+        (tmp_path / "subdir" / "unique.yaml").write_text("description: Unique config")
+
+        result = discover_configs(tmp_path)
+
+        # Should use plain name without prefix
+        assert "unique" in result
+        assert "subdir/unique" not in result
+
+    def test_mixed_collision_and_unique(self, tmp_path: Path) -> None:
+        """Handles mix of colliding and unique files correctly."""
+        (tmp_path / "dir1").mkdir()
+        (tmp_path / "dir2").mkdir()
+        # Colliding files
+        (tmp_path / "dir1" / "common.yaml").write_text("description: Dir1 common")
+        (tmp_path / "dir2" / "common.yaml").write_text("description: Dir2 common")
+        # Unique file
+        (tmp_path / "dir1" / "unique.yaml").write_text("description: Only in dir1")
+
+        result = discover_configs(tmp_path)
+
+        # Colliding files get prefix
+        assert "dir1/common" in result
+        assert "dir2/common" in result
+        # Unique file does not get prefix
+        assert "unique" in result
+        assert "dir1/unique" not in result
+
 
 class TestDiscoverPipelines:
     """Tests for discover_pipelines function using real configs."""
 
-    def test_discover_pipelines_finds_real_configs(self, real_config_path: Path) -> None:
-        """discover_pipelines finds bm25 and basic_rag in real configs/pipelines/."""
-        result = discover_pipelines()
+    def test_discover_pipelines_finds_real_retrieval_configs(self, real_config_path: Path) -> None:
+        """discover_pipelines finds bm25 in real configs/pipelines/retrieval/."""
+        result = discover_pipelines("retrieval")
 
-        assert "generation" in result
-        assert "retrieval" in result
-        assert "bm25" in result["retrieval"]
-        assert "basic_rag" in result["generation"]
+        assert "bm25" in result
+
+    def test_discover_pipelines_finds_real_generation_configs(self, real_config_path: Path) -> None:
+        """discover_pipelines finds basic_rag in real configs/pipelines/generation/."""
+        result = discover_pipelines("generation")
+
+        assert "basic_rag" in result
 
 
 class TestDiscoverMetrics:
     """Tests for discover_metrics function using real configs."""
 
-    def test_discover_metrics_finds_real_configs(self, real_config_path: Path) -> None:
-        """discover_metrics finds ndcg and recall in real configs/metrics/."""
-        result = discover_metrics()
+    def test_discover_metrics_finds_real_retrieval_configs(self, real_config_path: Path) -> None:
+        """discover_metrics finds ndcg in real configs/metrics/retrieval/."""
+        result = discover_metrics("retrieval")
 
-        assert "generation" in result
-        assert "retrieval" in result
-        assert "ndcg" in result["retrieval"]
-        assert "rouge" in result["generation"]
+        assert "ndcg" in result
+
+    def test_discover_metrics_finds_real_generation_configs(self, real_config_path: Path) -> None:
+        """discover_metrics finds rouge in real configs/metrics/generation/."""
+        result = discover_metrics("generation")
+
+        assert "rouge" in result
 
 
 class TestDiscoverEmbeddingConfigs:

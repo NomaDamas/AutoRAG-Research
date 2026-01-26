@@ -27,66 +27,58 @@ def discover_configs(config_dir: Path) -> dict[str, str]:
 
     Returns:
         Dictionary mapping config name (filename without .yaml) to description.
+        When files with the same stem exist in different subdirectories,
+        the parent directory is used as prefix (e.g., "retrieval/recall").
     """
     result = {}
     if not config_dir.exists():
         raise FileNotFoundError
 
+    # First pass: collect all files and detect collisions
+    files_by_stem: dict[str, list[Path]] = {}
     for yaml_file in sorted(config_dir.glob("**/*.yaml")):
-        try:
-            with open(yaml_file) as f:
-                cfg = yaml.safe_load(f)
-            name = yaml_file.stem
-            # Use description if available, otherwise fallback to _target_ or filename
-            description = cfg.get("description", cfg.get("_target_", "No description"))
+        stem = yaml_file.stem
+        files_by_stem.setdefault(stem, []).append(yaml_file)
+
+    # Second pass: build result with prefixes for collisions
+    for stem, files in files_by_stem.items():
+        use_prefix = len(files) > 1
+        for yaml_file in files:
+            try:
+                with open(yaml_file) as f:
+                    cfg = yaml.safe_load(f)
+                description = cfg.get("description", cfg.get("_target_", "No description"))
+            except Exception as e:
+                logger.warning(f"Failed to parse {yaml_file}: {e}")
+                description = "Error loading config"
+
+            name = f"{yaml_file.parent.name}/{stem}" if use_prefix else stem
             result[name] = description
-        except Exception as e:
-            logger.warning(f"Failed to parse {yaml_file}: {e}")
-            result[yaml_file.stem] = "Error loading config"
 
     return result
 
 
-def discover_pipelines() -> dict[str, dict[str, str]]:
-    """Discover available pipelines from configs/pipelines/.
+def discover_pipelines(pipeline_type: str) -> dict[str, str]:
+    """Discover available pipelines from configs/pipelines/{pipeline_type}/.
+
+    Args:
+        pipeline_type: Type of pipeline to discover ("retrieval" or "generation").
 
     Returns:
-        Nested dict: {subdir: {name: description}}
-        Example: {"retrieval": {"bm25": "BM25 retrieval..."}, "generation": {...}}
+        Dict: {name: description}
+        Example: {"dense": "Dense retrieval pipeline...", "sparse": "..."}
     """
-    config_dir = get_config_dir() / "pipelines"
-    result: dict[str, dict[str, str]] = {}
-
-    if not config_dir.exists():
-        logger.warning(f"Config directory not found: {config_dir}")
-        return result
-
-    for subdir in sorted(config_dir.iterdir()):
-        if subdir.is_dir():
-            result[subdir.name] = discover_configs(subdir)
-
-    return result
+    return discover_configs(get_config_dir() / "pipelines" / pipeline_type)
 
 
-def discover_metrics() -> dict[str, dict[str, str]]:
+def discover_metrics(pipeline_type: str) -> dict[str, str]:
     """Discover available metrics from configs/metrics/.
 
     Returns:
         Nested dict: {subdir: {name: description}}
         Example: {"retrieval": {"recall": "Recall@k..."}, "generation": {...}}
     """
-    config_dir = get_config_dir() / "metrics"
-    result: dict[str, dict[str, str]] = {}
-
-    if not config_dir.exists():
-        logger.warning(f"Config directory not found: {config_dir}")
-        return result
-
-    for subdir in sorted(config_dir.iterdir()):
-        if subdir.is_dir():
-            result[subdir.name] = discover_configs(subdir)
-
-    return result
+    return discover_configs(get_config_dir() / "metrics" / pipeline_type)
 
 
 # =============================================================================

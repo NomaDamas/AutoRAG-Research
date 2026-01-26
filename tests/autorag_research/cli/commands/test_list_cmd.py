@@ -73,21 +73,12 @@ class TestPrintPipelines:
 
 
 class TestPrintMetrics:
-    """Tests for print_metrics function.
-
-    Note: Real configs have metrics in subdirectories, so discover_metrics returns empty.
-    We use tmp_path to test with valid metric configs.
-    """
+    """Tests for print_metrics function."""
 
     def test_displays_metrics(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     ) -> None:
         """Displays available metrics from temp config."""
-        # Create metrics directory with top-level YAML files
-        metrics_dir = tmp_path / "metrics"
-        metrics_dir.mkdir()
-        (metrics_dir / "ndcg.yaml").write_text("description: NDCG@k metric")
-        (metrics_dir / "recall.yaml").write_text("description: Recall@k metric")
         monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
 
         print_metrics()

@@ -12,6 +12,7 @@ from typing import Literal
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Float,
     ForeignKey,
@@ -159,6 +160,8 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         contents: Mapped[str] = mapped_column(Text, nullable=False)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
         embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
+        is_table: Mapped[bool] = mapped_column(Boolean, default=False)
+        table_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
         # Relationships
         parent_caption_obj: Mapped["Caption | None"] = relationship(

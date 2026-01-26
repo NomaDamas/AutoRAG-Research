@@ -14,6 +14,8 @@ logger = logging.getLogger("AutoRAG-Research")
 
 ResourceType = Literal["ingestors", "pipelines", "metrics", "databases"]
 
+PIPELINE_TYPES = ("retrieval", "generation")
+
 
 RESOURCE_HANDLERS = {
     "ingestors": lambda **_: print_ingestors(),
@@ -68,17 +70,21 @@ def print_ingestors() -> None:
 
 def print_pipelines() -> None:
     """Print available pipelines by scanning configs/pipelines/."""
-    pipelines = discover_pipelines()
     typer.echo("\nAvailable Pipelines:")
     typer.echo("-" * 60)
-    if pipelines:
-        for subdir, configs in sorted(pipelines.items()):
-            typer.echo(f"\n  [{subdir}]")
-            for name, description in sorted(configs.items()):
+
+    has_pipelines = False
+    for pipeline_type in PIPELINE_TYPES:
+        pipelines = discover_pipelines(pipeline_type)
+        if pipelines:
+            has_pipelines = True
+            typer.echo(f"\n  [{pipeline_type}]")
+            for name, description in sorted(pipelines.items()):
                 typer.echo(f"    {name:<18} {description}")
-    else:
+
+    if not has_pipelines:
         typer.echo("  No pipelines found. Run 'autorag-research init-config' first.")
-    typer.echo("\nUsage in experiment.yaml:")
+    typer.echo("\nExample Usage in experiment.yaml:")
     typer.echo("  pipelines:")
     typer.echo("    retrieval: [bm25]")
     typer.echo("    generation: [basic_rag]")
@@ -86,17 +92,21 @@ def print_pipelines() -> None:
 
 def print_metrics() -> None:
     """Print available metrics by scanning configs/metrics/."""
-    metrics = discover_metrics()
     typer.echo("\nAvailable Metrics:")
     typer.echo("-" * 60)
-    if metrics:
-        for subdir, configs in sorted(metrics.items()):
-            typer.echo(f"\n  [{subdir}]")
-            for name, description in sorted(configs.items()):
+
+    has_metrics = False
+    for pipeline_type in ("retrieval", "generation"):
+        metrics = discover_metrics(pipeline_type)
+        if metrics:
+            has_metrics = True
+            typer.echo(f"\n  [{pipeline_type}]")
+            for name, description in sorted(metrics.items()):
                 typer.echo(f"    {name:<13} {description}")
-    else:
+
+    if not has_metrics:
         typer.echo("  No metrics found. Run 'autorag-research init-config' first.")
-    typer.echo("\nUsage in experiment.yaml:")
+    typer.echo("\nUExample sage in experiment.yaml:")
     typer.echo("  metrics:")
     typer.echo("    retrieval: [recall, ndcg]")
     typer.echo("    generation: [rouge]")

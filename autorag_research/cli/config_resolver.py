@@ -45,14 +45,10 @@ class ConfigResolver:
             if isinstance(names, str):
                 names = [names]
             for name in names:
-                path = self.config_dir / base_dir / subdir / f"{name}.yaml"
-                if not path.exists():
-                    msg = f"Config not found: {path}"
-                    raise FileNotFoundError(msg)
-                configs.append(OmegaConf.load(path))
+                configs.append(self.resolve_config([self.config_dir, base_dir, subdir], name))
         return configs
 
-    def resolve_config(self, dirs: list[str], name: str) -> DictConfig:
+    def resolve_config(self, dirs: list[str | Path], name: str) -> DictConfig:
         """Resolve a single config given a list of directories and a name.
 
         Args:
