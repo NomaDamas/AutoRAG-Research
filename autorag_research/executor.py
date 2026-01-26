@@ -27,6 +27,9 @@ from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 logger = logging.getLogger("AutoRAG-Research")
 
 
+PIPELINE_TYPES = ["pipelines", "retrieval"]
+
+
 @dataclass
 class PipelineResult:
     """Result of a single pipeline execution.
@@ -451,7 +454,7 @@ class Executor:
             return
 
         # Load pipeline config from pipelines/retrieval/ directory
-        pipeline_cfg = self._config_resolver.resolve_config(["pipelines", "retrieval"], name)
+        pipeline_cfg = self._config_resolver.resolve_config(PIPELINE_TYPES, name)
         pipeline_config = instantiate(pipeline_cfg)
 
         # Instantiate the retrieval pipeline
