@@ -74,7 +74,7 @@ _DATASET_CONFIGS: dict[VisRAGDatasetName, _DatasetConfig] = {
         supports_multi_answer=True,
     ),
     VisRAGDatasetName.INFO_VQA: _DatasetConfig(
-        hf_path="openbmb/VisRAG-Ret-Test-InfographicsVQA",
+        hf_path="openbmb/VisRAG-Ret-Test-InfoVQA",
         has_options=False,
         supports_multi_answer=True,
     ),
