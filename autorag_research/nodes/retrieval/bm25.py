@@ -1,111 +1,114 @@
 """
-BM25 retrieval module using Pyserini.
+BM25 retrieval module using VectorChord-BM25.
 
-This module implements BM25 retrieval using Pyserini's pre-built indices.
-It supports batch processing and can be configured with different indices.
+This module implements BM25 retrieval using PostgreSQL's VectorChord-BM25 extension,
+enabling full-text search directly on database-stored chunks without external indices.
 """
 
-from pathlib import Path
+from typing import Any
 
-from pyserini.search.lucene import LuceneSearcher
+from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.exceptions import MissingRequiredParameterError
 from autorag_research.nodes import BaseModule
+from autorag_research.orm.repository.chunk import ChunkRepository
 
 
-class BM25Module(BaseModule):
+class BM25DBModule(BaseModule):
     """
-    BM25 retrieval module using Pyserini.
+    BM25 retrieval module using VectorChord-BM25.
 
-    This module performs BM25-based sparse retrieval using either pre-built
-    indices or custom indices created from user documents.
+    This module performs BM25-based sparse retrieval using PostgreSQL's
+    VectorChord-BM25 extension, querying chunks stored in the database.
 
     Attributes:
-        searcher: Pyserini SimpleSearcher instance
-        index_name: Name of the pre-built index (if using pre-built)
-        index_path: Path to the custom index (if using custom index)
+        session_factory: SQLAlchemy sessionmaker for database connections.
+        tokenizer: Tokenizer name used for BM25 (default: "bert").
+        index_name: Name of the BM25 index in PostgreSQL.
+        schema: Schema namespace from create_schema().
+
+    Example:
+        ```python
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        engine = create_engine("postgresql://user:pass@localhost/dbname")
+        session_factory = sessionmaker(bind=engine)
+
+        module = BM25DBModule(session_factory=session_factory)
+        results = module.run(["What is machine learning?"], top_k=10)
+        ```
     """
 
     def __init__(
         self,
-        index_name: str | None = None,
-        index_path: str | None = None,
-        k1: float = 0.9,
-        b: float = 0.4,
-        language: str = "en",
+        session_factory: sessionmaker[Session],
+        tokenizer: str = "bert",
+        index_name: str = "idx_chunk_bm25",
+        schema: Any | None = None,
     ):
         """
-        Initialize BM25 module.
+        Initialize BM25 DB module.
 
         Args:
-            index_name: Name of pre-built index (e.g., 'msmarco-passage', 'msmarco-doc')
-            index_path: Path to custom Lucene index (used if index_name is not provided)
-            k1: BM25 k1 parameter (controls term frequency saturation)
-            b: BM25 b parameter (controls length normalization)
-            language: Language for analyzer ('en', 'ko', 'zh', 'ja', etc.)
-
-        Raises:
-            ValueError: If neither index_name nor index_path is provided
+            session_factory: SQLAlchemy sessionmaker for database connections.
+            tokenizer: Tokenizer name for BM25 (default: "bert" for bert_base_uncased).
+                       Other options may include: "simple", "standard", etc.
+            index_name: Name of the BM25 index (default: "idx_chunk_bm25").
+            schema: Schema namespace from create_schema(). If None, uses default schema.
         """
-        if index_name is None and index_path is None:
-            raise MissingRequiredParameterError(["index_name", "index_path"])
+        self.session_factory = session_factory
+        self.tokenizer = tokenizer
+        self.index_name = index_name
+        self._schema = schema
 
-        if index_name:
-            # Use pre-built index
-            self.searcher = LuceneSearcher.from_prebuilt_index(index_name)
-            self.index_name = index_name
-            self.index_path = None
-        else:
-            # Use custom index
-            self.searcher = LuceneSearcher(str(index_path))
-            self.index_name = None
-            self.index_path = Path(index_path)
+    def _get_chunk_model(self) -> type:
+        """Get the Chunk model class from schema or default."""
+        if self._schema is not None:
+            return self._schema.Chunk
+        from autorag_research.orm.schema import Chunk
 
-        # Set search language
-        self.searcher.set_language(language)
-
-        # Set BM25 parameters
-        self.searcher.set_bm25(k1=k1, b=b)
-
-        self.k1 = k1
-        self.b = b
+        return Chunk
 
     def run(self, queries: list[str], top_k: int = 10) -> list[list[dict]]:
         """
         Execute BM25 retrieval for given queries.
 
         Args:
-            queries: List of query strings for batch processing
-            top_k: Number of top documents to retrieve per query
+            queries: List of query strings for batch processing.
+            top_k: Number of top documents to retrieve per query.
 
         Returns:
             List of search results for each query. Each query returns a list of top_k results.
 
             Each result dictionary contains:
-            - doc_id: Document ID
-            - score: BM25 relevance score
-            - content: Document content
+            - doc_id: Chunk ID (int)
+            - score: BM25 relevance score (higher = more relevant)
+            - content: Chunk text content
         """
         all_results = []
+        chunk_model = self._get_chunk_model()
 
-        for query in queries:
-            hits = self.searcher.search(query, k=top_k)
+        with self.session_factory() as session:
+            repo = ChunkRepository(session, chunk_model)
 
-            query_results = []
-            for hit in hits:
-                content = ""
-                if hasattr(hit, "raw"):
-                    content = hit.raw
-                elif hasattr(hit, "contents"):
-                    content = hit.contents
+            for query in queries:
+                # Perform BM25 search
+                results = repo.bm25_search(
+                    query_text=query,
+                    index_name=self.index_name,
+                    limit=top_k,
+                    tokenizer=self.tokenizer,
+                )
 
-                result = {
-                    "doc_id": int(hit.docid),
-                    "score": hit.score,
-                    "content": content,
-                }
-                query_results.append(result)
+                query_results = []
+                for chunk, score in results:
+                    result = {
+                        "doc_id": chunk.id,
+                        "score": score,
+                        "content": chunk.contents,
+                    }
+                    query_results.append(result)
 
-            all_results.append(query_results)
+                all_results.append(query_results)
 
         return all_results
