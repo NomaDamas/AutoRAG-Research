@@ -185,12 +185,12 @@ def test_query_contents_format(self, mock_embedding_model):
 
 ---
 
-## Decorator Registration (필수)
+## Decorator Registration (Required)
 
-모든 Ingestor는 `@register_ingestor` decorator로 등록해야 합니다.
-CLI 옵션은 `__init__` 시그니처에서 자동 추출됩니다.
+All Ingestors must be registered with the `@register_ingestor` decorator.
+CLI options are automatically extracted from the `__init__` signature.
 
-### 예시
+### Example
 
 ```python
 from typing import Literal
@@ -208,7 +208,7 @@ MY_DATASETS = Literal["dataset_a", "dataset_b", "dataset_c"]
 class MyDatasetIngestor(TextEmbeddingDataIngestor):
     def __init__(
         self,
-        embedding_model: BaseEmbedding,  # 스킵됨 (알려진 의존성)
+        embedding_model: BaseEmbedding,  # Skipped (known dependency)
         config_name: MY_DATASETS,         # -> --config-name, choices=[...], required
         batch_size: int = 100,            # -> --batch-size, default=100
     ):
@@ -217,18 +217,18 @@ class MyDatasetIngestor(TextEmbeddingDataIngestor):
         self.batch_size = batch_size
 ```
 
-### 자동 추론 규칙
+### Auto-Inference Rules
 
-| `__init__` 파라미터 | CLI 옵션 |
+| `__init__` Parameter | CLI Option |
 |-------------------|---------|
-| `embedding_model: BaseEmbedding` | 스킵 |
+| `embedding_model: BaseEmbedding` | Skipped |
 | `name: Literal["a", "b"]` | `--name`, choices=["a", "b"], required |
 | `name: Literal["a", "b"] = "a"` | `--name`, choices=["a", "b"], default="a" |
 | `name: str` | `--name`, required |
 | `count: int = 10` | `--count`, type=int, default=10 |
 | `items: list[str]` | `--items`, comma-separated, is_list=True |
 
-### CLI 확인
+### CLI Verification
 
 ```bash
 # Check registered ingestors

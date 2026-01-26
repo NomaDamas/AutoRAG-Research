@@ -34,7 +34,7 @@ uv pip install autorag-research
 autorag-research init-config
 
 # 2. Edit database settings
-vi configs/db.yaml
+vim configs/db.yaml # OR your preferred editor
 
 # 3. Ingest a dataset
 autorag-research ingest --name beir --extra dataset-name=scifact
