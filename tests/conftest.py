@@ -1,8 +1,4 @@
-import json
 import os
-import shutil
-import subprocess
-import tempfile
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -13,7 +9,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
 from autorag_research.exceptions import EnvNotFoundError
-from autorag_research.orm.schema import Chunk
 
 # Load environment variables from postgresql/.env
 _env_path = Path(__file__).parent.parent / "postgresql" / ".env"
@@ -85,72 +80,3 @@ def db_session(session_factory) -> Generator[Session, Any, None]:
 
     session.rollback()
     session_factory.remove()  # Clean up the scoped session
-
-
-@pytest.fixture(scope="session")
-def bm25_index_path(session_factory):
-    """Create a BM25 index from seed data chunks.
-
-    This fixture:
-    1. Fetches chunks from the database (seed data from 002-seed.sql)
-    2. Writes them to a JSONL file
-    3. Builds a Lucene index using pyserini
-    4. Returns the index path
-
-    The index is created once per test session and cleaned up afterward.
-    """
-    if not shutil.which("java"):
-        pytest.fail("Java Development Kit (JDK) not found. Pyserini requires Java 11+.")
-
-    # Fetch chunks from seed data
-    session = session_factory()
-    try:
-        chunks = session.query(Chunk).all()
-        if not chunks:
-            pytest.skip("No chunks found in database - seed data may not be loaded")
-    finally:
-        session.close()
-
-    # Create temporary directory for index
-    temp_dir = tempfile.mkdtemp(prefix="bm25_test_index_")
-    temp_path = Path(temp_dir)
-    docs_dir = temp_path / "docs"
-    index_dir = temp_path / "index"
-    docs_dir.mkdir()
-
-    # Write chunks to JSONL file
-    jsonl_file = docs_dir / "chunks.jsonl"
-    with open(jsonl_file, "w") as f:
-        for chunk in chunks:
-            doc = {"id": str(chunk.id), "contents": chunk.contents}
-            f.write(json.dumps(doc) + "\n")
-
-    # Build Lucene index using pyserini CLI
-    cmd = [
-        "python",
-        "-m",
-        "pyserini.index.lucene",
-        "--collection",
-        "JsonCollection",
-        "--input",
-        str(docs_dir),
-        "--index",
-        str(index_dir),
-        "--generator",
-        "DefaultLuceneDocumentGenerator",
-        "--threads",
-        "1",
-        "--storePositions",
-        "--storeDocvectors",
-        "--storeRaw",
-    ]
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        shutil.rmtree(temp_dir)
-        pytest.fail(f"Failed to build BM25 index: {result.stderr}")
-
-    yield str(index_dir)
-
-    # Cleanup
-    shutil.rmtree(temp_dir)
