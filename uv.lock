@@ -338,7 +338,7 @@ requires-dist = [
     { name = "colpali-engine", marker = "extra == 'gpu'", specifier = ">=0.3.13" },
     { name = "datasets", specifier = "<3.0.0" },
     { name = "evaluate", specifier = ">=0.4.6" },
-    { name = "huggingface-hub", specifier = ">=0.28.0" },
+    { name = "huggingface-hub", specifier = ">=0.36.0" },
     { name = "llama-index", specifier = ">=0.12.52" },
     { name = "mteb", specifier = ">=1.34.0" },
     { name = "nltk", specifier = ">=3.9.2" },

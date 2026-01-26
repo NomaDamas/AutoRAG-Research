@@ -62,7 +62,9 @@ CREATE TABLE IF NOT EXISTS chunk (
 	parent_caption BIGINT REFERENCES caption(id),
 	contents TEXT NOT NULL,
 	embedding VECTOR(768),
-	embeddings VECTOR(768)[]  -- Multi-vector for ColBERT/ColPali style retrieval
+	embeddings VECTOR(768)[],  -- Multi-vector for ColBERT/ColPali style retrieval
+	is_table BOOLEAN DEFAULT FALSE,
+	table_type VARCHAR(255)
 );
 
 -- ImageChunk

@@ -53,14 +53,19 @@ class BaseIngestionService(BaseService, ABC):
     - _create_uow() to return their specific UoW type
     """
 
-    def add_chunks(self, chunks: list[dict[str, str | int | None]]) -> list[int | str]:
+    def add_chunks(self, chunks: list[dict[str, str | int | bool | None]]) -> list[int | str]:
         """Batch add text chunks to the database.
 
         Uses memory-efficient bulk insert (SQLAlchemy Core) instead of ORM objects.
         This reduces memory usage by ~3-5x for large batches.
 
         Args:
-            chunks: List of dict with keys: id (optional), contents, parent_caption_id (optional).
+            chunks: List of dict with keys:
+                - id (optional): Chunk ID
+                - contents (required): Text content
+                - parent_caption (optional): Parent caption ID
+                - is_table (optional, default=False): Whether this chunk is a table
+                - table_type (optional): Table format type (markdown, xml, html)
 
         Returns:
             List of created Chunk IDs.
