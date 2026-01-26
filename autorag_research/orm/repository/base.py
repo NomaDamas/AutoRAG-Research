@@ -503,7 +503,7 @@ class BaseEmbeddingRepository(GenericRepository[T]):
     This base class is made for schemas that have 'embedding' and 'embeddings' columns.
     """
 
-    def __execute_with_offset_limit(self, stmt: Any, limit: int | None = None, offset: int | None = None) -> list[T]:
+    def _execute_with_offset_limit(self, stmt: Any, limit: int | None = None, offset: int | None = None) -> list[T]:
         """Helper to execute a statement with optional offset and limit."""
         if offset:
             stmt = stmt.offset(offset)
@@ -522,7 +522,7 @@ class BaseEmbeddingRepository(GenericRepository[T]):
             List of entities without embeddings.
         """
         stmt = select(self.model_cls).where(self.model_cls.embedding.is_(None))
-        return self.__execute_with_offset_limit(stmt, limit, offset)
+        return self._execute_with_offset_limit(stmt, limit, offset)
 
     def get_with_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
         """Retrieve entities that have embeddings.
@@ -535,7 +535,7 @@ class BaseEmbeddingRepository(GenericRepository[T]):
             List of entities with embeddings.
         """
         stmt = select(self.model_cls).where(self.model_cls.embedding.is_not(None))
-        return self.__execute_with_offset_limit(stmt, limit, offset)
+        return self._execute_with_offset_limit(stmt, limit, offset)
 
     def get_without_multi_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
         """Retrieve entities that do not have multi-vector embeddings.
@@ -548,7 +548,7 @@ class BaseEmbeddingRepository(GenericRepository[T]):
             List of entities without multi-vector embeddings.
         """
         stmt = select(self.model_cls).where(self.model_cls.embeddings.is_(None))
-        return self.__execute_with_offset_limit(stmt, limit, offset)
+        return self._execute_with_offset_limit(stmt, limit, offset)
 
     def get_with_multi_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
         """Retrieve entities that have multi-vector embeddings.
@@ -561,7 +561,88 @@ class BaseEmbeddingRepository(GenericRepository[T]):
             List of entities with multi-vector embeddings.
         """
         stmt = select(self.model_cls).where(self.model_cls.embeddings.is_not(None))
-        return self.__execute_with_offset_limit(stmt, limit, offset)
+        return self._execute_with_offset_limit(stmt, limit, offset)
+
+    # ==================== BM25 Methods ====================
+
+    def batch_update_bm25_tokens(self, tokenizer: str = "bert", batch_size: int = 1000) -> int:
+        """Update bm25_tokens for entities in batches.
+
+        Uses VectorChord-BM25's tokenize() function to generate bm25vector from text.
+        Uses LIMIT + loop approach to avoid transaction/memory issues with large datasets.
+
+        Args:
+            tokenizer: Tokenizer to use (default: "bert"). See pg_tokenizer docs.
+            batch_size: Number of entities to update per batch (default: 1000).
+
+        Returns:
+            Total number of entities updated.
+        """
+        import logging
+
+        logger = logging.getLogger("AutoRAG-Research")
+        table_name = self.model_cls.__tablename__
+        total_updated = 0
+
+        while True:
+            sql = text(f"""
+                UPDATE {table_name}
+                SET bm25_tokens = tokenize(contents, :tokenizer)::bm25vector
+                WHERE id IN (
+                    SELECT id FROM {table_name}
+                    WHERE bm25_tokens IS NULL
+                      AND contents IS NOT NULL
+                      AND contents != ''
+                    LIMIT :batch_size
+                )
+            """)  # noqa: S608
+
+            result = self.session.execute(sql, {"tokenizer": tokenizer, "batch_size": batch_size})
+            updated = getattr(result, "rowcount", 0) or 0
+
+            if updated == 0:
+                break
+
+            self.session.commit()
+            total_updated += updated
+            logger.info(f"Updated {total_updated} {table_name} with BM25 tokens")
+
+        return total_updated
+
+    def get_without_bm25_tokens(self, limit: int | None = None) -> list[T]:
+        """Retrieve entities that don't have bm25_tokens.
+
+        Args:
+            limit: Maximum number of results to return.
+
+        Returns:
+            List of entities without bm25_tokens.
+        """
+        table_name = self.model_cls.__tablename__
+        limit_clause = f"LIMIT {limit}" if limit else ""
+
+        sql = text(f"""
+            SELECT id FROM {table_name}
+            WHERE bm25_tokens IS NULL
+              AND contents IS NOT NULL
+              AND contents != ''
+            {limit_clause}
+        """)  # noqa: S608
+
+        result = self.session.execute(sql)
+        ids = [row[0] for row in result.fetchall()]
+        return self.get_by_ids(ids)
+
+    def count_with_bm25_tokens(self) -> int:
+        """Count entities that have bm25_tokens.
+
+        Returns:
+            Number of entities with bm25_tokens populated.
+        """
+        table_name = self.model_cls.__tablename__
+        sql = text(f"SELECT COUNT(*) FROM {table_name} WHERE bm25_tokens IS NOT NULL")  # noqa: S608
+        result = self.session.execute(sql)
+        return result.scalar() or 0
 
 
 def create_repository(session: Session, model_cls: type[T]) -> GenericRepository[T]:
