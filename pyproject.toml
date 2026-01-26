@@ -25,6 +25,7 @@ dependencies = [
     "bert-score>=0.3.13",
     "datasets<3.0.0",
     "evaluate>=0.4.6",
+    "huggingface-hub>=0.36.0",
     "llama-index>=0.12.52",
     "nltk>=3.9.2",
     "numpy>=2.2.6",
