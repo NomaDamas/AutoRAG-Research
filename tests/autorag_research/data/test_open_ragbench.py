@@ -6,50 +6,13 @@ Integration tests use real data subsets against PostgreSQL.
 
 import pytest
 
-from autorag_research.data.open_ragbench import (
-    OpenRAGBenchIngestor,
-    make_caption_id,
-    make_chunk_id,
-    make_file_id,
-    make_image_chunk_id,
-    make_page_id,
-    make_table_chunk_id,
-)
+from autorag_research.data.open_ragbench import OpenRAGBenchIngestor
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestConfig,
     IngestorTestVerifier,
     create_test_database,
 )
-
-# ==================== Unit Tests: Helper Functions ====================
-
-
-class TestMakeId:
-    def test_make_page_id_basic(self):
-        result = make_page_id("2401.12345", 0)
-        assert result == "2401.12345_page_0"
-
-    def test_make_caption_id_basic(self):
-        result = make_caption_id("2401.12345", 0)
-        assert result == "2401.12345_caption_0"
-
-    def test_make_chunk_id_basic(self):
-        result = make_chunk_id("2401.12345", 0)
-        assert result == "2401.12345_section_0"
-
-    def test_make_image_chunk_id_basic(self):
-        result = make_image_chunk_id("2401.12345", 0, "img_0")
-        assert result == "2401.12345_section_0_img_img_0"
-
-    def test_make_file_id_basic(self):
-        result = make_file_id("2401.12345")
-        assert result == "2401.12345_file"
-
-    def test_make_table_chunk_id_basic(self):
-        result = make_table_chunk_id("2401.12345", 0, "table_0")
-        assert result == "2401.12345_section_0_table_table_0"
-
 
 # ==================== Integration Tests ====================
 

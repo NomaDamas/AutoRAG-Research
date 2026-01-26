@@ -18,29 +18,9 @@ REPO_ID = "vectara/open_ragbench"
 DATA_PATH = "pdf/arxiv"
 
 
-def make_page_id(doc_id: str, section_id: int) -> str:
-    return f"{doc_id}_page_{section_id}"
-
-
-def make_caption_id(doc_id: str, section_id: int) -> str:
-    return f"{doc_id}_caption_{section_id}"
-
-
-def make_chunk_id(doc_id: str, section_id: int) -> str:
-    return f"{doc_id}_section_{section_id}"
-
-
-def make_image_chunk_id(doc_id: str, section_id: int, img_key: str) -> str:
-    return f"{doc_id}_section_{section_id}_img_{img_key}"
-
-
-def make_table_chunk_id(doc_id: str, section_id: int, table_key: str) -> str:
-    return f"{doc_id}_section_{section_id}_table_{table_key}"
-
-
-def make_file_id(doc_id: str) -> str:
-    """Generate File ID from document ID."""
-    return f"{doc_id}_file"
+def make_id(*parts: str | int) -> str:
+    """Generate ID by joining parts with underscore."""
+    return "_".join(str(p) for p in parts)
 
 
 class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
@@ -65,10 +45,17 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
         self,
         subset: Literal["train", "dev", "test"] = "test",
         query_limit: int | None = None,
-        corpus_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
     ) -> None:
         if self.service is None:
             raise ServiceNotSetError
+
+        if min_corpus_cnt is not None:
+            logger.warning(
+                "min_corpus_cnt is ineffective for OpenRAGBench. "
+                "Each query maps to a specific document section (1:1 relation). "
+                "Only query_limit is effective for this dataset."
+            )
 
         rng = random.Random(RANDOM_SEED)  # noqa: S311
 
@@ -110,7 +97,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
             # 1. Create File record
             file_id = None
             if pdf_url:
-                file_id = make_file_id(doc_id)
+                file_id = make_id(doc_id, "file")
                 self.service.add_files([{"id": file_id, "type": "raw", "path": pdf_url}])
 
             # 2. Create Document
@@ -140,9 +127,9 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                 if not section_text and not images and not tables:
                     continue
 
-                page_id = make_page_id(doc_id, section_id)
-                caption_id = make_caption_id(doc_id, section_id)
-                chunk_id = make_chunk_id(doc_id, section_id)
+                page_id = make_id(doc_id, "page", section_id)
+                caption_id = make_id(doc_id, "caption", section_id)
+                chunk_id = make_id(doc_id, "section", section_id)
 
                 # 3. Create Page
                 self.service.add_pages([{"id": page_id, "document_id": doc_id, "page_num": section_id}])
@@ -152,7 +139,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                 for img_key, img_data_uri in images.items():
                     try:
                         img_bytes, mimetype = extract_image_from_data_uri(img_data_uri)
-                        img_chunk_id = make_image_chunk_id(doc_id, section_id, img_key)
+                        img_chunk_id = make_id(doc_id, "section", section_id, "img", img_key)
                         self.service.add_image_chunks([
                             {"id": img_chunk_id, "contents": img_bytes, "mimetype": mimetype, "parent_page": page_id}
                         ])
@@ -167,10 +154,10 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                         {"id": chunk_id, "contents": section_text, "parent_caption": caption_id, "is_table": False}
                     ])
 
-                # 7. Create Table Chunks (변경: ID 수집 로직 추가)
+                # 7. Create Table Chunks
                 table_chunk_ids: list[str] = []
                 for table_key, table_data in tables.items():
-                    table_chunk_id = make_table_chunk_id(doc_id, section_id, table_key)
+                    table_chunk_id = make_id(doc_id, "section", section_id, "table", table_key)
                     self.service.add_chunks([
                         {
                             "id": table_chunk_id,
@@ -214,7 +201,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
             qrel = qrels_data[qid]
             doc_id = qrel["doc_id"]
             section_id = qrel["section_id"]
-            chunk_id = make_chunk_id(doc_id, section_id)
+            chunk_id = make_id(doc_id, "section", section_id)
 
             if chunk_id not in chunk_id_map:
                 continue
