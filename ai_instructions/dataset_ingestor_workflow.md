@@ -185,6 +185,61 @@ def test_query_contents_format(self, mock_embedding_model):
 
 ---
 
+## Decorator Registration (Required)
+
+All Ingestors must be registered with the `@register_ingestor` decorator.
+CLI options are automatically extracted from the `__init__` signature.
+
+### Example
+
+```python
+from typing import Literal
+from llama_index.core.base.embeddings.base import BaseEmbedding
+from autorag_research.data.registry import register_ingestor
+from autorag_research.data.base import TextEmbeddingDataIngestor
+
+# Define available datasets as Literal type
+MY_DATASETS = Literal["dataset_a", "dataset_b", "dataset_c"]
+
+@register_ingestor(
+    name="my_dataset",
+    description="My dataset ingestor",
+)
+class MyDatasetIngestor(TextEmbeddingDataIngestor):
+    def __init__(
+        self,
+        embedding_model: BaseEmbedding,  # Skipped (known dependency)
+        config_name: MY_DATASETS,         # -> --config-name, choices=[...], required
+        batch_size: int = 100,            # -> --batch-size, default=100
+    ):
+        super().__init__(embedding_model)
+        self.config_name = config_name
+        self.batch_size = batch_size
+```
+
+### Auto-Inference Rules
+
+| `__init__` Parameter | CLI Option |
+|-------------------|---------|
+| `embedding_model: BaseEmbedding` | Skipped |
+| `name: Literal["a", "b"]` | `--name`, choices=["a", "b"], required |
+| `name: Literal["a", "b"] = "a"` | `--name`, choices=["a", "b"], default="a" |
+| `name: str` | `--name`, required |
+| `count: int = 10` | `--count`, type=int, default=10 |
+| `items: list[str]` | `--items`, comma-separated, is_list=True |
+
+### CLI Verification
+
+```bash
+# Check registered ingestors
+autorag-research list ingestors
+
+# Check specific ingestor options
+autorag-research ingest my_dataset --help
+```
+
+---
+
 ## Definition of Done
 
 * [ ] `Source_Data_Profile.json` generated (Local).
@@ -192,6 +247,9 @@ def test_query_contents_format(self, mock_embedding_model):
 * [ ] **Human review completed** - Strategy explicitly approved via `/design-ingestor`.
 * [ ] **Tests written FIRST** based on design document.
 * [ ] Ingestor class implemented to pass the tests.
+* [ ] **`@register_ingestor` decorator 적용됨**.
+* [ ] **`Literal` 타입 힌트로 choices 정의됨**.
+* [ ] **CLI 옵션이 자동 생성되어 동작함**.
 * [ ] Static analysis (Lint/Type) passed.
 * [ ] Integration tests pass against real data subsets.
 * [ ] Intermediate files removed or excluded from git.

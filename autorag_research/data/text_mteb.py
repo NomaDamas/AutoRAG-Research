@@ -9,6 +9,7 @@ import pandas as pd
 from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from autorag_research.data.base import TextEmbeddingDataIngestor
+from autorag_research.data.registry import register_ingestor
 from autorag_research.exceptions import ServiceNotSetError, UnsupportedDataSubsetError, UnsupportedMTEBTaskTypeError
 from autorag_research.orm.models import or_all
 
@@ -28,6 +29,10 @@ def _combine_title_text(row: pd.Series) -> str:
     return text.strip()
 
 
+@register_ingestor(
+    name="mteb",
+    description="MTEB (Massive Text Embedding Benchmark) retrieval tasks",
+)
 class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
     """Text-only ingestor for MTEB retrieval datasets using official mteb library.
 

@@ -1,0 +1,2 @@
+_target_: autorag_research.evaluation.metrics.retrieval.PrecisionConfig
+description: "Precision@k - Retrieval precision"

@@ -17,7 +17,6 @@ Available Datasets:
 - esg_reports_human_labeled_v2: Human-labeled ESG reports (52 queries, 1538 pages)
 """
 
-from enum import Enum
 from typing import Any, Literal
 
 import pandas as pd
@@ -26,6 +25,7 @@ from llama_index.core.embeddings import MultiModalEmbedding
 from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
+from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import image, or_all
@@ -33,15 +33,18 @@ from autorag_research.util import pil_image_to_bytes
 
 RANDOM_SEED = 42
 
+# ViDoReV2 available datasets
+VIDOREV2_DATASETS = Literal[
+    "esg_reports_v2",
+    "biomedical_lectures_v2",
+    "economics_reports_v2",
+]
 
-class ViDoReV2DatasetName(str, Enum):
-    """Available ViDoReV2 dataset names."""
 
-    ESG_REPORTS_V2 = "esg_reports_v2"
-    BIOMEDICAL_LECTURES_V2 = "biomedical_lectures_v2"
-    ECONOMICS_REPORTS_V2 = "economics_reports_v2"
-
-
+@register_ingestor(
+    name="vidorev2",
+    description="ViDoRe v2 visual document retrieval benchmark",
+)
 class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
     """Ingestor for ViDoReV2 datasets using streaming.
 
@@ -58,7 +61,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         from autorag_research.data.vidorev2 import ViDoReV2Ingestor, ViDoReV2DatasetName
         from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 
-        ingestor = ViDoReV2Ingestor(ViDoReV2DatasetName.ESG_REPORTS_V2)
+        ingestor = ViDoReV2Ingestor("esg_reports_v2")
         ingestor.set_service(service)
         ingestor.ingest(query_limit=10, min_corpus_cnt=50)
         ```
@@ -66,7 +69,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
 
     def __init__(
         self,
-        dataset_name: ViDoReV2DatasetName,
+        dataset_name: VIDOREV2_DATASETS,
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
@@ -103,7 +106,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         if subset != "test":
             raise ValueError("ViDoReV2 datasets only have 'test' split.")  # noqa: TRY003
 
-        dataset_path = f"vidore/{self.dataset_name.value}"
+        dataset_path = f"vidore/{self.dataset_name.value}"  # ty: ignore[possibly-missing-attribute]
 
         # Step 1: Load qrels into pandas and process with groupby
         qrels_df: pd.DataFrame = load_dataset(dataset_path, "qrels", streaming=False, split=subset).to_pandas()  # ty: ignore[possibly-missing-attribute, invalid-assignment]

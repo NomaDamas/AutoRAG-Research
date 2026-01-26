@@ -7,6 +7,7 @@ from huggingface_hub import hf_hub_download
 from llama_index.core.embeddings import MultiModalEmbedding
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
+from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import ImageId, TextId
@@ -24,6 +25,10 @@ def make_id(*parts: str | int) -> str:
     return "_".join(str(p) for p in parts)
 
 
+@register_ingestor(
+    name="open-ragbench",
+    description="The Open RAG Benchmark is a unique, high-quality Retrieval-Augmented Generation (RAG) dataset constructed directly from arXiv PDF documents, specifically designed for evaluating RAG systems with a focus on multimodal PDF understanding, made by Vectara.",
+)
 class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,

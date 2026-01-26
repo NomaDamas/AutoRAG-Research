@@ -335,8 +335,8 @@ class SemScoreConfig(BaseGenerationMetricConfig):
         truncate_length: Maximum length of texts to embed.
     """
 
-    embedding_model: BaseEmbedding
     truncate_length: int = 4096
+    embedding_model: BaseEmbedding | None = None
 
     def get_metric_func(self) -> Callable:
         """Return the metric function."""

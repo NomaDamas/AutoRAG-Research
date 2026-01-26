@@ -1,0 +1,2 @@
+_target_: llama_index.core.embeddings.mock_embed_model.MockEmbedding
+embed_dim: 384

@@ -1,0 +1,2 @@
+_target_: autorag_research.evaluation.metrics.retrieval.MAPConfig
+description: "mean Average Precision@k - Retrieval mean average precision"

@@ -1,0 +1,27 @@
+# Naive RAG Generation Pipeline Configuration
+#
+# Simple retrieve-then-generate pattern.
+# Uses a retrieval pipeline to fetch context, then generates answer with LLM.
+#
+# Parameters:
+#   retrieval_pipeline_name: Name of retrieval pipeline to use
+#   llm_model: LLM model identifier (default: gpt-4o-mini)
+#   top_k: Number of chunks to retrieve for context (default: 5)
+#
+_target_: autorag_research.pipelines.generation.basic_rag.BasicRAGPipelineConfig
+description: "Simple retrieve-then-generate RAG"
+name: basic_rag
+retrieval_pipeline_name: bm25
+llm_model: gpt-4o-mini
+top_k: 5
+batch_size: 10
+prompt_template: |
+  You are an AI assistant that provides answers based on the provided context.
+
+  Context:
+  {context}
+
+  Question:
+  {question}
+
+  Answer:

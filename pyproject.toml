@@ -21,27 +21,35 @@ dependencies = [
     "aiofiles>=25.1.0",
     "aiohttp>=3.13.2",
     "beir>=2.2.0",
+    "typer>=0.15.0",
     "mteb>=1.34.0",
     "bert-score>=0.3.13",
     "datasets<3.0.0",
     "huggingface-hub>=0.28.0",
     "evaluate>=0.4.6",
+    "hydra-core>=1.3.0",
+    "httpx>=0.28.0",
     "huggingface-hub>=0.36.0",
     "llama-index>=0.12.52",
     "nltk>=3.9.2",
     "numpy>=2.2.6",
+    "omegaconf>=2.3.0",
     "pandas>=2.3.3",
     "pgvector>=0.4.1",
     "pillow>=12.0.0",
     "platformdirs>=4.5.0",
     "psycopg[binary]>=3.2.12",
     "pydantic>=2.12.4",
+    "pyyaml>=6.0.0",
     "rouge-score>=0.1.2",
     "sacrebleu>=2.5.1",
     "sqlalchemy>=2.0.44",
     "tiktoken>=0.12.0",
     "typing-extensions>=4.15.0",
 ]
+
+[project.scripts]
+autorag-research = "autorag_research.cli.app:main"
 
 [project.urls]
 Homepage = "https://vkehfdl1.github.io/AutoRAG-Research/"
@@ -153,7 +161,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]
+"tests/*" = ["S101", "S603"]
 
 [tool.ruff.format]
 preview = true

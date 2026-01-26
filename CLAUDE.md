@@ -104,6 +104,10 @@ Prefer mocks over real API calls (use LlamaIndex MockLLM/MockEmbedding).
 - Ruff for linting/formatting
 - Type checking: ty
 
+## Logging
+- Alwasy use `logger = logging.getLogger("AutoRAG-Research")` to initialize logger
+- Do not use print statements for logging. Or any other logging methods.
+
 ## Utility Functions (DRY!)
 
 Before implementing common functionality, CHECK existing utils first:
@@ -134,3 +138,5 @@ Detailed patterns and examples are in `/ai_instructions/`:
 - **Code quality checks are automated via hooks** - `make check` runs automatically after file edits and on session end
 - Generate the corresponding test file correctly when you add the code, and runs the test code before commit (`make test`)
 - Do not use relative imports.
+- Always use `uv sync --all-extras --all-groups` to install dependencies to avoid missing optional packages.
+- Do not add `__init__.py` in `tests/` directory.

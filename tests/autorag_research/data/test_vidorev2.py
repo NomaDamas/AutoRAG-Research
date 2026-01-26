@@ -10,7 +10,6 @@ Unlike V1, it supports many-to-many query-to-corpus relations.
 import pytest
 
 from autorag_research.data.vidorev2 import (
-    ViDoReV2DatasetName,
     ViDoReV2Ingestor,
 )
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
@@ -19,23 +18,6 @@ from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestVerifier,
     create_test_database,
 )
-
-# ==================== Unit Tests: Dataset Validation ====================
-
-
-class TestViDoReV2DatasetValidation:
-    """Test dataset name validation for ViDoReV2Ingestor."""
-
-    def test_valid_dataset_names(self):
-        """Verify all valid dataset names are in the enum."""
-        expected_datasets = [
-            "esg_reports_v2",
-            "biomedical_lectures_v2",
-            "economics_reports_v2",
-        ]
-        actual_datasets = [d.value for d in ViDoReV2DatasetName]
-        assert sorted(actual_datasets) == sorted(expected_datasets)
-
 
 # ==================== Integration Tests ====================
 VIDOREV2_ECONOMICS_REPORTS_CONFIG = IngestorTestConfig(
@@ -58,7 +40,7 @@ class TestViDoReV2ESGReportsIngestorIntegration:
         with create_test_database(VIDOREV2_ECONOMICS_REPORTS_CONFIG) as db:
             service = MultiModalIngestionService(db.session_factory, schema=db.schema)
 
-            ingestor = ViDoReV2Ingestor(ViDoReV2DatasetName.ESG_REPORTS_V2)
+            ingestor = ViDoReV2Ingestor("esg_reports_v2")
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=VIDOREV2_ECONOMICS_REPORTS_CONFIG.expected_query_count,

@@ -30,8 +30,10 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
 
     Attributes:
         name: Unique name for this pipeline instance.
+        retrieval_pipeline_name: Name of the retrieval pipeline to use.
+            The Executor will automatically load and instantiate this pipeline
+            from configs/pipelines/{name}.yaml.
         llm: LlamaIndex LLM instance for text generation.
-        retrieval_pipeline: Retrieval pipeline for context retrieval.
         prompt_template: Template for building the generation prompt.
             Must contain {context} and {query} placeholders.
         top_k: Number of chunks to retrieve per query.
@@ -43,8 +45,8 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
 
         config = BasicRAGPipelineConfig(
             name="basic_rag_v1",
+            retrieval_pipeline_name="bm25_baseline",
             llm=OpenAI(model="gpt-4"),
-            retrieval_pipeline=my_retrieval_pipeline,
             prompt_template="Context:\\n{context}\\n\\nQ: {query}\\nA:",
             top_k=5,
         )
@@ -52,7 +54,6 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
     """
 
     llm: "LLM"
-    retrieval_pipeline: "BaseRetrievalPipeline"
     prompt_template: str = field(default=DEFAULT_PROMPT_TEMPLATE)
 
     def get_pipeline_class(self) -> type["BasicRAGPipeline"]:
@@ -61,15 +62,14 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
 
     def get_pipeline_kwargs(self) -> dict[str, Any]:
         """Return kwargs for BasicRAGPipeline constructor."""
+        if self._retrieval_pipeline is None:
+            msg = f"Retrieval pipeline '{self.retrieval_pipeline_name}' not injected"
+            raise ValueError(msg)
         return {
             "llm": self.llm,
-            "retrieval_pipeline": self.retrieval_pipeline,
+            "retrieval_pipeline": self._retrieval_pipeline,
             "prompt_template": self.prompt_template,
         }
-
-    def get_run_kwargs(self) -> dict[str, Any]:
-        """Return kwargs for pipeline.run() method."""
-        return {"top_k": self.top_k, "batch_size": self.batch_size}
 
 
 class BasicRAGPipeline(BaseGenerationPipeline):

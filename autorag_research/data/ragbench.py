@@ -1,18 +1,19 @@
 import hashlib
 import logging
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from datasets import load_dataset
 from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from autorag_research.data.base import TextEmbeddingDataIngestor
-from autorag_research.exceptions import ServiceNotSetError
+from autorag_research.exceptions import ServiceNotSetError, UnsupportedDataSubsetError
 from autorag_research.orm.models import or_all
 from autorag_research.util import normalize_string
 
 logger = logging.getLogger("AutoRAG-Research")
 
-RAGBENCH_CONFIGS = [
+# RAGBench available configs
+RAGBENCH_CONFIGS_LITERAL = Literal[
     "covidqa",
     "cuad",
     "delucionqa",
@@ -60,22 +61,26 @@ def _make_query_id(config: str, split: str, example_id: str) -> str:
     return f"{config}_{split}_{example_id}"
 
 
+# Import here to avoid circular import at module level
+from autorag_research.data.registry import register_ingestor  # noqa: E402
+
+
+@register_ingestor(
+    name="ragbench",
+    description="RAGBench benchmark for RAG evaluation",
+)
 class RAGBenchIngestor(TextEmbeddingDataIngestor):
     def __init__(
         self,
         embedding_model: BaseEmbedding,
-        configs: list[str] | None = None,
+        config: RAGBENCH_CONFIGS_LITERAL,
         batch_size: int = DEFAULT_BATCH_SIZE,
     ):
         super().__init__(embedding_model)
-        self.configs = configs if configs is not None else RAGBENCH_CONFIGS
+        if config not in get_args(RAGBENCH_CONFIGS_LITERAL):
+            raise UnsupportedDataSubsetError
+        self.config = config
         self.batch_size = batch_size
-        self._validate_configs()
-
-    def _validate_configs(self) -> None:
-        for config in self.configs:
-            if config not in RAGBENCH_CONFIGS:
-                raise ValueError(f"Invalid config '{config}'. Valid configs: {RAGBENCH_CONFIGS}")  # noqa: TRY003
 
     def detect_primary_key_type(self) -> Literal["bigint", "string"]:
         return "string"
@@ -98,10 +103,7 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
 
         hf_split = SPLIT_MAPPING[subset]
 
-        for config in self.configs:
-            logger.info(f"Ingesting RAGBench config '{config}' split '{hf_split}'...")
-            self._ingest_config(config, hf_split, query_limit)
-            logger.info(f"Completed ingestion for config '{config}'")
+        self._ingest_config(self.config, hf_split, query_limit)
 
         self.service.clean()
         logger.info("RAGBench ingestion complete.")
