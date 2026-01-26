@@ -19,9 +19,9 @@ from tests.autorag_research.data.ingestor_test_utils import (
 
 OPENRAGBENCH_CONFIG = IngestorTestConfig(
     expected_query_count=10,
-    expected_chunk_count=10,  # Each query maps to exactly one section
-    expected_image_chunk_count=5,  # Some sections have images (figures/tables)
-    chunk_count_is_minimum=True,  # Gold sections always included, may have more
+    expected_chunk_count=10,  # Minimum: each query's gold section
+    expected_image_chunk_count=5,  # Minimum: some sections have images
+    chunk_count_is_minimum=True,  # Full documents ingested, not just gold sections
     # Full hierarchy checks:
     #   - File: stores arxiv pdf_url
     #   - Chunk: Document -> Page -> Caption -> Chunk
@@ -30,10 +30,8 @@ OPENRAGBENCH_CONFIG = IngestorTestConfig(
     expected_file_count=10,  # One file per document (arxiv pdf_url)
     check_documents=True,
     expected_document_count=10,  # One document per query's gold section (unique doc_ids)
-    check_pages=True,
-    expected_page_count=10,  # One page per section with content (text or images)
-    check_captions=True,
-    expected_caption_count=10,  # One caption per section with text
+    check_pages=False,  # Full documents ingested, count varies
+    check_captions=False,  # Full documents ingested, count varies
     check_retrieval_relations=True,
     check_generation_gt=True,
     generation_gt_required_for_all=True,  # All queries have answers in answers.json
