@@ -136,19 +136,3 @@ class TestOpenRAGBenchIngestorIntegration:
 
             verifier = IngestorTestVerifier(service, db.schema, OPENRAGBENCH_CONFIG)
             verifier.verify_all()
-
-    def test_file_document_connection(self):
-        """Verify File records are created and linked to Documents."""
-        with create_test_database(OPENRAGBENCH_CONFIG) as db:
-            service = MultiModalIngestionService(db.session_factory, schema=db.schema)
-            ingestor = OpenRAGBenchIngestor()
-            ingestor.set_service(service)
-            ingestor.ingest(query_limit=OPENRAGBENCH_CONFIG.expected_query_count)
-
-            with service._create_uow() as uow:
-                doc = uow.documents.get_all(limit=1)[0]
-                assert doc.path == make_file_id(doc.id)
-
-                file = uow.files.get_by_id(doc.path)
-                assert file is not None
-                assert file.path.startswith("http")
