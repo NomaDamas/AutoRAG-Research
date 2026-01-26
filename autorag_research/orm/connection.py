@@ -41,6 +41,12 @@ class DBConnection:
         engine = self.get_engine()
         return sessionmaker(bind=engine)
 
+    def get_scoped_session_factory(self):
+        """Create a thread-safe scoped SQLAlchemy session factory."""
+        from sqlalchemy.orm import scoped_session
+
+        return scoped_session(self.get_session_factory())
+
     def detect_primary_key_type(self, schema_name: str = "public") -> Literal["bigint", "string"]:
         engine = self.get_engine()
 
