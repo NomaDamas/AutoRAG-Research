@@ -7,12 +7,22 @@ Uses existing database data for read operations and cleans up write operations.
 import uuid
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.schema import (
     Chunk,
 )
+
+
+def _check_bm25_extension(session: Session) -> bool:
+    """Check if VectorChord-BM25 extension is available."""
+    try:
+        result = session.execute(text("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vchord_bm25')"))
+        return bool(result.scalar())
+    except Exception:
+        return False
 
 
 @pytest.fixture
@@ -240,3 +250,62 @@ def test_chunk_with_table_fields(chunk_repository: ChunkRepository, db_session: 
 
     db_session.delete(chunk)
     db_session.commit()
+
+
+# ==================== BM25 Tests (require VectorChord-BM25 extension) ====================
+
+
+@pytest.mark.skipif(
+    "not config.getoption('--run-bm25', default=False)",
+    reason="BM25 tests require --run-bm25 flag",
+)
+def test_batch_update_bm25_tokens(chunk_repository: ChunkRepository, db_session: Session):
+    """Test batch updating bm25_tokens for chunks."""
+    if not _check_bm25_extension(db_session):
+        pytest.skip("VectorChord-BM25 extension not available")
+
+    chunks = [
+        Chunk(id=900001, contents="Machine learning is artificial intelligence", parent_caption=None),
+        Chunk(id=900002, contents="Deep learning uses neural networks", parent_caption=None),
+    ]
+    db_session.add_all(chunks)
+    db_session.commit()
+
+    try:
+        updated = chunk_repository.batch_update_bm25_tokens(tokenizer="bert", batch_size=10)
+        assert updated >= 2
+        assert chunk_repository.count_with_bm25_tokens() >= 2
+    finally:
+        for c in chunks:
+            if db_chunk := db_session.get(Chunk, c.id):
+                db_session.delete(db_chunk)
+        db_session.commit()
+
+
+@pytest.mark.skipif(
+    "not config.getoption('--run-bm25', default=False)",
+    reason="BM25 tests require --run-bm25 flag",
+)
+def test_bm25_search(chunk_repository: ChunkRepository, db_session: Session):
+    """Test BM25 search functionality."""
+    if not _check_bm25_extension(db_session):
+        pytest.skip("VectorChord-BM25 extension not available")
+
+    chunks = [
+        Chunk(id=900011, contents="Python programming language", parent_caption=None),
+        Chunk(id=900012, contents="Cooking recipes and food", parent_caption=None),
+    ]
+    db_session.add_all(chunks)
+    db_session.commit()
+
+    try:
+        chunk_repository.batch_update_bm25_tokens(tokenizer="bert")
+        results = chunk_repository.bm25_search(query_text="programming", limit=5, tokenizer="bert")
+
+        assert len(results) >= 1
+        assert any(c.id == 900011 for c, _ in results)
+    finally:
+        for c in chunks:
+            if db_chunk := db_session.get(Chunk, c.id):
+                db_session.delete(db_chunk)
+        db_session.commit()
