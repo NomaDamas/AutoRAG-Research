@@ -48,7 +48,7 @@ class ConfigResolver:
                 configs.append(self.resolve_config([self.config_dir, base_dir, subdir], name))
         return configs
 
-    def resolve_config(self, dirs: list[str], name: str) -> DictConfig:
+    def resolve_config(self, dirs: list[str | Path], name: str) -> DictConfig:
         """Resolve a single config given a list of directories and a name.
 
         Args:

@@ -75,26 +75,34 @@ class TestPrintPipelines:
 class TestPrintMetrics:
     """Tests for print_metrics function.
 
-    Note: Real configs have metrics in subdirectories, so discover_metrics returns empty.
-    We use tmp_path to test with valid metric configs.
+    Note: discover_metrics now requires pipeline_type ("retrieval" or "generation").
+    We use tmp_path to test with valid metric configs in subdirectories.
     """
 
     def test_displays_metrics(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     ) -> None:
         """Displays available metrics from temp config."""
-        # Create metrics directory with top-level YAML files
-        metrics_dir = tmp_path / "metrics"
-        metrics_dir.mkdir()
-        (metrics_dir / "ndcg.yaml").write_text("description: NDCG@k metric")
-        (metrics_dir / "recall.yaml").write_text("description: Recall@k metric")
+        # Create metrics directory with retrieval/generation subdirectories
+        retrieval_metrics_dir = tmp_path / "metrics" / "retrieval"
+        retrieval_metrics_dir.mkdir(parents=True)
+        (retrieval_metrics_dir / "ndcg.yaml").write_text("description: NDCG@k metric")
+        (retrieval_metrics_dir / "recall.yaml").write_text("description: Recall@k metric")
+
+        generation_metrics_dir = tmp_path / "metrics" / "generation"
+        generation_metrics_dir.mkdir(parents=True)
+        (generation_metrics_dir / "rouge.yaml").write_text("description: ROUGE metric")
+
         monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
 
         print_metrics()
 
         captured = capsys.readouterr()
+        assert "[retrieval]" in captured.out
         assert "ndcg" in captured.out
         assert "recall" in captured.out
+        assert "[generation]" in captured.out
+        assert "rouge" in captured.out
 
 
 class TestPrintDatabases:
