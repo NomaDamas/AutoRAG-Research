@@ -90,12 +90,12 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
 
         logger.info(f"OpenRAGBench ingestion complete: {len(query_ids)} queries, {len(required_doc_ids)} documents")
 
-    def _ingest_documents(self, doc_ids: set[str]) -> dict[str, list[str]]:  # noqa: C901
+    def _ingest_documents(self, doc_ids: set[str]) -> dict[str, dict[str, list[str]]]:  # noqa: C901
         """Ingest documents with proper hierarchy: File -> Document -> Page -> Caption -> Chunk."""
         if self.service is None:
             raise ServiceNotSetError
 
-        chunk_id_map: dict[str, list[str]] = {}
+        chunk_id_map: dict[str, dict[str, list[str]]] = {}
         pdf_urls_data = self._download_json("pdf_urls.json")
 
         for doc_id in doc_ids:
@@ -107,13 +107,13 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
 
             pdf_url = pdf_urls_data.get(doc_id)
 
-            # 1. Create File record (path = pdf_url)
+            # 1. Create File record
             file_id = None
             if pdf_url:
                 file_id = make_file_id(doc_id)
                 self.service.add_files([{"id": file_id, "type": "raw", "path": pdf_url}])
 
-            # 2. Create Document (linked to File via path)
+            # 2. Create Document
             authors = doc.get("authors", [])
             self.service.add_documents([
                 {
@@ -144,10 +144,10 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                 caption_id = make_caption_id(doc_id, section_id)
                 chunk_id = make_chunk_id(doc_id, section_id)
 
-                # 3. Create Page for each section
+                # 3. Create Page
                 self.service.add_pages([{"id": page_id, "document_id": doc_id, "page_num": section_id}])
 
-                # 4. Create ImageChunks for figures (linked to Page)
+                # 4. Create ImageChunks
                 image_chunk_ids: list[str] = []
                 for img_key, img_data_uri in images.items():
                     try:
@@ -160,16 +160,15 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                     except Exception as e:
                         logger.warning(f"Failed to extract image {img_key} from section {section_id}: {e}")
 
+                # 5 & 6. Create Caption & Text Chunk
                 if section_text:
-                    # 5. Create Caption for section text (linked to Page)
                     self.service.add_captions([{"id": caption_id, "page_id": page_id, "contents": section_text}])
-                    # 6. Create Chunk (linked to Caption)
                     self.service.add_chunks([
                         {"id": chunk_id, "contents": section_text, "parent_caption": caption_id, "is_table": False}
                     ])
-                    chunk_id_map[chunk_id] = image_chunk_ids
 
-                # 7. Create Table Chunks (is_table=True)
+                # 7. Create Table Chunks (변경: ID 수집 로직 추가)
+                table_chunk_ids: list[str] = []
                 for table_key, table_data in tables.items():
                     table_chunk_id = make_table_chunk_id(doc_id, section_id, table_key)
                     self.service.add_chunks([
@@ -178,19 +177,22 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                             "contents": str(table_data),
                             "parent_caption": caption_id if section_text else None,
                             "is_table": True,
-                            "table_type": "html",  # OpenRAGBench uses HTML tables
+                            "table_type": "html",
                         }
                     ])
+                    table_chunk_ids.append(table_chunk_id)
+
+                chunk_id_map[chunk_id] = {"images": image_chunk_ids, "tables": table_chunk_ids}
 
         return chunk_id_map
 
-    def _ingest_queries_and_relations(
+    def _ingest_queries_and_relations(  # noqa: C901
         self,
         query_ids: list[str],
         queries_data: dict[str, Any],
         answers_data: dict[str, str],
         qrels_data: dict[str, dict[str, Any]],
-        chunk_id_map: dict[str, list[str]],
+        chunk_id_map: dict[str, dict[str, list[str]]],
     ) -> None:
         if self.service is None:
             raise ServiceNotSetError
@@ -219,17 +221,32 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
 
             retrieval_gt_items.append((qid, chunk_id))
 
+        # 1. Register text ground truth
         if retrieval_gt_items:
-            self.service.add_retrieval_gt_batch(retrieval_gt_items, chunk_type="text")  # ty: ignore[invalid-argument-type]
+            self.service.add_retrieval_gt_batch(retrieval_gt_items, chunk_type="text")  # type: ignore[arg-type]
 
-        # Add ImageChunk retrieval ground truth
+        # 2. Extract image and table ground truth
         image_retrieval_gt_items: list[tuple[str, str]] = []
+        table_retrieval_gt_items: list[tuple[str, str]] = []
+
         for qid, chunk_id in retrieval_gt_items:
-            for image_chunk_id in chunk_id_map.get(chunk_id, []):
+            related_assets = chunk_id_map.get(chunk_id, {"images": [], "tables": []})
+
+            # Collect image IDs
+            for image_chunk_id in related_assets["images"]:
                 image_retrieval_gt_items.append((qid, image_chunk_id))
 
+            # Collect table IDs
+            for table_chunk_id in related_assets["tables"]:
+                table_retrieval_gt_items.append((qid, table_chunk_id))
+
+        # 3. Register image ground truth
         if image_retrieval_gt_items:
-            self.service.add_retrieval_gt_batch(image_retrieval_gt_items, chunk_type="image")  # ty: ignore[invalid-argument-type]
+            self.service.add_retrieval_gt_batch(image_retrieval_gt_items, chunk_type="image")  # type: ignore[arg-type]
+
+        # 4. Register table ground truth
+        if table_retrieval_gt_items:
+            self.service.add_retrieval_gt_batch(table_retrieval_gt_items, chunk_type="text")  # type: ignore[arg-type]
 
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
         super().embed_all(max_concurrency=max_concurrency, batch_size=batch_size)

@@ -13,6 +13,7 @@ from autorag_research.data.open_ragbench import (
     make_file_id,
     make_image_chunk_id,
     make_page_id,
+    make_table_chunk_id,
 )
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
@@ -45,6 +46,9 @@ class TestMakeId:
         result = make_file_id("2401.12345")
         assert result == "2401.12345_file"
 
+    def test_make_table_chunk_id_basic(self):
+        result = make_table_chunk_id("2401.12345", 0, "table_0")
+        assert result == "2401.12345_section_0_table_table_0"
 
 
 # ==================== Integration Tests ====================
