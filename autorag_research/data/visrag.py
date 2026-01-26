@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
-from datasets import load_dataset
+import pandas as pd
 from llama_index.core.embeddings import MultiModalEmbedding
 from PIL import Image
 
@@ -125,64 +125,38 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         super().__init__(embedding_model, late_interaction_embedding_model)
         self.dataset_name = dataset_name
         self._config = _DATASET_CONFIGS[dataset_name]
-        self._corpus_ds = None
-        self._queries_ds = None
-        self._qrels_ds = None
+        self._cache: dict[str, pd.DataFrame] = {}
 
     def detect_primary_key_type(self) -> Literal["bigint"] | Literal["string"]:
         return "string"
 
-    def _load_corpus(self):
-        """Load corpus subset (images)."""
-        if self._corpus_ds is None:
-            logger.info(f"Loading {self._config.hf_path} corpus...")
-            self._corpus_ds = load_dataset(self._config.hf_path, name="corpus", split="train")
-        return self._corpus_ds
+    def _load(self, name: Literal["corpus", "queries", "qrels"]) -> pd.DataFrame:
+        """Load dataset subset as DataFrame with caching."""
+        if name not in self._cache:
+            logger.info(f"Loading {self._config.hf_path} {name}...")
+            from datasets import load_dataset
 
-    def _load_queries(self):
-        """Load queries subset."""
-        if self._queries_ds is None:
-            logger.info(f"Loading {self._config.hf_path} queries...")
-            self._queries_ds = load_dataset(self._config.hf_path, name="queries", split="train")
-        return self._queries_ds
-
-    def _load_qrels(self) -> dict[str, dict[str, int]]:
-        """Load and parse qrels into dict format.
-
-        Returns:
-            Dict mapping query_id -> {corpus_id: score}
-        """
-        if self._qrels_ds is None:
-            logger.info(f"Loading {self._config.hf_path} qrels...")
-            self._qrels_ds = load_dataset(self._config.hf_path, name="qrels", split="train")
-
-        qrels: dict[str, dict[str, int]] = {}
-        for row in self._qrels_ds:
-            query_id = row["query-id"]
-            corpus_id = row["corpus-id"]
-            score = row["score"]
-            if query_id not in qrels:
-                qrels[query_id] = {}
-            qrels[query_id][corpus_id] = score
-        return qrels
+            ds = load_dataset(self._config.hf_path, name=name, split="train")
+            self._cache[name] = ds.to_pandas()  # ty: ignore[possibly-missing-attribute,invalid-assignment]
+        return self._cache[name]
 
     def _sample_queries(
         self,
-        query_index: dict[str, dict],
+        queries_df: pd.DataFrame,
         query_limit: int | None,
         rng: random.Random,
     ) -> list[str]:
-        """Sample queries from the query index.
+        """Sample queries from the queries DataFrame.
 
         Args:
-            query_index: Dict mapping query_id to row data.
+            queries_df: DataFrame with query-id column.
             query_limit: Maximum number of queries to sample.
-            rng: Random number generator.
+            rng: Random number generator (Python random for reproducibility).
 
         Returns:
             List of selected query IDs.
         """
-        all_query_ids = list(query_index.keys())
+        all_query_ids = queries_df["query-id"].tolist()
 
         if query_limit is not None and query_limit < len(all_query_ids):
             selected_query_ids = rng.sample(all_query_ids, query_limit)
@@ -195,28 +169,24 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
     def _collect_gold_corpus_ids(
         self,
         query_ids: list[str],
-        qrels: dict[str, dict[str, int]],
+        qrels_df: pd.DataFrame,
     ) -> set[str]:
         """Collect gold corpus IDs from selected queries.
 
         Args:
             query_ids: List of query IDs.
-            qrels: Dict mapping query_id -> {corpus_id: score}.
+            qrels_df: DataFrame with query-id, corpus-id, score columns.
 
         Returns:
             Set of gold corpus IDs.
         """
-        gold_corpus_ids: set[str] = set()
-        for qid in query_ids:
-            for corpus_id, score in qrels[qid].items():
-                if score > 0:
-                    gold_corpus_ids.add(corpus_id)
+        gold_corpus_ids = set(qrels_df.loc[qrels_df["query-id"].isin(query_ids), "corpus-id"])
         logger.info(f"Found {len(gold_corpus_ids)} gold corpus IDs")
         return gold_corpus_ids
 
     def _filter_corpus(
         self,
-        all_corpus_ids: list[str],
+        corpus_df: pd.DataFrame,
         gold_corpus_ids: set[str],
         min_corpus_cnt: int | None,
         rng: random.Random,
@@ -224,14 +194,16 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         """Filter corpus to include gold IDs plus random samples.
 
         Args:
-            all_corpus_ids: All corpus IDs.
+            corpus_df: DataFrame with corpus-id column.
             gold_corpus_ids: Gold corpus IDs that must be included.
             min_corpus_cnt: Maximum corpus size.
-            rng: Random number generator.
+            rng: Random number generator (Python random for reproducibility).
 
         Returns:
             List of selected corpus IDs.
         """
+        all_corpus_ids = corpus_df["corpus-id"].tolist()
+
         if min_corpus_cnt is not None and min_corpus_cnt < len(all_corpus_ids):
             non_gold_ids = [cid for cid in all_corpus_ids if cid not in gold_corpus_ids]
             remaining_slots = max(0, min_corpus_cnt - len(gold_corpus_ids))
@@ -416,25 +388,25 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        # Load all dataset components
-        corpus_ds = self._load_corpus()
-        queries_ds = self._load_queries()
-        qrels = self._load_qrels()
+        # Load all dataset components as DataFrames
+        corpus_df = self._load("corpus")
+        queries_df = self._load("queries")
+        qrels_df = self._load("qrels")
         rng = random.Random(RANDOM_SEED)  # noqa: S311
 
-        # Build indexes
-        query_index = {row["query-id"]: row for row in queries_ds}
-        corpus_index = {row["corpus-id"]: row for row in corpus_ds}
+        # Build indexes for row lookup (needed for image/query data access)
+        query_index = {row["query-id"]: row.to_dict() for _, row in queries_df.iterrows()}
+        corpus_index = {row["corpus-id"]: row.to_dict() for _, row in corpus_df.iterrows()}
 
-        # Sample and filter
-        selected_query_ids = self._sample_queries(query_index, query_limit, rng)
-        gold_corpus_ids = self._collect_gold_corpus_ids(selected_query_ids, qrels)
-        selected_corpus_ids = self._filter_corpus(list(corpus_index.keys()), gold_corpus_ids, min_corpus_cnt, rng)
+        # Sample and filter using DataFrames
+        selected_query_ids = self._sample_queries(queries_df, query_limit, rng)
+        gold_corpus_ids = self._collect_gold_corpus_ids(selected_query_ids, qrels_df)
+        selected_corpus_ids = self._filter_corpus(corpus_df, gold_corpus_ids, min_corpus_cnt, rng)
 
         # Ingest data
         corpus_id_to_pk, skipped = self._ingest_corpus(selected_corpus_ids, corpus_index)
         query_id_to_pk = self._ingest_queries(selected_query_ids, query_index)
-        self._ingest_qrels(selected_query_ids, qrels, query_id_to_pk, corpus_id_to_pk, set(selected_corpus_ids))
+        self._ingest_qrels(selected_query_ids, qrels_df, query_id_to_pk, corpus_id_to_pk, set(selected_corpus_ids))
 
         logger.info(
             f"[{self.dataset_name.value}] Ingestion complete: "
@@ -444,7 +416,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
     def _ingest_qrels(
         self,
         query_ids: list[str],
-        qrels: dict[str, dict[str, int]],
+        qrels_df: pd.DataFrame,
         query_id_to_pk: dict[str, str],
         corpus_id_to_pk: dict[str, str],
         selected_corpus_ids_set: set[str],
@@ -453,7 +425,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
 
         Args:
             query_ids: List of query IDs to process.
-            qrels: Dict mapping query_id -> {corpus_id: score}.
+            qrels_df: DataFrame with query-id, corpus-id, score columns.
             query_id_to_pk: Mapping from original query_id to database PK.
             corpus_id_to_pk: Mapping from original corpus_id to database PK.
             selected_corpus_ids_set: Set of corpus IDs that were actually ingested.
@@ -463,18 +435,18 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
 
         from autorag_research.orm.models.retrieval_gt import image, or_all
 
-        qrels_items: list[tuple[str, list[str]]] = []
+        filtered_qrels = qrels_df[
+            qrels_df["query-id"].isin(query_ids) & qrels_df["corpus-id"].isin(selected_corpus_ids_set)
+        ]
 
-        for query_id in query_ids:
+        # Group by query_id to collect gold corpus PKs
+        qrels_items: list[tuple[str, list[str]]] = []
+        for query_id, group in filtered_qrels.groupby("query-id"):
             if query_id not in query_id_to_pk:
                 continue
 
             query_pk = query_id_to_pk[query_id]
-            gold_pks: list[str] = []
-
-            for corpus_id, score in qrels[query_id].items():
-                if score > 0 and corpus_id in selected_corpus_ids_set and corpus_id in corpus_id_to_pk:
-                    gold_pks.append(corpus_id_to_pk[corpus_id])
+            gold_pks = [corpus_id_to_pk[cid] for cid in group["corpus-id"] if cid in corpus_id_to_pk]
 
             if gold_pks:
                 qrels_items.append((query_pk, gold_pks))
