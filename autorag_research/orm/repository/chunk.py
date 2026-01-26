@@ -176,3 +176,33 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         if limit:
             stmt = stmt.limit(limit)
         return list(self.session.execute(stmt).scalars().all())
+
+    def get_table_chunks(self) -> list[Any]:
+        """Retrieve chunks that are tables (is_table=True).
+
+        Returns:
+            List of chunks where is_table is True.
+        """
+        stmt = select(self.model_cls).where(self.model_cls.is_table.is_(True))
+        return list(self.session.execute(stmt).scalars().all())
+
+    def get_by_table_type(self, table_type: str) -> list[Any]:
+        """Retrieve chunks with a specific table_type.
+
+        Args:
+            table_type: The table format type (e.g., 'markdown', 'xml', 'html').
+
+        Returns:
+            List of chunks with the specified table_type.
+        """
+        stmt = select(self.model_cls).where(self.model_cls.table_type == table_type)
+        return list(self.session.execute(stmt).scalars().all())
+
+    def get_non_table_chunks(self) -> list[Any]:
+        """Retrieve chunks that are not tables (is_table=False).
+
+        Returns:
+            List of chunks where is_table is False.
+        """
+        stmt = select(self.model_cls).where(self.model_cls.is_table.is_(False))
+        return list(self.session.execute(stmt).scalars().all())
