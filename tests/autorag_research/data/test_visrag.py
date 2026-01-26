@@ -94,7 +94,7 @@ class TestDatasetConfigs:
 
     def test_infovqa_config(self):
         config = _DATASET_CONFIGS[VisRAGDatasetName.INFO_VQA]
-        assert config.hf_path == "openbmb/VisRAG-Ret-Test-InfographicsVQA"
+        assert config.hf_path == "openbmb/VisRAG-Ret-Test-InfoVQA"
         assert config.has_options is False
         assert config.supports_multi_answer is True
 
