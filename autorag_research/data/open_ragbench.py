@@ -9,6 +9,7 @@ from llama_index.core.embeddings import MultiModalEmbedding
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import ServiceNotSetError
+from autorag_research.orm.models import ImageId, TextId
 from autorag_research.util import extract_image_from_data_uri
 
 logger = logging.getLogger("AutoRAG-Research")
@@ -173,7 +174,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
 
         return chunk_id_map
 
-    def _ingest_queries_and_relations(  # noqa: C901
+    def _ingest_queries_and_relations(
         self,
         query_ids: list[str],
         queries_data: dict[str, Any],
@@ -193,7 +194,6 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
             for qid in query_ids
         ])
 
-        retrieval_gt_items: list[tuple[str, str]] = []
         for qid in query_ids:
             if qid not in qrels_data:
                 continue
@@ -206,34 +206,19 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
             if chunk_id not in chunk_id_map:
                 continue
 
-            retrieval_gt_items.append((qid, chunk_id))
-
-        # 1. Register text ground truth
-        if retrieval_gt_items:
-            self.service.add_retrieval_gt_batch(retrieval_gt_items, chunk_type="text")  # type: ignore[arg-type]
-
-        # 2. Extract image and table ground truth
-        image_retrieval_gt_items: list[tuple[str, str]] = []
-        table_retrieval_gt_items: list[tuple[str, str]] = []
-
-        for qid, chunk_id in retrieval_gt_items:
             related_assets = chunk_id_map.get(chunk_id, {"images": [], "tables": []})
 
-            # Collect image IDs
-            for image_chunk_id in related_assets["images"]:
-                image_retrieval_gt_items.append((qid, image_chunk_id))
+            # Build OR expression for all GT chunks (text + table + image)
+            gt_expr: Any = TextId(chunk_id)
 
-            # Collect table IDs
             for table_chunk_id in related_assets["tables"]:
-                table_retrieval_gt_items.append((qid, table_chunk_id))
+                gt_expr = gt_expr | TextId(table_chunk_id)
 
-        # 3. Register image ground truth
-        if image_retrieval_gt_items:
-            self.service.add_retrieval_gt_batch(image_retrieval_gt_items, chunk_type="image")  # type: ignore[arg-type]
+            for image_chunk_id in related_assets["images"]:
+                gt_expr = gt_expr | ImageId(image_chunk_id)
 
-        # 4. Register table ground truth
-        if table_retrieval_gt_items:
-            self.service.add_retrieval_gt_batch(table_retrieval_gt_items, chunk_type="text")  # type: ignore[arg-type]
+            # Register all GT for this query at once (mixed mode)
+            self.service.add_retrieval_gt(qid, gt_expr)
 
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
         super().embed_all(max_concurrency=max_concurrency, batch_size=batch_size)
