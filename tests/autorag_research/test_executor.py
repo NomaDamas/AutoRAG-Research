@@ -59,7 +59,7 @@ class TestExecutorWithRealDB:
 
     @pytest.fixture
     def mock_bm25_module(self):
-        """Create a mock BM25Module for testing."""
+        """Create a mock BM25DBModule for testing."""
 
         def mock_run(queries: list[str], top_k: int) -> list[list[dict]]:
             results = []
@@ -77,7 +77,7 @@ class TestExecutorWithRealDB:
             pipelines=[
                 BM25PipelineConfig(
                     name="test_successful_pipeline",
-                    index_path="/fake/path",
+                    tokenizer="bert",
                     top_k=3,
                 ),
             ],
@@ -88,7 +88,7 @@ class TestExecutorWithRealDB:
         executor = Executor(session_factory, config)
 
         with patch(
-            "autorag_research.nodes.retrieval.bm25.BM25Module",
+            "autorag_research.nodes.retrieval.bm25_db.BM25DBModule",
             return_value=mock_bm25_module,
         ):
             result = executor.run()
@@ -114,14 +114,12 @@ class TestExecutorWithRealDB:
             pipelines=[
                 BM25PipelineConfig(
                     name="test_multi_pipeline_1",
-                    index_path="/fake/path",
-                    k1=0.9,
+                    tokenizer="bert",
                     top_k=3,
                 ),
                 BM25PipelineConfig(
                     name="test_multi_pipeline_2",
-                    index_path="/fake/path",
-                    k1=1.2,
+                    tokenizer="bert",
                     top_k=3,
                 ),
             ],
@@ -132,7 +130,7 @@ class TestExecutorWithRealDB:
         executor = Executor(session_factory, config)
 
         with patch(
-            "autorag_research.nodes.retrieval.bm25.BM25Module",
+            "autorag_research.nodes.retrieval.bm25_db.BM25DBModule",
             return_value=mock_bm25_module,
         ):
             result = executor.run()
@@ -153,7 +151,7 @@ class TestExecutorWithRealDB:
             pipelines=[
                 BM25PipelineConfig(
                     name="test_failure_pipeline",
-                    index_path="/fake/path",
+                    tokenizer="bert",
                 ),
             ],
             metrics=[RecallConfig()],
@@ -162,12 +160,12 @@ class TestExecutorWithRealDB:
 
         executor = Executor(session_factory, config)
 
-        # Mock BM25Module to always fail
+        # Mock BM25DBModule to always fail
         mock_module = MagicMock()
         mock_module.run.side_effect = Exception("BM25 error")
 
         with patch(
-            "autorag_research.nodes.retrieval.bm25.BM25Module",
+            "autorag_research.nodes.retrieval.bm25_db.BM25DBModule",
             return_value=mock_module,
         ):
             result = executor.run()
