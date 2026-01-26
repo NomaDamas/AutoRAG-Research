@@ -33,8 +33,9 @@ class TestDatasetConfigs:
     """Test dataset configuration mapping."""
 
     def test_all_datasets_have_configs(self):
-        """All enum values should have corresponding configs."""
-        for dataset_name in VisRAGDatasetName:
+        """All Literal values should have corresponding configs."""
+        expected_names = ["ArxivQA", "ChartQA", "MP-DocVQA", "InfoVQA", "PlotQA", "SlideVQA"]
+        for dataset_name in expected_names:
             assert dataset_name in _DATASET_CONFIGS, f"Missing config for {dataset_name}"
 
     def test_hf_paths_follow_pattern(self):
@@ -45,19 +46,19 @@ class TestDatasetConfigs:
             )
 
     def test_arxivqa_config(self):
-        config = _DATASET_CONFIGS[VisRAGDatasetName.ARXIV_QA]
+        config = _DATASET_CONFIGS["ArxivQA"]
         assert config.hf_path == "openbmb/VisRAG-Ret-Test-ArxivQA"
         assert config.has_options is True
         assert config.supports_multi_answer is False
 
     def test_mp_docvqa_config(self):
-        config = _DATASET_CONFIGS[VisRAGDatasetName.MP_DOCVQA]
+        config = _DATASET_CONFIGS["MP-DocVQA"]
         assert config.hf_path == "openbmb/VisRAG-Ret-Test-MP-DocVQA"
         assert config.has_options is False
         assert config.supports_multi_answer is True
 
     def test_infovqa_config(self):
-        config = _DATASET_CONFIGS[VisRAGDatasetName.INFO_VQA]
+        config = _DATASET_CONFIGS["InfoVQA"]
         assert config.hf_path == "openbmb/VisRAG-Ret-Test-InfoVQA"
         assert config.has_options is False
         assert config.supports_multi_answer is True
@@ -70,12 +71,12 @@ class TestVisRAGIngestorInit:
     """Test VisRAGIngestor initialization."""
 
     def test_creates_with_dataset_name(self):
-        ingestor = VisRAGIngestor(VisRAGDatasetName.CHART_QA)
-        assert ingestor.dataset_name == VisRAGDatasetName.CHART_QA
-        assert ingestor._config == _DATASET_CONFIGS[VisRAGDatasetName.CHART_QA]
+        ingestor = VisRAGIngestor("ChartQA")
+        assert ingestor.dataset_name == "ChartQA"
+        assert ingestor._config == _DATASET_CONFIGS["ChartQA"]
 
     def test_detect_primary_key_type_is_string(self):
-        ingestor = VisRAGIngestor(VisRAGDatasetName.ARXIV_QA)
+        ingestor = VisRAGIngestor("ArxivQA")
         assert ingestor.detect_primary_key_type() == "string"
 
 
@@ -84,7 +85,7 @@ class TestVisRAGIngestorFormatQuery:
 
     def test_format_query_with_options(self):
         """Datasets with options should format query with options."""
-        ingestor = VisRAGIngestor(VisRAGDatasetName.ARXIV_QA)
+        ingestor = VisRAGIngestor("ArxivQA")
         row = {"query": "What is shown?", "options": ["A. Cat", "B. Dog"]}
         result = ingestor._format_query(row)
 
@@ -93,7 +94,7 @@ class TestVisRAGIngestorFormatQuery:
 
     def test_format_query_without_options(self):
         """Datasets without options should return plain query."""
-        ingestor = VisRAGIngestor(VisRAGDatasetName.MP_DOCVQA)
+        ingestor = VisRAGIngestor("MP-DocVQA")
         row = {"query": "What is the document about?", "options": None}
         result = ingestor._format_query(row)
 
@@ -102,7 +103,7 @@ class TestVisRAGIngestorFormatQuery:
 
     def test_format_query_missing_options_field(self):
         """Should handle missing options field gracefully."""
-        ingestor = VisRAGIngestor(VisRAGDatasetName.SLIDE_VQA)
+        ingestor = VisRAGIngestor("SlideVQA")
         row = {"query": "What is shown in the slide?"}
         result = ingestor._format_query(row)
 
@@ -114,7 +115,7 @@ class TestVisRAGIngestorExtractAnswers:
 
     def test_extract_single_answer(self):
         """Single answer datasets should return list with one answer."""
-        ingestor = VisRAGIngestor(VisRAGDatasetName.ARXIV_QA)
+        ingestor = VisRAGIngestor("ArxivQA")
         row = {"answer": "B"}
         result = ingestor._extract_answers(row)
 
@@ -122,7 +123,7 @@ class TestVisRAGIngestorExtractAnswers:
 
     def test_extract_multi_answer(self):
         """Multi-answer datasets should return all answers."""
-        ingestor = VisRAGIngestor(VisRAGDatasetName.MP_DOCVQA)
+        ingestor = VisRAGIngestor("MP-DocVQA")
         row = {"answer": ["answer1", "answer2", "answer3"]}
         result = ingestor._extract_answers(row)
 
@@ -130,7 +131,7 @@ class TestVisRAGIngestorExtractAnswers:
 
     def test_extract_answer_none(self):
         """Should handle None answer gracefully."""
-        ingestor = VisRAGIngestor(VisRAGDatasetName.ARXIV_QA)
+        ingestor = VisRAGIngestor("ArxivQA")
         row = {"answer": None}
         result = ingestor._extract_answers(row)
 
@@ -138,7 +139,7 @@ class TestVisRAGIngestorExtractAnswers:
 
     def test_extract_answer_missing_field(self):
         """Should handle missing answer field gracefully."""
-        ingestor = VisRAGIngestor(VisRAGDatasetName.ARXIV_QA)
+        ingestor = VisRAGIngestor("ArxivQA")
         row = {}
         result = ingestor._extract_answers(row)
 
@@ -146,7 +147,7 @@ class TestVisRAGIngestorExtractAnswers:
 
     def test_single_answer_dataset_with_list_input(self):
         """Single-answer dataset receiving list should return first as string."""
-        ingestor = VisRAGIngestor(VisRAGDatasetName.ARXIV_QA)
+        ingestor = VisRAGIngestor("ArxivQA")
         # This tests edge case - single answer dataset receiving list
         row = {"answer": ["A"]}
         result = ingestor._extract_answers(row)
@@ -171,7 +172,7 @@ def create_visrag_test_config(dataset_name: VisRAGDatasetName) -> IngestorTestCo
         check_generation_gt=True,
         generation_gt_required_for_all=True,
         primary_key_type="string",
-        db_name=f"visrag_{dataset_name.value.lower().replace('-', '_')}_test",
+        db_name=f"visrag_{dataset_name.lower().replace('-', '_')}_test",
     )
 
 
@@ -181,15 +182,7 @@ class TestVisRAGIngestorIntegration:
 
     @pytest.mark.parametrize(
         "dataset_name",
-        [
-            VisRAGDatasetName.ARXIV_QA,
-            VisRAGDatasetName.CHART_QA,
-            VisRAGDatasetName.MP_DOCVQA,
-            VisRAGDatasetName.INFO_VQA,
-            VisRAGDatasetName.PLOT_QA,
-            VisRAGDatasetName.SLIDE_VQA,
-        ],
-        ids=["ArxivQA", "ChartQA", "MP-DocVQA", "InfoVQA", "PlotQA", "SlideVQA"],
+        ["ArxivQA", "ChartQA", "MP-DocVQA", "InfoVQA", "PlotQA", "SlideVQA"],
     )
     def test_ingest_dataset_subset(self, dataset_name: VisRAGDatasetName):
         """Test ingestion for each VisRAG dataset."""
@@ -229,7 +222,7 @@ class TestVisRAGIngestorDatasetSpecific:
         with create_test_database(config) as db:
             service = MultiModalIngestionService(db.session_factory, schema=db.schema)
 
-            ingestor = VisRAGIngestor(VisRAGDatasetName.ARXIV_QA)
+            ingestor = VisRAGIngestor("ArxivQA")
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=config.expected_query_count,
@@ -259,7 +252,7 @@ class TestVisRAGIngestorDatasetSpecific:
         with create_test_database(config) as db:
             service = MultiModalIngestionService(db.session_factory, schema=db.schema)
 
-            ingestor = VisRAGIngestor(VisRAGDatasetName.MP_DOCVQA)
+            ingestor = VisRAGIngestor("MP-DocVQA")
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=config.expected_query_count,
@@ -288,7 +281,7 @@ class TestVisRAGIngestorDatasetSpecific:
         with create_test_database(config) as db:
             service = MultiModalIngestionService(db.session_factory, schema=db.schema)
 
-            ingestor = VisRAGIngestor(VisRAGDatasetName.ARXIV_QA)
+            ingestor = VisRAGIngestor("ArxivQA")
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=config.expected_query_count,

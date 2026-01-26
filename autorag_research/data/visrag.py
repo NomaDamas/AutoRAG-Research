@@ -49,32 +49,32 @@ class _DatasetConfig:
 
 # Dataset-specific configurations
 _DATASET_CONFIGS: dict[VisRAGDatasetName, _DatasetConfig] = {
-    VisRAGDatasetName.ARXIV_QA: _DatasetConfig(
+    "ArxivQA": _DatasetConfig(
         hf_path="openbmb/VisRAG-Ret-Test-ArxivQA",
         has_options=True,
         supports_multi_answer=False,
     ),
-    VisRAGDatasetName.CHART_QA: _DatasetConfig(
+    "ChartQA": _DatasetConfig(
         hf_path="openbmb/VisRAG-Ret-Test-ChartQA",
         has_options=False,
         supports_multi_answer=False,
     ),
-    VisRAGDatasetName.MP_DOCVQA: _DatasetConfig(
+    "MP-DocVQA": _DatasetConfig(
         hf_path="openbmb/VisRAG-Ret-Test-MP-DocVQA",
         has_options=False,
         supports_multi_answer=True,
     ),
-    VisRAGDatasetName.INFO_VQA: _DatasetConfig(
+    "InfoVQA": _DatasetConfig(
         hf_path="openbmb/VisRAG-Ret-Test-InfoVQA",
         has_options=False,
         supports_multi_answer=True,
     ),
-    VisRAGDatasetName.PLOT_QA: _DatasetConfig(
+    "PlotQA": _DatasetConfig(
         hf_path="openbmb/VisRAG-Ret-Test-PlotQA",
         has_options=False,
         supports_multi_answer=False,
     ),
-    VisRAGDatasetName.SLIDE_VQA: _DatasetConfig(
+    "SlideVQA": _DatasetConfig(
         hf_path="openbmb/VisRAG-Ret-Test-SlideVQA",
         has_options=False,
         supports_multi_answer=False,
@@ -404,7 +404,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         self._ingest_qrels(selected_query_ids, qrels_df, query_id_to_pk, corpus_id_to_pk, set(selected_corpus_ids))
 
         logger.info(
-            f"[{self.dataset_name.value}] Ingestion complete: "
+            f"[{self.dataset_name}] Ingestion complete: "
             f"{len(query_id_to_pk)} queries, {len(corpus_id_to_pk)} images, {skipped} skipped"
         )
 
