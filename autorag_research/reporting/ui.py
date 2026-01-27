@@ -9,6 +9,8 @@ import pandas as pd
 
 from autorag_research.reporting.service import ReportingService
 
+METRIC_TYPES = Literal["retrieval", "generation"]
+
 
 # === Service Management ===
 class _ServiceManager:
@@ -52,7 +54,7 @@ def format_dataset_stats(db_name: str) -> str:
 # === UI Update Handlers ===
 
 
-def on_dataset_change(db_name: str, metric_type: Literal["retrieval", "generation"]) -> tuple[pd.DataFrame, dict]:
+def on_dataset_change(db_name: str, metric_type: METRIC_TYPES) -> tuple[pd.DataFrame, dict]:
     """Handle dataset selection change - returns leaderboard DataFrame and stats."""
     if not db_name:
         return pd.DataFrame(), gr.update(value="")
@@ -61,14 +63,14 @@ def on_dataset_change(db_name: str, metric_type: Literal["retrieval", "generatio
     return df, gr.update(value=stats)
 
 
-def on_metric_type_change(db_name: str, metric_type: Literal["retrieval", "generation"]) -> pd.DataFrame:
+def on_metric_type_change(db_name: str, metric_type: METRIC_TYPES) -> pd.DataFrame:
     """Handle metric type selection change - returns leaderboard DataFrame."""
     if not db_name:
         return pd.DataFrame()
     return get_service().get_all_metrics_leaderboard(db_name, metric_type)
 
 
-def on_refresh_leaderboard(db_name: str, metric_type: Literal["retrieval", "generation"]) -> tuple[pd.DataFrame, dict]:
+def on_refresh_leaderboard(db_name: str, metric_type: METRIC_TYPES) -> tuple[pd.DataFrame, dict]:
     """Refresh leaderboard data."""
     if not db_name:
         return pd.DataFrame(), gr.update(value="")
