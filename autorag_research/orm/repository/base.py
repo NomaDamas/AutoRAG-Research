@@ -572,7 +572,13 @@ class BaseEmbeddingRepository(GenericRepository[T]):
         Uses LIMIT + loop approach to avoid transaction/memory issues with large datasets.
 
         Args:
-            tokenizer: Tokenizer to use (default: "bert"). See pg_tokenizer docs.
+            tokenizer: Tokenizer to use (default: "bert").
+                Available tokenizers (pg_tokenizer pre-built models):
+                    - "bert": bert-base-uncased (Hugging Face) - Default
+                    - "wiki_tocken": Wikitext-103 trained model
+                    - "gemma2b": Google lightweight model (~100MB memory)
+                    - "llmlingua2": Microsoft summarization model (~200MB memory)
+                See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
             batch_size: Number of entities to update per batch (default: 1000).
 
         Returns:

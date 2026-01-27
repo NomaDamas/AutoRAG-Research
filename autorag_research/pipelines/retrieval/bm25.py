@@ -35,6 +35,16 @@ class BM25PipelineConfig(BaseRetrievalPipelineConfig):
     """
 
     tokenizer: str = "bert"
+    """Tokenizer name for BM25 sparse retrieval.
+
+    Available tokenizers (pg_tokenizer pre-built models):
+        - "bert": bert-base-uncased (Hugging Face) - Default
+        - "wiki_tocken": Wikitext-103 trained model
+        - "gemma2b": Google lightweight model (~100MB memory)
+        - "llmlingua2": Microsoft summarization model (~200MB memory)
+
+    See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
+    """
     index_name: str = "idx_chunk_bm25"
 
     def get_pipeline_class(self) -> type["BM25RetrievalPipeline"]:
@@ -95,6 +105,12 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
             session_factory: SQLAlchemy sessionmaker for database connections.
             name: Name for this pipeline.
             tokenizer: Tokenizer name for BM25 (default: "bert" for bert_base_uncased).
+                Available tokenizers (pg_tokenizer pre-built models):
+                    - "bert": bert-base-uncased (Hugging Face) - Default
+                    - "wiki_tocken": Wikitext-103 trained model
+                    - "gemma2b": Google lightweight model (~100MB memory)
+                    - "llmlingua2": Microsoft summarization model (~200MB memory)
+                See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
             index_name: Name of the BM25 index (default: "idx_chunk_bm25").
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """

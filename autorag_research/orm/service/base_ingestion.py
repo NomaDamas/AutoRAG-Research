@@ -316,7 +316,13 @@ class BaseIngestionService(BaseService, ABC):
         and bm25_tokenizer is specified.
 
         Args:
-            tokenizer: Tokenizer name (e.g., "bert", "simple").
+            tokenizer: Tokenizer name for BM25 sparse retrieval.
+                Available tokenizers (pg_tokenizer pre-built models):
+                    - "bert": bert-base-uncased (Hugging Face) - Default
+                    - "wiki_tocken": Wikitext-103 trained model
+                    - "gemma2b": Google lightweight model (~100MB memory)
+                    - "llmlingua2": Microsoft summarization model (~200MB memory)
+                See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
             entity_type: Type of entity to populate ("chunk" or "query").
             batch_size: Number of entities to update per batch (default: 1000).
 

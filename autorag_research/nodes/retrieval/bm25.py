@@ -53,7 +53,12 @@ class BM25Module(BaseModule):
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
             tokenizer: Tokenizer name for BM25 (default: "bert" for bert_base_uncased).
-                       Other options may include: "simple", "standard", etc.
+                Available tokenizers (pg_tokenizer pre-built models):
+                    - "bert": bert-base-uncased (Hugging Face) - Default
+                    - "wiki_tocken": Wikitext-103 trained model
+                    - "gemma2b": Google lightweight model (~100MB memory)
+                    - "llmlingua2": Microsoft summarization model (~200MB memory)
+                See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
             index_name: Name of the BM25 index (default: "idx_chunk_bm25").
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """

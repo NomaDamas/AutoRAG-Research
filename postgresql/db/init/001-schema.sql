@@ -33,6 +33,35 @@ BEGIN
 	END;
 END $$;
 
+-- Create BM25 tokenizers (requires pg_tokenizer extension)
+-- Available pre-built models from pg_tokenizer:
+--   bert: bert-base-uncased (Hugging Face)
+--   wiki_tocken: Wikitext-103 trained model
+--   gemma2b: Google lightweight model (~100MB memory)
+--   llmlingua2: Microsoft summarization model (~200MB memory, default preload)
+-- See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
+DO $$
+BEGIN
+	IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_tokenizer') THEN
+		-- bert-base-uncased (Hugging Face)
+		BEGIN
+			PERFORM create_tokenizer('bert', 'model = "bert-base-uncased"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+		-- wiki_tocken (Wikitext-103)
+		BEGIN
+			PERFORM create_tokenizer('wiki_tocken', 'model = "wiki_tocken"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+		-- gemma2b (Google, ~100MB)
+		BEGIN
+			PERFORM create_tokenizer('gemma2b', 'model = "gemma2b"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+		-- llmlingua2 (Microsoft, ~200MB, default preload)
+		BEGIN
+			PERFORM create_tokenizer('llmlingua2', 'model = "llmlingua2"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+	END IF;
+END $$;
+
 -- Schema DDL matching the provided design
 
 -- File

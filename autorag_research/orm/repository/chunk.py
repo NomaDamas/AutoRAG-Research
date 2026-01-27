@@ -224,6 +224,12 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
             index_name: Name of the BM25 index (default: "idx_chunk_bm25").
             limit: Maximum number of results to return.
             tokenizer: Tokenizer to use for query (default: "bert").
+                Available tokenizers (pg_tokenizer pre-built models):
+                    - "bert": bert-base-uncased (Hugging Face) - Default
+                    - "wiki_tocken": Wikitext-103 trained model
+                    - "gemma2b": Google lightweight model (~100MB memory)
+                    - "llmlingua2": Microsoft summarization model (~200MB memory)
+                See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
 
         Returns:
             List of tuples (entity, score) ordered by relevance.
@@ -277,6 +283,12 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
             index_name: Name of the BM25 index (default: "idx_chunk_bm25").
             limit: Maximum number of results to return.
             tokenizer: Tokenizer to use for query (default: "bert").
+                Available tokenizers (pg_tokenizer pre-built models):
+                    - "bert": bert-base-uncased (Hugging Face) - Default
+                    - "wiki_tocken": Wikitext-103 trained model
+                    - "gemma2b": Google lightweight model (~100MB memory)
+                    - "llmlingua2": Microsoft summarization model (~200MB memory)
+                See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
 
         Returns:
             List of tuples (chunk_id, score) ordered by relevance.
