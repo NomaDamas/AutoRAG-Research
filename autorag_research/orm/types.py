@@ -30,6 +30,17 @@ class BM25Vector(UserDefinedType):
 
     cache_ok = True
 
+    def get_col_spec(self, **kw: Any) -> str:
+        """Return the column specification for PostgreSQL.
+
+        Args:
+            **kw: Additional keyword arguments (unused, for SQLAlchemy compatibility).
+
+        Returns:
+            PostgreSQL type specification string.
+        """
+        return "bm25vector"
+
 
 class VectorArrayType(UserDefinedType):
     """Custom SQLAlchemy type for array of vectors compatible with VectorChord.

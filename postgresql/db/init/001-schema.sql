@@ -43,9 +43,9 @@ END $$;
 DO $$
 BEGIN
 	IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_tokenizer') THEN
-		-- bert-base-uncased (Hugging Face)
+		-- bert_base_uncased (Hugging Face) - uses underscores per pg_tokenizer model naming
 		BEGIN
-			PERFORM create_tokenizer('bert', 'model = "bert-base-uncased"');
+			PERFORM create_tokenizer('bert', 'model = "bert_base_uncased"');
 		EXCEPTION WHEN others THEN PERFORM 1; END;
 		-- wiki_tocken (Wikitext-103)
 		BEGIN
