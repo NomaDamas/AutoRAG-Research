@@ -15,14 +15,14 @@ from autorag_research.embeddings.injection import (
     with_embedding,
 )
 
+cli.CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "configs"
+
 
 class TestLoadEmbeddingModel:
     """Tests for load_embedding_model function."""
 
-    def test_raises_file_not_found_for_missing_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_raises_file_not_found_for_missing_config(self) -> None:
         """Raises FileNotFoundError when config doesn't exist."""
-        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
-
         with pytest.raises(FileNotFoundError):
             load_embedding_model("nonexistent")
 
@@ -145,7 +145,7 @@ class TestWithEmbeddingDecorator:
         def my_func(embedding_model) -> None:
             pass
 
-        with pytest.raises(TypeError, match="must be string or BaseEmbedding"):
+        with pytest.raises(TypeError, match="must be string, BaseEmbedding or MultiVectorBaseEmbedding"):
             my_func(embedding_model=123)  # type: ignore[arg-type]
 
     def test_invalid_param_name_raises_error(self) -> None:
@@ -160,9 +160,13 @@ class TestWithEmbeddingDecorator:
         """Decorator works with custom param_name."""
 
         @with_embedding(param_name="model")
-        def my_func(model) -> object:
-            return model
+        @with_embedding("model2")
+        def my_func(model, model2, ho) -> object:
+            return model, model2, ho
 
         mock_model = MockEmbedding(embed_dim=384)
-        result = my_func(model=mock_model)
-        assert result is mock_model
+        mock_model2 = MockEmbedding(embed_dim=768)
+        result1, result2, result3 = my_func(model=mock_model, model2=mock_model2, ho=3)
+        assert result1 is mock_model
+        assert result2 is mock_model2
+        assert result3 == 3
