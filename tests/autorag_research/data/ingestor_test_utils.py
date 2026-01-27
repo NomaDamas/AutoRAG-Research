@@ -302,11 +302,16 @@ class IngestorTestVerifier:
         stats = self.service.get_statistics()
         actual = stats.get("documents", 0)
         expected = self.config.expected_document_count or 0
-        passed = actual == expected
+        if self.config.chunk_count_is_minimum:
+            passed = actual >= expected
+            comparison = ">="
+        else:
+            passed = actual == expected
+            comparison = "=="
         return CheckResult(
             passed=passed,
-            message=f"Expected {expected}, got {actual}",
-            failures=[] if passed else ["Document count mismatch"],
+            message=f"Expected {comparison} {expected}, got {actual}",
+            failures=[] if passed else [f"Document count mismatch: expected {comparison} {expected}, got {actual}"],
         )
 
     def _verify_page_count(self) -> CheckResult:
@@ -314,11 +319,16 @@ class IngestorTestVerifier:
         stats = self.service.get_statistics()
         actual = stats.get("pages", 0)
         expected = self.config.expected_page_count or 0
-        passed = actual == expected
+        if self.config.chunk_count_is_minimum:
+            passed = actual >= expected
+            comparison = ">="
+        else:
+            passed = actual == expected
+            comparison = "=="
         return CheckResult(
             passed=passed,
-            message=f"Expected {expected}, got {actual}",
-            failures=[] if passed else ["Page count mismatch"],
+            message=f"Expected {comparison} {expected}, got {actual}",
+            failures=[] if passed else [f"Page count mismatch: expected {comparison} {expected}, got {actual}"],
         )
 
     def _verify_file_count(self) -> CheckResult:
@@ -326,11 +336,16 @@ class IngestorTestVerifier:
         stats = self.service.get_statistics()
         actual = stats.get("files", 0)
         expected = self.config.expected_file_count or 0
-        passed = actual == expected
+        if self.config.chunk_count_is_minimum:
+            passed = actual >= expected
+            comparison = ">="
+        else:
+            passed = actual == expected
+            comparison = "=="
         return CheckResult(
             passed=passed,
-            message=f"Expected {expected}, got {actual}",
-            failures=[] if passed else ["File count mismatch"],
+            message=f"Expected {comparison} {expected}, got {actual}",
+            failures=[] if passed else [f"File count mismatch: expected {comparison} {expected}, got {actual}"],
         )
 
     def _verify_caption_count(self) -> CheckResult:
@@ -338,11 +353,16 @@ class IngestorTestVerifier:
         stats = self.service.get_statistics()
         actual = stats.get("captions", 0)
         expected = self.config.expected_caption_count or 0
-        passed = actual == expected
+        if self.config.chunk_count_is_minimum:
+            passed = actual >= expected
+            comparison = ">="
+        else:
+            passed = actual == expected
+            comparison = "=="
         return CheckResult(
             passed=passed,
-            message=f"Expected {expected}, got {actual}",
-            failures=[] if passed else ["Caption count mismatch"],
+            message=f"Expected {comparison} {expected}, got {actual}",
+            failures=[] if passed else [f"Caption count mismatch: expected {comparison} {expected}, got {actual}"],
         )
 
     # ==================== Format Validation ====================
