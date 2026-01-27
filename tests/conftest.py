@@ -1,7 +1,3 @@
-import json
-import shutil
-import subprocess
-import tempfile
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -11,8 +7,6 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 
 from autorag_research.orm.connection import DBConnection
-from autorag_research.orm.schema import Chunk
-
 
 # Load environment variables from postgresql/.env
 _env_path = Path(__file__).parent.parent / "postgresql" / ".env"
