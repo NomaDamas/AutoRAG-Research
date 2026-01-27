@@ -45,6 +45,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 
+from autorag_research.orm.connection import DBConnection
 from autorag_research.orm.schema_factory import create_schema
 from autorag_research.orm.service.base_ingestion import BaseIngestionService
 from autorag_research.orm.util import create_database, drop_database, install_vector_extensions
@@ -124,21 +125,12 @@ def create_test_database(config: IngestorTestConfig) -> Generator[TestDatabaseCo
     Yields:
         TestDatabaseContext with schema, engine, and session_factory.
     """
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    user = os.getenv("POSTGRES_USER", "postgres")
-    pwd = os.getenv("POSTGRES_PASSWORD", "postgres")
-    port = int(os.getenv("PG_PORT", os.getenv("POSTGRES_PORT", "5432")))
+    conn = DBConnection.from_env()
+    conn.create_database()
 
-    # Create database
-    create_database(host, user, pwd, config.db_name, port)
-    install_vector_extensions(host, user, pwd, config.db_name, port)
-
-    # Create engine and schema
-    url = f"postgresql+psycopg://{user}:{pwd}@{host}:{port}/{config.db_name}"
-    engine = create_engine(url, pool_pre_ping=True)
-    schema = create_schema(config.embedding_dim, config.primary_key_type)
-    schema.Base.metadata.create_all(engine)
-    session_factory = scoped_session(sessionmaker(bind=engine))
+    schema = conn.get_schema()
+    engine = conn.get_engine()
+    session_factory = conn.get_session_factory()
 
     try:
         yield TestDatabaseContext(
@@ -149,7 +141,7 @@ def create_test_database(config: IngestorTestConfig) -> Generator[TestDatabaseCo
     finally:
         session_factory.remove()
         engine.dispose()
-        drop_database(host, user, pwd, config.db_name, port, force=True)
+        conn.drop_database()
 
 
 class IngestorTestVerifier:

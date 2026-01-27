@@ -39,7 +39,6 @@ from functools import reduce
 
 from autorag_research.exceptions import EmptyIterableError
 
-
 # =============================================================================
 # Chunk ID Wrappers
 # =============================================================================
