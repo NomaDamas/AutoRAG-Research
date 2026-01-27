@@ -122,7 +122,7 @@ class TestViDoReV3IngestorIntegration:
             check_generation_gt=True,
             generation_gt_required_for_all=True,  # All queries have answers in ViDoReV3
             primary_key_type="bigint",  # corpus_id is int64
-            db_name="vidorev3_hr_test",
+            db_name=f"vidorev3_hr_test_{qrels_mode.replace('-', '_')}",
         )
         with create_test_database(VIDOREV3_HR_CONFIG) as db:
             service = MultiModalIngestionService(db.session_factory, schema=db.schema)

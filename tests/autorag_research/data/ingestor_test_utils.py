@@ -122,9 +122,11 @@ def create_test_database(config: IngestorTestConfig) -> Generator[TestDatabaseCo
         TestDatabaseContext with schema, engine, and session_factory.
     """
     conn = DBConnection.from_env()
+    conn.database = config.db_name
     conn.create_database()
 
-    schema = conn.get_schema()
+    # Create schema with explicit embedding_dim and primary_key_type from config
+    schema = conn.create_schema(config.embedding_dim, config.primary_key_type)
     engine = conn.get_engine()
     session_factory = conn.get_session_factory()
 
@@ -135,8 +137,8 @@ def create_test_database(config: IngestorTestConfig) -> Generator[TestDatabaseCo
             session_factory=session_factory,
         )
     finally:
-        session_factory.remove()
         engine.dispose()
+        conn.terminate_connections()
         conn.drop_database()
 
 
