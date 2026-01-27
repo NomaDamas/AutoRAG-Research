@@ -10,6 +10,27 @@ from sqlalchemy import Dialect, TypeDecorator
 from sqlalchemy.types import UserDefinedType
 
 
+class BM25Vector(UserDefinedType):
+    """Custom SQLAlchemy type for VectorChord-BM25's bm25vector type.
+
+    This type represents tokenized sparse vectors used for BM25 full-text search.
+    The actual tokenization is done via PostgreSQL's tokenize() function from
+    the pg_tokenizer extension.
+
+    Usage:
+        bm25_tokens: Mapped[Any | None] = mapped_column(BM25Vector())
+
+    Database representation:
+        bm25vector - Sparse vector storing term frequencies
+
+    Note:
+        This column is typically populated via raw SQL using tokenize():
+        UPDATE chunk SET bm25_tokens = tokenize(contents, 'bert')::bm25vector
+    """
+
+    cache_ok = True
+
+
 class VectorArrayType(UserDefinedType):
     """Custom SQLAlchemy type for array of vectors compatible with VectorChord.
 
