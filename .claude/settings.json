@@ -56,9 +56,10 @@
     "dev@team-attention-plugins": true,
     "session-wrap@team-attention-plugins": true,
     "agent-council@team-attention-plugins": true,
+    "mgrep@Mixedbread-Grep": true,
     "code-documentation@claude-code-workflows": true,
-    "debugging-toolkit@claude-code-workflows": true,
     "code-review-ai@claude-code-workflows": true,
-    "mgrep@Mixedbread-Grep": true
+    "database-design@claude-code-workflows": true,
+    "debugging-toolkit@claude-code-workflows": true
   }
 }

@@ -23,6 +23,7 @@ class BM25Module(BaseModule):
     Attributes:
         session_factory: SQLAlchemy sessionmaker for database connections.
         tokenizer: Tokenizer name used for BM25 (default: "bert").
+            For available models, see: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
         index_name: Name of the BM25 index in PostgreSQL.
         schema: Schema namespace from create_schema().
 
