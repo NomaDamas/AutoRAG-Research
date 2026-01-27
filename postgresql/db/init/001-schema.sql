@@ -18,6 +18,50 @@ BEGIN
 	END;
 END $$;
 
+-- VectorChord-BM25 extensions for sparse retrieval
+DO $$
+BEGIN
+	BEGIN
+		CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;
+	EXCEPTION WHEN others THEN
+		PERFORM 1;
+	END;
+	BEGIN
+		CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;
+	EXCEPTION WHEN others THEN
+		PERFORM 1;
+	END;
+END $$;
+
+-- Create BM25 tokenizers (requires pg_tokenizer extension)
+-- Available pre-built models from pg_tokenizer:
+--   bert: bert-base-uncased (Hugging Face)
+--   wiki_tocken: Wikitext-103 trained model
+--   gemma2b: Google lightweight model (~100MB memory)
+--   llmlingua2: Microsoft summarization model (~200MB memory, default preload)
+-- See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
+DO $$
+BEGIN
+	IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_tokenizer') THEN
+		-- bert_base_uncased (Hugging Face) - uses underscores per pg_tokenizer model naming
+		BEGIN
+			PERFORM create_tokenizer('bert', 'model = "bert_base_uncased"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+		-- wiki_tocken (Wikitext-103)
+		BEGIN
+			PERFORM create_tokenizer('wiki_tocken', 'model = "wiki_tocken"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+		-- gemma2b (Google, ~100MB)
+		BEGIN
+			PERFORM create_tokenizer('gemma2b', 'model = "gemma2b"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+		-- llmlingua2 (Microsoft, ~200MB, default preload)
+		BEGIN
+			PERFORM create_tokenizer('llmlingua2', 'model = "llmlingua2"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+	END IF;
+END $$;
+
 -- Schema DDL matching the provided design
 
 -- File
@@ -57,15 +101,19 @@ CREATE TABLE IF NOT EXISTS caption (
 
 -- Chunk
 -- embeddings column supports VectorChord's MaxSim operator (@#) for late interaction models
+-- bm25_tokens column supports VectorChord-BM25 sparse retrieval (added conditionally)
 CREATE TABLE IF NOT EXISTS chunk (
 	id BIGSERIAL PRIMARY KEY,
 	parent_caption BIGINT REFERENCES caption(id),
 	contents TEXT NOT NULL,
 	embedding VECTOR(768),
 	embeddings VECTOR(768)[],  -- Multi-vector for ColBERT/ColPali style retrieval
+    bm25_tokens bm25vector,  -- Tokenized sparse vector for BM25 retrieval
 	is_table BOOLEAN DEFAULT FALSE,
 	table_type VARCHAR(255)
 );
+
+CREATE INDEX IF NOT EXISTS idx_chunk_bm25 ON chunk USING bm25 (bm25_tokens bm25_ops);
 
 -- ImageChunk
 -- embeddings column supports VectorChord's MaxSim operator (@#) for late interaction models
@@ -93,7 +141,8 @@ CREATE TABLE IF NOT EXISTS query (
     query_to_llm TEXT,
 	generation_gt TEXT[],
 	embedding VECTOR(768),
-	embeddings VECTOR(768)[]  -- Multi-vector for ColBERT/ColPali style retrieval
+	embeddings VECTOR(768)[],  -- Multi-vector for ColBERT/ColPali style retrieval
+    bm25_tokens bm25vector  -- Tokenized sparse vector for BM25 retrieval
 );
 
 -- RetrievalRelation

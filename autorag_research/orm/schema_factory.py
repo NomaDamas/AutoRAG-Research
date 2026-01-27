@@ -7,7 +7,7 @@ and key types in a single process.
 
 import uuid
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -25,7 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from autorag_research.orm.types import VectorArray
+from autorag_research.orm.types import BM25Vector, VectorArray
 
 
 @lru_cache(maxsize=16)
@@ -160,6 +160,7 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         contents: Mapped[str] = mapped_column(Text, nullable=False)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
         embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
+        bm25_tokens: Mapped[Any | None] = mapped_column(BM25Vector(), nullable=True)
         is_table: Mapped[bool] = mapped_column(Boolean, default=False)
         table_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
@@ -221,6 +222,7 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         generation_gt: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
         embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
+        bm25_tokens: Mapped[Any | None] = mapped_column(BM25Vector(), nullable=True)
 
         # Relationships
         retrieval_relations: Mapped[list["RetrievalRelation"]] = relationship(

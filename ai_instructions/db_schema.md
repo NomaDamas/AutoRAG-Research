@@ -38,6 +38,7 @@ Table Chunk {
   contents text [not null]
   embedding vector(768)
   embeddings vector[](768)
+  bm25_tokens bm25vector // tokenized sparse vector (TF) for BM25 search (requires vchord_bm25 extension, optional)
   is_table boolean [default: false]
   table_type varchar(255) // markdown, xml, html
 }
@@ -62,7 +63,8 @@ Table Query {
   query_to_llm text
   generation_gt text[]
   embedding vector(768)
-  embeddings vector
+  embeddings vector[](768)
+  bm25_tokens bm25vector // pre-computed tokens for BM25 search (no index needed - index is on chunks only)
 }
 
 Table RetrievalRelation {
