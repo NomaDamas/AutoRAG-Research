@@ -103,4 +103,19 @@ help:
 	@uv run python -c "import re; \
 	[[print(f'\033[36m{m[0]:<20}\033[0m {m[1]}') for m in re.findall(r'^([a-zA-Z_-]+):.*?## (.*)$$', open(makefile).read(), re.M)] for makefile in ('$(MAKEFILE_LIST)').strip().split()]"
 
+# UI Development targets
+.PHONY: ui-setup ui-launch ui-restart
+
+ui-setup: ## Setup UI development databases (dataset_alpha, dataset_beta, dataset_gamma)
+	@echo "🎨 Setting up UI development databases..."
+	@set -a && . postgresql/.env && set +a && uv run python scripts/setup_ui_dev_databases.py
+
+ui-launch: docker-up docker-wait ui-setup ## Launch UI with full setup (Docker + databases + UI)
+	@echo "🚀 Launching AutoRAG Leaderboard UI..."
+	@set -a && . postgresql/.env && set +a && uv run python -m autorag_research.reporting.ui
+
+ui-restart: ## Restart UI only (assumes databases already exist)
+	@echo "🔄 Restarting AutoRAG Leaderboard UI..."
+	@set -a && . postgresql/.env && set +a && uv run python -m autorag_research.reporting.ui
+
 .DEFAULT_GOAL := help

@@ -140,3 +140,5 @@ Detailed patterns and examples are in `/ai_instructions/`:
 - Do not use relative imports.
 - Always use `uv sync --all-extras --all-groups` to install dependencies to avoid missing optional packages.
 - Do not add `__init__.py` in `tests/` directory.
+- DO NOT CHANGE ty, ruff, deptry configurations in the `pyproject.toml`. Use ignore annotation if necessary.
+- DO NOT USE `global` variable anywhere in the codebase.

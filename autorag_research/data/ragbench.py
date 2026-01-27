@@ -130,7 +130,7 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         total_processed = 0
 
         for example in ds:
-            example_dict: dict[str, Any] = example  # type: ignore[assignment]
+            example_dict: dict[str, Any] = example
             batch.append(example_dict)
 
             if len(batch) >= self.batch_size:
