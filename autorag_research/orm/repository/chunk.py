@@ -257,15 +257,19 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         )
         rows = result.fetchall()
 
-        # Fetch entities and return with negated scores (so higher = better)
-        entity_scores = []
-        for row in rows:
-            entity = self.get_by_id(row[0])
-            if entity:
-                # Negate score so higher = more relevant
-                entity_scores.append((entity, -float(row[1])))
+        # Build id -> score mapping (negate scores so higher = better)
+        id_to_score = {row[0]: -float(row[1]) for row in rows}
 
-        return entity_scores
+        # Fetch all entities in single query
+        entities = self.get_by_ids(list(id_to_score.keys()))
+        id_to_entity = {entity.id: entity for entity in entities}
+
+        # Return entities with scores, sorted by score descending (higher = better)
+        return sorted(
+            [(id_to_entity[eid], score) for eid, score in id_to_score.items() if eid in id_to_entity],
+            key=lambda x: x[1],
+            reverse=True,
+        )
 
     def bm25_search_ids_with_scores(
         self,
