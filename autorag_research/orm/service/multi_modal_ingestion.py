@@ -30,14 +30,12 @@ class MultiModalIngestionService(BaseIngestionService):
 
     Example:
         ```python
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
-
+        from autorag_research.orm.connection import DBConnection
         from autorag_research.orm.service import MultiModalIngestionService
 
         # Setup database connection
-        engine = create_engine("postgresql://user:pass@localhost/dbname")
-        session_factory = sessionmaker(bind=engine)
+        db = DBConnection.from_config()  # or DBConnection.from_env()
+        session_factory = db.get_session_factory()
 
         # Initialize service
         service = MultiModalIngestionService(session_factory)
