@@ -29,11 +29,10 @@ class MultiModalUnitOfWork(BaseUnitOfWork):
 
     Example:
         ```python
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
+        from autorag_research.orm.connection import DBConnection
 
-        engine = create_engine("postgresql://user:pass@localhost/dbname")
-        session_factory = sessionmaker(bind=engine)
+        db = DBConnection.from_config()  # or DBConnection.from_env()
+        session_factory = db.get_session_factory()
 
         with MultiModalUnitOfWork(session_factory) as uow:
             # Access repositories
