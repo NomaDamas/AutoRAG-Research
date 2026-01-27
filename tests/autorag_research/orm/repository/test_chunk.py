@@ -178,3 +178,65 @@ def test_get_chunks_with_empty_content(chunk_repository: ChunkRepository, db_ses
     db_session.delete(db_session.get(Chunk, 800003))
     db_session.delete(db_session.get(Chunk, 800004))
     db_session.commit()
+
+
+def test_get_table_chunks(chunk_repository: ChunkRepository, db_session: Session):
+    """Test retrieving chunks that are tables (is_table=True)."""
+    # Seed data has chunks 7, 8 with is_table=True
+    results = chunk_repository.get_table_chunks()
+
+    assert len(results) >= 2
+    assert all(c.is_table is True for c in results)
+
+
+def test_get_by_table_type(chunk_repository: ChunkRepository, db_session: Session):
+    """Test retrieving chunks by table_type."""
+    # Seed data has chunk 7 with table_type='markdown'
+    results = chunk_repository.get_by_table_type("markdown")
+
+    assert len(results) >= 1
+    assert all(c.table_type == "markdown" for c in results)
+
+
+def test_get_by_table_type_html(chunk_repository: ChunkRepository, db_session: Session):
+    """Test retrieving chunks by table_type='html'."""
+    # Seed data has chunk 8 with table_type='html'
+    results = chunk_repository.get_by_table_type("html")
+
+    assert len(results) >= 1
+    assert all(c.table_type == "html" for c in results)
+
+
+def test_get_non_table_chunks(chunk_repository: ChunkRepository, db_session: Session):
+    """Test retrieving chunks that are not tables (is_table=False)."""
+    # Seed data has chunks 1-6 with is_table=False
+    results = chunk_repository.get_non_table_chunks()
+
+    assert len(results) >= 6
+    assert all(c.is_table is False for c in results)
+
+
+def test_chunk_is_table_default(chunk_repository: ChunkRepository, db_session: Session):
+    """Test that is_table defaults to False for new chunks."""
+    chunk = Chunk(contents="Test content without is_table")
+    db_session.add(chunk)
+    db_session.flush()
+
+    assert chunk.is_table is False
+    assert chunk.table_type is None
+
+    db_session.delete(chunk)
+    db_session.commit()
+
+
+def test_chunk_with_table_fields(chunk_repository: ChunkRepository, db_session: Session):
+    """Test creating a chunk with is_table=True and table_type."""
+    chunk = Chunk(contents="| A | B |", is_table=True, table_type="markdown")
+    db_session.add(chunk)
+    db_session.flush()
+
+    assert chunk.is_table is True
+    assert chunk.table_type == "markdown"
+
+    db_session.delete(chunk)
+    db_session.commit()

@@ -38,6 +38,8 @@ Table Chunk {
   contents text [not null]
   embedding vector(768)
   embeddings vector[](768)
+  is_table boolean [default: false]
+  table_type varchar(255) // markdown, xml, html
 }
 
 Table ImageChunk {
