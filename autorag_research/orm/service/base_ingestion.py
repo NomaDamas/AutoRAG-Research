@@ -226,7 +226,7 @@ class BaseIngestionService(BaseService, ABC):
         | TextMultiVectorEmbeddingFunc,
         batch_size: int,
         max_concurrency: int,
-        bm25_tokenizer: str | None = None,
+        bm25_tokenizer: str | None = "bert",
     ) -> int:
         """Generic method to embed entities (queries, chunks, or image chunks) with single or multi-vector embeddings.
 
@@ -236,8 +236,13 @@ class BaseIngestionService(BaseService, ABC):
             embed_func: Async function that takes data and returns embedding.
             batch_size: Number of entities to process per batch.
             max_concurrency: Maximum concurrent embedding calls.
-            bm25_tokenizer: Tokenizer for BM25 tokens (only for chunks). If None, skip BM25.
-                           Common values: "bert", "simple", etc.
+            bm25_tokenizer: Tokenizer for BM25 tokens (only for chunks/queries). Set to None to skip.
+                Available tokenizers (pg_tokenizer pre-built models):
+                    - "bert": bert-base-uncased (Hugging Face) - Default
+                    - "wiki_tocken": Wikitext-103 trained model
+                    - "gemma2b": Google lightweight model (~100MB memory)
+                    - "llmlingua2": Microsoft summarization model (~200MB memory)
+                See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
 
         Returns:
             Total number of entities successfully embedded.
@@ -306,7 +311,7 @@ class BaseIngestionService(BaseService, ABC):
 
     def _populate_bm25_tokens(
         self,
-        tokenizer: str,
+        tokenizer: str = "bert",
         entity_type: Literal["chunk", "query"] = "chunk",
         batch_size: int = 1000,
     ) -> int:
