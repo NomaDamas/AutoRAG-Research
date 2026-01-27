@@ -33,7 +33,6 @@ Usage:
 import hashlib
 import io
 import logging
-import os
 import random
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -41,14 +40,11 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from PIL import Image
-from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.orm import scoped_session
 
 from autorag_research.orm.connection import DBConnection
-from autorag_research.orm.schema_factory import create_schema
 from autorag_research.orm.service.base_ingestion import BaseIngestionService
-from autorag_research.orm.util import create_database, drop_database, install_vector_extensions
 from tests.util import CheckResult, VerificationReport
 
 # Environment variables are loaded by conftest.py via load_dotenv()

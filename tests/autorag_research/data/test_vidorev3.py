@@ -36,7 +36,7 @@ class TestResolveChunker:
     def test_resolve_chunker_with_none_returns_default(self):
         """When chunker is None, return default SentenceSplitter."""
         chunker = _resolve_chunker(None)
-        assert chunker is None
+        assert isinstance(chunker, SentenceSplitter)
 
     def test_resolve_chunker_with_node_parser_returns_same(self):
         """When chunker is a NodeParser, return it unchanged."""
@@ -53,8 +53,18 @@ class TestResolveChunker:
         })
         chunker = _resolve_chunker(config)
         assert isinstance(chunker, SentenceSplitter)
-        assert chunker.chunk_size == 512
-        assert chunker.chunk_overlap == 64
+
+    def test_resolve_chunker_with_dict_instantiates(self):
+        """When chunker is a dict with _target_, convert to DictConfig and instantiate."""
+        config = {
+            "_target_": "llama_index.core.node_parser.SentenceSplitter",
+            "chunk_size": 256,
+            "chunk_overlap": 32,
+        }
+        chunker = _resolve_chunker(config)
+        assert isinstance(chunker, SentenceSplitter)
+        assert chunker.chunk_size == 256
+        assert chunker.chunk_overlap == 32
 
 
 class TestChunkMarkdown:
@@ -80,40 +90,52 @@ class TestChunkMarkdown:
 
 # ==================== Integration Tests ====================
 
-VIDOREV3_HR_CONFIG = IngestorTestConfig(
-    expected_query_count=10,
-    expected_image_chunk_count=50,  # ImageChunks from corpus pages
-    expected_chunk_count=50,  # Text chunks from Caption via LlamaIndex chunking (minimum, varies by text length)
-    chunk_count_is_minimum=True,  # Gold IDs always included, chunk count varies by text length.
-    check_files=True,
-    expected_file_count=1,
-    check_documents=True,
-    expected_document_count=1,
-    check_pages=True,
-    expected_page_count=50,
-    check_captions=True,
-    expected_caption_count=50,
-    check_retrieval_relations=True,
-    check_generation_gt=True,
-    generation_gt_required_for_all=True,  # All queries have answers in ViDoReV3
-    primary_key_type="bigint",  # corpus_id is int64
-    db_name="vidorev3_hr_test",
-)
-
 
 @pytest.mark.data
 class TestViDoReV3IngestorIntegration:
     """Integration tests using real ViDoReV3 dataset."""
 
-    def test_ingest_hr_subset(self):
+    @pytest.mark.parametrize(
+        "qrels_mode",
+        ["image-only", "text-only", "both"],
+    )
+    def test_ingest_hr_subset(self, qrels_mode: str):
         """Basic integration test - verify_all() handles all standard checks.
 
         Tests the 'hr' (Human Resources) configuration with a small subset.
         """
+        VIDOREV3_HR_CONFIG = IngestorTestConfig(
+            expected_query_count=10,
+            expected_image_chunk_count=50,  # ImageChunks from corpus pages
+            expected_chunk_count=50,
+            # Text chunks from Caption via LlamaIndex chunking (minimum, varies by text length)
+            chunk_count_is_minimum=True,  # Gold IDs always included, chunk count varies by text length.
+            check_files=True,
+            expected_file_count=1,
+            check_documents=True,
+            expected_document_count=1,
+            check_pages=True,
+            expected_page_count=50,
+            check_captions=True,
+            expected_caption_count=50,
+            check_retrieval_relations=True,
+            check_generation_gt=True,
+            generation_gt_required_for_all=True,  # All queries have answers in ViDoReV3
+            primary_key_type="bigint",  # corpus_id is int64
+            db_name="vidorev3_hr_test",
+        )
         with create_test_database(VIDOREV3_HR_CONFIG) as db:
             service = MultiModalIngestionService(db.session_factory, schema=db.schema)
 
-            ingestor = ViDoReV3Ingestor(config_name="hr")
+            ingestor = ViDoReV3Ingestor(
+                config_name="hr",
+                chunker={
+                    "_target_": "llama_index.core.node_parser.SentenceSplitter",
+                    "chunk_size": 128,
+                    "chunk_overlap": 16,
+                },
+                qrels_mode=qrels_mode,
+            )
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=VIDOREV3_HR_CONFIG.expected_query_count,
