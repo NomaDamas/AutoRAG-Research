@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS chunk (
 	table_type VARCHAR(255)
 );
 
-CREATE INDEX IF NOT EXISTS idx_chunk_bm25 ON chunk USING bm25 (bm25_tokens bm25_ops)
+CREATE INDEX IF NOT EXISTS idx_chunk_bm25 ON chunk USING bm25 (bm25_tokens bm25_ops);
 
 -- ImageChunk
 -- embeddings column supports VectorChord's MaxSim operator (@#) for late interaction models
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS query (
     query_to_llm TEXT,
 	generation_gt TEXT[],
 	embedding VECTOR(768),
-	embeddings VECTOR(768)[]  -- Multi-vector for ColBERT/ColPali style retrieval
+	embeddings VECTOR(768)[],  -- Multi-vector for ColBERT/ColPali style retrieval
     bm25_tokens bm25vector  -- Tokenized sparse vector for BM25 retrieval
 );
 
