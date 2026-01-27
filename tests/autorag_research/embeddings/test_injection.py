@@ -27,14 +27,14 @@ class TestLoadEmbeddingModel:
             load_embedding_model("nonexistent")
 
     @patch("hydra.utils.instantiate")
-    def test_raises_type_error_for_wrong_type(self, mock_instantiate: MagicMock, real_config_path: Path) -> None:
+    def test_raises_type_error_for_wrong_type(self, mock_instantiate: MagicMock) -> None:
         """Raises TypeError when instantiated object is not BaseEmbedding."""
         mock_instantiate.return_value = "not an embedding"
 
         with pytest.raises(TypeError, match="BaseEmbedding"):
             load_embedding_model("openai-small")
 
-    def test_returns_embedding_instance(self, real_config_path: Path) -> None:
+    def test_returns_embedding_instance(self) -> None:
         """Returns BaseEmbedding instance when config is valid."""
         from llama_index.core.base.embeddings.base import BaseEmbedding
 
@@ -73,7 +73,7 @@ class TestHealthCheckEmbedding:
 class TestGetCachedEmbeddingModel:
     """Tests for get_cached_embedding_model function."""
 
-    def test_caches_embedding_model(self, real_config_path: Path) -> None:
+    def test_caches_embedding_model(self) -> None:
         """Same config name returns same cached instance."""
 
         clear_embedding_cache()
@@ -85,7 +85,7 @@ class TestGetCachedEmbeddingModel:
         assert "mock" in _embedding_model_cache
         clear_embedding_cache()
 
-    def test_clear_cache_removes_all(self, real_config_path: Path) -> None:
+    def test_clear_cache_removes_all(self) -> None:
         """clear_embedding_cache removes all cached models."""
         clear_embedding_cache()
         get_cached_embedding_model("mock")
@@ -98,7 +98,7 @@ class TestGetCachedEmbeddingModel:
 class TestWithEmbeddingDecorator:
     """Tests for with_embedding decorator."""
 
-    def test_string_to_instance_conversion(self, real_config_path: Path) -> None:
+    def test_string_to_instance_conversion(self) -> None:
         """Decorator converts string config name to BaseEmbedding instance."""
 
         clear_embedding_cache()
@@ -123,7 +123,7 @@ class TestWithEmbeddingDecorator:
         result = my_func(embedding_model=mock_model)
         assert result is mock_model
 
-    def test_caching_same_config(self, real_config_path: Path) -> None:
+    def test_caching_same_config(self) -> None:
         """Decorator uses cached model for same config name."""
         clear_embedding_cache()
         results = []
