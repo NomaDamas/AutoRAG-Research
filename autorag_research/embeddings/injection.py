@@ -4,14 +4,17 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 from omegaconf import OmegaConf
 
 from autorag_research.cli.utils import get_config_dir
+from autorag_research.embeddings.base import MultiVectorBaseEmbedding
 
 logger = logging.getLogger("AutoRAG-Research")
 
+EMBEDDING_MODEL_TYPES = BaseEmbedding | MultiVectorBaseEmbedding
+
 # Module-level cache for embedding model instances
-_embedding_model_cache: dict[str, "BaseEmbedding"] = {}
+_embedding_model_cache: dict[str, EMBEDDING_MODEL_TYPES] = {}
 
 
-def load_embedding_model(config_name: str) -> "BaseEmbedding":
+def load_embedding_model(config_name: str) -> EMBEDDING_MODEL_TYPES:
     """Load LlamaIndex embedding model directly from YAML via Hydra instantiate.
 
     Args:
@@ -39,7 +42,7 @@ def load_embedding_model(config_name: str) -> "BaseEmbedding":
     return model
 
 
-def get_cached_embedding_model(config_name: str) -> "BaseEmbedding":
+def get_cached_embedding_model(config_name: str) -> EMBEDDING_MODEL_TYPES:
     """Get or create a cached embedding model instance.
 
     Args:
@@ -98,9 +101,10 @@ def with_embedding(param_name: str = "embedding_model"):
                 value = bound.arguments[param_name]
                 if isinstance(value, str):
                     bound.arguments[param_name] = get_cached_embedding_model(value)
-                elif not isinstance(value, BaseEmbedding):
-                    raise TypeError(f"'{param_name}' must be string or BaseEmbedding, got {type(value).__name__}")  # noqa: TRY003
-                # BaseEmbedding instance: pass through unchanged
+                elif not isinstance(value, BaseEmbedding) and not isinstance(value, MultiVectorBaseEmbedding):
+                    raise TypeError(  # noqa: TRY003
+                        f"'{param_name}' must be string, BaseEmbedding or MultiVectorBaseEmbedding, got {type(value).__name__}"
+                    )
             return func(*bound.args, **bound.kwargs)
 
         return wrapper
@@ -108,7 +112,7 @@ def with_embedding(param_name: str = "embedding_model"):
     return decorator
 
 
-def health_check_embedding(model: "BaseEmbedding") -> int:
+def health_check_embedding(model: EMBEDDING_MODEL_TYPES) -> int:
     """Health check embedding model and return embedding dimension.
 
     Args:
