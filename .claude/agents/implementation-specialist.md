@@ -74,6 +74,8 @@ from datasets import load_dataset
 
 6. **Modularity**: Break complex logic into small, focused private methods
 
+7. **Use Pandas**: It is always preferred to use Pandas for data manipulation when applicable
+
 ## Constraints You Must Follow
 
 - **File Location**: Always create files in `autorag_research/data/`

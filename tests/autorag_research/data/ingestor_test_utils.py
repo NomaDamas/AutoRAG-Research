@@ -180,7 +180,7 @@ class IngestorTestVerifier:
         self.service = service
         self.schema = schema
         self.config = config
-        self._rng = random.Random(RANDOM_SEED)  # noqa: S311
+        self._rng = random.Random(RANDOM_SEED)
 
     def verify_all(self) -> VerificationReport:
         """Run all configured checks and return detailed report.
