@@ -22,7 +22,7 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from autorag_research.cli.utils import discover_embedding_configs
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.embeddings.injection import health_check_embedding, load_embedding_model
+from autorag_research.injection import health_check_embedding, load_embedding_model
 from autorag_research.orm.connection import DBConnection
 
 if TYPE_CHECKING:
