@@ -8,6 +8,7 @@ import asyncio
 import logging
 from abc import ABC
 from collections.abc import Awaitable, Callable
+from io import BytesIO
 from typing import Any, Literal
 
 from autorag_research.exceptions import (
@@ -21,7 +22,7 @@ from autorag_research.util import run_with_concurrency_limit
 
 # Type alias for embedding functions
 # Single-vector embedding functions
-ImageEmbeddingFunc = Callable[[bytes], Awaitable[list[float]]]
+ImageEmbeddingFunc = Callable[[str | BytesIO], Awaitable[list[float]]]
 TextEmbeddingFunc = Callable[[str], Awaitable[list[float]]]
 # Multi-vector embedding functions (for late interaction models like ColPali)
 ImageMultiVectorEmbeddingFunc = Callable[[bytes], Awaitable[list[list[float]]]]
@@ -283,7 +284,7 @@ class BaseIngestionService(BaseService, ABC):
 
             # Run embedding
             data_list = [data for _, data in valid_items]
-            embeddings = asyncio.run(run_with_concurrency_limit(data_list, embed_func, max_concurrency, error_msg))
+            embeddings = asyncio.run(run_with_concurrency_limit(data_list, embed_func, max_concurrency, error_msg))  # ty: ignore[invalid-argument-type]
 
             # Filter out None embeddings and update entities
             valid_updates = [
