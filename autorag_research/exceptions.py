@@ -27,6 +27,13 @@ class EmbeddingNotSetError(Exception):
         super().__init__("Embedding model is not set.")
 
 
+class LLMNotSetError(Exception):
+    """Raised when the LLM model is not set."""
+
+    def __init__(self):
+        super().__init__("LLM model is not set.")
+
+
 class SessionNotSetError(Exception):
     """Raised when the database session is not set."""
 
