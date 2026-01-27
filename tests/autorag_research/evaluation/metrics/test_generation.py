@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -208,6 +209,19 @@ def test_sem_score_other_model():
         metric_inputs=similarity_generation_metric_inputs,
         embedding_model=OpenAIEmbedding(),
     )
+    assert len(scores) == len(generation_gts)
+    assert all(isinstance(score, float) for score in scores)
+
+
+def test_sem_score_from_string_configs():
+    from autorag_research import cli
+
+    cli.CONFIG_PATH = Path(__file__).parent.parent.parent.parent.parent / "configs"
+    scores = sem_score(
+        metric_inputs=similarity_generation_metric_inputs,
+        embedding_model="mock",
+    )
+
     assert len(scores) == len(generation_gts)
     assert all(isinstance(score, float) for score in scores)
 
