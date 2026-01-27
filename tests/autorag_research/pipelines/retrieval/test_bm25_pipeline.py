@@ -3,25 +3,18 @@
 Tests the BM25 retrieval pipeline logic using mocked BM25 search.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
+from autorag_research.orm.schema import Chunk
 from autorag_research.pipelines.retrieval.bm25 import BM25RetrievalPipeline
 from tests.autorag_research.pipelines.pipeline_test_utils import (
     PipelineTestConfig,
     PipelineTestVerifier,
 )
-
-
-def _create_mock_chunk(chunk_id: int, contents: str) -> MagicMock:
-    """Create a mock Chunk object."""
-    mock = MagicMock()
-    mock.id = chunk_id
-    mock.contents = contents
-    return mock
 
 
 class TestBM25RetrievalPipeline:
@@ -85,11 +78,11 @@ class TestBM25RetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test single query retrieval with mocked BM25 search."""
-        # Mock BM25 search results: (chunk_obj, score)
+        # Use actual Chunk model instances for mock results
         mock_results = [
-            (_create_mock_chunk(1, "Machine learning content"), 0.95),
-            (_create_mock_chunk(2, "Deep learning content"), 0.85),
-            (_create_mock_chunk(3, "Neural network content"), 0.75),
+            (Chunk(id=1, contents="Machine learning content"), 0.95),
+            (Chunk(id=2, contents="Deep learning content"), 0.85),
+            (Chunk(id=3, contents="Neural network content"), 0.75),
         ]
 
         with patch("autorag_research.orm.repository.chunk.ChunkRepository.bm25_search") as mock_search:
@@ -123,10 +116,10 @@ class TestBM25RetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test running the full pipeline with mocked BM25 search."""
-        # Mock returns results for each query (seed data has 5 queries)
+        # Use actual Chunk model instances for mock results
         mock_results = [
-            (_create_mock_chunk(1, "Content 1"), 0.9),
-            (_create_mock_chunk(2, "Content 2"), 0.8),
+            (Chunk(id=1, contents="Content 1"), 0.9),
+            (Chunk(id=2, contents="Content 2"), 0.8),
         ]
 
         with patch("autorag_research.orm.repository.chunk.ChunkRepository.bm25_search") as mock_search:
@@ -160,9 +153,10 @@ class TestBM25RetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test that results are correctly persisted in database."""
+        # Use actual Chunk model instances for mock results
         mock_results = [
-            (_create_mock_chunk(1, "Content 1"), 0.95),
-            (_create_mock_chunk(2, "Content 2"), 0.85),
+            (Chunk(id=1, contents="Content 1"), 0.95),
+            (Chunk(id=2, contents="Content 2"), 0.85),
         ]
 
         with patch("autorag_research.orm.repository.chunk.ChunkRepository.bm25_search") as mock_search:
