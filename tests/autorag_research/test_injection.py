@@ -6,7 +6,7 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.embeddings.mock_embed_model import MockEmbedding
 
 from autorag_research import cli
-from autorag_research.embeddings.injection import (
+from autorag_research.injection import (
     _embedding_model_cache,
     clear_embedding_cache,
     get_cached_embedding_model,

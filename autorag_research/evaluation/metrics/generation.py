@@ -12,9 +12,9 @@ from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
 
 from autorag_research.config import BaseGenerationMetricConfig
-from autorag_research.embeddings.injection import with_embedding
 from autorag_research.evaluation.metrics.util import calculate_cosine_similarity, metric_loop
 from autorag_research.exceptions import EmbeddingNotSetError
+from autorag_research.injection import with_embedding
 from autorag_research.schema import MetricInput
 from autorag_research.util import convert_inputs_to_list, truncate_texts, unpack_and_run
 
