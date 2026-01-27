@@ -1,25 +1,15 @@
-"""Test cases for BM25DBModule.
+"""Test cases for BM25Module.
 
 Tests the VectorChord-BM25 based BM25 retrieval module.
 These tests require the vchord_bm25 and pg_tokenizer extensions to be installed.
 """
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.nodes.retrieval.bm25 import BM25Module
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.schema import Chunk
-
-
-def _check_bm25_extensions(session: Session) -> bool:
-    """Check if VectorChord-BM25 extensions are available."""
-    try:
-        result = session.execute(text("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vchord_bm25')"))
-        return bool(result.scalar())
-    except Exception:
-        return False
 
 
 def _populate_bm25_tokens(session: Session, tokenizer: str = "bert") -> None:
@@ -30,14 +20,8 @@ def _populate_bm25_tokens(session: Session, tokenizer: str = "bert") -> None:
 
 
 @pytest.fixture
-def bm25_enabled(db_session: Session) -> bool:
-    """Check if BM25 extensions are available."""
-    return _check_bm25_extensions(db_session)
-
-
-@pytest.fixture
 def bm25_module(session_factory: sessionmaker[Session]) -> BM25Module:
-    """Create a BM25DBModule instance for testing."""
+    """Create a BM25Module instance for testing."""
     return BM25Module(
         session_factory=session_factory,
         tokenizer="bert",
@@ -45,11 +29,11 @@ def bm25_module(session_factory: sessionmaker[Session]) -> BM25Module:
     )
 
 
-class TestBM25DBModule:
-    """Tests for BM25DBModule."""
+class TestBM25Module:
+    """Tests for BM25Module."""
 
     def test_module_initialization(self, session_factory: sessionmaker[Session]):
-        """Test BM25DBModule initialization."""
+        """Test BM25Module initialization."""
         module = BM25Module(
             session_factory=session_factory,
             tokenizer="bert",
@@ -65,20 +49,12 @@ class TestBM25DBModule:
         results = bm25_module.run([], top_k=5)
         assert results == []
 
-    @pytest.mark.skipif(
-        "not config.getoption('--run-bm25', default=False)",
-        reason="BM25 tests require --run-bm25 flag and VectorChord-BM25 extension",
-    )
     def test_run_single_query(
         self,
         bm25_module: BM25Module,
         db_session: Session,
-        bm25_enabled: bool,
     ):
         """Test running with a single query."""
-        if not bm25_enabled:
-            pytest.skip("VectorChord-BM25 extension not available")
-
         # Create test chunks
         test_chunks = [
             Chunk(id=910001, contents="Introduction to machine learning algorithms", parent_caption=None),
@@ -111,20 +87,12 @@ class TestBM25DBModule:
                     db_session.delete(db_chunk)
             db_session.commit()
 
-    @pytest.mark.skipif(
-        "not config.getoption('--run-bm25', default=False)",
-        reason="BM25 tests require --run-bm25 flag and VectorChord-BM25 extension",
-    )
     def test_run_multiple_queries(
         self,
         bm25_module: BM25Module,
         db_session: Session,
-        bm25_enabled: bool,
     ):
         """Test running with multiple queries."""
-        if not bm25_enabled:
-            pytest.skip("VectorChord-BM25 extension not available")
-
         # Create test chunks
         test_chunks = [
             Chunk(id=910011, contents="Python programming basics and syntax", parent_caption=None),
