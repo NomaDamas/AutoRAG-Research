@@ -37,8 +37,11 @@ class VectorArrayType(UserDefinedType):
         """
         self.dim = dim
 
-    def get_col_spec(self) -> str:
+    def get_col_spec(self, **kw: Any) -> str:
         """Return the column specification for PostgreSQL.
+
+        Args:
+            **kw: Additional keyword arguments (unused, for SQLAlchemy compatibility).
 
         Returns:
             PostgreSQL type specification string.

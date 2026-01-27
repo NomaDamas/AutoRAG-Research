@@ -140,10 +140,16 @@ INSERT INTO chunk_retrieved_result (query_id, pipeline_id, chunk_id, rel_score) 
 	(2, 2, 3, 0.4)
 ON CONFLICT DO NOTHING;
 
--- Summary
+-- Summary (retrieval metrics)
 INSERT INTO summary (pipeline_id, metric_id, metric_result, token_usage, execution_time, result_metadata) VALUES
 	(1, 1, 0.82, '{"prompt_tokens": 110, "completion_tokens": 110, "total_tokens": 220, "embedding_tokens": 0}', 2600, '{"run": 1}'),
 	(2, 1, 0.85, '{"prompt_tokens": 60, "completion_tokens": 60, "total_tokens": 120, "embedding_tokens": 0}', 1400, '{"run": 1}')
+ON CONFLICT DO NOTHING;
+
+-- Summary (generation metrics - bleu)
+INSERT INTO summary (pipeline_id, metric_id, metric_result, token_usage, execution_time, result_metadata) VALUES
+	(1, 2, 0.55, '{"prompt_tokens": 100, "completion_tokens": 150, "total_tokens": 250, "embedding_tokens": 0}', 3000, '{"run": 1}'),
+	(2, 2, 0.62, '{"prompt_tokens": 120, "completion_tokens": 180, "total_tokens": 300, "embedding_tokens": 0}', 3200, '{"run": 1}')
 ON CONFLICT DO NOTHING;
 
 -- Advance sequences to max IDs to prevent conflicts on future inserts

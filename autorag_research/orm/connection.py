@@ -23,10 +23,17 @@ class DBConnection:
 
     @property
     def db_url(self) -> str:
-        """Construct the database URL."""
+        """Construct the SQLAlchemy database URL."""
         if self.database is None:
             return f"postgresql+psycopg://{self.username}:{self.password}@{self.host}:{self.port}"
         return f"postgresql+psycopg://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
+
+    @property
+    def duckdb_url(self) -> str:
+        """Construct the DuckDB-compatible PostgreSQL URL (without driver specification)."""
+        if self.database is None:
+            return f"postgresql://{self.username}:{self.password}@{self.host}:{self.port}"
+        return f"postgresql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
 
     def get_engine(self) -> Engine:
         """Create a SQLAlchemy engine using the connection configuration."""

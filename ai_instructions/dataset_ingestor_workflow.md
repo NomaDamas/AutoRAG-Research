@@ -247,9 +247,9 @@ autorag-research ingest my_dataset --help
 * [ ] **Human review completed** - Strategy explicitly approved via `/design-ingestor`.
 * [ ] **Tests written FIRST** based on design document.
 * [ ] Ingestor class implemented to pass the tests.
-* [ ] **`@register_ingestor` decorator 적용됨**.
-* [ ] **`Literal` 타입 힌트로 choices 정의됨**.
-* [ ] **CLI 옵션이 자동 생성되어 동작함**.
+* [ ] **`@register_ingestor` decorator is applied**.
+* [ ] **Define choices by `Literal` type**.
+* [ ] **New dataset ingestor is shown in the 'autorag-research list ingestors' cli command**.
 * [ ] Static analysis (Lint/Type) passed.
 * [ ] Integration tests pass against real data subsets.
 * [ ] Intermediate files removed or excluded from git.
