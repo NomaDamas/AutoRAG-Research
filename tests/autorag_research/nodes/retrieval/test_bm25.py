@@ -12,13 +12,6 @@ from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.schema import Chunk
 
 
-def _populate_bm25_tokens(session: Session, tokenizer: str = "bert") -> None:
-    """Helper to populate BM25 vectors for test chunks."""
-    repo = ChunkRepository(session)
-    repo.batch_update_bm25_tokens(tokenizer=tokenizer)
-    session.commit()
-
-
 @pytest.fixture
 def bm25_module(session_factory: sessionmaker[Session]) -> BM25Module:
     """Create a BM25Module instance for testing."""
@@ -66,7 +59,7 @@ class TestBM25Module:
 
         try:
             # Populate BM25 vectors
-            _populate_bm25_tokens(db_session, "bert")
+            ChunkRepository(db_session).batch_update_bm25_tokens(tokenizer="bert")
 
             # Run search
             results = bm25_module.run(["machine learning"], top_k=3)
@@ -104,7 +97,7 @@ class TestBM25Module:
 
         try:
             # Populate BM25 vectors
-            _populate_bm25_tokens(db_session, "bert")
+            ChunkRepository(db_session).batch_update_bm25_tokens(tokenizer="bert")
 
             # Run search with multiple queries
             results = bm25_module.run(["python programming", "database"], top_k=2)
