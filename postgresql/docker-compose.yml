@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       # Default to 5432 to match VectorChord docs; override via PG_PORT
-      - "${PG_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       # For PostgreSQL 18 the recommended data dir for performance is:
       # /var/lib/postgresql/18/docker
