@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
+DEFAULT_BM25_INDEX_NAME = "idx_chunk_bm25"
+
 
 @dataclass(kw_only=True)
 class BM25PipelineConfig(BaseRetrievalPipelineConfig):
@@ -45,7 +47,7 @@ class BM25PipelineConfig(BaseRetrievalPipelineConfig):
 
     See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
     """
-    index_name: str = "idx_chunk_bm25"
+    index_name: str = DEFAULT_BM25_INDEX_NAME
 
     def get_pipeline_class(self) -> type["BM25RetrievalPipeline"]:
         """Return the BM25RetrievalPipeline class."""
@@ -96,7 +98,7 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
         session_factory: sessionmaker[Session],
         name: str,
         tokenizer: str = "bert",
-        index_name: str = "idx_chunk_bm25",
+        index_name: str = DEFAULT_BM25_INDEX_NAME,
         schema: Any | None = None,
     ):
         """Initialize BM25 retrieval pipeline.
