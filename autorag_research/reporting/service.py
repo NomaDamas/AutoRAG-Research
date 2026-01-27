@@ -306,7 +306,7 @@ class ReportingService:
         pivoted = df.pivot(index="pipeline", columns="metric", values="score")
         pivoted["Average"] = pivoted.mean(axis=1)
         pivoted = pivoted.sort_values("Average", ascending=False).reset_index()
-        pivoted.insert(0, "rank", range(1, len(pivoted) + 1))
+        pivoted.insert(0, "rank", list(range(1, len(pivoted) + 1)))  # ty: ignore[invalid-argument-type]
 
         # Round numeric columns for display
         numeric_cols = pivoted.select_dtypes(include=["float64"]).columns

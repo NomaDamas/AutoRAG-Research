@@ -270,7 +270,7 @@ class DBConnection:
         return cls(
             host=host,
             port=port,
-            username=username,
-            password=password,
+            username=str(username),
+            password=str(password),
             database=database,
         )

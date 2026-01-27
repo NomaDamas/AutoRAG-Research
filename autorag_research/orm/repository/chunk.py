@@ -6,7 +6,7 @@ the base vector repository pattern for similarity search.
 
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from autorag_research.orm.repository.base import BaseEmbeddingRepository, BaseVectorRepository
@@ -206,3 +206,67 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         """
         stmt = select(self.model_cls).where(self.model_cls.is_table.is_(False))
         return list(self.session.execute(stmt).scalars().all())
+
+    def bm25_search(
+        self,
+        query_text: str,
+        index_name: str = "idx_chunk_bm25",
+        limit: int = 10,
+        tokenizer: str = "bert",
+    ) -> list[tuple[Any, float]]:
+        """Perform VectorChord BM25 search.
+
+        Uses VectorChord-BM25's <&> operator for full-text search.
+        Returns entities with their BM25 scores (converted to positive values).
+
+        Args:
+            query_text: The query text to search for.
+            index_name: Name of the BM25 index (default: "idx_chunk_bm25").
+            limit: Maximum number of results to return.
+            tokenizer: Tokenizer to use for query (default: "bert").
+                Available tokenizers (pg_tokenizer pre-built models):
+                    - "bert": bert-base-uncased (Hugging Face) - Default
+                    - "wiki_tocken": Wikitext-103 trained model
+                    - "gemma2b": Google lightweight model (~100MB memory)
+                    - "llmlingua2": Microsoft summarization model (~200MB memory)
+                See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
+
+        Returns:
+            List of tuples (entity, score) ordered by relevance.
+            Higher scores indicate higher relevance.
+
+        Note:
+            BM25 scores from VectorChord are negative (more negative = more relevant).
+            This method negates the scores so higher = more relevant.
+        """
+        table_name = self.model_cls.__tablename__
+
+        # BM25 search query using <&> operator with to_bm25query
+        sql = text(f"""
+            SELECT id,
+                   bm25_tokens <&> to_bm25query(:index_name, tokenize(:query, :tokenizer)::bm25vector) AS score
+            FROM {table_name}
+            WHERE bm25_tokens IS NOT NULL
+            ORDER BY score
+            LIMIT :limit
+        """)  # noqa: S608
+
+        result = self.session.execute(
+            sql,
+            {"index_name": index_name, "query": query_text, "tokenizer": tokenizer, "limit": limit},
+        )
+        rows = result.fetchall()
+
+        # Build id -> score mapping (negate scores so higher = better)
+        id_to_score = {row[0]: -float(row[1]) for row in rows}
+
+        # Fetch all entities in single query
+        entities = self.get_by_ids(list(id_to_score.keys()))
+        id_to_entity = {entity.id: entity for entity in entities}
+
+        # Return entities with scores, sorted by score descending (higher = better)
+        return sorted(
+            [(id_to_entity[eid], score) for eid, score in id_to_score.items() if eid in id_to_entity],
+            key=lambda x: x[1],
+            reverse=True,
+        )
