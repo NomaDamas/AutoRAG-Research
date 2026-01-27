@@ -75,6 +75,7 @@ class TestChunkMarkdown:
         assert len(result) > 0
         assert all(isinstance(c, str) for c in result)
 
+
 # ==================== Integration Tests ====================
 
 VIDOREV3_HR_CONFIG = IngestorTestConfig(
@@ -266,9 +267,7 @@ class TestViDoReV3IngestorIntegration:
                 chunks = uow.chunks.get_all(limit=100)
                 if chunks:
                     for chunk in chunks:
-                        assert chunk.parent_caption is not None, (
-                            f"Chunk {chunk.id} should have parent_caption FK set"
-                        )
+                        assert chunk.parent_caption is not None, f"Chunk {chunk.id} should have parent_caption FK set"
                         # Verify the parent caption exists
                         caption = uow.captions.get_by_id(chunk.parent_caption)
                         assert caption is not None, (
@@ -284,14 +283,10 @@ class TestViDoReV3IngestorIntegration:
                 captions = uow.captions.get_all(limit=100)
                 if captions:
                     for caption in captions:
-                        assert caption.page_id is not None, (
-                            f"Caption {caption.id} should have page_id FK set"
-                        )
+                        assert caption.page_id is not None, f"Caption {caption.id} should have page_id FK set"
                         # Verify parent page exists
                         page = uow.pages.get_by_id(caption.page_id)
-                        assert page is not None, (
-                            f"Caption {caption.id} references non-existent page {caption.page_id}"
-                        )
+                        assert page is not None, f"Caption {caption.id} references non-existent page {caption.page_id}"
 
     def test_image_chunk_has_parent_page(self):
         """Test ImageChunk -> Page relationship.

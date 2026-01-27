@@ -42,6 +42,7 @@ def _resolve_chunker(chunker: NodeParser | DictConfig | None) -> NodeParser:
         return instantiate(chunker)
     return chunker
 
+
 VIDOREV3_CONFIGS = Literal[
     "hr",
     "finance_en",
@@ -123,18 +124,14 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         gold_corpus_ids = self._extract_gold_corpus_ids(selected_queries_df)
         additional_needed = self._calculate_additional_corpus_needed(gold_corpus_ids, min_corpus_cnt)
 
-        corpus_ids_to_ingest = self._determine_corpus_ids_to_ingest(
-            corpus_mapping, gold_corpus_ids, additional_needed
-        )
+        corpus_ids_to_ingest = self._determine_corpus_ids_to_ingest(corpus_mapping, gold_corpus_ids, additional_needed)
 
         required_doc_ids = self._get_required_doc_ids(corpus_mapping, corpus_ids_to_ingest)
         filtered_docs_metadata = docs_metadata[docs_metadata.index.isin(required_doc_ids)]
 
         doc_id_to_db_id = self._ingest_document_hierarchy(filtered_docs_metadata)
 
-        ingested_corpus_ids = self._ingest_corpus(
-            dataset_path, corpus_ids_to_ingest, resolved_chunker, doc_id_to_db_id
-        )
+        ingested_corpus_ids = self._ingest_corpus(dataset_path, corpus_ids_to_ingest, resolved_chunker, doc_id_to_db_id)
 
         self._ingest_queries(selected_queries_df, queries_df)
         self._ingest_qrels(selected_queries_df, query_types_map, ingested_corpus_ids)
@@ -199,9 +196,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
             gold_corpus_ids.update(corpus_list)
         return gold_corpus_ids
 
-    def _calculate_additional_corpus_needed(
-        self, gold_corpus_ids: set[int], min_corpus_cnt: int | None
-    ) -> int:
+    def _calculate_additional_corpus_needed(self, gold_corpus_ids: set[int], min_corpus_cnt: int | None) -> int:
         if min_corpus_cnt is not None and min_corpus_cnt > len(gold_corpus_ids):
             return min_corpus_cnt - len(gold_corpus_ids)
         return 0
@@ -215,23 +210,13 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         corpus_ids_to_ingest = set(gold_ids)
 
         if additional_needed > 0:
-            gold_doc_ids = {
-                str(corpus_mapping.loc[cid, "doc_id"])
-                for cid in gold_ids
-                if cid in corpus_mapping.index
-            }
+            gold_doc_ids = {str(corpus_mapping.loc[cid, "doc_id"]) for cid in gold_ids if cid in corpus_mapping.index}
 
             all_corpus_ids = set(corpus_mapping.index)
             non_gold_ids = list(all_corpus_ids - gold_ids)
 
-            same_doc_ids = [
-                cid for cid in non_gold_ids
-                if str(corpus_mapping.loc[cid, "doc_id"]) in gold_doc_ids
-            ]
-            other_doc_ids = [
-                cid for cid in non_gold_ids
-                if str(corpus_mapping.loc[cid, "doc_id"]) not in gold_doc_ids
-            ]
+            same_doc_ids = [cid for cid in non_gold_ids if str(corpus_mapping.loc[cid, "doc_id"]) in gold_doc_ids]
+            other_doc_ids = [cid for cid in non_gold_ids if str(corpus_mapping.loc[cid, "doc_id"]) not in gold_doc_ids]
 
             rng = random.Random(RANDOM_SEED)  # noqa: S311
             rng.shuffle(same_doc_ids)
@@ -257,10 +242,12 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
             doc_id_str = str(doc_id)
             url = row.get("url", "")
 
-            file_ids = self.service.add_files([{
-                "type": "raw",
-                "path": url if url else "",
-            }])
+            file_ids = self.service.add_files([
+                {
+                    "type": "raw",
+                    "path": url if url else "",
+                }
+            ])
             file_db_id = file_ids[0] if file_ids else None
 
             file_name = row.get("file_name", "")
@@ -270,22 +257,24 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
             if hasattr(visual_types, "tolist"):
                 visual_types = visual_types.tolist()
 
-            doc_ids = self.service.add_documents([{
-                "path": file_db_id,
-                "filename": file_name,
-                "title": title,
-                "author": None,
-                "doc_metadata": {
-                    "url": url,
-                    "doc_type": row.get("doc_type"),
-                    "doc_language": row.get("doc_language"),
-                    "doc_year": row.get("doc_year"),
-                    "visual_types": visual_types,
-                    "page_count": row.get("page_number"),
-                    "license": row.get("license"),
-                    "original_doc_id": doc_id_str,
-                },
-            }])
+            doc_ids = self.service.add_documents([
+                {
+                    "path": file_db_id,
+                    "filename": file_name,
+                    "title": title,
+                    "author": None,
+                    "doc_metadata": {
+                        "url": url,
+                        "doc_type": row.get("doc_type"),
+                        "doc_language": row.get("doc_language"),
+                        "doc_year": row.get("doc_year"),
+                        "visual_types": visual_types,
+                        "page_count": row.get("page_number"),
+                        "license": row.get("license"),
+                        "original_doc_id": doc_id_str,
+                    },
+                }
+            ])
 
             if doc_ids:
                 doc_id_to_db_id[doc_id_str] = doc_ids[0]
@@ -324,22 +313,26 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
 
             page_key = (doc_id, page_num)
             if page_key not in page_key_to_db_id:
-                page_ids = self.service.add_pages([{
-                    "document_id": doc_db_id,
-                    "page_num": page_num,
-                    "image_contents": img_bytes,
-                    "mimetype": mimetype,
-                }])
+                page_ids = self.service.add_pages([
+                    {
+                        "document_id": doc_db_id,
+                        "page_num": page_num,
+                        "image_contents": img_bytes,
+                        "mimetype": mimetype,
+                    }
+                ])
                 if page_ids:
                     page_key_to_db_id[page_key] = page_ids[0]
 
             page_db_id = page_key_to_db_id.get(page_key)
 
             if markdown.strip() and page_db_id is not None:
-                caption_ids = self.service.add_captions([{
-                    "page_id": page_db_id,
-                    "contents": markdown,
-                }])
+                caption_ids = self.service.add_captions([
+                    {
+                        "page_id": page_db_id,
+                        "contents": markdown,
+                    }
+                ])
                 caption_db_id = caption_ids[0] if caption_ids else None
 
                 if caption_db_id is not None:
@@ -355,12 +348,14 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
                         ]
                         self.service.add_chunks(chunks_data)
 
-            self.service.add_image_chunks([{
-                "id": corpus_id,
-                "contents": img_bytes,
-                "mimetype": mimetype,
-                "parent_page": page_db_id,
-            }])
+            self.service.add_image_chunks([
+                {
+                    "id": corpus_id,
+                    "contents": img_bytes,
+                    "mimetype": mimetype,
+                    "parent_page": page_db_id,
+                }
+            ])
 
             ingested_ids.add(corpus_id)
 
