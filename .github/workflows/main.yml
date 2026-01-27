@@ -33,7 +33,7 @@ jobs:
       fail-fast: false
     services:
       postgres:
-        image: tensorchord/vchord-postgres:pg18-v1.0.0
+        image: tensorchord/vchord-suite:pg18-latest
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -71,9 +71,6 @@ jobs:
         uses: ./.github/actions/setup-python-env
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Build BM25 test index
-        run: uv run python tests/resources/build_bm25_index.py
 
       - name: Initialize PostgreSQL database
         run: |

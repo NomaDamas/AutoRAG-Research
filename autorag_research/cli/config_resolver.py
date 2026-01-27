@@ -45,7 +45,8 @@ class ConfigResolver:
             if isinstance(names, str):
                 names = [names]
             for name in names:
-                configs.append(self.resolve_config([self.config_dir, base_dir, subdir], name))
+                dirs: list[str | Path] = [self.config_dir, base_dir, str(subdir)]
+                configs.append(self.resolve_config(dirs, name))
         return configs
 
     def resolve_config(self, dirs: list[str | Path], name: str) -> DictConfig:

@@ -201,10 +201,10 @@ def database_exists(
         return _database_exists(conn, database)
 
 
-# SQL to install vector extensions with fallback (vchord -> vectors -> vector)
 _INSTALL_VECTOR_EXTENSIONS_SQL = """
 DO $$
 BEGIN
+    -- 1. Base vector extensions (priority: vchord -> vectors -> vector fallback)
     BEGIN
         CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
     EXCEPTION WHEN others THEN
@@ -217,6 +217,20 @@ BEGIN
     END;
     BEGIN
         CREATE EXTENSION IF NOT EXISTS vector;
+    EXCEPTION WHEN others THEN
+        PERFORM 1;
+    END;
+
+    -- 2. Tokenizer (dependency for vchord_bm25)
+    BEGIN
+        CREATE EXTENSION IF NOT EXISTS pg_tokenizer;
+    EXCEPTION WHEN others THEN
+        PERFORM 1;
+    END;
+
+    -- 3. BM25 extension (install after tokenizer)
+    BEGIN
+        CREATE EXTENSION IF NOT EXISTS vchord_bm25;
     EXCEPTION WHEN others THEN
         PERFORM 1;
     END;

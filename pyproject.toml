@@ -63,9 +63,6 @@ gpu = [
     "torch>=2.8.0",
     "transformers>=4.57.1",
 ]
-search = [
-    "pyserini>=1.2.0",
-]
 reporting = [
     "duckdb>=1.0.0",
     "gradio>=6.0.0",
@@ -74,7 +71,6 @@ all = [
     "colpali-engine>=0.3.13",
     "torch>=2.8.0",
     "transformers>=4.57.1",
-    "pyserini>=1.2.0",
     "duckdb>=1.0.0",
     "gradio>=6.0.0",
 ]
