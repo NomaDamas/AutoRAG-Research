@@ -4,6 +4,7 @@ Implements Generic Repository + Unit of Work patterns for efficient
 CRUD operations and transaction management with SQLAlchemy.
 """
 
+import logging
 from contextlib import contextmanager
 from typing import Any, Generic, TypeVar, cast
 
@@ -14,6 +15,8 @@ from sqlalchemy.orm import Session
 from autorag_research.exceptions import LengthMismatchError, NoSessionError
 
 T = TypeVar("T")
+
+logger = logging.getLogger("AutoRAG-Research")
 
 
 class GenericRepository(Generic[T]):
@@ -584,9 +587,6 @@ class BaseEmbeddingRepository(GenericRepository[T]):
         Returns:
             Total number of entities updated.
         """
-        import logging
-
-        logger = logging.getLogger("AutoRAG-Research")
         table_name = self.model_cls.__tablename__  # ty: ignore[possibly-missing-attribute]
         total_updated = 0
 
