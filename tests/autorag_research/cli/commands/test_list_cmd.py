@@ -75,11 +75,9 @@ class TestPrintPipelines:
 class TestPrintMetrics:
     """Tests for print_metrics function."""
 
-    def test_displays_metrics(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
-    ) -> None:
+    def test_displays_metrics(self, capsys: pytest.CaptureFixture) -> None:
         """Displays available metrics from temp config."""
-        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
+        cli.CONFIG_PATH = Path(__file__).parent.parent.parent.parent.parent / "configs"
 
         print_metrics()
 

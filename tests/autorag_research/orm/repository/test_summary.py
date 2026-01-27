@@ -86,22 +86,28 @@ def test_compare_pipelines_by_metric(summary_repository: SummaryRepository):
 
 
 def test_delete_by_composite_key(summary_repository: SummaryRepository, db_session: Session):
-    new_summary = Summary(
-        pipeline_id=2,
-        metric_id=2,
-        metric_result=0.95,
-        token_usage=100,
-        execution_time=1000,
-        result_metadata={"test": "delete"},
-    )
-    summary_repository.add(new_summary)
-    db_session.flush()
-
-    deleted = summary_repository.delete_by_composite_key(2, 2)
+    deleted = summary_repository.delete_by_composite_key(2, 1)
     db_session.flush()
 
     assert deleted is True
-    assert summary_repository.get_by_composite_key(2, 2) is None
+    assert summary_repository.get_by_composite_key(2, 1) is None
+
+    # Restore
+    summary = Summary(
+        pipeline_id=2,
+        metric_id=1,
+        metric_result=0.85,
+        token_usage={
+            "prompt_tokens": 60,
+            "completion_tokens": 60,
+            "total_tokens": 120,
+            "embedding_tokens": 0,
+        },
+        execution_time=1400,
+        result_metadata={"run": 1},
+    )
+    summary_repository.add(summary)
+    db_session.flush()
 
 
 def test_exists_by_composite_key(summary_repository: SummaryRepository):
