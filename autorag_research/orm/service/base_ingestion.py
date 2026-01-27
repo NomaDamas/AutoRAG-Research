@@ -334,30 +334,25 @@ class BaseIngestionService(BaseService, ABC):
         Returns:
             Number of entities updated with BM25 tokens.
         """
-        from autorag_research.orm.repository.chunk import ChunkRepository
-        from autorag_research.orm.repository.query import QueryRepository
+        repo_attr = "chunks" if entity_type == "chunk" else "queries"
 
-        # Get model class based on entity type
-        model_key = "Chunk" if entity_type == "chunk" else "Query"
-        model_cls = self._get_schema_classes().get(model_key)
-        if model_cls is None:
-            logger.warning(f"{model_key} model not found in schema, skipping BM25 token generation")
-            return 0
+        with self._create_uow() as uow:
+            repository = getattr(uow, repo_attr, None)
+            if repository is None:
+                raise RepositoryNotSupportedError(repo_attr, type(uow).__name__)
 
-        # Select appropriate repository class
-        repo_cls = ChunkRepository if entity_type == "chunk" else QueryRepository
-
-        try:
-            with self.session_factory() as session:
-                repo = repo_cls(session, model_cls)
-                # Note: repo.batch_update_bm25_tokens commits internally per batch
-                updated = repo.batch_update_bm25_tokens(tokenizer=tokenizer, batch_size=batch_size)
+            try:
+                # Note: batch_update_bm25_tokens commits internally per batch
+                updated = repository.batch_update_bm25_tokens(tokenizer=tokenizer, batch_size=batch_size)
+            except Exception as e:
+                # VectorChord-BM25 extension may not be installed
+                logger.warning(
+                    f"Failed to generate BM25 tokens for {entity_type}s (extension may not be installed): {e}"
+                )
+                return 0
+            else:
                 logger.info(f"Generated BM25 tokens for {updated} {entity_type}s using tokenizer '{tokenizer}'")
                 return updated
-        except Exception as e:
-            # VectorChord-BM25 extension may not be installed
-            logger.warning(f"Failed to generate BM25 tokens for {entity_type}s (extension may not be installed): {e}")
-            return 0
 
     def embed_all_queries(
         self,
