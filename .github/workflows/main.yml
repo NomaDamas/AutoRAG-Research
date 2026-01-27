@@ -33,7 +33,7 @@ jobs:
       fail-fast: false
     services:
       postgres:
-        image: tensorchord/vchord-postgres:pg18-v1.0.0
+        image: tensorchord/vchord-suite:pg18-latest
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

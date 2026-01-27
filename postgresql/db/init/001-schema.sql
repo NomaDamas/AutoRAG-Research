@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS caption (
 
 -- Chunk
 -- embeddings column supports VectorChord's MaxSim operator (@#) for late interaction models
--- bm25_index column supports VectorChord-BM25 sparse retrieval (added conditionally)
+-- bm25_tokens column supports VectorChord-BM25 sparse retrieval (added conditionally)
 CREATE TABLE IF NOT EXISTS chunk (
 	id BIGSERIAL PRIMARY KEY,
 	parent_caption BIGINT REFERENCES caption(id),
