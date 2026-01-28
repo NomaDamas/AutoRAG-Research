@@ -22,7 +22,6 @@ from autorag_research.orm.models import (
     or_all_mixed,
     text,
 )
-from autorag_research.orm.models.retrieval_gt import _IntWrapper
 from autorag_research.util import pil_image_to_bytes, to_list
 
 logger = logging.getLogger("AutoRAG-Research")
@@ -115,11 +114,13 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
 
         doc_id_to_db_id = self._ingest_document_hierarchy(filtered_docs_metadata)
 
-        ingested_corpus_ids, corpus_to_chunks = self._ingest_corpus(dataset_path, corpus_ids_to_ingest, doc_id_to_db_id)
+        ingested_corpus_ids, corpus_to_text_chunk = self._ingest_corpus(
+            dataset_path, corpus_ids_to_ingest, doc_id_to_db_id
+        )
 
         self._ingest_queries(selected_query_ids, queries_df)
         self._ingest_qrels(
-            qrels_df, selected_query_ids, query_types_map, ingested_corpus_ids, corpus_to_chunks, self.qrels_mode
+            qrels_df, selected_query_ids, query_types_map, ingested_corpus_ids, corpus_to_text_chunk, self.qrels_mode
         )
 
         logger.info(
@@ -258,20 +259,20 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         dataset_path: str,
         corpus_ids_to_ingest: set[int],
         doc_id_to_db_id: dict[str, int],
-    ) -> tuple[set[int], dict[int, list[int | str]]]:
+    ) -> tuple[set[int], dict[int, int | str]]:
         """Ingest corpus items and return ingested IDs and corpus-to-chunk mapping.
 
         Returns:
-            A tuple of (ingested_corpus_ids, corpus_to_chunks) where:
+            A tuple of (ingested_corpus_ids, corpus_to_text_chunk) where:
             - ingested_corpus_ids: Set of successfully ingested corpus IDs
-            - corpus_to_chunks: Mapping from corpus_id to list of text chunk DB IDs
+            - corpus_to_text_chunk: Mapping from corpus_id to text chunk DB ID (1:1 relation)
         """
         if self.service is None:
             raise ServiceNotSetError
 
         corpus_ds = load_dataset(dataset_path, "corpus", streaming=True, split="test")
         ingested_ids: set[int] = set()
-        corpus_to_chunks: dict[int, list[int | str]] = {}
+        corpus_to_text_chunk: dict[int, int | str] = {}
 
         page_key_to_db_id: dict[tuple[str, int], int] = {}
 
@@ -312,7 +313,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
                 if caption_db_id is not None:
                     chunk_ids = self._create_text_chunk(markdown, caption_db_id)
                     if chunk_ids:
-                        corpus_to_chunks[corpus_id] = chunk_ids
+                        corpus_to_text_chunk[corpus_id] = chunk_ids[0]
 
             self.service.add_image_chunks([
                 {"id": corpus_id, "contents": img_bytes, "mimetype": mimetype, "parent_page": page_db_id}
@@ -320,7 +321,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
 
             ingested_ids.add(corpus_id)
 
-        return ingested_ids, corpus_to_chunks
+        return ingested_ids, corpus_to_text_chunk
 
     def _ingest_queries(
         self,
@@ -354,7 +355,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         selected_query_ids: list[int],
         query_types_map: dict[int, list[str]],
         ingested_corpus_ids: set[int],
-        corpus_to_chunks: dict[int, list[int | str]],
+        corpus_to_text_chunk: dict[int, int | str],
         qrels_mode: QrelsMode,
     ) -> None:
         """Ingest query relevance relations based on qrels_mode.
@@ -364,7 +365,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
             selected_query_ids: List of query IDs to process
             query_types_map: Mapping from query_id to list of query types
             ingested_corpus_ids: Set of successfully ingested corpus IDs
-            corpus_to_chunks: Mapping from corpus_id to list of text chunk DB IDs
+            corpus_to_text_chunk: Mapping from corpus_id to text chunk DB ID (1:1 relation)
             qrels_mode: How to map qrels to chunks:
                 - "image-only": Map corpus_id to ImageChunk only
                 - "text-only": Map corpus_id to text Chunk(s) only
@@ -385,7 +386,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
             query_types = query_types_map.get(query_id, [])
             is_multi_hop = "multi-hop" in query_types
 
-            gt_expr = self._build_gt_expression(valid_corpus_ids, corpus_to_chunks, qrels_mode, is_multi_hop)
+            gt_expr = self._build_gt_expression(valid_corpus_ids, corpus_to_text_chunk, qrels_mode, is_multi_hop)
 
             if gt_expr is None:
                 continue
@@ -402,7 +403,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
     def _build_gt_expression(
         self,
         corpus_ids: list[int],
-        corpus_to_chunks: dict[int, list[int | str]],
+        corpus_to_text_chunk: dict[int, int | str],
         qrels_mode: QrelsMode,
         is_multi_hop: bool,
     ) -> RetrievalGT | None:
@@ -410,7 +411,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
 
         Args:
             corpus_ids: List of valid corpus IDs for the query
-            corpus_to_chunks: Mapping from corpus_id to list of text chunk DB IDs
+            corpus_to_text_chunk: Mapping from corpus_id to text chunk DB ID (1:1 relation)
             qrels_mode: How to map qrels to chunks
             is_multi_hop: Whether this is a multi-hop query (AND semantics)
 
@@ -420,9 +421,9 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         if qrels_mode == "image-only":
             return self._build_image_only_gt(corpus_ids, is_multi_hop)
         elif qrels_mode == "text-only":
-            return self._build_text_only_gt(corpus_ids, corpus_to_chunks, is_multi_hop)
+            return self._build_text_only_gt(corpus_ids, corpus_to_text_chunk, is_multi_hop)
         else:  # both
-            return self._build_both_gt(corpus_ids, corpus_to_chunks, is_multi_hop)
+            return self._build_both_gt(corpus_ids, corpus_to_text_chunk, is_multi_hop)
 
     def _build_image_only_gt(
         self,
@@ -436,42 +437,32 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
     def _build_text_only_gt(
         self,
         corpus_ids: list[int],
-        corpus_to_chunks: dict[int, list[int | str]],
+        corpus_to_text_chunk: dict[int, int | str],
         is_multi_hop: bool,
     ) -> RetrievalGT | None:
         """Build GT expression for text-only mode."""
+        chunk_ids = [corpus_to_text_chunk[cid] for cid in corpus_ids if cid in corpus_to_text_chunk]
+        if not chunk_ids:
+            return None
         if is_multi_hop:
-            # Each corpus_id's chunks form one AND group, within each group any chunk is valid (OR)
-            groups: list[OrGroup | TextId] = []
-            for corpus_id in corpus_ids:
-                chunk_ids = corpus_to_chunks.get(corpus_id, [])
-                if chunk_ids:
-                    groups.append(or_all(chunk_ids, text))  # type: ignore[arg-type]
-            if not groups:
-                return None
-            return and_all_mixed([g._to_chunk_id() if isinstance(g, _IntWrapper) else g for g in groups])  # type: ignore[return-value, arg-type]
+            return and_all(chunk_ids, text)
         else:
-            all_chunk_ids: list[int | str] = []
-            for corpus_id in corpus_ids:
-                all_chunk_ids.extend(corpus_to_chunks.get(corpus_id, []))
-            if not all_chunk_ids:
-                return None
-            return or_all(all_chunk_ids, text)
+            return or_all(chunk_ids, text)
 
     def _build_both_gt(
         self,
         corpus_ids: list[int],
-        corpus_to_chunks: dict[int, list[int | str]],
+        corpus_to_text_chunk: dict[int, int | str],
         is_multi_hop: bool,
     ) -> RetrievalGT | None:
         """Build GT expression for both mode (text and image chunks)."""
         if is_multi_hop:
-            # Multi-hop: (TextChunks OR ImageChunk) AND (TextChunks OR ImageChunk) ...
+            # Multi-hop: (TextChunk OR ImageChunk) AND (TextChunk OR ImageChunk) ...
             and_groups: list[OrGroup | TextId | ImageId] = []
             for corpus_id in corpus_ids:
-                chunk_ids = corpus_to_chunks.get(corpus_id, [])
-                items: list[TextId | ImageId] = [TextId(cid) for cid in chunk_ids]
-                items.append(ImageId(corpus_id))
+                items: list[TextId | ImageId] = [ImageId(corpus_id)]
+                if corpus_id in corpus_to_text_chunk:
+                    items.append(TextId(corpus_to_text_chunk[corpus_id]))
                 and_groups.append(or_all_mixed(items))
             if not and_groups:
                 return None
@@ -480,9 +471,9 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
             # Non-multi-hop: all text chunks and all image chunks are OR alternatives
             items: list[TextId | ImageId] = []
             for corpus_id in corpus_ids:
-                chunk_ids = corpus_to_chunks.get(corpus_id, [])
-                items.extend(TextId(cid) for cid in chunk_ids)
                 items.append(ImageId(corpus_id))
+                if corpus_id in corpus_to_text_chunk:
+                    items.append(TextId(corpus_to_text_chunk[corpus_id]))
             if not items:
                 return None
             return or_all_mixed(items)
