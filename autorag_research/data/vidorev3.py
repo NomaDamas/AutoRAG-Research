@@ -4,11 +4,7 @@ from typing import Any, Literal
 
 import pandas as pd
 from datasets import load_dataset
-from hydra.utils import instantiate
 from llama_index.core.embeddings import MultiModalEmbedding
-from llama_index.core.node_parser import NodeParser
-from llama_index.core.schema import Document
-from omegaconf import DictConfig
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
@@ -32,35 +28,9 @@ from autorag_research.util import pil_image_to_bytes, to_list
 logger = logging.getLogger("AutoRAG-Research")
 
 RANDOM_SEED = 42
-DEFAULT_CHUNK_SIZE = 1024
-DEFAULT_CHUNK_OVERLAP = 128
 
 # Type alias for qrels mapping mode
 QrelsMode = Literal["image-only", "text-only", "both"]
-
-
-def _resolve_chunker(chunker: NodeParser | DictConfig | dict | None) -> NodeParser:
-    """Resolve chunker from config or use default.
-
-    Args:
-        chunker: A NodeParser instance, a Hydra DictConfig with _target_, a dict with _target_, or None.
-
-    Returns:
-        A NodeParser instance ready to use for chunking.
-    """
-    # Import here to avoid linter removing unused import at module level
-    from llama_index.core.node_parser import SentenceSplitter
-
-    if chunker is None:
-        return SentenceSplitter(
-            chunk_size=DEFAULT_CHUNK_SIZE,
-            chunk_overlap=DEFAULT_CHUNK_OVERLAP,
-        )
-    if isinstance(chunker, dict):
-        chunker = DictConfig(chunker)
-    if isinstance(chunker, DictConfig):
-        return instantiate(chunker)
-    return chunker
 
 
 VIDOREV3_CONFIGS = Literal[
@@ -75,23 +45,6 @@ VIDOREV3_CONFIGS = Literal[
 ]
 
 
-def chunk_markdown(markdown: str, chunker: NodeParser) -> list[str]:
-    """Chunk markdown text using the provided NodeParser.
-
-    Args:
-        markdown: The markdown text to chunk.
-        chunker: A LlamaIndex NodeParser instance for splitting the text.
-
-    Returns:
-        A list of chunk strings.
-    """
-    if not markdown or not markdown.strip():
-        return []
-
-    nodes = chunker.get_nodes_from_documents([Document(text=markdown)])
-    return [node.get_content() for node in nodes if node.get_content().strip()]
-
-
 @register_ingestor(
     name="vidorev3",
     description="ViDoRe V3 visual document retrieval benchmark",
@@ -100,7 +53,6 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,
         config_name: VIDOREV3_CONFIGS,
-        chunker: NodeParser | DictConfig | dict | None = None,
         qrels_mode: QrelsMode = "image-only",
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
@@ -110,8 +62,6 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
 
         Args:
             config_name: config names for different ViDoReV3 datasets.
-            chunker: NodeParser instance, Hydra DictConfig with _target_, or None.
-                If None, does not use chunker (use full captions as single chunks).
             qrels_mode: How to map qrels to chunks. Options:
                 - "image-only" (default): Map corpus_id to ImageChunk only.
                 - "text-only": Map corpus_id to text Chunk(s) only.
@@ -121,7 +71,6 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         """
         super().__init__(embedding_model, late_interaction_embedding_model)
         self.config_name = config_name
-        self.chunker = _resolve_chunker(chunker)
         self.qrels_mode = qrels_mode
 
     def detect_primary_key_type(self) -> Literal["bigint", "string"]:
@@ -284,33 +233,25 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
 
         return doc_id_to_db_id
 
-    def _create_text_chunks(
+    def _create_text_chunk(
         self,
         markdown: str,
         caption_db_id: int,
-        chunker: NodeParser,
     ) -> list[int | str]:
-        """Create text chunks from markdown content.
+        """Create a single text chunk from markdown content (whole page = one chunk).
 
         Args:
-            markdown: The markdown text to chunk
+            markdown: The markdown text content
             caption_db_id: The parent caption DB ID
-            chunker: NodeParser for chunking
 
         Returns:
-            List of created chunk DB IDs
+            List containing the created chunk DB ID
         """
         if self.service is None:
             raise ServiceNotSetError
 
-        chunk_texts = chunk_markdown(markdown, chunker)
-        if chunk_texts:
-            chunks_data = [
-                {"parent_caption": caption_db_id, "contents": chunk_text, "is_table": False}
-                for chunk_text in chunk_texts
-            ]
-            return self.service.add_chunks(chunks_data)
-        return []
+        chunks_data = [{"parent_caption": caption_db_id, "contents": markdown, "is_table": False}]
+        return self.service.add_chunks(chunks_data)
 
     def _ingest_corpus(
         self,
@@ -334,7 +275,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
 
         page_key_to_db_id: dict[tuple[str, int], int] = {}
 
-        for row in corpus_ds:  # type: ignore[union-attr]
+        for row in corpus_ds:
             corpus_id = int(row["corpus_id"])
 
             if corpus_id not in corpus_ids_to_ingest:
@@ -369,7 +310,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
                 caption_db_id = caption_ids[0] if caption_ids else None
 
                 if caption_db_id is not None:
-                    chunk_ids = self._create_text_chunks(markdown, caption_db_id, self.chunker)
+                    chunk_ids = self._create_text_chunk(markdown, caption_db_id)
                     if chunk_ids:
                         corpus_to_chunks[corpus_id] = chunk_ids
 
@@ -453,7 +394,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
             chunk_type = "mixed" if qrels_mode == "both" else ("image" if qrels_mode == "image-only" else "text")
 
             self.service.add_retrieval_gt(
-                query_id,  # type: ignore[arg-type]
+                query_id,
                 gt_expr,
                 chunk_type=chunk_type,
             )
@@ -489,7 +430,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         is_multi_hop: bool,
     ) -> RetrievalGT:
         """Build GT expression for image-only mode."""
-        ids: list[int | str] = list(corpus_ids)  # ty: ignore[invalid-assignment]
+        ids: list[int | str] = list(corpus_ids)
         return and_all(ids, image) if is_multi_hop else or_all(ids, image)
 
     def _build_text_only_gt(
@@ -531,7 +472,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
                 chunk_ids = corpus_to_chunks.get(corpus_id, [])
                 items: list[TextId | ImageId] = [TextId(cid) for cid in chunk_ids]
                 items.append(ImageId(corpus_id))
-                and_groups.append(or_all_mixed(items))  # type: ignore[arg-type]
+                and_groups.append(or_all_mixed(items))
             if not and_groups:
                 return None
             return and_all_mixed(and_groups)  # type: ignore[return-value, arg-type]

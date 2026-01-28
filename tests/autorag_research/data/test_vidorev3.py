@@ -1,6 +1,5 @@
 """Tests for ViDoReV3Ingestor.
 
-Unit tests for helper functions.
 Integration tests use real data subsets against PostgreSQL.
 
 ViDoReV3 key features:
@@ -8,85 +7,18 @@ ViDoReV3 key features:
 - Query type determines retrieval semantics:
   - multi-hop queries: and_all() semantics (ALL pages required)
   - other queries: or_all() semantics (ANY page acceptable)
-- LlamaIndex chunking for Caption -> Chunk splitting
+- Each page's markdown content becomes one text chunk (no chunking)
 """
 
 import pytest
-from llama_index.core.node_parser import SentenceSplitter
-from omegaconf import DictConfig
 
-from autorag_research.data.vidorev3 import (
-    ViDoReV3Ingestor,
-    _resolve_chunker,
-    chunk_markdown,
-)
+from autorag_research.data.vidorev3 import ViDoReV3Ingestor
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestConfig,
     IngestorTestVerifier,
     create_test_database,
 )
-
-# ==================== Unit Tests ====================
-
-
-class TestResolveChunker:
-    """Unit tests for _resolve_chunker helper function."""
-
-    def test_resolve_chunker_with_none_returns_default(self):
-        """When chunker is None, return default SentenceSplitter."""
-        chunker = _resolve_chunker(None)
-        assert isinstance(chunker, SentenceSplitter)
-
-    def test_resolve_chunker_with_node_parser_returns_same(self):
-        """When chunker is a NodeParser, return it unchanged."""
-        custom_chunker = SentenceSplitter(chunk_size=256, chunk_overlap=32)
-        result = _resolve_chunker(custom_chunker)
-        assert result is custom_chunker
-
-    def test_resolve_chunker_with_dict_config_instantiates(self):
-        """When chunker is a DictConfig, instantiate it via Hydra."""
-        config = DictConfig({
-            "_target_": "llama_index.core.node_parser.SentenceSplitter",
-            "chunk_size": 512,
-            "chunk_overlap": 64,
-        })
-        chunker = _resolve_chunker(config)
-        assert isinstance(chunker, SentenceSplitter)
-
-    def test_resolve_chunker_with_dict_instantiates(self):
-        """When chunker is a dict with _target_, convert to DictConfig and instantiate."""
-        config = {
-            "_target_": "llama_index.core.node_parser.SentenceSplitter",
-            "chunk_size": 256,
-            "chunk_overlap": 32,
-        }
-        chunker = _resolve_chunker(config)
-        assert isinstance(chunker, SentenceSplitter)
-        assert chunker.chunk_size == 256
-        assert chunker.chunk_overlap == 32
-
-
-class TestChunkMarkdown:
-    """Unit tests for chunk_markdown function."""
-
-    def test_chunk_markdown_empty_string_returns_empty_list(self):
-        """Empty markdown returns empty list."""
-        chunker = SentenceSplitter(chunk_size=100, chunk_overlap=10)
-        assert chunk_markdown("", chunker) == []
-
-    def test_chunk_markdown_whitespace_only_returns_empty_list(self):
-        """Whitespace-only markdown returns empty list."""
-        chunker = SentenceSplitter(chunk_size=100, chunk_overlap=10)
-        assert chunk_markdown("   \n\t  ", chunker) == []
-
-    def test_chunk_markdown_with_content_returns_chunks(self):
-        """Non-empty markdown returns list of chunk strings."""
-        chunker = SentenceSplitter(chunk_size=100, chunk_overlap=10)
-        result = chunk_markdown("This is some test content.", chunker)
-        assert len(result) > 0
-        assert all(isinstance(c, str) for c in result)
-
 
 # ==================== Integration Tests ====================
 
@@ -103,13 +35,13 @@ class TestViDoReV3IngestorIntegration:
         """Basic integration test - verify_all() handles all standard checks.
 
         Tests the 'hr' (Human Resources) configuration with a small subset.
+        Each page's markdown = one text chunk (no chunking).
         """
         VIDOREV3_HR_CONFIG = IngestorTestConfig(
             expected_query_count=10,
             expected_image_chunk_count=50,  # ImageChunks from corpus pages
-            expected_chunk_count=50,
-            # Text chunks from Caption via LlamaIndex chunking (minimum, varies by text length)
-            chunk_count_is_minimum=True,  # Gold IDs always included, chunk count varies by text length.
+            expected_chunk_count=50,  # One text chunk per page (no chunking)
+            chunk_count_is_minimum=True,  # Gold IDs always included
             check_files=True,
             expected_file_count=1,
             check_documents=True,
@@ -129,11 +61,6 @@ class TestViDoReV3IngestorIntegration:
 
             ingestor = ViDoReV3Ingestor(
                 config_name="hr",
-                chunker={
-                    "_target_": "llama_index.core.node_parser.SentenceSplitter",
-                    "chunk_size": 128,
-                    "chunk_overlap": 16,
-                },
                 qrels_mode=qrels_mode,
             )
             ingestor.set_service(service)
