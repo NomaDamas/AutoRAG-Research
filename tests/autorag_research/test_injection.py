@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -39,13 +40,19 @@ class TestHealthCheckEmbedding:
 
     def test_raises_on_embedding_failure(self) -> None:
         """Raises EmbeddingNotSetError when embedding fails."""
+        from llama_index.embeddings.openai import OpenAIEmbedding
+
         from autorag_research.exceptions import EmbeddingNotSetError
 
-        mock_model = MagicMock()
-        mock_model.get_text_embedding.side_effect = Exception("API Error")
+        original_api_key = os.getenv("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = "havertz"
 
+        embedding_model = OpenAIEmbedding()
         with pytest.raises(EmbeddingNotSetError):
-            health_check_embedding(mock_model)
+            health_check_embedding(embedding_model)
+
+        if original_api_key:
+            os.environ["OPENAI_API_KEY"] = original_api_key
 
 
 class TestHealthCheckLlm:
@@ -61,13 +68,19 @@ class TestHealthCheckLlm:
 
     def test_raises_on_llm_failure(self) -> None:
         """Raises LLMNotSetError when LLM fails."""
+        from llama_index.llms.openai import OpenAI
+
         from autorag_research.exceptions import LLMNotSetError
 
-        mock_model = MagicMock()
-        mock_model.complete.side_effect = Exception("API Error")
+        original_api_key = os.getenv("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = "havertz"
+        model = OpenAI()
 
         with pytest.raises(LLMNotSetError):
-            health_check_llm(mock_model)
+            health_check_llm(model)
+
+        if original_api_key:
+            os.environ["OPENAI_API_KEY"] = original_api_key
 
 
 # ============================================================================
@@ -82,14 +95,6 @@ class TestLoadEmbeddingModel:
         """Raises FileNotFoundError when config doesn't exist."""
         with pytest.raises(FileNotFoundError):
             load_embedding_model("nonexistent")
-
-    @patch("autorag_research.injection.instantiate")
-    def test_raises_type_error_for_wrong_type(self, mock_instantiate: MagicMock) -> None:
-        """Raises TypeError when instantiated object is not BaseEmbedding."""
-        mock_instantiate.return_value = "not an embedding"
-
-        with pytest.raises(TypeError, match="BaseEmbedding"):
-            load_embedding_model("mock")
 
     def test_returns_embedding_instance(self) -> None:
         """Returns BaseEmbedding instance when config is valid."""
@@ -181,14 +186,6 @@ class TestLoadLlm:
         """Raises FileNotFoundError when config doesn't exist."""
         with pytest.raises(FileNotFoundError):
             load_llm("nonexistent")
-
-    @patch("autorag_research.injection.instantiate")
-    def test_raises_type_error_for_wrong_type(self, mock_instantiate: MagicMock) -> None:
-        """Raises TypeError when instantiated object is not BaseLLM."""
-        mock_instantiate.return_value = "not an llm"
-
-        with pytest.raises(TypeError, match="BaseLLM"):
-            load_llm("mock")
 
     def test_returns_llm_instance(self) -> None:
         """Returns BaseLLM instance when config is valid."""

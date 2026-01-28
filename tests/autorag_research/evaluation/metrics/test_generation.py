@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
+from autorag_research import cli
 from autorag_research.evaluation.metrics.generation import (
     bert_score,
     bleu,
@@ -13,6 +14,8 @@ from autorag_research.evaluation.metrics.generation import (
 )
 from autorag_research.schema import MetricInput
 from tests.mock import mock_get_text_embedding_batch
+
+cli.CONFIG_PATH = Path(__file__).parent.parent.parent.parent.parent / "configs"
 
 generation_gts = [
     ["The dog had bit the man.", "The man had bitten the dog."],
@@ -214,9 +217,6 @@ def test_sem_score_other_model():
 
 
 def test_sem_score_from_string_configs():
-    from autorag_research import cli
-
-    cli.CONFIG_PATH = Path(__file__).parent.parent.parent.parent.parent / "configs"
     scores = sem_score(
         metric_inputs=similarity_generation_metric_inputs,
         embedding_model="mock",
