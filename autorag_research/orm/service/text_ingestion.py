@@ -20,7 +20,7 @@ class TextDataIngestionService(BaseIngestionService):
     Provides methods for:
 
     - Adding queries (with optional generation_gt)
-    - Adding chunks (text-only, no parent caption required)
+    - Adding chunks (text-only, no parent page required)
     - Creating retrieval ground truth relations (with multi-hop support)
     - Setting embeddings for queries and chunks (accepts pre-computed vectors)
 

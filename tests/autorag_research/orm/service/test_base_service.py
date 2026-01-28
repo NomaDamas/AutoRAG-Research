@@ -21,8 +21,8 @@ class TestBaseService:
     def test_add_returns_ids(self, session_factory):
         service = ConcreteTestService(session_factory)
         chunks = [
-            {"contents": "test chunk 1", "parent_caption": None},
-            {"contents": "test chunk 2", "parent_caption": None},
+            {"contents": "test chunk 1", "parent_page": None},
+            {"contents": "test chunk 2", "parent_page": None},
         ]
         ids = service._add(chunks, table_name="Chunk", repository_property="chunks")
         assert len(ids) == 2

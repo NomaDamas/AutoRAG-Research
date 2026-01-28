@@ -22,8 +22,8 @@ class TestTextDataIngestionService:
 
     def test_clean_removes_empty_content(self, service):
         chunk_ids = service.add_chunks([
-            {"contents": "   ", "parent_caption": None},
-            {"contents": "", "parent_caption": None},
+            {"contents": "   ", "parent_page": None},
+            {"contents": "", "parent_page": None},
         ])
         query_ids = service.add_queries([
             {"contents": "   ", "generation_gt": None},

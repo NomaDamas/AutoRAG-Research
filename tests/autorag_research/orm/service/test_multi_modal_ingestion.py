@@ -46,18 +46,6 @@ class TestMultiModalIngestionService:
                 uow.pages.delete_by_id(id_)
             uow.commit()
 
-    def test_add_captions(self, service):
-        captions = [
-            {"page_id": 1, "contents": "Test caption content"},
-        ]
-        ids = service.add_captions(captions)
-        assert len(ids) == 1
-
-        with service._create_uow() as uow:
-            for id_ in ids:
-                uow.captions.delete_by_id(id_)
-            uow.commit()
-
     def test_add_image_chunks(self, service):
         image_chunks = [
             {"contents": b"\x00\x01\x02", "mimetype": "image/png", "parent_page": 1},
@@ -99,7 +87,6 @@ class TestMultiModalIngestionService:
         assert "files" in stats
         assert "documents" in stats
         assert "pages" in stats
-        assert "captions" in stats
         assert "chunks" in stats
         assert "image_chunks" in stats
         assert "queries" in stats

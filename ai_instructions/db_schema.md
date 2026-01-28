@@ -26,15 +26,9 @@ Table File {
   path varchar(255) [not null]
 }
 
-Table Caption {
-  id bigserial [pk]
-  page_id bigint [ref: > Page.id, not null]
-  contents text [not null]
-}
-
 Table Chunk {
   id bigserial [pk]
-  parent_caption bigint [ref: > Caption.id]
+  parent_page bigint [ref: > Page.id]
   contents text [not null]
   embedding vector(768)
   embeddings vector[](768)
@@ -52,8 +46,8 @@ Table ImageChunk {
   embeddings vector[](768)
 }
 
-Table CaptionChunkRelation {
-  caption_id bigint [ref: > Caption.id, pk]
+Table PageChunkRelation {
+  page_id bigint [ref: > Page.id, pk]
   chunk_id bigint [ref: > Chunk.id, pk]
 }
 

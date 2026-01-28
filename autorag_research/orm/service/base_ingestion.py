@@ -64,7 +64,7 @@ class BaseIngestionService(BaseService, ABC):
             chunks: List of dict with keys:
                 - id (optional): Chunk ID
                 - contents (required): Text content
-                - parent_caption (optional): Parent caption ID
+                - parent_page (optional): Parent page ID
                 - is_table (optional, default=False): Whether this chunk is a table
                 - table_type (optional): Table format type (markdown, xml, html)
 

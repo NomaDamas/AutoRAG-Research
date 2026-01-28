@@ -8,7 +8,6 @@ from autorag_research.orm.repository.base import (
     GenericRepository,
     UnitOfWork,
 )
-from autorag_research.orm.repository.caption import CaptionRepository
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.orm.repository.document import DocumentRepository
@@ -24,7 +23,6 @@ from autorag_research.orm.uow.text_uow import TextOnlyUnitOfWork
 
 __all__ = [
     "BaseVectorRepository",
-    "CaptionRepository",
     "ChunkRepository",
     "ChunkRetrievedResultRepository",
     "DocumentRepository",
