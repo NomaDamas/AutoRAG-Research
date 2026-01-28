@@ -1,6 +1,7 @@
-"""BM25 Retrieval Pipeline for AutoRAG-Research.
+"""BM25 DB Retrieval Pipeline for AutoRAG-Research.
 
-This pipeline uses RetrievalPipelineService with BM25Module for retrieval.
+This pipeline uses VectorChord-BM25 for full-text BM25 retrieval
+directly from database-stored chunks.
 """
 
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
+DEFAULT_BM25_INDEX_NAME = "idx_chunk_bm25"
+
 
 @dataclass(kw_only=True)
 class BM25PipelineConfig(BaseRetrievalPipelineConfig):
@@ -18,10 +21,8 @@ class BM25PipelineConfig(BaseRetrievalPipelineConfig):
 
     Attributes:
         name: Unique name for this pipeline instance.
-        index_path: Path to the Lucene index directory.
-        k1: BM25 k1 parameter (controls term frequency saturation).
-        b: BM25 b parameter (controls length normalization).
-        language: Language for analyzer ('en', 'ko', 'zh', 'ja', etc.).
+        tokenizer: Tokenizer name for BM25 (default: "bert" for bert_base_uncased).
+        index_name: Name of the BM25 index in PostgreSQL.
         top_k: Number of results to retrieve per query.
         batch_size: Number of queries to process in each batch.
 
@@ -29,18 +30,24 @@ class BM25PipelineConfig(BaseRetrievalPipelineConfig):
         ```python
         config = BM25PipelineConfig(
             name="bm25_baseline",
-            index_path="/path/to/lucene/index",
-            k1=0.9,
-            b=0.4,
+            tokenizer="bert",
             top_k=10,
         )
         ```
     """
 
-    index_path: str
-    k1: float = 0.9
-    b: float = 0.4
-    language: str = "en"
+    tokenizer: str = "bert"
+    """Tokenizer name for BM25 sparse retrieval.
+
+    Available tokenizers (pg_tokenizer pre-built models):
+        - "bert": bert-base-uncased (Hugging Face) - Default
+        - "wiki_tocken": Wikitext-103 trained model
+        - "gemma2b": Google lightweight model (~100MB memory)
+        - "llmlingua2": Microsoft summarization model (~200MB memory)
+
+    See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
+    """
+    index_name: str = DEFAULT_BM25_INDEX_NAME
 
     def get_pipeline_class(self) -> type["BM25RetrievalPipeline"]:
         """Return the BM25RetrievalPipeline class."""
@@ -49,18 +56,17 @@ class BM25PipelineConfig(BaseRetrievalPipelineConfig):
     def get_pipeline_kwargs(self) -> dict[str, Any]:
         """Return kwargs for BM25RetrievalPipeline constructor."""
         return {
-            "index_path": self.index_path,
-            "k1": self.k1,
-            "b": self.b,
-            "language": self.language,
+            "tokenizer": self.tokenizer,
+            "index_name": self.index_name,
         }
 
 
 class BM25RetrievalPipeline(BaseRetrievalPipeline):
-    """Pipeline for running BM25 retrieval.
+    """Pipeline for running VectorChord-BM25 retrieval.
 
-    This pipeline wraps RetrievalPipelineService with BM25Module,
-    providing a convenient interface for BM25-based retrieval.
+    This pipeline wraps RetrievalPipelineService with BM25DBModule,
+    providing a convenient interface for BM25-based retrieval using
+    PostgreSQL's VectorChord-BM25 extension.
 
     Example:
         ```python
@@ -70,15 +76,18 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
         db = DBConnection.from_config()  # or DBConnection.from_env()
         session_factory = db.get_session_factory()
 
-        # Initialize pipeline with index path
+        # Initialize pipeline
         pipeline = BM25RetrievalPipeline(
             session_factory=session_factory,
             name="bm25_baseline",
-            index_path="/path/to/lucene/index",
+            tokenizer="bert",
         )
 
-        # Run pipeline
+        # Run pipeline on all queries in DB
         results = pipeline.run(top_k=10)
+
+        # Or retrieve for a single query
+        chunks = pipeline.retrieve("What is machine learning?", top_k=10)
         ```
     """
 
@@ -86,10 +95,8 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
         self,
         session_factory: sessionmaker[Session],
         name: str,
-        index_path: str,
-        k1: float = 0.9,
-        b: float = 0.4,
-        language: str = "en",
+        tokenizer: str = "bert",
+        index_name: str = DEFAULT_BM25_INDEX_NAME,
         schema: Any | None = None,
     ):
         """Initialize BM25 retrieval pipeline.
@@ -97,18 +104,20 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
             name: Name for this pipeline.
-            index_path: Path to the Lucene index directory.
-            k1: BM25 k1 parameter (controls term frequency saturation).
-            b: BM25 b parameter (controls length normalization).
-            language: Language for analyzer ('en', 'ko', 'zh', 'ja', etc.).
+            tokenizer: Tokenizer name for BM25 (default: "bert" for bert_base_uncased).
+                Available tokenizers (pg_tokenizer pre-built models):
+                    - "bert": bert-base-uncased (Hugging Face) - Default
+                    - "wiki_tocken": Wikitext-103 trained model
+                    - "gemma2b": Google lightweight model (~100MB memory)
+                    - "llmlingua2": Microsoft summarization model (~200MB memory)
+                See: https://github.com/tensorchord/pg_tokenizer.rs/blob/main/docs/06-model.md
+            index_name: Name of the BM25 index (default: "idx_chunk_bm25").
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """
         # Store BM25-specific parameters before calling super().__init__
         # because _get_pipeline_config() is called in super().__init__
-        self.index_path = index_path
-        self.k1 = k1
-        self.b = b
-        self.language = language
+        self.tokenizer = tokenizer
+        self.index_name = index_name
 
         super().__init__(session_factory, name, schema)
 
@@ -116,21 +125,18 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
         """Return BM25 pipeline configuration."""
         return {
             "type": "bm25",
-            "index_path": self.index_path,
-            "k1": self.k1,
-            "b": self.b,
-            "language": self.language,
+            "tokenizer": self.tokenizer,
+            "index_name": self.index_name,
         }
 
     def _get_retrieval_func(self) -> Any:
         """Return BM25 retrieval function."""
-        # Lazy import to avoid Java dependency at import time
         from autorag_research.nodes.retrieval.bm25 import BM25Module
 
         bm25 = BM25Module(
-            index_path=self.index_path,
-            k1=self.k1,
-            b=self.b,
-            language=self.language,
+            session_factory=self.session_factory,
+            tokenizer=self.tokenizer,
+            index_name=self.index_name,
+            schema=self._schema,
         )
         return bm25.run

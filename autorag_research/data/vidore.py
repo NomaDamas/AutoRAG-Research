@@ -38,7 +38,7 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor, ABC):
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         super().__init__(embedding_model, late_interaction_embedding_model)
-        self.ds = load_dataset(f"vidore/{dataset_name}")["test"]  # ty: ignore[non-subscriptable]
+        self.ds = load_dataset(f"vidore/{dataset_name}")["test"]  # ty: ignore[not-subscriptable]
         if dataset_name not in ViDoReDatasets:
             raise InvalidDatasetNameError(dataset_name)
 
