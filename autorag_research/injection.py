@@ -111,7 +111,7 @@ class ModelManager(Generic[T]):
 
         self._health_check_func(model)
 
-        return model  # type: ignore[return-value]
+        return model
 
     def get_cached(self, config_name: str) -> T:
         """Get or create a cached model instance.
