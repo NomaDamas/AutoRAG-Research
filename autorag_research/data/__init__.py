@@ -9,7 +9,6 @@ from autorag_research.data.hf_storage import (
     upload_dump,
 )
 from autorag_research.data.restore import restore_database
-from autorag_research.data.util import setup_dataset
 
 USER_DATA_DIR = user_data_dir("autorag_research", "NomaDamas")
 
@@ -19,6 +18,5 @@ __all__ = [
     "download_dump",
     "list_available_dumps",
     "restore_database",
-    "setup_dataset",
     "upload_dump",
 ]
