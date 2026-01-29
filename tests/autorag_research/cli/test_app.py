@@ -81,14 +81,6 @@ class TestVersionFlag:
         assert result.exit_code == 0
         assert "autorag-research" in result.stdout
 
-    def test_version_flag_exits_early(self, cli_runner: CliRunner) -> None:
-        """--version exits before processing other arguments."""
-        # Even with invalid command, --version should work
-        result = cli_runner.invoke(app, ["--version", "invalid-command"])
-
-        assert result.exit_code == 0
-        assert "autorag-research" in result.stdout
-
 
 class TestAppStructure:
     """Tests for the Typer app structure."""

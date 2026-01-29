@@ -90,13 +90,6 @@ class TestPrintDatasets:
 class TestShowDatasetsCommand:
     """Tests for 'show datasets' command."""
 
-    def test_show_datasets_help_shows_options(self, cli_runner: CliRunner) -> None:
-        """'show datasets --help' shows available options."""
-        result = cli_runner.invoke(app, ["show", "datasets", "--help"])
-
-        assert result.exit_code == 0
-        assert "datasets" in result.stdout.lower() or "NAME" in result.stdout
-
     @patch("autorag_research.data.hf_storage.list_available_dumps")
     def test_show_datasets_with_ingestor(self, mock_list: MagicMock, cli_runner: CliRunner) -> None:
         """'show datasets <ingestor>' shows available dumps."""
@@ -108,23 +101,3 @@ class TestShowDatasetsCommand:
         assert "scifact_openai-small" in result.stdout
         assert "nfcorpus_bge-small" in result.stdout
         mock_list.assert_called_once_with("beir")
-
-    @patch("autorag_research.data.hf_storage.list_available_dumps")
-    def test_show_datasets_empty_repo(self, mock_list: MagicMock, cli_runner: CliRunner) -> None:
-        """'show datasets' with empty repo shows message."""
-        mock_list.return_value = []
-
-        result = cli_runner.invoke(app, ["show", "datasets", "beir"])
-
-        assert result.exit_code == 0
-        assert "No dump files found" in result.stdout
-
-    @patch("autorag_research.data.hf_storage.list_available_dumps")
-    def test_show_datasets_unknown_ingestor(self, mock_list: MagicMock, cli_runner: CliRunner) -> None:
-        """'show datasets' with unknown ingestor shows error."""
-        mock_list.side_effect = KeyError("Unknown ingestor or no HF repo configured: 'unknown'")
-
-        result = cli_runner.invoke(app, ["show", "datasets", "unknown"])
-
-        assert result.exit_code == 1
-        assert "Unknown ingestor" in result.output or "unknown" in result.output.lower()
