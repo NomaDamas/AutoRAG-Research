@@ -39,6 +39,7 @@ BEIR_DATASETS = Literal[
 @register_ingestor(
     name="beir",
     description="BEIR benchmark datasets for information retrieval",
+    hf_repo="beir-dumps",
 )
 class BEIRIngestor(TextEmbeddingDataIngestor):
     def __init__(self, embedding_model: BaseEmbedding, dataset_name: BEIR_DATASETS):
