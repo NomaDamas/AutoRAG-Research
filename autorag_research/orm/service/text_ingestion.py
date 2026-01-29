@@ -20,7 +20,7 @@ class TextDataIngestionService(BaseIngestionService):
     Provides methods for:
 
     - Adding queries (with optional generation_gt)
-    - Adding chunks (text-only, no parent caption required)
+    - Adding chunks (text-only, no parent page required)
     - Creating retrieval ground truth relations (with multi-hop support)
     - Setting embeddings for queries and chunks (accepts pre-computed vectors)
 
@@ -53,23 +53,25 @@ class TextDataIngestionService(BaseIngestionService):
         return TextOnlyUnitOfWork(self.session_factory, self._schema)
 
     def _get_schema_classes(self) -> dict[str, type]:
-        """Get Query, Chunk, RetrievalRelation classes from schema.
+        """Get Query, Chunk, RetrievalRelation, PageChunkRelation classes from schema.
 
         Returns:
-            Tuple of (Query, Chunk, RetrievalRelation) model classes.
+            Dictionary mapping class names to model classes.
         """
         if self._schema is not None:
             return {
                 "Query": self._schema.Query,
                 "Chunk": self._schema.Chunk,
+                "PageChunkRelation": self._schema.PageChunkRelation,
                 "RetrievalRelation": self._schema.RetrievalRelation,
             }
         # Use default schema
-        from autorag_research.orm.schema import Chunk, Query, RetrievalRelation
+        from autorag_research.orm.schema import Chunk, PageChunkRelation, Query, RetrievalRelation
 
         return {
             "Query": Query,
             "Chunk": Chunk,
+            "PageChunkRelation": PageChunkRelation,
             "RetrievalRelation": RetrievalRelation,
         }
 

@@ -12,7 +12,7 @@ _target_: autorag_research.pipelines.generation.basic_rag.BasicRAGPipelineConfig
 description: "Simple retrieve-then-generate RAG"
 name: basic_rag
 retrieval_pipeline_name: bm25
-llm_model: gpt-4o-mini
+llm: gpt-4o-mini
 top_k: 5
 batch_size: 10
 prompt_template: |

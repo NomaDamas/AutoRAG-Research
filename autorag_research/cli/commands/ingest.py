@@ -18,13 +18,11 @@ import logging
 from typing import TYPE_CHECKING, Annotated, Literal
 
 import typer
+from llama_index.core.base.embeddings.base import BaseEmbedding
 
-from autorag_research.cli.utils import (
-    discover_embedding_configs,
-    health_check_embedding,
-    load_embedding_model,
-)
+from autorag_research.cli.utils import discover_embedding_configs
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+from autorag_research.injection import health_check_embedding, load_embedding_model
 from autorag_research.orm.connection import DBConnection
 
 if TYPE_CHECKING:
@@ -255,6 +253,8 @@ def ingest(  # noqa: C901
 
     ingestor_class = meta.ingestor_class
     if issubclass(ingestor_class, TextEmbeddingDataIngestor):
+        if not isinstance(embed_model, BaseEmbedding):
+            raise TypeError("Text ingestor requires a BaseEmbedding model")  # noqa: TRY003
         ingestor = ingestor_class(embed_model, **init_kwargs)
     elif issubclass(ingestor_class, MultiModalEmbeddingDataIngestor):
         from llama_index.core.embeddings import MultiModalEmbedding

@@ -1,14 +1,13 @@
 """Multi-modal Unit of Work for AutoRAG-Research.
 
 Provides a comprehensive Unit of Work pattern for multi-modal data ingestion,
-including File, Document, Page, Caption, Chunk, ImageChunk, Query, and RetrievalRelation.
+including File, Document, Page, Chunk, ImageChunk, Query, and RetrievalRelation.
 """
 
 from typing import Any
 
 from sqlalchemy.orm import sessionmaker
 
-from autorag_research.orm.repository.caption import CaptionRepository
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.document import DocumentRepository
 from autorag_research.orm.repository.file import FileRepository
@@ -23,7 +22,7 @@ class MultiModalUnitOfWork(BaseUnitOfWork):
     """Multi-modal Unit of Work for managing comprehensive data ingestion transactions.
 
     This UoW includes all entity repositories needed for multi-modal RAG data:
-    - File, Document, Page, Caption, Chunk, ImageChunk, Query, RetrievalRelation
+    - File, Document, Page, Chunk, ImageChunk, Query, RetrievalRelation
 
     Provides lazy-initialized repositories for efficient resource usage.
 
@@ -55,7 +54,6 @@ class MultiModalUnitOfWork(BaseUnitOfWork):
         self._file_repo: FileRepository | None = None
         self._document_repo: DocumentRepository | None = None
         self._page_repo: PageRepository | None = None
-        self._caption_repo: CaptionRepository | None = None
         self._chunk_repo: ChunkRepository | None = None
         self._image_chunk_repo: ImageChunkRepository | None = None
         self._query_repo: QueryRepository | None = None
@@ -72,7 +70,6 @@ class MultiModalUnitOfWork(BaseUnitOfWork):
                 "File": self._schema.File,
                 "Document": self._schema.Document,
                 "Page": self._schema.Page,
-                "Caption": self._schema.Caption,
                 "Chunk": self._schema.Chunk,
                 "ImageChunk": self._schema.ImageChunk,
                 "Query": self._schema.Query,
@@ -80,7 +77,6 @@ class MultiModalUnitOfWork(BaseUnitOfWork):
             }
 
         from autorag_research.orm.schema import (
-            Caption,
             Chunk,
             Document,
             File,
@@ -94,7 +90,6 @@ class MultiModalUnitOfWork(BaseUnitOfWork):
             "File": File,
             "Document": Document,
             "Page": Page,
-            "Caption": Caption,
             "Chunk": Chunk,
             "ImageChunk": ImageChunk,
             "Query": Query,
@@ -106,7 +101,6 @@ class MultiModalUnitOfWork(BaseUnitOfWork):
         self._file_repo = None
         self._document_repo = None
         self._page_repo = None
-        self._caption_repo = None
         self._chunk_repo = None
         self._image_chunk_repo = None
         self._query_repo = None
@@ -158,22 +152,6 @@ class MultiModalUnitOfWork(BaseUnitOfWork):
             "_page_repo",
             PageRepository,
             lambda: self._get_schema_classes()["Page"],
-        )
-
-    @property
-    def captions(self) -> CaptionRepository:
-        """Get the Caption repository.
-
-        Returns:
-            CaptionRepository instance.
-
-        Raises:
-            SessionNotSetError: If session is not initialized.
-        """
-        return self._get_repository(
-            "_caption_repo",
-            CaptionRepository,
-            lambda: self._get_schema_classes()["Caption"],
         )
 
     @property

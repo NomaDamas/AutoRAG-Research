@@ -92,19 +92,11 @@ CREATE TABLE IF NOT EXISTS page (
 	CONSTRAINT uq_page_per_doc UNIQUE (document_id, page_num)
 );
 
--- Caption
-CREATE TABLE IF NOT EXISTS caption (
-	id BIGSERIAL PRIMARY KEY,
-	page_id BIGINT NOT NULL REFERENCES page(id),
-	contents TEXT NOT NULL
-);
-
 -- Chunk
 -- embeddings column supports VectorChord's MaxSim operator (@#) for late interaction models
 -- bm25_tokens column supports VectorChord-BM25 sparse retrieval (added conditionally)
 CREATE TABLE IF NOT EXISTS chunk (
 	id BIGSERIAL PRIMARY KEY,
-	parent_caption BIGINT REFERENCES caption(id),
 	contents TEXT NOT NULL,
 	embedding VECTOR(768),
 	embeddings VECTOR(768)[],  -- Multi-vector for ColBERT/ColPali style retrieval
@@ -126,11 +118,11 @@ CREATE TABLE IF NOT EXISTS image_chunk (
 	embeddings VECTOR(768)[]  -- Multi-vector for ColPali style image retrieval
 );
 
--- CaptionChunkRelation
-CREATE TABLE IF NOT EXISTS caption_chunk_relation (
-	caption_id BIGINT NOT NULL REFERENCES caption(id),
+-- PageChunkRelation
+CREATE TABLE IF NOT EXISTS page_chunk_relation (
+	page_id BIGINT NOT NULL REFERENCES page(id),
 	chunk_id BIGINT NOT NULL REFERENCES chunk(id),
-	PRIMARY KEY (caption_id, chunk_id)
+	PRIMARY KEY (page_id, chunk_id)
 );
 
 -- Query

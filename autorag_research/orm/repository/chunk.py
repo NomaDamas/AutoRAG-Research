@@ -28,47 +28,19 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
             model_cls = Chunk
         super().__init__(session, model_cls)
 
-    def get_by_caption_id(self, caption_id: int) -> list[Any]:
-        """Retrieve all chunks for a specific caption.
-
-        Args:
-            caption_id: The caption ID.
-
-        Returns:
-            List of chunks belonging to the caption.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.parent_caption == caption_id)
-        return list(self.session.execute(stmt).scalars().all())
-
-    def get_with_parent_caption(self, chunk_id: int) -> Any | None:
-        """Retrieve a chunk with its parent caption eagerly loaded.
+    def get_with_page_chunk_relations(self, chunk_id: int) -> Any | None:
+        """Retrieve a chunk with its page-chunk relations eagerly loaded.
 
         Args:
             chunk_id: The chunk ID.
 
         Returns:
-            The chunk with parent caption loaded, None if not found.
+            The chunk with page-chunk relations loaded, None if not found.
         """
         stmt = (
             select(self.model_cls)
             .where(self.model_cls.id == chunk_id)
-            .options(joinedload(self.model_cls.parent_caption_obj))
-        )
-        return self.session.execute(stmt).scalar_one_or_none()
-
-    def get_with_caption_chunk_relations(self, chunk_id: int) -> Any | None:
-        """Retrieve a chunk with its caption-chunk relations eagerly loaded.
-
-        Args:
-            chunk_id: The chunk ID.
-
-        Returns:
-            The chunk with caption-chunk relations loaded, None if not found.
-        """
-        stmt = (
-            select(self.model_cls)
-            .where(self.model_cls.id == chunk_id)
-            .options(joinedload(self.model_cls.caption_chunk_relations))
+            .options(joinedload(self.model_cls.page_chunk_relations))
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
@@ -128,17 +100,6 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.contents == contents)
         return list(self.session.execute(stmt).scalars().all())
 
-    def count_by_caption(self, caption_id: int) -> int:
-        """Count the number of chunks for a specific caption.
-
-        Args:
-            caption_id: The caption ID.
-
-        Returns:
-            Number of chunks for the caption.
-        """
-        return self.session.query(self.model_cls).filter(self.model_cls.parent_caption == caption_id).count()
-
     def get_with_all_relations(self, chunk_id: int) -> Any | None:
         """Retrieve a chunk with all relationships eagerly loaded.
 
@@ -152,8 +113,7 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
             select(self.model_cls)
             .where(self.model_cls.id == chunk_id)
             .options(
-                joinedload(self.model_cls.parent_caption_obj),
-                joinedload(self.model_cls.caption_chunk_relations),
+                joinedload(self.model_cls.page_chunk_relations),
                 joinedload(self.model_cls.retrieval_relations),
                 joinedload(self.model_cls.chunk_retrieved_results),
             )
