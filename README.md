@@ -31,7 +31,7 @@ uv pip install autorag-research
 
 ```bash
 # 1. Initialize configuration files
-autorag-research init-config
+autorag-research init
 
 # 2. Edit database settings
 vim configs/db.yaml # OR your preferred editor
@@ -45,12 +45,12 @@ autorag-research run --db-name=beir_scifact_test
 
 ### Commands
 
-#### `init-config` - Initialize Configuration Files
+#### `init` - Initialize Configuration Files
 
 Downloads default configuration files to `./configs/` directory.
 
 ```bash
-autorag-research init-config
+autorag-research init
 ```
 
 This creates:

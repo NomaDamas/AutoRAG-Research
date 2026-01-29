@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 import autorag_research.cli as cli
 from autorag_research.cli.app import app
-from autorag_research.cli.commands.init_config import fetch_config_files_from_github, init_config
+from autorag_research.cli.commands.init import fetch_config_files_from_github, init
 
 
 @pytest.fixture
@@ -39,19 +39,19 @@ def mock_github_metrics_response() -> list[dict]:
 
 
 class TestInitConfigCommand:
-    """Tests for the init-config CLI command."""
+    """Tests for the init CLI command."""
 
-    def test_init_config_help(self, cli_runner: CliRunner) -> None:
-        """'init-config --help' shows help."""
-        result = cli_runner.invoke(app, ["init-config", "--help"])
+    def test_init_help(self, cli_runner: CliRunner) -> None:
+        """'init --help' shows help."""
+        result = cli_runner.invoke(app, ["init", "--help"])
 
         assert result.exit_code == 0
 
-    @patch("autorag_research.cli.commands.init_config.httpx.Client")
+    @patch("autorag_research.cli.commands.init.httpx.Client")
     def test_init_config_creates_directory(
         self, mock_client_class: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """init_config creates config directory if it doesn't exist."""
+        """init creates config directory if it doesn't exist."""
         config_dir = tmp_path / "new_configs"
         monkeypatch.setattr(cli, "CONFIG_PATH", config_dir)
 
@@ -67,7 +67,7 @@ class TestInitConfigCommand:
         mock_response.text = "host: localhost"
         mock_client.get.return_value = mock_response
 
-        init_config()
+        init()
 
         assert config_dir.exists()
 
@@ -97,7 +97,7 @@ class TestInitConfigCommand:
 
         mock_client.get.side_effect = [api_response, raw_response]
 
-        init_config()
+        init()
 
         assert (config_dir / "db.yaml").exists()
         assert "localhost" in (config_dir / "db.yaml").read_text()
@@ -128,7 +128,7 @@ class TestInitConfigCommand:
         api_response.json.return_value = [{"name": "db.yaml", "type": "file", "path": "configs/db.yaml"}]
         mock_client.get.return_value = api_response
 
-        init_config()
+        init()
 
         # File should still have original content
         assert (config_dir / "db.yaml").read_text() == "existing content"
@@ -154,7 +154,7 @@ class TestInitConfigCommand:
         mock_client.get.return_value = api_response
 
         with pytest.raises(RuntimeError, match="Failed to fetch config files"):
-            init_config()
+            init()
 
 
 class TestFetchConfigFilesFromGitHub:

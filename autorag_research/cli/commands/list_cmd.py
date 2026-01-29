@@ -83,7 +83,7 @@ def print_pipelines() -> None:
                 typer.echo(f"    {name:<18} {description}")
 
     if not has_pipelines:
-        typer.echo("  No pipelines found. Run 'autorag-research init-config' first.")
+        typer.echo("  No pipelines found. Run 'autorag-research init' first.")
     typer.echo("\nExample Usage in experiment.yaml:")
     typer.echo("  pipelines:")
     typer.echo("    retrieval: [bm25]")
@@ -105,7 +105,7 @@ def print_metrics() -> None:
                 typer.echo(f"    {name:<13} {description}")
 
     if not has_metrics:
-        typer.echo("  No metrics found. Run 'autorag-research init-config' first.")
+        typer.echo("  No metrics found. Run 'autorag-research init' first.")
     typer.echo("\nUExample sage in experiment.yaml:")
     typer.echo("  metrics:")
     typer.echo("    retrieval: [recall, ndcg]")

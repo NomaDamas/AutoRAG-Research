@@ -170,7 +170,7 @@ def restore_dump_cmd(
             db_conn.database = target_db
             db_conn.restore_database(dump_path, clean=clean, no_owner=no_owner)
     except FileNotFoundError:
-        typer.echo("Config file not found. Run 'autorag-research init-config' first.", err=True)
+        typer.echo("Config file not found. Run 'autorag-research init' first.", err=True)
         raise typer.Exit(1) from None
     except RuntimeError as e:
         typer.echo(f"Restore failed: {e}", err=True)
@@ -212,7 +212,7 @@ def dump_database_cmd(
             db_conn.database = db_name
             result = db_conn.dump_database(output_path, no_owner=no_owner)
     except FileNotFoundError:
-        typer.echo("Config file not found. Run 'autorag-research init-config' first.", err=True)
+        typer.echo("Config file not found. Run 'autorag-research init' first.", err=True)
         raise typer.Exit(1) from None
     except RuntimeError as e:
         typer.echo(f"Dump failed: {e}", err=True)

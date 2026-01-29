@@ -121,13 +121,13 @@ class TestAppStructure:
         assert result.exit_code == 0
         assert "Usage:" in result.stdout
 
-    def test_app_has_init_config_command(self, cli_runner: CliRunner) -> None:
-        """App has 'init-config' command registered."""
-        result = cli_runner.invoke(app, ["init-config", "--help"])
+    def test_app_has_init_command(self, cli_runner: CliRunner) -> None:
+        """App has 'init' command registered."""
+        result = cli_runner.invoke(app, ["init", "--help"])
 
         assert result.exit_code == 0
         assert "Usage:" in result.stdout
-        assert "init-config" in result.stdout
+        assert "init" in result.stdout
 
     def test_app_has_run_command(self, cli_runner: CliRunner) -> None:
         """App has 'run' command registered."""
