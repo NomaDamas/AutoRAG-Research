@@ -7,6 +7,12 @@ import aiohttp
 
 from autorag_research.data import PUBLIC_R2_URL, restore_database
 
+
+def make_id(*parts: str | int) -> str:
+    """Generate ID by joining parts with underscore."""
+    return "_".join(str(p) for p in parts)
+
+
 DATASET_TAGS = {
     "scifact": {
         "embeddinggemma-300m": "scifact-embeddinggemma-300m.dump",
