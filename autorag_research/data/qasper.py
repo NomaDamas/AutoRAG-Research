@@ -309,7 +309,7 @@ class QasperIngestor(TextEmbeddingDataIngestor):
         logger.info(f"Found {len(query_metadata)} {'answerable' if self.qa_mode == 'answerable' else 'total'} queries")
 
         # Sample queries if limit specified
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
         if query_limit is not None and query_limit < len(query_metadata):
             query_metadata = rng.sample(query_metadata, query_limit)
             logger.info(f"Sampled {len(query_metadata)} queries")
