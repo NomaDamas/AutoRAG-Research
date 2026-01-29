@@ -44,6 +44,7 @@ VIDOREV2_DATASETS = Literal[
 @register_ingestor(
     name="vidorev2",
     description="ViDoRe v2 visual document retrieval benchmark",
+    hf_repo="vidorev2-dumps",
 )
 class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
     """Ingestor for ViDoReV2 datasets using streaming.

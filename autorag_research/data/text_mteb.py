@@ -32,6 +32,7 @@ def _combine_title_text(row: pd.Series) -> str:
 @register_ingestor(
     name="mteb",
     description="MTEB (Massive Text Embedding Benchmark) retrieval tasks",
+    hf_repo="mteb-dumps",
 )
 class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
     """Text-only ingestor for MTEB retrieval datasets using official mteb library.

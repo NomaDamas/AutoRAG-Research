@@ -57,18 +57,20 @@ class IngestorMeta:
     ingestor_class: type
     description: str
     params: list[ParamMeta] = field(default_factory=list)
+    hf_repo: str | None = None  # HuggingFace Hub repository name suffix (e.g., "beir-dumps")
 
 
 # Global registry (populated by @register_ingestor decorators at import time)
 _INGESTOR_REGISTRY: dict[str, IngestorMeta] = {}
 
 # Modules in autorag_research.data that are NOT ingestors (skip during auto-discovery)
-_NON_INGESTOR_MODULES = {"base", "registry", "restore", "util"}
+_NON_INGESTOR_MODULES = {"base", "registry", "restore", "util", "hf_storage"}
 
 
 def register_ingestor(
     name: str,
     description: str = "",
+    hf_repo: str | None = None,
 ):
     """Decorator to register an ingestor class.
 
@@ -78,6 +80,7 @@ def register_ingestor(
     Args:
         name: CLI command name (e.g., "beir")
         description: Help text for CLI
+        hf_repo: HuggingFace Hub repository name suffix (e.g., "beir-dumps")
 
     Example:
         @register_ingestor(name="beir", description="BEIR benchmark")
@@ -98,6 +101,7 @@ def register_ingestor(
             ingestor_class=cls,
             description=description,
             params=params,
+            hf_repo=hf_repo,
         )
         return cls
 

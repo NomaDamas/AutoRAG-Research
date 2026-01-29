@@ -86,6 +86,7 @@ _DATASET_CONFIGS: dict[VisRAGDatasetName, _DatasetConfig] = {
 @register_ingestor(
     name="visrag",
     description="Datasets that used in the VisRAG paper for benchmarking",
+    hf_repo="visrag-dumps",
 )
 class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
     """Unified ingestor for all VisRAG benchmark datasets.
