@@ -168,6 +168,41 @@ class DBConnection:
 
         logger.info(f"Database '{self.database}' created and vector extensions installed.")
 
+    def terminate_connections(self):
+        """Terminate all connections to this database except the current one.
+
+        This is useful before dropping a database to ensure no active connections
+        prevent the DROP DATABASE command from executing.
+        """
+        if self.database is None:
+            raise MissingDBNameError
+
+        # Connect to 'postgres' database to terminate connections
+        admin_conn = DBConnection(
+            host=self.host,
+            port=self.port,
+            username=self.username,
+            password=self.password,
+            database="postgres",
+        )
+        engine = admin_conn.get_engine()
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text(
+                        """
+                        SELECT pg_terminate_backend(pid)
+                        FROM pg_stat_activity
+                        WHERE datname = :dbname AND pid <> pg_backend_pid()
+                        """
+                    ),
+                    {"dbname": self.database},
+                )
+                conn.commit()
+            logger.info(f"Terminated all connections to database '{self.database}'.")
+        finally:
+            engine.dispose()
+
     def drop_database(self):
         if self.database is None:
             raise MissingDBNameError
@@ -189,7 +224,7 @@ class DBConnection:
         dump_file: str | Path,
         clean: bool = False,
         create: bool = True,
-        no_owner: bool = False,
+        no_owner: bool = True,
         extra_args: list[str] | None = None,
     ) -> None:
         """Restore a PostgreSQL database from a dump file.
@@ -203,6 +238,7 @@ class DBConnection:
             create: If True, create the database before restoring.
                 Default is True.
             no_owner: If True, skip restoration of object ownership.
+                Default is True.
             extra_args: Additional arguments to pass to pg_restore.
 
         Raises:
@@ -219,7 +255,15 @@ class DBConnection:
             raise FileNotFoundError
 
         if create:
-            self.create_database()
+            from autorag_research.orm.util import create_database
+
+            create_database(
+                host=self.host,
+                port=self.port,
+                user=self.username,
+                password=self.password,
+                database=self.database,
+            )
 
         optional_flags = [
             ("--clean", clean),
@@ -231,13 +275,13 @@ class DBConnection:
             f"--port={self.port}",
             f"--username={self.username}",
             f"--dbname={self.database}",
-            f"--password={self.password}",
             *[flag for flag, enabled in optional_flags if enabled],
             *(extra_args or []),
             str(dump_path),
         ]
 
         env = os.environ.copy()
+        env["PGPASSWORD"] = self.password
 
         logger.info(f"Restoring database '{self.database}' from '{dump_path}'")
 
@@ -264,7 +308,7 @@ class DBConnection:
         self,
         output_file: str | Path,
         output_format: str = "custom",
-        no_owner: bool = False,
+        no_owner: bool = True,
         extra_args: list[str] | None = None,
     ) -> Path:
         """Dump the database to a file.
@@ -276,6 +320,7 @@ class DBConnection:
             output_file: Path to the output dump file.
             output_format: Output format - "custom" (default), "plain", "directory", or "tar".
             no_owner: If True, skip output of commands to set ownership.
+                Default is True.
             extra_args: Additional arguments to pass to pg_dump.
 
         Returns:
@@ -298,7 +343,6 @@ class DBConnection:
             f"--port={self.port}",
             f"--username={self.username}",
             f"--dbname={self.database}",
-            f"--password={self.password}",
             f"--format={output_format}",
             f"--file={output_path}",
         ]
@@ -310,6 +354,7 @@ class DBConnection:
             cmd.extend(extra_args)
 
         env = os.environ.copy()
+        env["PGPASSWORD"] = self.password
 
         logger.info(f"Dumping database '{self.database}' to '{output_path}'")
 
