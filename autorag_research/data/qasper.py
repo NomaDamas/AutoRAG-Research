@@ -247,6 +247,7 @@ def _process_question(
 @register_ingestor(
     name="qasper",
     description="Qasper QA dataset over NLP research papers",
+    hf_repo="qasper-dumps",
 )
 class QasperIngestor(TextEmbeddingDataIngestor):
     """Ingestor for the Qasper dataset.
