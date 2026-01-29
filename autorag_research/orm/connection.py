@@ -183,6 +183,86 @@ class DBConnection:
 
         logger.info(f"Database '{self.database}' dropped.")
 
+    def dump_database(
+        self,
+        output_file: str | Path,
+        output_format: str = "custom",
+        no_owner: bool = False,
+        extra_args: list[str] | None = None,
+    ) -> Path:
+        """Dump the database to a file.
+
+        Uses pg_dump to create a database dump file that can be restored
+        with pg_restore or the restore_database function.
+
+        Args:
+            output_file: Path to the output dump file.
+            output_format: Output format - "custom" (default), "plain", "directory", or "tar".
+            no_owner: If True, skip output of commands to set ownership.
+            extra_args: Additional arguments to pass to pg_dump.
+
+        Returns:
+            Path to the created dump file.
+
+        Raises:
+            MissingDBNameError: If database name is not set.
+            subprocess.CalledProcessError: If pg_dump fails.
+            RuntimeError: If pg_dump command is not found.
+        """
+        if self.database is None:
+            raise MissingDBNameError
+
+        import os
+        import subprocess
+
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            "pg_dump",
+            f"--host={self.host}",
+            f"--port={self.port}",
+            f"--username={self.username}",
+            f"--dbname={self.database}",
+            f"--password={self.password}",
+            f"--format={output_format}",
+            f"--file={output_path}",
+        ]
+
+        if no_owner:
+            cmd.append("--no-owner")
+
+        if extra_args:
+            cmd.extend(extra_args)
+
+        env = os.environ.copy()
+
+        logger.info(f"Dumping database '{self.database}' to '{output_path}'")
+
+        try:
+            result = subprocess.run(  # noqa: S603
+                cmd,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if result.stdout:
+                logger.debug(result.stdout)
+        except FileNotFoundError as e:
+            msg = "pg_dump command not found. Ensure PostgreSQL client tools are installed."
+            raise RuntimeError(msg) from e
+        except subprocess.CalledProcessError as e:
+            logger.exception(f"pg_dump failed: {e.stderr}")
+            raise
+
+        if not output_path.exists():
+            msg = f"Dump file was not created: {output_path}"
+            raise RuntimeError(msg)
+
+        logger.info(f"Database '{self.database}' dumped successfully to '{output_path}'")
+        return output_path
+
     @classmethod
     def from_config(cls, config_path: Path | None = None) -> "DBConnection":
         """Load database connection configuration from a YAML file.

@@ -7,7 +7,7 @@ dump files stored in HuggingFace Hub dataset repositories.
 import logging
 from pathlib import Path
 
-from huggingface_hub import hf_hub_download, list_repo_files, repo_exists, upload_file
+from huggingface_hub import hf_hub_download, list_repo_files, upload_file
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -146,32 +146,3 @@ def list_available_dumps(ingestor: str) -> list[str]:
 
     files = list_repo_files(repo_id=repo_id, repo_type="dataset")
     return [f.removesuffix(".dump") for f in files if f.endswith(".dump")]
-
-
-def dump_exists(ingestor: str, filename: str) -> bool:
-    """Check if a specific dump file exists in HuggingFace Hub.
-
-    Args:
-        ingestor: Ingestor family name (e.g., "beir", "mrtydi")
-        filename: Dump filename without .dump extension (e.g., "scifact_openai-small").
-
-    Returns:
-        True if the dump exists, False otherwise
-
-    Raises:
-        KeyError: If ingestor is not recognized
-    """
-    repo_id = get_repo_id(ingestor)
-
-    # First check if repo exists
-    if not repo_exists(repo_id=repo_id, repo_type="dataset"):
-        return False
-
-    full_filename = f"{filename}.dump"
-
-    try:
-        files = list_repo_files(repo_id=repo_id, repo_type="dataset")
-    except Exception:
-        return False
-    else:
-        return full_filename in files

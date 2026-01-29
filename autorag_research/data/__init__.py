@@ -5,7 +5,6 @@ from platformdirs import user_data_dir
 from autorag_research.data.hf_storage import (
     HF_ORG,
     download_dump,
-    dump_exists,
     list_available_dumps,
     upload_dump,
 )
@@ -18,7 +17,6 @@ __all__ = [
     "HF_ORG",
     "USER_DATA_DIR",
     "download_dump",
-    "dump_exists",
     "list_available_dumps",
     "restore_database",
     "setup_dataset",

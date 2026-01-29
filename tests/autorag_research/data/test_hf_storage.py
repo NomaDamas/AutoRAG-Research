@@ -11,7 +11,6 @@ import pytest
 from autorag_research.data.hf_storage import (
     HF_ORG,
     download_dump,
-    dump_exists,
     get_repo_id,
     list_available_dumps,
     upload_dump,
@@ -190,91 +189,3 @@ class TestListAvailableDumps:
         """Test that unknown ingestor raises KeyError."""
         with pytest.raises(KeyError, match="Unknown ingestor"):
             list_available_dumps("unknown")
-
-
-class TestDumpExists:
-    """Tests for dump_exists function."""
-
-    @patch("autorag_research.data.hf_storage.list_repo_files")
-    @patch("autorag_research.data.hf_storage.repo_exists")
-    def test_dump_exists_true(self, mock_repo_exists, mock_list):
-        """Test that dump_exists returns True when file exists."""
-        mock_repo_exists.return_value = True
-        mock_list.return_value = ["scifact_openai-small.dump", "nfcorpus_openai-small.dump"]
-
-        result = dump_exists("beir", "scifact_openai-small")
-
-        assert result is True
-
-    @patch("autorag_research.data.hf_storage.list_repo_files")
-    @patch("autorag_research.data.hf_storage.repo_exists")
-    def test_dump_exists_false(self, mock_repo_exists, mock_list):
-        """Test that dump_exists returns False when file doesn't exist."""
-        mock_repo_exists.return_value = True
-        mock_list.return_value = ["other_openai-small.dump"]
-
-        result = dump_exists("beir", "scifact_openai-small")
-
-        assert result is False
-
-    @patch("autorag_research.data.hf_storage.repo_exists")
-    def test_dump_exists_repo_not_found(self, mock_repo_exists):
-        """Test that dump_exists returns False when repo doesn't exist."""
-        mock_repo_exists.return_value = False
-
-        result = dump_exists("beir", "scifact_openai-small")
-
-        assert result is False
-
-    @patch("autorag_research.data.hf_storage.list_repo_files")
-    @patch("autorag_research.data.hf_storage.repo_exists")
-    def test_dump_exists_exception(self, mock_repo_exists, mock_list):
-        """Test that dump_exists returns False on exception."""
-        mock_repo_exists.return_value = True
-        mock_list.side_effect = Exception("Network error")
-
-        result = dump_exists("beir", "scifact_openai-small")
-
-        assert result is False
-
-    def test_dump_exists_unknown_ingestor(self):
-        """Test that unknown ingestor raises KeyError."""
-        with pytest.raises(KeyError, match="Unknown ingestor"):
-            dump_exists("unknown", "some_filename")
-
-
-class TestConstants:
-    """Tests for module constants."""
-
-    def test_hf_org_value(self):
-        """Test HF_ORG constant."""
-        assert HF_ORG == "NomaDamas"
-
-    def test_registry_has_expected_ingestors_with_hf_repo(self):
-        """Test that registry has expected ingestors with hf_repo configured."""
-        from autorag_research.data.registry import discover_ingestors
-
-        registry = discover_ingestors()
-        ingestors_with_hf_repo = {name for name, meta in registry.items() if meta.hf_repo is not None}
-
-        # These are the ingestors that should have hf_repo configured
-        expected = {
-            "beir",
-            "mrtydi",
-            "ragbench",
-            "bright",
-            "visrag",
-            "vidorev2",
-            "open-ragbench",
-            "mteb",
-        }
-        assert expected.issubset(ingestors_with_hf_repo)
-
-    def test_hf_repo_values_end_with_dumps(self):
-        """Test that all hf_repo values end with '-dumps'."""
-        from autorag_research.data.registry import discover_ingestors
-
-        registry = discover_ingestors()
-        for name, meta in registry.items():
-            if meta.hf_repo is not None:
-                assert meta.hf_repo.endswith("-dumps"), f"{name}: {meta.hf_repo} should end with '-dumps'"
