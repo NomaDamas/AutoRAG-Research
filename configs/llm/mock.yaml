@@ -1,0 +1,2 @@
+_target_: llama_index.core.llms.MockLLM
+max_tokens: 256

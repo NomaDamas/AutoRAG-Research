@@ -24,14 +24,13 @@ OPENRAGBENCH_CONFIG = IngestorTestConfig(
     chunk_count_is_minimum=True,  # Full documents ingested, not just gold sections
     # Full hierarchy checks:
     #   - File: stores arxiv pdf_url
-    #   - Chunk: Document -> Page -> Caption -> Chunk
+    #   - Chunk: Document -> Page -> Chunk
     #   - ImageChunk: Document -> Page -> ImageChunk
     check_files=True,
     expected_file_count=10,  # One file per document (arxiv pdf_url)
     check_documents=True,
     expected_document_count=10,  # One document per query's gold section (unique doc_ids)
     check_pages=False,  # Full documents ingested, count varies
-    check_captions=False,  # Full documents ingested, count varies
     check_retrieval_relations=True,
     check_generation_gt=True,
     generation_gt_required_for_all=True,  # All queries have answers in answers.json

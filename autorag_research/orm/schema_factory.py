@@ -43,7 +43,7 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
     Returns:
         A Schema namespace object containing all ORM classes:
         - Base: The declarative base class
-        - File, Document, Page, Caption, Chunk, ImageChunk, etc.
+        - File, Document, Page, Chunk, ImageChunk, etc.
         - embedding_dim: The dimension used for this schema
         - primary_key_type: The primary key type used for this schema
 
@@ -131,23 +131,13 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
 
         # Relationships
         document: Mapped["Document"] = relationship(back_populates="pages")
-        captions: Mapped[list["Caption"]] = relationship(back_populates="page", cascade="all, delete-orphan")
         image_chunks: Mapped[list["ImageChunk"]] = relationship(back_populates="page", cascade="all, delete-orphan")
-
-    class Caption(Base):
-        """Caption table for page captions"""
-
-        __tablename__ = "caption"
-
-        id: Mapped[int | str] = make_pk_column()
-        page_id: Mapped[int | str] = make_fk_column("page")
-        contents: Mapped[str] = mapped_column(Text, nullable=False)
-
-        # Relationships
-        page: Mapped["Page"] = relationship(back_populates="captions")
-        chunks: Mapped[list["Chunk"]] = relationship(back_populates="parent_caption_obj", cascade="all, delete-orphan")
-        caption_chunk_relations: Mapped[list["CaptionChunkRelation"]] = relationship(
-            back_populates="caption", cascade="all, delete-orphan"
+        page_chunk_relations: Mapped[list["PageChunkRelation"]] = relationship(
+            back_populates="page", cascade="all, delete-orphan"
+        )
+        # M:N relationship to Chunk via PageChunkRelation
+        chunks: Mapped[list["Chunk"]] = relationship(
+            secondary="page_chunk_relation", back_populates="pages", viewonly=True
         )
 
     class Chunk(Base):
@@ -156,7 +146,6 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         __tablename__ = "chunk"
 
         id: Mapped[int | str] = make_pk_column()
-        parent_caption: Mapped[int | str | None] = make_fk_column("caption", nullable=True)
         contents: Mapped[str] = mapped_column(Text, nullable=False)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
         embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
@@ -165,17 +154,18 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         table_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
         # Relationships
-        parent_caption_obj: Mapped["Caption | None"] = relationship(
-            foreign_keys=[parent_caption], back_populates="chunks"
-        )
-        caption_chunk_relations: Mapped[list["CaptionChunkRelation"]] = relationship(
-            foreign_keys="CaptionChunkRelation.chunk_id", back_populates="chunk", cascade="all, delete-orphan"
+        page_chunk_relations: Mapped[list["PageChunkRelation"]] = relationship(
+            foreign_keys="PageChunkRelation.chunk_id", back_populates="chunk", cascade="all, delete-orphan"
         )
         retrieval_relations: Mapped[list["RetrievalRelation"]] = relationship(
             foreign_keys="RetrievalRelation.chunk_id", back_populates="chunk", cascade="all, delete-orphan"
         )
         chunk_retrieved_results: Mapped[list["ChunkRetrievedResult"]] = relationship(
             back_populates="chunk", cascade="all, delete-orphan"
+        )
+        # M:N relationship to Page via PageChunkRelation
+        pages: Mapped[list["Page"]] = relationship(
+            secondary="page_chunk_relation", back_populates="chunks", viewonly=True
         )
 
     class ImageChunk(Base):
@@ -191,7 +181,7 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
 
         # Relationships
-        page: Mapped["Page"] = relationship(back_populates="image_chunks")
+        page: Mapped["Page | None"] = relationship(back_populates="image_chunks")
         retrieval_relations: Mapped[list["RetrievalRelation"]] = relationship(
             back_populates="image_chunk", cascade="all, delete-orphan"
         )
@@ -199,17 +189,17 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
             back_populates="image_chunk", cascade="all, delete-orphan"
         )
 
-    class CaptionChunkRelation(Base):
-        """Relation between captions and chunks"""
+    class PageChunkRelation(Base):
+        """Relation between pages and chunks"""
 
-        __tablename__ = "caption_chunk_relation"
+        __tablename__ = "page_chunk_relation"
 
-        caption_id: Mapped[int | str] = make_fk_column("caption", primary_key=True)
+        page_id: Mapped[int | str] = make_fk_column("page", primary_key=True)
         chunk_id: Mapped[int | str] = make_fk_column("chunk", primary_key=True)
 
         # Relationships
-        caption: Mapped["Caption"] = relationship(back_populates="caption_chunk_relations")
-        chunk: Mapped["Chunk"] = relationship(foreign_keys=[chunk_id], back_populates="caption_chunk_relations")
+        page: Mapped["Page"] = relationship(back_populates="page_chunk_relations")
+        chunk: Mapped["Chunk"] = relationship(foreign_keys=[chunk_id], back_populates="page_chunk_relations")
 
     class Query(Base):
         """Query table for retrieval and generation evaluation"""
@@ -390,10 +380,9 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
     Schema.File = File  # ty: ignore
     Schema.Document = Document  # ty: ignore
     Schema.Page = Page  # ty: ignore
-    Schema.Caption = Caption  # ty: ignore
     Schema.Chunk = Chunk  # ty: ignore
     Schema.ImageChunk = ImageChunk  # ty: ignore
-    Schema.CaptionChunkRelation = CaptionChunkRelation  # ty: ignore
+    Schema.PageChunkRelation = PageChunkRelation  # ty: ignore
     Schema.Query = Query  # ty: ignore
     Schema.RetrievalRelation = RetrievalRelation  # ty: ignore
     Schema.Pipeline = Pipeline  # ty: ignore

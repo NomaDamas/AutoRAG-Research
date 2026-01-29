@@ -13,6 +13,8 @@ from sacrebleu.metrics.bleu import BLEU
 
 from autorag_research.config import BaseGenerationMetricConfig
 from autorag_research.evaluation.metrics.util import calculate_cosine_similarity, metric_loop
+from autorag_research.exceptions import EmbeddingError
+from autorag_research.injection import with_embedding
 from autorag_research.schema import MetricInput
 from autorag_research.util import convert_inputs_to_list, truncate_texts, unpack_and_run
 
@@ -155,9 +157,10 @@ def rouge(
 
 
 @metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@with_embedding()
 def sem_score(
     metric_inputs: list[MetricInput],
-    embedding_model: BaseEmbedding,
+    embedding_model: BaseEmbedding | str,
     truncate_length: int = 4096,
 ) -> list[float]:
     """Compute sem score between generation gt and pred with cosine similarity.
@@ -165,11 +168,15 @@ def sem_score(
     Args:
         metric_inputs: A list of MetricInput schema (Required Field -> "generation_gt", "generated_texts").
         embedding_model: Embedding model to use for compute cosine similarity.
+            Can be a BaseEmbedding instance or a string config name (e.g., "openai-large").
         truncate_length: Maximum length of texts to embedding. Default is 4096.
 
     Returns:
         A list of computed metric scores.
     """
+    if not isinstance(embedding_model, BaseEmbedding):
+        raise EmbeddingError
+
     generations = [metric_input.generated_texts for metric_input in metric_inputs]
     generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 
@@ -179,7 +186,9 @@ def sem_score(
 
     embedded_pred: list[list[float]] = embedding_model.get_text_embedding_batch(generations, show_progress=True)
     embedded_gt: list[list[float]] = unpack_and_run(
-        generation_gt, embedding_model.get_text_embedding_batch, show_progress=True
+        generation_gt,
+        embedding_model.get_text_embedding_batch,
+        show_progress=True,
     )
 
     result = []
@@ -187,7 +196,6 @@ def sem_score(
         similarity_scores: list[float] = [calculate_cosine_similarity(x, pred) for x in gt]
         result.append(max(similarity_scores))
 
-    del embedding_model
     return result
 
 
@@ -331,12 +339,12 @@ class SemScoreConfig(BaseGenerationMetricConfig):
     """Configuration for SemScore (semantic similarity) metric.
 
     Attributes:
-        embedding_model: Embedding model to use for computing cosine similarity.
+        embedding_model: Embedding model config name (e.g., "openai-large") or BaseEmbedding instance.
         truncate_length: Maximum length of texts to embed.
     """
 
     truncate_length: int = 4096
-    embedding_model: BaseEmbedding | None = None
+    embedding_model: BaseEmbedding | str = "openai-large"
 
     def get_metric_func(self) -> Callable:
         """Return the metric function."""

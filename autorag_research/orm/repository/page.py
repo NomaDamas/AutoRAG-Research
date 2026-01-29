@@ -68,16 +68,32 @@ class PageRepository(GenericRepository):
         stmt = select(self.model_cls).where(self.model_cls.id == page_id).options(joinedload(self.model_cls.document))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_captions(self, page_id: int) -> Any | None:
-        """Retrieve a page with its captions eagerly loaded.
+    def get_with_chunks(self, page_id: int) -> Any | None:
+        """Retrieve a page with its chunks eagerly loaded.
 
         Args:
             page_id: The page ID.
 
         Returns:
-            The page with captions loaded, None if not found.
+            The page with chunks loaded, None if not found.
         """
-        stmt = select(self.model_cls).where(self.model_cls.id == page_id).options(joinedload(self.model_cls.captions))
+        stmt = select(self.model_cls).where(self.model_cls.id == page_id).options(joinedload(self.model_cls.chunks))
+        return self.session.execute(stmt).unique().scalar_one_or_none()
+
+    def get_with_page_chunk_relations(self, page_id: int) -> Any | None:
+        """Retrieve a page with its page-chunk relations eagerly loaded.
+
+        Args:
+            page_id: The page ID.
+
+        Returns:
+            The page with page-chunk relations loaded, None if not found.
+        """
+        stmt = (
+            select(self.model_cls)
+            .where(self.model_cls.id == page_id)
+            .options(joinedload(self.model_cls.page_chunk_relations))
+        )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
     def get_with_image_chunks(self, page_id: int) -> Any | None:

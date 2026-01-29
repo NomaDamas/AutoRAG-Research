@@ -1,7 +1,6 @@
 """Tests for autorag_research.cli.utils module."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,8 +11,6 @@ from autorag_research.cli.utils import (
     discover_metrics,
     discover_pipelines,
     get_config_dir,
-    health_check_embedding,
-    load_embedding_model,
     setup_logging,
 )
 
@@ -190,60 +187,6 @@ class TestGetConfigDir:
         result = get_config_dir()
 
         assert result == Path.cwd() / "configs"
-
-
-class TestLoadEmbeddingModel:
-    """Tests for load_embedding_model function."""
-
-    def test_raises_file_not_found_for_missing_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Raises FileNotFoundError when config doesn't exist."""
-        monkeypatch.setattr(cli, "CONFIG_PATH", tmp_path)
-
-        with pytest.raises(FileNotFoundError):
-            load_embedding_model("nonexistent")
-
-    @patch("hydra.utils.instantiate")
-    def test_raises_type_error_for_wrong_type(self, mock_instantiate: MagicMock, real_config_path: Path) -> None:
-        """Raises TypeError when instantiated object is not BaseEmbedding."""
-        mock_instantiate.return_value = "not an embedding"
-
-        with pytest.raises(TypeError, match="BaseEmbedding"):
-            load_embedding_model("openai-small")
-
-    def test_returns_embedding_instance(self, real_config_path: Path) -> None:
-        """Returns BaseEmbedding instance when config is valid."""
-        from llama_index.core.base.embeddings.base import BaseEmbedding
-
-        result = load_embedding_model("mock")
-
-        assert isinstance(result, BaseEmbedding)
-
-
-class TestHealthCheckEmbedding:
-    """Tests for health_check_embedding function.
-
-    Uses mock embedding model to avoid real API calls.
-    """
-
-    def test_returns_dimension_on_success(self) -> None:
-        """Returns embedding dimension on success."""
-        from llama_index.core.embeddings.mock_embed_model import MockEmbedding
-
-        mock_embedding = MockEmbedding(384)
-
-        result = health_check_embedding(mock_embedding)
-
-        assert result == 384
-
-    def test_raises_on_embedding_failure(self) -> None:
-        """Raises EmbeddingNotSetError when embedding fails."""
-        from autorag_research.exceptions import EmbeddingNotSetError
-
-        mock_model = MagicMock()
-        mock_model.get_text_embedding.side_effect = Exception("API Error")
-
-        with pytest.raises(EmbeddingNotSetError):
-            health_check_embedding(mock_model)
 
 
 class TestSetupLogging:

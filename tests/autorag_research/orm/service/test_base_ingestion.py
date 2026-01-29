@@ -26,8 +26,8 @@ class TestBaseIngestionService:
 
     def test_add_chunks(self, service):
         chunks = [
-            {"contents": "test chunk A", "parent_caption": None},
-            {"contents": "test chunk B", "parent_caption": None},
+            {"contents": "test chunk A"},
+            {"contents": "test chunk B"},
         ]
         ids = service.add_chunks(chunks)
         assert len(ids) == 2

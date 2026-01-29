@@ -33,11 +33,20 @@ def test_get_with_document(page_repository: PageRepository):
     assert result.document is not None
 
 
-def test_get_with_captions(page_repository: PageRepository):
-    result = page_repository.get_with_captions(1)
+def test_get_with_chunks(page_repository: PageRepository):
+    result = page_repository.get_with_chunks(1)
 
     assert result is not None
-    assert hasattr(result, "captions")
+    assert hasattr(result, "chunks")
+    assert len(result.chunks) >= 1
+
+
+def test_get_with_page_chunk_relations(page_repository: PageRepository):
+    result = page_repository.get_with_page_chunk_relations(1)
+
+    assert result is not None
+    assert hasattr(result, "page_chunk_relations")
+    assert len(result.page_chunk_relations) >= 1
 
 
 def test_get_with_image_chunks(page_repository: PageRepository):

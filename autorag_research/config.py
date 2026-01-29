@@ -12,6 +12,8 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from llama_index.core.base.llms.base import BaseLLM
+
     from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
 
@@ -116,17 +118,27 @@ class BaseRetrievalPipelineConfig(BasePipelineConfig, ABC):
         return {"top_k": self.top_k, "batch_size": self.batch_size}
 
 
-@dataclass
+@dataclass(kw_only=True)
 class BaseGenerationPipelineConfig(BasePipelineConfig, ABC):
     """Base configuration for generation pipelines.
 
     This class sets the pipeline_type to GENERATION by default.
+    When llm is set with a string, it automatically loads the LLM instance.
     """
 
+    llm: "str | BaseLLM"
+    retrieval_pipeline_name: str
     pipeline_type: PipelineType = field(default=PipelineType.GENERATION, init=False)
-    retrieval_pipeline_name: str = ""
     # Runtime injection (Executor sets this)
     _retrieval_pipeline: "BaseRetrievalPipeline | None" = field(default=None, repr=False)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Auto-convert llm string to BaseLLM instance."""
+        if name == "llm" and isinstance(value, str):
+            from autorag_research.injection import load_llm
+
+            value = load_llm(value)
+        super().__setattr__(name, value)
 
     def get_run_kwargs(self) -> dict[str, Any]:
         """Return kwargs for pipeline.run() method.
