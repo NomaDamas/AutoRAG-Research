@@ -17,7 +17,7 @@ class TestMainCallback:
         config_dir = tmp_path / "my_configs"
         config_dir.mkdir()
 
-        cli_runner.invoke(app, ["--config-path", str(config_dir), "list", "pipelines"])
+        cli_runner.invoke(app, ["--config-path", str(config_dir), "show", "pipelines"])
 
         assert config_dir.resolve() == cli.CONFIG_PATH
 
@@ -28,7 +28,7 @@ class TestMainCallback:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.chdir(tmpdir)
-            cli_runner.invoke(app, ["list", "pipelines"])
+            cli_runner.invoke(app, ["show", "pipelines"])
 
             expected = (Path(tmpdir) / "configs").resolve()
             assert expected == cli.CONFIG_PATH
@@ -41,7 +41,7 @@ class TestMainCallback:
         config_dir.mkdir()
 
         monkeypatch.setenv("AUTORAG_RESEARCH_CONFIG_PATH", str(config_dir))
-        cli_runner.invoke(app, ["list", "pipelines"])
+        cli_runner.invoke(app, ["show", "pipelines"])
 
         assert config_dir.resolve() == cli.CONFIG_PATH
 
@@ -55,7 +55,7 @@ class TestMainCallback:
         cli_dir.mkdir()
 
         monkeypatch.setenv("AUTORAG_RESEARCH_CONFIG_PATH", str(env_dir))
-        cli_runner.invoke(app, ["--config-path", str(cli_dir), "list", "pipelines"])
+        cli_runner.invoke(app, ["--config-path", str(cli_dir), "show", "pipelines"])
 
         assert cli_dir.resolve() == cli.CONFIG_PATH
 
@@ -99,12 +99,12 @@ class TestAppStructure:
         assert result.exit_code == 0
         assert "AutoRAG-Research CLI" in result.stdout
 
-    def test_app_has_list_command(self, cli_runner: CliRunner) -> None:
-        """App has 'list' command registered."""
-        result = cli_runner.invoke(app, ["list", "--help"])
+    def test_app_has_show_command(self, cli_runner: CliRunner) -> None:
+        """App has 'show' command registered."""
+        result = cli_runner.invoke(app, ["show", "--help"])
 
         assert result.exit_code == 0
-        assert "list" in result.stdout.lower() and "resources" in result.stdout.lower()
+        assert "show" in result.stdout.lower() and "resources" in result.stdout.lower()
 
     def test_app_has_ingest_command(self, cli_runner: CliRunner) -> None:
         """App has 'ingest' command registered."""
