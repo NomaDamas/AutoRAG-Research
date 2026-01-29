@@ -285,6 +285,11 @@ class TestMetricEvaluationRules:
         mock_generation_metric_config,
     ):
         """Test that generation pipelines evaluate both retrieval and generation metrics."""
+        from pathlib import Path
+
+        from autorag_research import cli
+
+        cli.CONFIG_PATH = Path(__file__).parent.parent.parent / "configs"
 
         # Create mock generation pipeline config
         @dataclass
@@ -299,7 +304,7 @@ class TestMetricEvaluationRules:
                 return {}
 
         config = ExecutorConfig(
-            pipelines=[MockGenerationPipeline(name="test_generation")],
+            pipelines=[MockGenerationPipeline(name="test_generation", llm="mock", retrieval_pipeline_name="mock")],
             metrics=[mock_retrieval_metric_config, mock_generation_metric_config],
             max_retries=1,
         )
@@ -332,6 +337,7 @@ class TestMetricEvaluationRules:
             )
 
         executor._evaluate_metric = track_evaluate
+        executor._resolve_dependencies = MagicMock()
 
         result = executor.run()
 

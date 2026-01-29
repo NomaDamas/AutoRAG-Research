@@ -6,7 +6,7 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.embeddings import MultiModalEmbedding
 
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
+from autorag_research.exceptions import EmbeddingError, ServiceNotSetError
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 
@@ -60,7 +60,7 @@ class TextEmbeddingDataIngestor(DataIngestor, ABC):
         if self.service is None:
             raise ServiceNotSetError
         if self.embedding_model is None:
-            raise EmbeddingNotSetError
+            raise EmbeddingError
         self.service.embed_all_queries(
             self.embedding_model.aget_query_embedding,
             batch_size=batch_size,
@@ -94,7 +94,7 @@ class MultiModalEmbeddingDataIngestor(DataIngestor, ABC):
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
         """Embed all queries and image chunks using single-vector embedding model."""
         if self.embedding_model is None:
-            raise EmbeddingNotSetError
+            raise EmbeddingError
         if self.service is None:
             raise ServiceNotSetError
         self.service.embed_all_queries(
@@ -111,7 +111,7 @@ class MultiModalEmbeddingDataIngestor(DataIngestor, ABC):
     def embed_all_late_interaction(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
         """Embed all queries and image chunks using multi-vector embedding model."""
         if self.late_interaction_embedding_model is None:
-            raise EmbeddingNotSetError
+            raise EmbeddingError
         if self.service is None:
             raise ServiceNotSetError
         self.service.embed_all_queries_multi_vector(

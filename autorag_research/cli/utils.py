@@ -3,13 +3,8 @@
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import yaml
-from omegaconf import OmegaConf
-
-if TYPE_CHECKING:
-    from llama_index.core.base.embeddings.base import BaseEmbedding
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -104,61 +99,6 @@ def setup_logging(verbose: bool = False) -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
-
-
-# =============================================================================
-# Embedding Model Utilities
-# =============================================================================
-
-
-def load_embedding_model(config_name: str) -> "BaseEmbedding":
-    """Load LlamaIndex embedding model directly from YAML via Hydra instantiate.
-
-    Args:
-        config_name: Name of the embedding config file (without .yaml extension).
-                    e.g., "openai-small", "openai-large", "openai-like"
-
-    Returns:
-        LlamaIndex BaseEmbedding instance.
-
-    Raises:
-        FileNotFoundError: If the config file doesn't exist.
-    """
-    from hydra.utils import instantiate
-    from llama_index.core.base.embeddings.base import BaseEmbedding
-
-    yaml_path = get_config_dir() / "embedding" / f"{config_name}.yaml"
-    if not yaml_path.exists():
-        raise FileNotFoundError
-
-    cfg = OmegaConf.load(yaml_path)
-    model = instantiate(cfg)
-
-    if not isinstance(model, BaseEmbedding):
-        raise TypeError(f"Expected BaseEmbedding, got {type(model)}")  # noqa: TRY003
-
-    return model
-
-
-def health_check_embedding(model: "BaseEmbedding") -> int:
-    """Health check embedding model and return embedding dimension.
-
-    Args:
-        model: LlamaIndex BaseEmbedding instance.
-
-    Returns:
-        Embedding dimension (length of embedding vector).
-
-    Raises:
-        EmbeddingNotSetError: If health check fails.
-    """
-    from autorag_research.exceptions import EmbeddingNotSetError
-
-    try:
-        embedding = model.get_text_embedding("health check")
-        return len(embedding)
-    except Exception as e:
-        raise EmbeddingNotSetError from e
 
 
 def discover_embedding_configs() -> dict[str, str]:
