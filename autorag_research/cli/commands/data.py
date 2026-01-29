@@ -29,38 +29,6 @@ data_app = typer.Typer(
 )
 
 
-@data_app.command(name="download")
-def download_dump_cmd(
-    ingestor: Annotated[str, typer.Argument(help="Ingestor name (e.g., beir, mteb)")],
-    filename: Annotated[str, typer.Argument(help="Dump filename without .dump extension")],
-) -> None:
-    """Download a dump file from HuggingFace Hub.
-
-    Examples:
-        autorag-research data download beir scifact_openai-small
-        autorag-research data download mteb nfcorpus_bge-small
-    """
-    from huggingface_hub.utils import EntryNotFoundError, RepositoryNotFoundError
-
-    from autorag_research.data.hf_storage import download_dump
-
-    try:
-        with console.status(f"[bold blue]Downloading '{filename}' from '{ingestor}'..."):
-            path = download_dump(ingestor, filename)
-    except KeyError as e:
-        typer.echo(str(e), err=True)
-        raise typer.Exit(1) from None
-    except RepositoryNotFoundError:
-        typer.echo(f"Repository not found for ingestor '{ingestor}'", err=True)
-        raise typer.Exit(1) from None
-    except EntryNotFoundError:
-        typer.echo(f"File '{filename}.dump' not found in repository", err=True)
-        typer.echo(f"Use 'autorag-research show datasets {ingestor}' to see available dumps", err=True)
-        raise typer.Exit(1) from None
-
-    console.print(f"[green]✓[/green] Downloaded: {path}")
-
-
 @data_app.command(name="restore")
 def restore_dump_cmd(
     ingestor: Annotated[str, typer.Argument(help="Ingestor name (e.g., beir, mteb)")],
