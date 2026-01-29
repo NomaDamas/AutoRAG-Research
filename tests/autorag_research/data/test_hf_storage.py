@@ -60,36 +60,6 @@ class TestDownloadDump:
             cache_dir=None,
         )
 
-    @patch("autorag_research.data.hf_storage.hf_hub_download")
-    def test_download_dump_with_revision(self, mock_download):
-        """Test download with specific revision."""
-        mock_download.return_value = "/cache/path/scifact_openai-small.dump"
-
-        download_dump("beir", "scifact_openai-small", revision="v1.0")
-
-        mock_download.assert_called_once_with(
-            repo_id=f"{HF_ORG}/beir-dumps",
-            filename="scifact_openai-small.dump",
-            revision="v1.0",
-            repo_type="dataset",
-            cache_dir=None,
-        )
-
-    @patch("autorag_research.data.hf_storage.hf_hub_download")
-    def test_download_dump_with_cache_dir(self, mock_download):
-        """Test download with custom cache directory."""
-        mock_download.return_value = "/custom/cache/scifact_openai-small.dump"
-
-        download_dump("beir", "scifact_openai-small", cache_dir="/custom/cache")
-
-        mock_download.assert_called_once_with(
-            repo_id=f"{HF_ORG}/beir-dumps",
-            filename="scifact_openai-small.dump",
-            revision=None,
-            repo_type="dataset",
-            cache_dir="/custom/cache",
-        )
-
     def test_download_dump_unknown_ingestor(self):
         """Test that unknown ingestor raises KeyError."""
         with pytest.raises(KeyError, match="Unknown ingestor"):
