@@ -135,6 +135,10 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         page_chunk_relations: Mapped[list["PageChunkRelation"]] = relationship(
             back_populates="page", cascade="all, delete-orphan"
         )
+        # M:N relationship to Chunk via PageChunkRelation
+        chunks: Mapped[list["Chunk"]] = relationship(
+            secondary="page_chunk_relation", back_populates="pages", viewonly=True
+        )
 
     class Chunk(Base):
         """Text chunk table with embeddings"""
@@ -158,6 +162,10 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         )
         chunk_retrieved_results: Mapped[list["ChunkRetrievedResult"]] = relationship(
             back_populates="chunk", cascade="all, delete-orphan"
+        )
+        # M:N relationship to Page via PageChunkRelation
+        pages: Mapped[list["Page"]] = relationship(
+            secondary="page_chunk_relation", back_populates="chunks", viewonly=True
         )
 
     class ImageChunk(Base):
