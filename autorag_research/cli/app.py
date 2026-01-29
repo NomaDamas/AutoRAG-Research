@@ -11,8 +11,8 @@ import autorag_research.cli as cli
 from autorag_research.cli.commands.data import data_app
 from autorag_research.cli.commands.ingest import ingest_app
 from autorag_research.cli.commands.init import init
-from autorag_research.cli.commands.list_cmd import list_resources
 from autorag_research.cli.commands.run import run_command
+from autorag_research.cli.commands.show import show_resources
 
 # Configure logging for CLI output
 logging.basicConfig(
@@ -72,7 +72,7 @@ app.add_typer(data_app, name="data")
 app.add_typer(ingest_app, name="ingest")
 
 # Add simple commands
-app.command(name="list")(list_resources)
+app.command(name="show")(show_resources)
 app.command(name="init")(init)
 app.command(name="run")(run_command)
 

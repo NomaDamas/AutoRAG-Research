@@ -6,51 +6,6 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 from autorag_research.cli.app import app
-from autorag_research.cli.commands.data import _get_available_ingestors
-
-
-class TestDataListCommand:
-    """Tests for 'data list' command."""
-
-    def test_list_help_shows_options(self, cli_runner: CliRunner) -> None:
-        """'data list --help' shows available options."""
-        result = cli_runner.invoke(app, ["data", "list", "--help"])
-
-        assert result.exit_code == 0
-        assert "INGESTOR" in result.stdout or "ingestor" in result.stdout.lower()
-
-    @patch("autorag_research.data.hf_storage.list_available_dumps")
-    def test_list_shows_dumps(self, mock_list: MagicMock, cli_runner: CliRunner) -> None:
-        """'data list <ingestor>' shows available dumps."""
-        mock_list.return_value = ["scifact_openai-small", "nfcorpus_bge-small"]
-
-        result = cli_runner.invoke(app, ["data", "list", "beir"])
-
-        assert result.exit_code == 0
-        assert "scifact_openai-small" in result.stdout
-        assert "nfcorpus_bge-small" in result.stdout
-        mock_list.assert_called_once_with("beir")
-
-    @patch("autorag_research.data.hf_storage.list_available_dumps")
-    def test_list_empty_repo(self, mock_list: MagicMock, cli_runner: CliRunner) -> None:
-        """'data list' with empty repo shows message."""
-        mock_list.return_value = []
-
-        result = cli_runner.invoke(app, ["data", "list", "beir"])
-
-        assert result.exit_code == 0
-        assert "No dump files found" in result.stdout
-
-    @patch("autorag_research.data.hf_storage.list_available_dumps")
-    def test_list_unknown_ingestor(self, mock_list: MagicMock, cli_runner: CliRunner) -> None:
-        """'data list' with unknown ingestor shows error."""
-        mock_list.side_effect = KeyError("Unknown ingestor or no HF repo configured: 'unknown'")
-
-        result = cli_runner.invoke(app, ["data", "list", "unknown"])
-
-        assert result.exit_code == 1
-        # Error is written to stderr, use output which combines stdout+stderr
-        assert "Unknown ingestor" in result.output or "unknown" in result.output.lower()
 
 
 class TestDataDownloadCommand:
@@ -342,25 +297,3 @@ class TestDataUploadCommand:
         assert result.exit_code == 1
         # Error is written to stderr, use output which combines stdout+stderr
         assert "Authentication" in result.output or "HF_TOKEN" in result.output
-
-
-class TestGetAvailableIngestors:
-    """Tests for _get_available_ingestors helper function."""
-
-    def test_returns_sorted_list(self) -> None:
-        """Returns sorted list of ingestors with HF repos."""
-        result = _get_available_ingestors()
-
-        assert isinstance(result, list)
-        assert result == sorted(result)
-
-    def test_only_includes_ingestors_with_hf_repos(self) -> None:
-        """Only includes ingestors that have HF repos configured."""
-        result = _get_available_ingestors()
-
-        # Known ingestors with HF repos (from the plan)
-        known_hf_ingestors = ["beir", "mteb", "mrtydi", "bright", "ragbench"]
-
-        # At least some of the known ingestors should be in the result
-        found = [name for name in known_hf_ingestors if name in result]
-        assert len(found) > 0, f"Expected some of {known_hf_ingestors} in {result}"

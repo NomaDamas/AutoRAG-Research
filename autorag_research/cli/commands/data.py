@@ -1,14 +1,15 @@
 """data command - Manage PostgreSQL dump files via HuggingFace Hub.
 
-This module provides CLI commands for listing, downloading, uploading,
+This module provides CLI commands for downloading, uploading,
 and restoring PostgreSQL dump files stored in HuggingFace Hub repositories.
 
 Examples:
-    autorag-research data list beir
     autorag-research data download beir scifact_openai-small
     autorag-research data restore beir scifact_openai-small
     autorag-research data dump --db-name=my_database
     autorag-research data upload ./backup.dump beir scifact_openai-small
+
+Note: Use 'autorag-research show datasets [ingestor]' to list available dumps.
 """
 
 import logging
@@ -26,46 +27,6 @@ data_app = typer.Typer(
     name="data",
     help="Manage PostgreSQL dump files via HuggingFace Hub.",
 )
-
-
-def _get_available_ingestors() -> list[str]:
-    """Get list of ingestors with HuggingFace repos configured."""
-    from autorag_research.data.registry import discover_ingestors
-
-    registry = discover_ingestors()
-    return sorted(name for name, meta in registry.items() if meta.hf_repo is not None)
-
-
-@data_app.command(name="list")
-def list_dumps_cmd(
-    ingestor: Annotated[str, typer.Argument(help="Ingestor name (e.g., beir, mteb, ragbench)")],
-) -> None:
-    """List available dump files for an ingestor.
-
-    Examples:
-        autorag-research data list beir
-        autorag-research data list mteb
-    """
-    from huggingface_hub.utils import RepositoryNotFoundError
-
-    from autorag_research.data.hf_storage import list_available_dumps
-
-    try:
-        dumps = list_available_dumps(ingestor)
-    except KeyError as e:
-        typer.echo(str(e), err=True)
-        raise typer.Exit(1) from None
-    except RepositoryNotFoundError:
-        typer.echo(f"Repository not found for ingestor '{ingestor}'", err=True)
-        raise typer.Exit(1) from None
-
-    if not dumps:
-        typer.echo(f"No dump files found for '{ingestor}'")
-        return
-
-    typer.echo(f"Available dumps for '{ingestor}':")
-    for dump in sorted(dumps):
-        typer.echo(f"  {dump}")
 
 
 @data_app.command(name="download")
@@ -94,7 +55,7 @@ def download_dump_cmd(
         raise typer.Exit(1) from None
     except EntryNotFoundError:
         typer.echo(f"File '{filename}.dump' not found in repository", err=True)
-        typer.echo(f"Use 'autorag-research data list {ingestor}' to see available dumps", err=True)
+        typer.echo(f"Use 'autorag-research show datasets {ingestor}' to see available dumps", err=True)
         raise typer.Exit(1) from None
 
     console.print(f"[green]✓[/green] Downloaded: {path}")
@@ -158,7 +119,7 @@ def restore_dump_cmd(
         raise typer.Exit(1) from None
     except EntryNotFoundError:
         typer.echo(f"File '{filename}.dump' not found in repository", err=True)
-        typer.echo(f"Use 'autorag-research data list {ingestor}' to see available dumps", err=True)
+        typer.echo(f"Use 'autorag-research show datasets {ingestor}' to see available dumps", err=True)
         raise typer.Exit(1) from None
 
     console.print(f"[green]✓[/green] Downloaded: {dump_path}")
