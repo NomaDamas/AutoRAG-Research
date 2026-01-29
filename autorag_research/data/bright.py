@@ -52,6 +52,7 @@ BATCH_SIZE = 1000
 @register_ingestor(
     name="bright",
     description="BRIGHT benchmark for reasoning-intensive retrieval",
+    hf_repo="bright-dumps",
 )
 class BRIGHTIngestor(TextEmbeddingDataIngestor):
     def __init__(

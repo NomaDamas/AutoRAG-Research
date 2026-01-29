@@ -68,6 +68,7 @@ from autorag_research.data.registry import register_ingestor  # noqa: E402
 @register_ingestor(
     name="ragbench",
     description="RAGBench benchmark for RAG evaluation",
+    hf_repo="ragbench-dumps",
 )
 class RAGBenchIngestor(TextEmbeddingDataIngestor):
     def __init__(

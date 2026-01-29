@@ -1,5 +1,6 @@
 import logging
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -217,6 +218,169 @@ class DBConnection:
         )
 
         logger.info(f"Database '{self.database}' dropped.")
+
+    def restore_database(
+        self,
+        dump_file: str | Path,
+        clean: bool = False,
+        create: bool = True,
+        no_owner: bool = True,
+        extra_args: list[str] | None = None,
+    ) -> None:
+        """Restore a PostgreSQL database from a dump file.
+
+        Uses pg_restore to restore a database from a dump file created with
+        pg_dump in custom format (--format=custom).
+
+        Args:
+            dump_file: Path to the dump file to restore from.
+            clean: If True, drop database objects before recreating them.
+            create: If True, create the database before restoring.
+                Default is True.
+            no_owner: If True, skip restoration of object ownership.
+                Default is True.
+            extra_args: Additional arguments to pass to pg_restore.
+
+        Raises:
+            MissingDBNameError: If database name is not set.
+            FileNotFoundError: If the dump file does not exist.
+            subprocess.CalledProcessError: If pg_restore fails.
+            RuntimeError: If pg_restore command is not found.
+        """
+        if self.database is None:
+            raise MissingDBNameError
+
+        dump_path = Path(dump_file)
+        if not dump_path.exists():
+            raise FileNotFoundError
+
+        if create:
+            from autorag_research.orm.util import create_database
+
+            create_database(
+                host=self.host,
+                port=self.port,
+                user=self.username,
+                password=self.password,
+                database=self.database,
+            )
+
+        optional_flags = [
+            ("--clean", clean),
+            ("--no-owner", no_owner),
+        ]
+        cmd = [
+            "pg_restore",
+            f"--host={self.host}",
+            f"--port={self.port}",
+            f"--username={self.username}",
+            f"--dbname={self.database}",
+            *[flag for flag, enabled in optional_flags if enabled],
+            *(extra_args or []),
+            str(dump_path),
+        ]
+
+        env = os.environ.copy()
+        env["PGPASSWORD"] = self.password
+
+        logger.info(f"Restoring database '{self.database}' from '{dump_path}'")
+
+        try:
+            result = subprocess.run(  # noqa: S603
+                cmd,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if result.stdout:
+                logger.debug(result.stdout)
+        except FileNotFoundError as e:
+            msg = "pg_restore command not found. Ensure PostgreSQL client tools are installed."
+            raise RuntimeError(msg) from e
+        except subprocess.CalledProcessError as e:
+            logger.exception(f"pg_restore failed: {e.stderr}")
+            raise
+
+        logger.info(f"Database '{self.database}' restored successfully")
+
+    def dump_database(
+        self,
+        output_file: str | Path,
+        output_format: str = "custom",
+        no_owner: bool = True,
+        extra_args: list[str] | None = None,
+    ) -> Path:
+        """Dump the database to a file.
+
+        Uses pg_dump to create a database dump file that can be restored
+        with pg_restore or the restore_database function.
+
+        Args:
+            output_file: Path to the output dump file.
+            output_format: Output format - "custom" (default), "plain", "directory", or "tar".
+            no_owner: If True, skip output of commands to set ownership.
+                Default is True.
+            extra_args: Additional arguments to pass to pg_dump.
+
+        Returns:
+            Path to the created dump file.
+
+        Raises:
+            MissingDBNameError: If database name is not set.
+            subprocess.CalledProcessError: If pg_dump fails.
+            RuntimeError: If pg_dump command is not found.
+        """
+        if self.database is None:
+            raise MissingDBNameError
+
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            "pg_dump",
+            f"--host={self.host}",
+            f"--port={self.port}",
+            f"--username={self.username}",
+            f"--dbname={self.database}",
+            f"--format={output_format}",
+            f"--file={output_path}",
+        ]
+
+        if no_owner:
+            cmd.append("--no-owner")
+
+        if extra_args:
+            cmd.extend(extra_args)
+
+        env = os.environ.copy()
+        env["PGPASSWORD"] = self.password
+
+        logger.info(f"Dumping database '{self.database}' to '{output_path}'")
+
+        try:
+            result = subprocess.run(  # noqa: S603
+                cmd,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if result.stdout:
+                logger.debug(result.stdout)
+        except FileNotFoundError as e:
+            msg = "pg_dump command not found. Ensure PostgreSQL client tools are installed."
+            raise RuntimeError(msg) from e
+        except subprocess.CalledProcessError as e:
+            logger.exception(f"pg_dump failed: {e.stderr}")
+            raise
+
+        if not output_path.exists():
+            msg = f"Dump file was not created: {output_path}"
+            raise RuntimeError(msg)
+
+        logger.info(f"Database '{self.database}' dumped successfully to '{output_path}'")
+        return output_path
 
     @classmethod
     def from_config(cls, config_path: Path | None = None) -> "DBConnection":

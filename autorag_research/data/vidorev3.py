@@ -47,6 +47,7 @@ VIDOREV3_CONFIGS = Literal[
 @register_ingestor(
     name="vidorev3",
     description="ViDoRe V3 visual document retrieval benchmark",
+    hf_repo="vidorev3-dumps",
 )
 class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
     def __init__(
