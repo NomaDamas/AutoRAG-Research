@@ -53,7 +53,6 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
         ```
     """
 
-    llm: "LLM"
     prompt_template: str = field(default=DEFAULT_PROMPT_TEMPLATE)
 
     def get_pipeline_class(self) -> type["BasicRAGPipeline"]:
