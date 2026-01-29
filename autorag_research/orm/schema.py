@@ -23,10 +23,9 @@ Base = _default_schema.Base
 File = _default_schema.File
 Document = _default_schema.Document
 Page = _default_schema.Page
-Caption = _default_schema.Caption
 Chunk = _default_schema.Chunk
 ImageChunk = _default_schema.ImageChunk
-CaptionChunkRelation = _default_schema.CaptionChunkRelation
+PageChunkRelation = _default_schema.PageChunkRelation
 Query = _default_schema.Query
 RetrievalRelation = _default_schema.RetrievalRelation
 Pipeline = _default_schema.Pipeline
@@ -39,8 +38,6 @@ Summary = _default_schema.Summary
 
 __all__ = [
     "Base",
-    "Caption",
-    "CaptionChunkRelation",
     "Chunk",
     "ChunkRetrievedResult",
     "Document",
@@ -51,6 +48,7 @@ __all__ = [
     "ImageChunkRetrievedResult",
     "Metric",
     "Page",
+    "PageChunkRelation",
     "Pipeline",
     "Query",
     "RetrievalRelation",

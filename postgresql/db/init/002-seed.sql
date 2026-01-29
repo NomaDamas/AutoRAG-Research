@@ -40,32 +40,18 @@ INSERT INTO page (id, page_num, document_id, image_contents, mimetype, page_meta
 	(10, 2, 5, NULL, NULL, '{"dpi": 300}')
 ON CONFLICT DO NOTHING;
 
--- Captions (one per page)
-INSERT INTO caption (id, page_id, contents) VALUES
-	(1, 1, 'Caption for page 1 of doc1'),
-	(2, 2, 'Caption for page 2 of doc1'),
-	(3, 3, 'Caption for page 1 of doc2'),
-	(4, 4, 'Caption for page 2 of doc2'),
-	(5, 5, 'Caption for page 1 of doc3'),
-	(6, 6, 'Caption for page 2 of doc3'),
-	(7, 7, 'Caption for page 1 of doc4'),
-	(8, 8, 'Caption for page 2 of doc4'),
-	(9, 9, 'Caption for page 1 of doc5'),
-	(10, 10, 'Caption for page 2 of doc5')
-ON CONFLICT DO NOTHING;
-
--- Chunks (text chunks from captions)
+-- Chunks (text chunks from pages)
 -- embeddings column uses VectorChord-compatible array format: ARRAY['[...]'::vector, ...]
-INSERT INTO chunk (id, parent_caption, contents, embedding, embeddings, is_table, table_type) VALUES
-	(1, 1, 'Chunk 1-1', NULL, NULL, FALSE, NULL),
-	(2, 1, 'Chunk 1-2', NULL, NULL, FALSE, NULL),
-	(3, 3, 'Chunk 2-1', NULL, NULL, FALSE, NULL),
-	(4, 5, 'Chunk 3-1', NULL, NULL, FALSE, NULL),
-	(5, 7, 'Chunk 4-1', NULL, NULL, FALSE, NULL),
-	(6, 9, 'Chunk 5-1', NULL, NULL, FALSE, NULL),
+INSERT INTO chunk (id, contents, embedding, embeddings, is_table, table_type) VALUES
+	(1, 'Chunk 1-1', NULL, NULL, FALSE, NULL),
+	(2, 'Chunk 1-2', NULL, NULL, FALSE, NULL),
+	(3, 'Chunk 2-1', NULL, NULL, FALSE, NULL),
+	(4, 'Chunk 3-1', NULL, NULL, FALSE, NULL),
+	(5, 'Chunk 4-1', NULL, NULL, FALSE, NULL),
+	(6, 'Chunk 5-1', NULL, NULL, FALSE, NULL),
 	-- Table sample data
-	(7, 1, '| Col1 | Col2 |\n|------|------|\n| A | B |', NULL, NULL, TRUE, 'markdown'),
-	(8, 3, '<table><tr><td>Data</td></tr></table>', NULL, NULL, TRUE, 'html')
+	(7, '| Col1 | Col2 |\n|------|------|\n| A | B |', NULL, NULL, TRUE, 'markdown'),
+	(8, '<table><tr><td>Data</td></tr></table>', NULL, NULL, TRUE, 'html')
 ON CONFLICT DO NOTHING;
 
 -- ImageChunks (image regions from pages)
@@ -78,8 +64,8 @@ INSERT INTO image_chunk (id, parent_page, contents, mimetype, embedding, embeddi
 	(5, 5, E'\\x00'::bytea, 'image/png', NULL, NULL)
 ON CONFLICT DO NOTHING;
 
--- Caption-Chunk relations
-INSERT INTO caption_chunk_relation (caption_id, chunk_id) VALUES
+-- Page-Chunk relations
+INSERT INTO page_chunk_relation (page_id, chunk_id) VALUES
 	(1, 1), (1, 2), (3, 3), (5, 4), (7, 5), (9, 6)
 ON CONFLICT DO NOTHING;
 
@@ -156,7 +142,6 @@ ON CONFLICT DO NOTHING;
 SELECT setval(pg_get_serial_sequence('file','id'), (SELECT COALESCE(MAX(id), 1) FROM file), true);
 SELECT setval(pg_get_serial_sequence('document','id'), (SELECT COALESCE(MAX(id), 1) FROM document), true);
 SELECT setval(pg_get_serial_sequence('page','id'), (SELECT COALESCE(MAX(id), 1) FROM page), true);
-SELECT setval(pg_get_serial_sequence('caption','id'), (SELECT COALESCE(MAX(id), 1) FROM caption), true);
 SELECT setval(pg_get_serial_sequence('chunk','id'), (SELECT COALESCE(MAX(id), 1) FROM chunk), true);
 SELECT setval(pg_get_serial_sequence('image_chunk','id'), (SELECT COALESCE(MAX(id), 1) FROM image_chunk), true);
 SELECT setval(pg_get_serial_sequence('query','id'), (SELECT COALESCE(MAX(id), 1) FROM query), true);

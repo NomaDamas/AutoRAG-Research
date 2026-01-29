@@ -1,7 +1,7 @@
 """Multi-Modal Data Ingestion Service for AutoRAG-Research.
 
 Provides service layer for ingesting multi-modal data including files, documents,
-pages, captions, chunks, image chunks, queries, and retrieval ground truth relations.
+pages, chunks, image chunks, queries, and retrieval ground truth relations.
 """
 
 import logging
@@ -71,19 +71,19 @@ class MultiModalIngestionService(BaseIngestionService):
                 "File": self._schema.File,
                 "Document": self._schema.Document,
                 "Page": self._schema.Page,
-                "Caption": self._schema.Caption,
                 "Chunk": self._schema.Chunk,
                 "ImageChunk": self._schema.ImageChunk,
+                "PageChunkRelation": self._schema.PageChunkRelation,
                 "Query": self._schema.Query,
                 "RetrievalRelation": self._schema.RetrievalRelation,
             }
         from autorag_research.orm.schema import (
-            Caption,
             Chunk,
             Document,
             File,
             ImageChunk,
             Page,
+            PageChunkRelation,
             Query,
             RetrievalRelation,
         )
@@ -92,9 +92,9 @@ class MultiModalIngestionService(BaseIngestionService):
             "File": File,
             "Document": Document,
             "Page": Page,
-            "Caption": Caption,
             "Chunk": Chunk,
             "ImageChunk": ImageChunk,
+            "PageChunkRelation": PageChunkRelation,
             "Query": Query,
             "RetrievalRelation": RetrievalRelation,
         }
@@ -144,21 +144,6 @@ class MultiModalIngestionService(BaseIngestionService):
             List of created Page IDs.
         """
         return self._add(pages, table_name="Page", repository_property="pages")
-
-    def add_captions(self, captions: list[dict[str, int | str]]) -> list[int]:
-        """Batch add captions to the database.
-
-        Args:
-            captions: List of dictionary with keys (page_id, contents).
-
-        Returns:
-            List of created Caption IDs.
-        """
-        return self._add(
-            captions,
-            table_name="Caption",
-            repository_property="captions",
-        )
 
     def add_image_chunks(self, image_chunks: list[dict[str, bytes | str | int | None]]) -> list[int | str]:
         """Batch add image chunks to the database.
@@ -267,7 +252,6 @@ class MultiModalIngestionService(BaseIngestionService):
             total_files = uow.files.count()
             total_documents = uow.documents.count()
             total_pages = uow.pages.count()
-            total_captions = uow.captions.count()
             total_chunks = uow.chunks.count()
             total_image_chunks = uow.image_chunks.count()
             total_queries = uow.queries.count()
@@ -283,7 +267,6 @@ class MultiModalIngestionService(BaseIngestionService):
                 "files": total_files,
                 "documents": total_documents,
                 "pages": total_pages,
-                "captions": total_captions,
                 "chunks": {
                     "total": total_chunks,
                     "with_embeddings": chunks_with_emb,

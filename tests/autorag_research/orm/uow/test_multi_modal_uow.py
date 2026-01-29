@@ -1,6 +1,5 @@
 import pytest
 
-from autorag_research.orm.repository.caption import CaptionRepository
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.document import DocumentRepository
 from autorag_research.orm.repository.file import FileRepository
@@ -17,7 +16,6 @@ from autorag_research.orm.uow import MultiModalUnitOfWork
         ("files", FileRepository),
         ("documents", DocumentRepository),
         ("pages", PageRepository),
-        ("captions", CaptionRepository),
         ("chunks", ChunkRepository),
         ("image_chunks", ImageChunkRepository),
         ("queries", QueryRepository),
@@ -35,7 +33,6 @@ def test_can_use_existing_seed_data(session_factory):
         file = uow.files.get_by_id(1)
         document = uow.documents.get_by_id(1)
         page = uow.pages.get_by_id(1)
-        caption = uow.captions.get_by_id(1)
         chunk = uow.chunks.get_by_id(1)
         image_chunk = uow.image_chunks.get_by_id(1)
         query = uow.queries.get_by_id(1)
@@ -46,8 +43,6 @@ def test_can_use_existing_seed_data(session_factory):
         assert document.filename == "doc1.pdf"
         assert page is not None
         assert page.page_num == 1
-        assert caption is not None
-        assert caption.contents == "Caption for page 1 of doc1"
         assert chunk is not None
         assert chunk.contents == "Chunk 1-1"
         assert image_chunk is not None

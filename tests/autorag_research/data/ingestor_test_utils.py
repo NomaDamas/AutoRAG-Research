@@ -87,8 +87,6 @@ class IngestorTestConfig:
     expected_page_count: int | None = None
     check_files: bool = False
     expected_file_count: int | None = None
-    check_captions: bool = False
-    expected_caption_count: int | None = None
 
     # Relation checks
     check_retrieval_relations: bool = True
@@ -241,8 +239,6 @@ class IngestorTestVerifier:
             report.add_check("page_count", self._verify_page_count())
         if self.config.check_files:
             report.add_check("file_count", self._verify_file_count())
-        if self.config.check_captions:
-            report.add_check("caption_count", self._verify_caption_count())
 
     def _add_format_checks(self, report: VerificationReport) -> None:
         """Add format validation checks to report."""
@@ -341,18 +337,6 @@ class IngestorTestVerifier:
             passed=passed,
             message=f"Expected {expected}, got {actual}",
             failures=[] if passed else ["File count mismatch"],
-        )
-
-    def _verify_caption_count(self) -> CheckResult:
-        """Verify caption count matches expected."""
-        stats = self.service.get_statistics()
-        actual = stats.get("captions", 0)
-        expected = self.config.expected_caption_count or 0
-        passed = actual == expected
-        return CheckResult(
-            passed=passed,
-            message=f"Expected {expected}, got {actual}",
-            failures=[] if passed else ["Caption count mismatch"],
         )
 
     # ==================== Format Validation ====================
