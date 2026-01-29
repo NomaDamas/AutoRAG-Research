@@ -187,6 +187,63 @@ def _collect_all_evidence(answers: list[dict]) -> list[str]:
     return all_evidence
 
 
+def _process_question(
+    paper_id: str,
+    question: str,
+    question_id: str,
+    answers: list[dict],
+    evidence_map: dict[str, str],
+    qa_mode: str,
+) -> dict | None:
+    """Process a single question and return query metadata if valid.
+       (A function created to reduce function complexity as requested by Ruff)
+
+    Args:
+        paper_id: Paper ID.
+        question: Question text.
+        question_id: Question ID.
+        answers: Raw answers list from dataset.
+        evidence_map: Mapping from normalized text to chunk ID.
+        qa_mode: "answerable" or "full" mode.
+
+    Returns:
+        Query metadata dict or None if question should be skipped.
+    """
+    if not answers:
+        return None
+
+    annotator_answers = [{"answer": a} for a in answers]
+    is_answerable = _is_answerable(annotator_answers)
+
+    if qa_mode == "answerable" and not is_answerable:
+        return None
+
+    query_id = make_id("qasper", paper_id, question_id)
+    generation_gt = _extract_generation_gt(annotator_answers)
+
+    if not is_answerable:
+        generation_gt = ["unanswerable"]
+
+    gold_chunk_ids: list[str] = []
+    if qa_mode == "answerable" and is_answerable:
+        all_evidence = _collect_all_evidence(annotator_answers)
+        gold_chunk_ids = _find_chunk_ids_for_evidence(all_evidence, evidence_map)
+
+        if not gold_chunk_ids:
+            logger.debug(f"Skipping query {question_id} in paper {paper_id}: no evidence matched any paragraph")
+            return None
+
+    return {
+        "query_id": query_id,
+        "paper_id": paper_id,
+        "question": question,
+        "question_id": question_id,
+        "generation_gt": generation_gt,
+        "gold_chunk_ids": gold_chunk_ids,
+        "annotator_answers": annotator_answers,
+    }
+
+
 @register_ingestor(
     name="qasper",
     description="Qasper QA dataset over NLP research papers",
@@ -251,7 +308,7 @@ class QasperIngestor(TextEmbeddingDataIngestor):
         logger.info(f"Found {len(query_metadata)} {'answerable' if self.qa_mode == 'answerable' else 'total'} queries")
 
         # Sample queries if limit specified
-        rng = random.Random(RANDOM_SEED)
+        rng = random.Random(RANDOM_SEED)  # noqa: S311
         if query_limit is not None and query_limit < len(query_metadata):
             query_metadata = rng.sample(query_metadata, query_limit)
             logger.info(f"Sampled {len(query_metadata)} queries")
@@ -313,20 +370,16 @@ class QasperIngestor(TextEmbeddingDataIngestor):
             qas = paper["qas"]
 
             # Collect chunks for this paper
-            chunks_for_paper: dict[str, str] = {}
-            for chunk_id, para in _iter_paper_chunks(paper_id, full_text.get("paragraphs", [])):
-                chunks_for_paper[chunk_id] = para
-            paper_chunks[paper_id] = chunks_for_paper
+            paper_chunks[paper_id] = dict(_iter_paper_chunks(paper_id, full_text.get("paragraphs", [])))
 
             # Build evidence map for this paper
             evidence_map = _build_evidence_to_chunk_map(paper_id, full_text)
 
-            # Process each question
+            # Validate and process questions
             questions = qas.get("question", [])
             question_ids = qas.get("question_id", [])
             answers_list = qas.get("answers", [])
 
-            # Validate data structure consistency
             if len(questions) != len(question_ids):
                 logger.warning(
                     f"Paper {paper_id}: question/question_id length mismatch "
@@ -339,49 +392,9 @@ class QasperIngestor(TextEmbeddingDataIngestor):
                     continue
 
                 answers = answers_list[i].get("answer", [])
-                if not answers:
-                    continue
-
-                # Convert to list of annotator dicts
-                annotator_answers = [{"answer": a} for a in answers]
-
-                is_answerable = _is_answerable(annotator_answers)
-
-                # answerable mode: skip unanswerable questions
-                if self.qa_mode == "answerable" and not is_answerable:
-                    continue
-
-                query_id = make_id("qasper", paper_id, question_id)
-                generation_gt = _extract_generation_gt(annotator_answers)
-
-                # For full mode, unanswerable questions get "unanswerable" as GT
-                if not is_answerable:
-                    generation_gt = ["unanswerable"]
-
-                # Collect evidence chunk IDs (only for answerable mode)
-                gold_chunk_ids: list[str] = []
-                if self.qa_mode == "answerable" and is_answerable:
-                    all_evidence = _collect_all_evidence(annotator_answers)
-                    gold_chunk_ids = _find_chunk_ids_for_evidence(all_evidence, evidence_map)
-
-                    # Skip questions without matching evidence in answerable mode
-                    # (evidence may reference tables/figures not in paragraphs)
-                    if not gold_chunk_ids:
-                        logger.debug(
-                            f"Skipping query {question_id} in paper {paper_id}: "
-                            "no evidence matched any paragraph"
-                        )
-                        continue
-
-                query_metadata.append({
-                    "query_id": query_id,
-                    "paper_id": paper_id,
-                    "question": question,
-                    "question_id": question_id,
-                    "generation_gt": generation_gt,
-                    "gold_chunk_ids": gold_chunk_ids,
-                    "annotator_answers": annotator_answers,
-                })
+                qm = _process_question(paper_id, question, question_id, answers, evidence_map, self.qa_mode)
+                if qm:
+                    query_metadata.append(qm)
 
         return query_metadata, paper_chunks
 

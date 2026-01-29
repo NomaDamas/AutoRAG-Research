@@ -35,10 +35,7 @@ def mock_embedding_model():
 class TestIterPaperChunks:
     def test_iter_handles_multiple_sections_and_empty_paragraphs(self):
         """Test iteration with multiple sections, empty paragraphs, and whitespace."""
-        paragraphs = [
-            ["Intro.", "", None],
-            ["  Methods 1.  ", "Methods 2."]
-        ]
+        paragraphs = [["Intro.", "", None], ["  Methods 1.  ", "Methods 2."]]
         result = list(_iter_paper_chunks("paper123", paragraphs))
 
         assert len(result) == 3
