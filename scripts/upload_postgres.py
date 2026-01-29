@@ -1,11 +1,10 @@
 """Upload PostgreSQL dump files to HuggingFace Hub.
 
 Usage:
-    python scripts/upload_postgres.py \\
-        --file-path ./scifact.dump \\
-        --ingestor beir \\
-        --dataset scifact \\
-        --embedding-model openai-small
+    python scripts/upload_postgres.py \
+        --file-path ./scifact_openai-small.dump \
+        --ingestor beir \
+        --filename scifact_openai-small
 
 Requires HF_TOKEN environment variable with write access to the target repository.
 """
@@ -13,7 +12,13 @@ Requires HF_TOKEN environment variable with write access to the target repositor
 import click
 
 from autorag_research.data import upload_dump
-from autorag_research.data.hf_storage import INGESTOR_TO_REPO
+from autorag_research.data.registry import discover_ingestors
+
+
+def _get_ingestors_with_hf_repo() -> list[str]:
+    """Get list of ingestor names that have hf_repo configured."""
+    registry = discover_ingestors()
+    return sorted(name for name, meta in registry.items() if meta.hf_repo is not None)
 
 
 @click.command()
@@ -26,20 +31,14 @@ from autorag_research.data.hf_storage import INGESTOR_TO_REPO
 @click.option(
     "--ingestor",
     required=True,
-    type=click.Choice(list(INGESTOR_TO_REPO.keys())),
+    type=click.Choice(_get_ingestors_with_hf_repo()),
     help="Ingestor family name (determines target repository).",
 )
 @click.option(
-    "--dataset",
+    "--filename",
     required=True,
     type=str,
-    help="Dataset subset name (e.g., 'scifact', 'arxivqa').",
-)
-@click.option(
-    "--embedding-model",
-    required=True,
-    type=str,
-    help="Embedding model name (e.g., 'openai-small', 'colpali-v1.2').",
+    help="Dump filename without .dump extension (e.g., 'scifact_openai-small').",
 )
 @click.option(
     "--message",
@@ -50,16 +49,14 @@ from autorag_research.data.hf_storage import INGESTOR_TO_REPO
 def main(
     file_path: str,
     ingestor: str,
-    dataset: str,
-    embedding_model: str,
+    filename: str,
     message: str | None,
 ) -> None:
     """Upload a PostgreSQL dump file to HuggingFace Hub."""
     result = upload_dump(
         file_path=file_path,
         ingestor=ingestor,
-        dataset=dataset,
-        embedding=embedding_model,
+        filename=filename,
         commit_message=message,
     )
     click.echo(f"Upload successful: {result}")

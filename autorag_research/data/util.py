@@ -6,43 +6,31 @@ and restore them to PostgreSQL databases.
 
 import logging
 
-from autorag_research.data.hf_storage import INGESTOR_TO_REPO, download_dump
+from autorag_research.data.hf_storage import download_dump
+from autorag_research.data.registry import discover_ingestors
 from autorag_research.data.restore import restore_database
 
 logger = logging.getLogger("AutoRAG-Research")
 
-# Registry mapping: ingestor -> dataset -> embedding -> filename
-# This registry tracks available pre-built dumps
-DATASET_REGISTRY: dict[str, dict[str, dict[str, str]]] = {
-    "beir": {
-        "scifact": {"embeddinggemma-300m": "scifact_embeddinggemma-300m.dump"},
-    },
-}
 
-
-def _find_ingestor_for_dataset(dataset_name: str) -> str | None:
-    """Find the ingestor that contains a given dataset.
-
-    Args:
-        dataset_name: Name of the dataset to find
+def _get_ingestors_with_hf_repo() -> dict[str, str]:
+    """Get all ingestors that have hf_repo configured.
 
     Returns:
-        Ingestor name if found, None otherwise
+        Dict mapping ingestor name to hf_repo value.
     """
-    for ingestor, datasets in DATASET_REGISTRY.items():
-        if dataset_name in datasets:
-            return ingestor
-    return None
+    registry = discover_ingestors()
+    return {name: meta.hf_repo for name, meta in registry.items() if meta.hf_repo is not None}
 
 
 def setup_dataset(
+    ingestor_name: str,
     dataset_name: str,
     embedding_model_name: str,
     host: str,
     user: str,
     password: str,
     port: int = 5432,
-    ingestor_name: str | None = None,
     **kwargs,
 ) -> None:
     """Set up a dataset by downloading and restoring it to a PostgreSQL database.
@@ -51,39 +39,30 @@ def setup_dataset(
     to a PostgreSQL database with the naming convention "{dataset_name}_{embedding_model_name}".
 
     Args:
+        ingestor_name: Name of the ingestor family (e.g., "beir", "mrtydi").
         dataset_name: Name of the dataset to set up (e.g., "scifact").
         embedding_model_name: Name of the embedding model used for the dataset.
         host: PostgreSQL server hostname.
         user: PostgreSQL username.
         password: PostgreSQL password.
         port: PostgreSQL server port. Defaults to 5432.
-        ingestor_name: Name of the ingestor family (e.g., "beir", "mrtydi").
-            If not provided, will attempt to auto-detect from DATASET_REGISTRY.
         **kwargs: Additional keyword arguments passed to restore_database.
 
     Raises:
-        KeyError: If the dataset cannot be found and ingestor_name is not provided.
-        ValueError: If the ingestor_name is not recognized.
+        ValueError: If the ingestor_name is not recognized or has no HF repo configured.
     """
-    # Determine ingestor
-    if ingestor_name is None:
-        ingestor_name = _find_ingestor_for_dataset(dataset_name)
-        if ingestor_name is None:
-            available_datasets = [f"{ing}/{ds}" for ing, datasets in DATASET_REGISTRY.items() for ds in datasets]
-            msg = f"Dataset '{dataset_name}' not found. Use one of: {', '.join(available_datasets)}"
-            raise KeyError(msg)
-
-    if ingestor_name not in INGESTOR_TO_REPO:
-        msg = f"Unknown ingestor '{ingestor_name}'. Available: {', '.join(sorted(INGESTOR_TO_REPO.keys()))}"
+    ingestors_with_hf_repo = _get_ingestors_with_hf_repo()
+    if ingestor_name not in ingestors_with_hf_repo:
+        msg = f"Unknown ingestor or no HF repo configured: '{ingestor_name}'. Available: {', '.join(sorted(ingestors_with_hf_repo.keys()))}"
         raise ValueError(msg)
 
     logger.info(f"Setting up dataset: {ingestor_name}/{dataset_name} with {embedding_model_name}")
 
     # Download dump from HuggingFace Hub (uses HF caching)
+    filename = f"{dataset_name}_{embedding_model_name}"
     dump_path = download_dump(
         ingestor=ingestor_name,
-        dataset=dataset_name,
-        embedding=embedding_model_name,
+        filename=filename,
     )
 
     # Restore to PostgreSQL

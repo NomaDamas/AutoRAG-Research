@@ -13,19 +13,6 @@ logger = logging.getLogger("AutoRAG-Research")
 
 HF_ORG = "NomaDamas"
 
-INGESTOR_TO_REPO: dict[str, str] = {
-    "beir": "beir-dumps",
-    "mrtydi": "mrtydi-dumps",
-    "ragbench": "ragbench-dumps",
-    "bright": "bright-dumps",
-    "visrag": "visrag-dumps",
-    "vidore": "vidore-dumps",
-    "vidorev2": "vidorev2-dumps",
-    "open-ragbench": "openragbench-dumps",
-    "mteb": "mteb-dumps",
-    "arxivqa": "arxivqa-dumps",
-}
-
 
 def get_repo_id(ingestor: str) -> str:
     """Get the HuggingFace Hub repository ID for an ingestor.
@@ -37,31 +24,21 @@ def get_repo_id(ingestor: str) -> str:
         Full repository ID (e.g., "NomaDamas/beir-dumps")
 
     Raises:
-        KeyError: If ingestor is not recognized
+        KeyError: If ingestor is not recognized or has no HF repo configured
     """
-    if ingestor not in INGESTOR_TO_REPO:
-        available = ", ".join(sorted(INGESTOR_TO_REPO.keys()))
-        raise KeyError(f"Unknown ingestor '{ingestor}'. Available: {available}")  # noqa: TRY003
-    return f"{HF_ORG}/{INGESTOR_TO_REPO[ingestor]}"
+    from autorag_research.data.registry import discover_ingestors
 
-
-def make_dump_filename(dataset: str, embedding: str) -> str:
-    """Generate a standardized dump filename.
-
-    Args:
-        dataset: Dataset subset name (e.g., "scifact", "arxivqa")
-        embedding: Embedding model name (e.g., "openai-small", "colpali-v1.2")
-
-    Returns:
-        Filename in format "{dataset}_{embedding}.dump"
-    """
-    return f"{dataset}_{embedding}.dump"
+    registry = discover_ingestors()
+    meta = registry.get(ingestor)
+    if meta is None or meta.hf_repo is None:
+        available = sorted(name for name, m in registry.items() if m.hf_repo is not None)
+        raise KeyError(f"Unknown ingestor or no HF repo configured: '{ingestor}'. Available: {', '.join(available)}")  # noqa: TRY003
+    return f"{HF_ORG}/{meta.hf_repo}"
 
 
 def download_dump(
     ingestor: str,
-    dataset: str,
-    embedding: str,
+    filename: str,
     revision: str | None = None,
     cache_dir: str | Path | None = None,
 ) -> Path:
@@ -71,8 +48,8 @@ def download_dump(
 
     Args:
         ingestor: Ingestor family name (e.g., "beir", "mrtydi")
-        dataset: Dataset subset name (e.g., "scifact")
-        embedding: Embedding model name (e.g., "openai-small")
+        filename: Dump filename without .dump extension (e.g., "scifact_openai-small").
+            Use list_available_dumps() to see available files.
         revision: Git revision (branch, tag, or commit hash). Defaults to main.
         cache_dir: Optional custom cache directory. Defaults to HF cache.
 
@@ -85,13 +62,13 @@ def download_dump(
         huggingface_hub.utils.RepositoryNotFoundError: If repo doesn't exist
     """
     repo_id = get_repo_id(ingestor)
-    filename = make_dump_filename(dataset, embedding)
+    full_filename = f"{filename}.dump"
 
-    logger.info(f"Downloading dump from HuggingFace Hub: {repo_id}/{filename}")
+    logger.info(f"Downloading dump from HuggingFace Hub: {repo_id}/{full_filename}")
 
     downloaded_path = hf_hub_download(
         repo_id=repo_id,
-        filename=filename,
+        filename=full_filename,
         revision=revision,
         repo_type="dataset",
         cache_dir=cache_dir,
@@ -104,8 +81,7 @@ def download_dump(
 def upload_dump(
     file_path: str | Path,
     ingestor: str,
-    dataset: str,
-    embedding: str,
+    filename: str,
     commit_message: str | None = None,
 ) -> str:
     """Upload a PostgreSQL dump file to HuggingFace Hub.
@@ -115,8 +91,7 @@ def upload_dump(
     Args:
         file_path: Path to the local dump file
         ingestor: Ingestor family name (e.g., "beir", "mrtydi")
-        dataset: Dataset subset name (e.g., "scifact")
-        embedding: Embedding model name (e.g., "openai-small")
+        filename: Dump filename without .dump extension (e.g., "scifact_openai-small").
         commit_message: Optional commit message. Auto-generated if not provided.
 
     Returns:
@@ -132,16 +107,16 @@ def upload_dump(
         raise FileNotFoundError(f"Dump file not found: {file_path}")  # noqa: TRY003
 
     repo_id = get_repo_id(ingestor)
-    filename = make_dump_filename(dataset, embedding)
+    full_filename = f"{filename}.dump"
 
     if commit_message is None:
-        commit_message = f"Add {dataset} dump with {embedding} embeddings"
+        commit_message = f"Add {filename} dump"
 
-    logger.info(f"Uploading dump to HuggingFace Hub: {repo_id}/{filename}")
+    logger.info(f"Uploading dump to HuggingFace Hub: {repo_id}/{full_filename}")
 
     result = upload_file(
         path_or_fileobj=str(file_path),
-        path_in_repo=filename,
+        path_in_repo=full_filename,
         repo_id=repo_id,
         repo_type="dataset",
         commit_message=commit_message,
@@ -158,7 +133,8 @@ def list_available_dumps(ingestor: str) -> list[str]:
         ingestor: Ingestor family name (e.g., "beir", "mrtydi")
 
     Returns:
-        List of filenames (e.g., ["scifact_openai-small.dump", "nfcorpus_openai-small.dump"])
+        List of filenames without .dump extension (e.g., ["scifact_openai-small", "nfcorpus_openai-small"]).
+        These can be passed directly to download_dump().
 
     Raises:
         KeyError: If ingestor is not recognized
@@ -169,16 +145,15 @@ def list_available_dumps(ingestor: str) -> list[str]:
     logger.debug(f"Listing files in HuggingFace Hub repo: {repo_id}")
 
     files = list_repo_files(repo_id=repo_id, repo_type="dataset")
-    return [f for f in files if f.endswith(".dump")]
+    return [f.removesuffix(".dump") for f in files if f.endswith(".dump")]
 
 
-def dump_exists(ingestor: str, dataset: str, embedding: str) -> bool:
+def dump_exists(ingestor: str, filename: str) -> bool:
     """Check if a specific dump file exists in HuggingFace Hub.
 
     Args:
         ingestor: Ingestor family name (e.g., "beir", "mrtydi")
-        dataset: Dataset subset name (e.g., "scifact")
-        embedding: Embedding model name (e.g., "openai-small")
+        filename: Dump filename without .dump extension (e.g., "scifact_openai-small").
 
     Returns:
         True if the dump exists, False otherwise
@@ -192,11 +167,11 @@ def dump_exists(ingestor: str, dataset: str, embedding: str) -> bool:
     if not repo_exists(repo_id=repo_id, repo_type="dataset"):
         return False
 
-    filename = make_dump_filename(dataset, embedding)
+    full_filename = f"{filename}.dump"
 
     try:
         files = list_repo_files(repo_id=repo_id, repo_type="dataset")
     except Exception:
         return False
     else:
-        return filename in files
+        return full_filename in files

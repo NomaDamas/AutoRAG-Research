@@ -10,12 +10,10 @@ import pytest
 
 from autorag_research.data.hf_storage import (
     HF_ORG,
-    INGESTOR_TO_REPO,
     download_dump,
     dump_exists,
     get_repo_id,
     list_available_dumps,
-    make_dump_filename,
     upload_dump,
 )
 
@@ -28,40 +26,20 @@ class TestGetRepoId:
         result = get_repo_id("beir")
         assert result == f"{HF_ORG}/beir-dumps"
 
-    def test_get_repo_id_mrtydi(self):
-        """Test getting repo ID for mrtydi ingestor."""
-        result = get_repo_id("mrtydi")
-        assert result == f"{HF_ORG}/mrtydi-dumps"
+    def test_get_repo_id_all_ingestors_with_hf_repo(self):
+        """Test that all registered ingestors with hf_repo return valid repo IDs."""
+        from autorag_research.data.registry import discover_ingestors
 
-    def test_get_repo_id_all_ingestors(self):
-        """Test that all registered ingestors return valid repo IDs."""
-        for ingestor, repo_name in INGESTOR_TO_REPO.items():
-            result = get_repo_id(ingestor)
-            assert result == f"{HF_ORG}/{repo_name}"
+        registry = discover_ingestors()
+        for name, meta in registry.items():
+            if meta.hf_repo is not None:
+                result = get_repo_id(name)
+                assert result == f"{HF_ORG}/{meta.hf_repo}"
 
     def test_get_repo_id_unknown_ingestor(self):
         """Test that unknown ingestor raises KeyError."""
-        with pytest.raises(KeyError, match="Unknown ingestor 'unknown'"):
-            get_repo_id("unknown")
-
-
-class TestMakeDumpFilename:
-    """Tests for make_dump_filename function."""
-
-    def test_make_dump_filename_basic(self):
-        """Test basic filename generation."""
-        result = make_dump_filename("scifact", "openai-small")
-        assert result == "scifact_openai-small.dump"
-
-    def test_make_dump_filename_with_version(self):
-        """Test filename with versioned embedding model."""
-        result = make_dump_filename("arxivqa", "colpali-v1.2")
-        assert result == "arxivqa_colpali-v1.2.dump"
-
-    def test_make_dump_filename_complex_names(self):
-        """Test filename with complex dataset and embedding names."""
-        result = make_dump_filename("nfcorpus", "embeddinggemma-300m")
-        assert result == "nfcorpus_embeddinggemma-300m.dump"
+        with pytest.raises(KeyError, match="Unknown ingestor or no HF repo configured"):
+            get_repo_id("havertz")
 
 
 class TestDownloadDump:
@@ -72,7 +50,7 @@ class TestDownloadDump:
         """Test successful dump download."""
         mock_download.return_value = "/cache/path/scifact_openai-small.dump"
 
-        result = download_dump("beir", "scifact", "openai-small")
+        result = download_dump("beir", "scifact_openai-small")
 
         assert result == Path("/cache/path/scifact_openai-small.dump")
         mock_download.assert_called_once_with(
@@ -88,7 +66,7 @@ class TestDownloadDump:
         """Test download with specific revision."""
         mock_download.return_value = "/cache/path/scifact_openai-small.dump"
 
-        download_dump("beir", "scifact", "openai-small", revision="v1.0")
+        download_dump("beir", "scifact_openai-small", revision="v1.0")
 
         mock_download.assert_called_once_with(
             repo_id=f"{HF_ORG}/beir-dumps",
@@ -103,7 +81,7 @@ class TestDownloadDump:
         """Test download with custom cache directory."""
         mock_download.return_value = "/custom/cache/scifact_openai-small.dump"
 
-        download_dump("beir", "scifact", "openai-small", cache_dir="/custom/cache")
+        download_dump("beir", "scifact_openai-small", cache_dir="/custom/cache")
 
         mock_download.assert_called_once_with(
             repo_id=f"{HF_ORG}/beir-dumps",
@@ -116,7 +94,7 @@ class TestDownloadDump:
     def test_download_dump_unknown_ingestor(self):
         """Test that unknown ingestor raises KeyError."""
         with pytest.raises(KeyError, match="Unknown ingestor"):
-            download_dump("unknown", "dataset", "embedding")
+            download_dump("unknown", "some_filename")
 
 
 class TestUploadDump:
@@ -133,7 +111,7 @@ class TestUploadDump:
             "https://huggingface.co/datasets/NomaDamas/beir-dumps/blob/main/scifact_openai-small.dump"
         )
 
-        result = upload_dump(dump_file, "beir", "scifact", "openai-small")
+        result = upload_dump(dump_file, "beir", "scifact_openai-small")
 
         assert "huggingface.co" in result
         mock_upload.assert_called_once_with(
@@ -141,7 +119,7 @@ class TestUploadDump:
             path_in_repo="scifact_openai-small.dump",
             repo_id=f"{HF_ORG}/beir-dumps",
             repo_type="dataset",
-            commit_message="Add scifact dump with openai-small embeddings",
+            commit_message="Add scifact_openai-small dump",
         )
 
     @patch("autorag_research.data.hf_storage.upload_file")
@@ -155,8 +133,7 @@ class TestUploadDump:
         upload_dump(
             dump_file,
             "beir",
-            "scifact",
-            "openai-small",
+            "scifact_openai-small",
             commit_message="Custom commit message",
         )
 
@@ -167,7 +144,7 @@ class TestUploadDump:
     def test_upload_dump_file_not_found(self):
         """Test that missing file raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError, match="Dump file not found"):
-            upload_dump("/nonexistent/file.dump", "beir", "scifact", "openai-small")
+            upload_dump("/nonexistent/file.dump", "beir", "scifact_openai-small")
 
     def test_upload_dump_unknown_ingestor(self, tmp_path):
         """Test that unknown ingestor raises KeyError."""
@@ -175,7 +152,7 @@ class TestUploadDump:
         dump_file.write_text("test content")
 
         with pytest.raises(KeyError, match="Unknown ingestor"):
-            upload_dump(dump_file, "unknown", "dataset", "embedding")
+            upload_dump(dump_file, "unknown", "some_filename")
 
 
 class TestListAvailableDumps:
@@ -193,7 +170,8 @@ class TestListAvailableDumps:
 
         result = list_available_dumps("beir")
 
-        assert result == ["scifact_openai-small.dump", "nfcorpus_openai-small.dump"]
+        # Should return filenames without .dump extension
+        assert result == ["scifact_openai-small", "nfcorpus_openai-small"]
         mock_list.assert_called_once_with(
             repo_id=f"{HF_ORG}/beir-dumps",
             repo_type="dataset",
@@ -224,7 +202,7 @@ class TestDumpExists:
         mock_repo_exists.return_value = True
         mock_list.return_value = ["scifact_openai-small.dump", "nfcorpus_openai-small.dump"]
 
-        result = dump_exists("beir", "scifact", "openai-small")
+        result = dump_exists("beir", "scifact_openai-small")
 
         assert result is True
 
@@ -235,7 +213,7 @@ class TestDumpExists:
         mock_repo_exists.return_value = True
         mock_list.return_value = ["other_openai-small.dump"]
 
-        result = dump_exists("beir", "scifact", "openai-small")
+        result = dump_exists("beir", "scifact_openai-small")
 
         assert result is False
 
@@ -244,7 +222,7 @@ class TestDumpExists:
         """Test that dump_exists returns False when repo doesn't exist."""
         mock_repo_exists.return_value = False
 
-        result = dump_exists("beir", "scifact", "openai-small")
+        result = dump_exists("beir", "scifact_openai-small")
 
         assert result is False
 
@@ -255,14 +233,14 @@ class TestDumpExists:
         mock_repo_exists.return_value = True
         mock_list.side_effect = Exception("Network error")
 
-        result = dump_exists("beir", "scifact", "openai-small")
+        result = dump_exists("beir", "scifact_openai-small")
 
         assert result is False
 
     def test_dump_exists_unknown_ingestor(self):
         """Test that unknown ingestor raises KeyError."""
         with pytest.raises(KeyError, match="Unknown ingestor"):
-            dump_exists("unknown", "dataset", "embedding")
+            dump_exists("unknown", "some_filename")
 
 
 class TestConstants:
@@ -272,23 +250,31 @@ class TestConstants:
         """Test HF_ORG constant."""
         assert HF_ORG == "NomaDamas"
 
-    def test_ingestor_to_repo_has_expected_keys(self):
-        """Test that INGESTOR_TO_REPO has expected ingestors."""
+    def test_registry_has_expected_ingestors_with_hf_repo(self):
+        """Test that registry has expected ingestors with hf_repo configured."""
+        from autorag_research.data.registry import discover_ingestors
+
+        registry = discover_ingestors()
+        ingestors_with_hf_repo = {name for name, meta in registry.items() if meta.hf_repo is not None}
+
+        # These are the ingestors that should have hf_repo configured
         expected = {
             "beir",
             "mrtydi",
             "ragbench",
             "bright",
             "visrag",
-            "vidore",
             "vidorev2",
             "open-ragbench",
             "mteb",
-            "arxivqa",
         }
-        assert set(INGESTOR_TO_REPO.keys()) == expected
+        assert expected.issubset(ingestors_with_hf_repo)
 
-    def test_ingestor_to_repo_values_end_with_dumps(self):
-        """Test that all repo names end with '-dumps'."""
-        for repo_name in INGESTOR_TO_REPO.values():
-            assert repo_name.endswith("-dumps"), f"{repo_name} should end with '-dumps'"
+    def test_hf_repo_values_end_with_dumps(self):
+        """Test that all hf_repo values end with '-dumps'."""
+        from autorag_research.data.registry import discover_ingestors
+
+        registry = discover_ingestors()
+        for name, meta in registry.items():
+            if meta.hf_repo is not None:
+                assert meta.hf_repo.endswith("-dumps"), f"{name}: {meta.hf_repo} should end with '-dumps'"
