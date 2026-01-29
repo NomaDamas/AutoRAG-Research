@@ -60,6 +60,36 @@ class TestMainCallback:
         assert cli_dir.resolve() == cli.CONFIG_PATH
 
 
+class TestVersionFlag:
+    """Tests for the --version flag."""
+
+    def test_version_flag_long(self, cli_runner: CliRunner) -> None:
+        """--version flag shows version and exits."""
+        result = cli_runner.invoke(app, ["--version"])
+
+        assert result.exit_code == 0
+        assert "autorag-research" in result.stdout
+        # Version should match pattern like "0.0.1" or "1.2.3"
+        import re
+
+        assert re.search(r"\d+\.\d+\.\d+", result.stdout)
+
+    def test_version_flag_short(self, cli_runner: CliRunner) -> None:
+        """-V flag shows version and exits."""
+        result = cli_runner.invoke(app, ["-V"])
+
+        assert result.exit_code == 0
+        assert "autorag-research" in result.stdout
+
+    def test_version_flag_exits_early(self, cli_runner: CliRunner) -> None:
+        """--version exits before processing other arguments."""
+        # Even with invalid command, --version should work
+        result = cli_runner.invoke(app, ["--version", "invalid-command"])
+
+        assert result.exit_code == 0
+        assert "autorag-research" in result.stdout
+
+
 class TestAppStructure:
     """Tests for the Typer app structure."""
 

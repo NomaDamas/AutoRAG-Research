@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 import typer
 from llama_index.core.base.embeddings.base import BaseEmbedding
+from rich.console import Console
 
 from autorag_research.cli.utils import discover_embedding_configs
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
     from autorag_research.data.registry import IngestorMeta
 
 logger = logging.getLogger("AutoRAG-Research")
+console = Console()
 
 # Create ingest sub-app (no lazy group needed - single command via callback)
 ingest_app = typer.Typer(
@@ -229,24 +231,25 @@ def ingest(  # noqa: C901
     typer.echo("=" * 60)
 
     # 5. Load embedding model from YAML config
-    typer.echo(f"\nLoading embedding model: {embedding_model}")
     try:
-        embed_model = load_embedding_model(embedding_model)
+        with console.status(f"[bold blue]Loading embedding model: {embedding_model}..."):
+            embed_model = load_embedding_model(embedding_model)
     except FileNotFoundError as e:
         typer.echo(f"Error: {e}", err=True)
         typer.echo("\nAvailable embedding configs:", err=True)
         for emb_name in discover_embedding_configs():
             typer.echo(f"  {emb_name}", err=True)
         raise typer.Exit(1) from None
+    console.print(f"[green]✓[/green] Loaded embedding model: {embedding_model}")
 
     # 6. Health check embedding model and get dimension
-    typer.echo("Checking embedding model health...")
     try:
-        embedding_dim = health_check_embedding(embed_model)
-        typer.echo(f"Embedding model healthy. Dimension: {embedding_dim}")
+        with console.status("[bold blue]Checking embedding model health..."):
+            embedding_dim = health_check_embedding(embed_model)
     except Exception as e:
         typer.echo(f"Error: Embedding health check failed: {e}", err=True)
         raise typer.Exit(1) from None
+    console.print(f"[green]✓[/green] Embedding model healthy. Dimension: {embedding_dim}")
 
     # 7. Create ingestor with embedding model
     from autorag_research.data.base import MultiModalEmbeddingDataIngestor, TextEmbeddingDataIngestor
@@ -274,13 +277,12 @@ def ingest(  # noqa: C901
         raise typer.Exit(1)
 
     # 8. Detect primary key type from dataset
-    typer.echo("\nDetecting primary key type from dataset...")
     detected_pkey_type: Literal["bigint", "string"] = ingestor.detect_primary_key_type()
-    typer.echo(f"Detected primary key type: {detected_pkey_type}")
+    console.print(f"[green]✓[/green] Detected primary key type: {detected_pkey_type}")
 
     # 9. Create database and schema
-    typer.echo(f"\nCreating database schema: {final_db_name}")
     db_conn.create_database()
+    console.print(f"[green]✓[/green] Created database schema: {final_db_name}")
 
     # 10. Create session factory and service
     session_factory = db_conn.get_session_factory()
@@ -298,25 +300,27 @@ def ingest(  # noqa: C901
         ingestor.set_service(mm_service)  # ty: ignore[invalid-argument-type]
 
     # 11. Ingest data
-    typer.echo(f"\nIngesting {name} dataset...")
     subset_literal: Literal["train", "dev", "test"] = subset
-    ingestor.ingest(
-        subset=subset_literal,
-        query_limit=query_limit,
-        min_corpus_cnt=min_corpus_cnt,
-    )
-    typer.echo("Ingestion complete.")
+    with console.status(f"[bold blue]Ingesting {name} dataset..."):
+        ingestor.ingest(
+            subset=subset_literal,
+            query_limit=query_limit,
+            min_corpus_cnt=min_corpus_cnt,
+        )
+    console.print("[green]✓[/green] Ingestion complete")
 
     # 12. Embed data (unless skipped)
     if not skip_embedding:
-        typer.echo(f"\nEmbedding all data (batch_size={embed_batch_size}, concurrency={embed_concurrency})...")
-        if isinstance(embed_model, MultiVectorMultiModalEmbedding):
-            ingestor.embed_all_late_interaction(max_concurrency=embed_concurrency, batch_size=embed_batch_size)  # ty: ignore[possibly-missing-attribute]
-        else:
-            ingestor.embed_all(max_concurrency=embed_concurrency, batch_size=embed_batch_size)
-        typer.echo("Embedding complete.")
+        with console.status(
+            f"[bold blue]Embedding all data (batch_size={embed_batch_size}, concurrency={embed_concurrency})..."
+        ):
+            if isinstance(embed_model, MultiVectorMultiModalEmbedding):
+                ingestor.embed_all_late_interaction(max_concurrency=embed_concurrency, batch_size=embed_batch_size)  # ty: ignore[possibly-missing-attribute]
+            else:
+                ingestor.embed_all(max_concurrency=embed_concurrency, batch_size=embed_batch_size)
+        console.print("[green]✓[/green] Embedding complete")
     else:
-        typer.echo("\nSkipping embedding step (--skip-embedding)")
+        console.print("[yellow]⊘[/yellow] Skipping embedding step (--skip-embedding)")
 
     # 13. Print summary
     typer.echo("\n" + "=" * 60)

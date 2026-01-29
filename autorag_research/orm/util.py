@@ -237,6 +237,30 @@ BEGIN
 END $$;
 """
 
+_INSTALL_BM25_TOKENIZER_SQL = """
+DO $$
+BEGIN
+	IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_tokenizer') THEN
+		-- bert_base_uncased (Hugging Face) - uses underscores per pg_tokenizer model naming
+		BEGIN
+			PERFORM create_tokenizer('bert', 'model = "bert_base_uncased"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+		-- wiki_tocken (Wikitext-103)
+		BEGIN
+			PERFORM create_tokenizer('wiki_tocken', 'model = "wiki_tocken"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+		-- gemma2b (Google, ~100MB)
+		BEGIN
+			PERFORM create_tokenizer('gemma2b', 'model = "gemma2b"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+		-- llmlingua2 (Microsoft, ~200MB, default preload)
+		BEGIN
+			PERFORM create_tokenizer('llmlingua2', 'model = "llmlingua2"');
+		EXCEPTION WHEN others THEN PERFORM 1; END;
+	END IF;
+END $$;
+"""
+
 
 def install_vector_extensions(
     host: str,
@@ -266,5 +290,6 @@ def install_vector_extensions(
     ) as conn:
         with conn.cursor() as cursor:
             cursor.execute(_INSTALL_VECTOR_EXTENSIONS_SQL)
+            cursor.execute(_INSTALL_BM25_TOKENIZER_SQL)
         conn.commit()
     logger.info("Vector extensions installed successfully")
