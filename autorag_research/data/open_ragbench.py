@@ -28,6 +28,7 @@ def make_id(*parts: str | int) -> str:
 @register_ingestor(
     name="open-ragbench",
     description="The Open RAG Benchmark is a unique, high-quality Retrieval-Augmented Generation (RAG) dataset constructed directly from arXiv PDF documents, specifically designed for evaluating RAG systems with a focus on multimodal PDF understanding, made by Vectara.",
+    hf_repo="open-ragbench-dumps",
 )
 class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
     def __init__(
@@ -63,7 +64,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                 "Only query_limit is effective for this dataset."
             )
 
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
 
         queries_data = self._download_json("queries.json")
         answers_data = self._download_json("answers.json")

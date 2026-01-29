@@ -30,13 +30,7 @@ See the [Installation Guide](installation.md) for detailed instructions and prer
 
 ### Download the pre-built datasets
 
-You can download the whole benchmark dataset with embedding vectors from the AutoRAG-Research storage.
-
-For example:
-```python
-from autorag_research.data.util import setup_dataset
-setup_dataset("scifact", "embeddinggemma-300m", "localhost", "postgres", "postgres")
-```
+CLI will be configured in the future.
 
 See the [Dataset Setup Guide](dataset_setup.md) for detailed instructions.
 

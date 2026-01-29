@@ -32,6 +32,7 @@ def _combine_title_text(row: pd.Series) -> str:
 @register_ingestor(
     name="mteb",
     description="MTEB (Massive Text Embedding Benchmark) retrieval tasks",
+    hf_repo="mteb-dumps",
 )
 class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
     """Text-only ingestor for MTEB retrieval datasets using official mteb library.
@@ -277,7 +278,7 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         split = self._resolve_subset(subset)
         corpus_df, queries_df, relevant_docs = self._get_split_data(split)
 
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
 
         # Step 1: Sample queries (only those with relevant docs above score_threshold)
         query_ids_with_relations = [qid for qid in queries_df.index if self._get_gold_ids(relevant_docs, qid)]
