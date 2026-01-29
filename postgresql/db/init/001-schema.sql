@@ -97,7 +97,6 @@ CREATE TABLE IF NOT EXISTS page (
 -- bm25_tokens column supports VectorChord-BM25 sparse retrieval (added conditionally)
 CREATE TABLE IF NOT EXISTS chunk (
 	id BIGSERIAL PRIMARY KEY,
-	parent_page BIGINT REFERENCES page(id),
 	contents TEXT NOT NULL,
 	embedding VECTOR(768),
 	embeddings VECTOR(768)[],  -- Multi-vector for ColBERT/ColPali style retrieval

@@ -64,7 +64,6 @@ class BaseIngestionService(BaseService, ABC):
             chunks: List of dict with keys:
                 - id (optional): Chunk ID
                 - contents (required): Text content
-                - parent_page (optional): Parent page ID
                 - is_table (optional, default=False): Whether this chunk is a table
                 - table_type (optional): Table format type (markdown, xml, html)
 
@@ -72,6 +71,68 @@ class BaseIngestionService(BaseService, ABC):
             List of created Chunk IDs.
         """
         return self._add_bulk(chunks, repository_property="chunks")
+
+    def link_pages_to_chunks(
+        self,
+        relations: list[dict[str, int | str]],
+    ) -> list[tuple[int | str, int | str]]:
+        """Batch create Page-Chunk relations (M:N relationship support).
+
+        This is the primary method for creating Page-Chunk relations.
+        Use this when you need to link multiple pages to multiple chunks in a single call.
+
+        Args:
+            relations: List of dict with keys:
+                - page_id (required): Page ID
+                - chunk_id (required): Chunk ID
+
+        Returns:
+            List of created PageChunkRelation PKs as (page_id, chunk_id) tuples.
+
+        Raises:
+            RepositoryNotSupportedError: If PageChunkRelation is not available in schema.
+            SessionNotSetError: If UoW session is not initialized.
+        """
+        classes = self._get_schema_classes()
+        PageChunkRelation = classes.get("PageChunkRelation")
+        if PageChunkRelation is None:
+            raise RepositoryNotSupportedError("PageChunkRelation", "schema")
+
+        with self._create_uow() as uow:
+            if uow.session is None:
+                raise SessionNotSetError
+            relation_entities = [
+                PageChunkRelation(page_id=rel["page_id"], chunk_id=rel["chunk_id"]) for rel in relations
+            ]
+            for entity in relation_entities:
+                uow.session.add(entity)
+            uow.flush()
+            pks = [(r.page_id, r.chunk_id) for r in relation_entities]
+            uow.commit()
+            return pks
+
+    def link_page_to_chunks(
+        self,
+        page_id: int | str,
+        chunk_ids: list[int] | list[str],
+    ) -> list[tuple[int | str, int | str]]:
+        """Link a single Page to multiple Chunks (1:N relationship).
+
+        Convenience method for the common case where one page contains multiple chunks.
+        Internally calls link_pages_to_chunks.
+
+        Args:
+            page_id: The Page ID to link from.
+            chunk_ids: List of Chunk IDs to link to.
+
+        Returns:
+            List of created PageChunkRelation PKs as (page_id, chunk_id) tuples.
+
+        Raises:
+            RepositoryNotSupportedError: If PageChunkRelation is not available in schema.
+            SessionNotSetError: If UoW session is not initialized.
+        """
+        return self.link_pages_to_chunks([{"page_id": page_id, "chunk_id": cid} for cid in chunk_ids])
 
     def add_queries(self, queries: list[dict[str, str | list[str] | None]]) -> list[int | str]:
         """Batch add queries to the database.

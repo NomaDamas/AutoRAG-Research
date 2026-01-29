@@ -28,7 +28,6 @@ Table File {
 
 Table Chunk {
   id bigserial [pk]
-  parent_page bigint [ref: > Page.id]
   contents text [not null]
   embedding vector(768)
   embeddings vector[](768)

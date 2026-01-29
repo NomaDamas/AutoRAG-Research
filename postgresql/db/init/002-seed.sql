@@ -42,16 +42,16 @@ ON CONFLICT DO NOTHING;
 
 -- Chunks (text chunks from pages)
 -- embeddings column uses VectorChord-compatible array format: ARRAY['[...]'::vector, ...]
-INSERT INTO chunk (id, parent_page, contents, embedding, embeddings, is_table, table_type) VALUES
-	(1, 1, 'Chunk 1-1', NULL, NULL, FALSE, NULL),
-	(2, 1, 'Chunk 1-2', NULL, NULL, FALSE, NULL),
-	(3, 3, 'Chunk 2-1', NULL, NULL, FALSE, NULL),
-	(4, 5, 'Chunk 3-1', NULL, NULL, FALSE, NULL),
-	(5, 7, 'Chunk 4-1', NULL, NULL, FALSE, NULL),
-	(6, 9, 'Chunk 5-1', NULL, NULL, FALSE, NULL),
+INSERT INTO chunk (id, contents, embedding, embeddings, is_table, table_type) VALUES
+	(1, 'Chunk 1-1', NULL, NULL, FALSE, NULL),
+	(2, 'Chunk 1-2', NULL, NULL, FALSE, NULL),
+	(3, 'Chunk 2-1', NULL, NULL, FALSE, NULL),
+	(4, 'Chunk 3-1', NULL, NULL, FALSE, NULL),
+	(5, 'Chunk 4-1', NULL, NULL, FALSE, NULL),
+	(6, 'Chunk 5-1', NULL, NULL, FALSE, NULL),
 	-- Table sample data
-	(7, 1, '| Col1 | Col2 |\n|------|------|\n| A | B |', NULL, NULL, TRUE, 'markdown'),
-	(8, 3, '<table><tr><td>Data</td></tr></table>', NULL, NULL, TRUE, 'html')
+	(7, '| Col1 | Col2 |\n|------|------|\n| A | B |', NULL, NULL, TRUE, 'markdown'),
+	(8, '<table><tr><td>Data</td></tr></table>', NULL, NULL, TRUE, 'html')
 ON CONFLICT DO NOTHING;
 
 -- ImageChunks (image regions from pages)

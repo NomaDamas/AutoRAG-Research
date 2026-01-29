@@ -153,10 +153,10 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                         logger.warning(f"Failed to extract image {img_key} from section {section_id}: {e}")
 
                 # 5. Create Text Chunk
+                chunk_ids_to_link: list[str] = []
                 if section_text:
-                    self.service.add_chunks([
-                        {"id": chunk_id, "contents": section_text, "parent_page": page_id, "is_table": False}
-                    ])
+                    self.service.add_chunks([{"id": chunk_id, "contents": section_text, "is_table": False}])
+                    chunk_ids_to_link.append(chunk_id)
 
                 # 6. Create Table Chunks
                 table_chunk_ids: list[str] = []
@@ -166,12 +166,16 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                         {
                             "id": table_chunk_id,
                             "contents": str(table_data),
-                            "parent_page": page_id,
                             "is_table": True,
                             "table_type": "markdown",
                         }
                     ])
+                    chunk_ids_to_link.append(table_chunk_id)
                     table_chunk_ids.append(table_chunk_id)
+
+                # 7. Link all chunks to page at once (1:N relationship)
+                if chunk_ids_to_link:
+                    self.service.link_page_to_chunks(page_id, chunk_ids_to_link)
 
                 chunk_id_map[chunk_id] = {"images": image_chunk_ids, "tables": table_chunk_ids}
 

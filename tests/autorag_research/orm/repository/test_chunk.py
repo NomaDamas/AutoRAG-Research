@@ -28,26 +28,6 @@ def chunk_repository(db_session: Session) -> ChunkRepository:
     return ChunkRepository(db_session)
 
 
-def test_get_by_page_id(chunk_repository: ChunkRepository, db_session: Session):
-    """Test retrieving all chunks for a specific page."""
-    # Use existing seed data (page id=1 has chunks 1, 2)
-    results = chunk_repository.get_by_page_id(1)
-
-    assert len(results) >= 2
-    assert all(c.parent_page == 1 for c in results)
-
-
-def test_get_with_page(chunk_repository: ChunkRepository, db_session: Session):
-    """Test retrieving a chunk with its page eagerly loaded."""
-    # Use existing seed data (chunk id=1, parent_page=1)
-    result = chunk_repository.get_with_page(1)
-
-    assert result is not None
-    assert result.id == 1
-    assert result.page is not None
-    assert result.page.id == 1
-
-
 def test_get_with_page_chunk_relations(chunk_repository: ChunkRepository, db_session: Session):
     """Test retrieving a chunk with its page-chunk relations eagerly loaded."""
     # Use existing seed data (chunk id=1 has page_chunk_relation)
@@ -104,7 +84,7 @@ def test_get_with_embeddings(chunk_repository: ChunkRepository, db_session: Sess
     # Create test data with embedding (seed data has NULL embeddings)
     unique_id = uuid.uuid4()
     embedding_vector = [0.1] * 768  # Convert to string for pgvector
-    chunk = Chunk(parent_page=None, contents=f"Chunk with embedding {unique_id}", embedding=embedding_vector)
+    chunk = Chunk(contents=f"Chunk with embedding {unique_id}", embedding=embedding_vector)
     db_session.add(chunk)
     db_session.commit()
 
@@ -137,30 +117,21 @@ def test_get_without_embeddings(chunk_repository: ChunkRepository, db_session: S
     assert len(results_offset) <= 5
 
 
-def test_count_by_page(chunk_repository: ChunkRepository, db_session: Session):
-    """Test counting the number of chunks for a specific page."""
-    # Use existing seed data (page id=1 has 2 chunks)
-    count = chunk_repository.count_by_page(1)
-
-    assert count >= 2
-
-
 def test_get_with_all_relations(chunk_repository: ChunkRepository, db_session: Session):
     result = chunk_repository.get_with_all_relations(1)
 
     assert result is not None
     assert result.id == 1
-    assert result.page is not None
     assert hasattr(result, "page_chunk_relations")
     assert hasattr(result, "retrieval_relations")
     assert hasattr(result, "chunk_retrieved_results")
 
 
 def test_get_chunks_with_empty_content(chunk_repository: ChunkRepository, db_session: Session):
-    empty_chunk = Chunk(id=800001, contents="", parent_page=None)
-    whitespace_chunk = Chunk(id=800002, contents="   ", parent_page=None)
-    null_chunk = Chunk(id=800003, contents="        ", parent_page=None)
-    valid_chunk = Chunk(id=800004, contents="Valid content", parent_page=None)
+    empty_chunk = Chunk(id=800001, contents="")
+    whitespace_chunk = Chunk(id=800002, contents="   ")
+    null_chunk = Chunk(id=800003, contents="        ")
+    valid_chunk = Chunk(id=800004, contents="Valid content")
 
     db_session.add_all([empty_chunk, whitespace_chunk, null_chunk, valid_chunk])
     db_session.commit()

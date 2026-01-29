@@ -131,9 +131,6 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
 
         # Relationships
         document: Mapped["Document"] = relationship(back_populates="pages")
-        chunks: Mapped[list["Chunk"]] = relationship(
-            foreign_keys="Chunk.parent_page", back_populates="page", cascade="all, delete-orphan"
-        )
         image_chunks: Mapped[list["ImageChunk"]] = relationship(back_populates="page", cascade="all, delete-orphan")
         page_chunk_relations: Mapped[list["PageChunkRelation"]] = relationship(
             back_populates="page", cascade="all, delete-orphan"
@@ -145,7 +142,6 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         __tablename__ = "chunk"
 
         id: Mapped[int | str] = make_pk_column()
-        parent_page: Mapped[int | str | None] = make_fk_column("page", nullable=True)
         contents: Mapped[str] = mapped_column(Text, nullable=False)
         embedding: Mapped[Vector | None] = mapped_column(Vector(embedding_dim))
         embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
@@ -154,7 +150,6 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         table_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
         # Relationships
-        page: Mapped["Page | None"] = relationship(foreign_keys=[parent_page], back_populates="chunks")
         page_chunk_relations: Mapped[list["PageChunkRelation"]] = relationship(
             foreign_keys="PageChunkRelation.chunk_id", back_populates="chunk", cascade="all, delete-orphan"
         )
@@ -178,7 +173,7 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         embeddings: Mapped[list[list[float]] | None] = mapped_column(VectorArray(embedding_dim))
 
         # Relationships
-        page: Mapped["Page"] = relationship(back_populates="image_chunks")
+        page: Mapped["Page | None"] = relationship(back_populates="image_chunks")
         retrieval_relations: Mapped[list["RetrievalRelation"]] = relationship(
             back_populates="image_chunk", cascade="all, delete-orphan"
         )

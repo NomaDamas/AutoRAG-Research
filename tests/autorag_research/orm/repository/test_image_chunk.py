@@ -13,7 +13,8 @@ def test_get_by_page_id(image_chunk_repository: ImageChunkRepository):
     results = image_chunk_repository.get_by_page_id(1)
 
     assert len(results) >= 1
-    assert all(ic.parent_page == 1 for ic in results)
+    for ic in results:
+        assert ic.parent_page == 1
 
 
 def test_get_with_page(image_chunk_repository: ImageChunkRepository):

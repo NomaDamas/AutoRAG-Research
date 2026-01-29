@@ -28,30 +28,6 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
             model_cls = Chunk
         super().__init__(session, model_cls)
 
-    def get_by_page_id(self, page_id: int) -> list[Any]:
-        """Retrieve all chunks for a specific page.
-
-        Args:
-            page_id: The page ID.
-
-        Returns:
-            List of chunks belonging to the page.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.parent_page == page_id)
-        return list(self.session.execute(stmt).scalars().all())
-
-    def get_with_page(self, chunk_id: int) -> Any | None:
-        """Retrieve a chunk with its page eagerly loaded.
-
-        Args:
-            chunk_id: The chunk ID.
-
-        Returns:
-            The chunk with page loaded, None if not found.
-        """
-        stmt = select(self.model_cls).where(self.model_cls.id == chunk_id).options(joinedload(self.model_cls.page))
-        return self.session.execute(stmt).scalar_one_or_none()
-
     def get_with_page_chunk_relations(self, chunk_id: int) -> Any | None:
         """Retrieve a chunk with its page-chunk relations eagerly loaded.
 
@@ -124,17 +100,6 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.contents == contents)
         return list(self.session.execute(stmt).scalars().all())
 
-    def count_by_page(self, page_id: int) -> int:
-        """Count the number of chunks for a specific page.
-
-        Args:
-            page_id: The page ID.
-
-        Returns:
-            Number of chunks for the page.
-        """
-        return self.session.query(self.model_cls).filter(self.model_cls.parent_page == page_id).count()
-
     def get_with_all_relations(self, chunk_id: int) -> Any | None:
         """Retrieve a chunk with all relationships eagerly loaded.
 
@@ -148,7 +113,6 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
             select(self.model_cls)
             .where(self.model_cls.id == chunk_id)
             .options(
-                joinedload(self.model_cls.page),
                 joinedload(self.model_cls.page_chunk_relations),
                 joinedload(self.model_cls.retrieval_relations),
                 joinedload(self.model_cls.chunk_retrieved_results),

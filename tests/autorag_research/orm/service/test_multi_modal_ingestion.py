@@ -48,7 +48,7 @@ class TestMultiModalIngestionService:
 
     def test_add_image_chunks(self, service):
         image_chunks = [
-            {"contents": b"\x00\x01\x02", "mimetype": "image/png", "parent_page": 1},
+            {"contents": b"\x00\x01\x02", "mimetype": "image/png"},
         ]
         ids = service.add_image_chunks(image_chunks)
         assert len(ids) == 1

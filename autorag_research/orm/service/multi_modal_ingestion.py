@@ -73,6 +73,7 @@ class MultiModalIngestionService(BaseIngestionService):
                 "Page": self._schema.Page,
                 "Chunk": self._schema.Chunk,
                 "ImageChunk": self._schema.ImageChunk,
+                "PageChunkRelation": self._schema.PageChunkRelation,
                 "Query": self._schema.Query,
                 "RetrievalRelation": self._schema.RetrievalRelation,
             }
@@ -82,6 +83,7 @@ class MultiModalIngestionService(BaseIngestionService):
             File,
             ImageChunk,
             Page,
+            PageChunkRelation,
             Query,
             RetrievalRelation,
         )
@@ -92,6 +94,7 @@ class MultiModalIngestionService(BaseIngestionService):
             "Page": Page,
             "Chunk": Chunk,
             "ImageChunk": ImageChunk,
+            "PageChunkRelation": PageChunkRelation,
             "Query": Query,
             "RetrievalRelation": RetrievalRelation,
         }
