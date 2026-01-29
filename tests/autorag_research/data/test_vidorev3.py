@@ -10,6 +10,8 @@ ViDoReV3 key features:
 - Each page's markdown content becomes one text chunk (no chunking)
 """
 
+from typing import Literal
+
 import pytest
 
 from autorag_research.data.vidorev3 import ViDoReV3Ingestor
@@ -29,9 +31,9 @@ class TestViDoReV3IngestorIntegration:
 
     @pytest.mark.parametrize(
         "qrels_mode",
-        ["image-only", "text-only", "both"],
+        ["image", "text", "mixed"],
     )
-    def test_ingest_hr_subset(self, qrels_mode: str):
+    def test_ingest_hr_subset(self, qrels_mode: Literal["image", "text", "mixed"]):
         """Basic integration test - verify_all() handles all standard checks.
 
         Tests the 'hr' (Human Resources) configuration with a small subset.
@@ -48,8 +50,6 @@ class TestViDoReV3IngestorIntegration:
             expected_document_count=1,
             check_pages=True,
             expected_page_count=50,
-            check_captions=True,
-            expected_caption_count=50,
             check_retrieval_relations=True,
             check_generation_gt=True,
             generation_gt_required_for_all=True,  # All queries have answers in ViDoReV3

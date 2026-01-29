@@ -28,8 +28,8 @@ logger = logging.getLogger("AutoRAG-Research")
 
 RANDOM_SEED = 42
 
-# Type alias for qrels mapping mode
-QrelsMode = Literal["image-only", "text-only", "both"]
+# Type alias for qrels mapping mode (matches chunk_type in add_retrieval_gt)
+QrelsMode = Literal["image", "text", "mixed"]
 
 
 VIDOREV3_CONFIGS = Literal[
@@ -52,7 +52,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,
         config_name: VIDOREV3_CONFIGS,
-        qrels_mode: QrelsMode = "image-only",
+        qrels_mode: QrelsMode = "image",
         embedding_model: MultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
@@ -62,9 +62,9 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         Args:
             config_name: config names for different ViDoReV3 datasets.
             qrels_mode: How to map qrels to chunks. Options:
-                - "image-only" (default): Map corpus_id to ImageChunk only.
-                - "text-only": Map corpus_id to text Chunk(s) only.
-                - "both": Map to both text Chunks and ImageChunk (OR relation).
+                - "image" (default): Map corpus_id to ImageChunk only.
+                - "text": Map corpus_id to text Chunk only.
+                - "mixed": Map to both text Chunk and ImageChunk (OR relation).
             embedding_model: Embedding model for single-vector embeddings.
             late_interaction_embedding_model: Embedding model for multi-vector embeddings.
         """
@@ -114,14 +114,10 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
 
         doc_id_to_db_id = self._ingest_document_hierarchy(filtered_docs_metadata)
 
-        ingested_corpus_ids, corpus_to_text_chunk = self._ingest_corpus(
-            dataset_path, corpus_ids_to_ingest, doc_id_to_db_id
-        )
+        ingested_corpus_ids = self._ingest_corpus(dataset_path, corpus_ids_to_ingest, doc_id_to_db_id)
 
         self._ingest_queries(selected_query_ids, queries_df)
-        self._ingest_qrels(
-            qrels_df, selected_query_ids, query_types_map, ingested_corpus_ids, corpus_to_text_chunk, self.qrels_mode
-        )
+        self._ingest_qrels(qrels_df, selected_query_ids, query_types_map, ingested_corpus_ids, self.qrels_mode)
 
         logger.info(
             f"ViDoReV3 ingestion complete for '{self.config_name}': "
@@ -236,43 +232,43 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
 
     def _create_text_chunk(
         self,
+        corpus_id: int,
         markdown: str,
-        caption_db_id: int,
-    ) -> list[int | str]:
+    ) -> int:
         """Create a single text chunk from markdown content (whole page = one chunk).
 
         Args:
+            corpus_id: The corpus ID to use as chunk ID
             markdown: The markdown text content
-            caption_db_id: The parent caption DB ID
 
         Returns:
-            List containing the created chunk DB ID
+            The created chunk DB ID (same as corpus_id)
         """
         if self.service is None:
             raise ServiceNotSetError
 
-        chunks_data = [{"parent_caption": caption_db_id, "contents": markdown, "is_table": False}]
-        return self.service.add_chunks(chunks_data)
+        chunks_data = [{"id": corpus_id, "contents": markdown, "is_table": False}]
+        self.service.add_chunks(chunks_data)
+        return corpus_id
 
     def _ingest_corpus(
         self,
         dataset_path: str,
         corpus_ids_to_ingest: set[int],
         doc_id_to_db_id: dict[str, int],
-    ) -> tuple[set[int], dict[int, int | str]]:
-        """Ingest corpus items and return ingested IDs and corpus-to-chunk mapping.
+    ) -> set[int]:
+        """Ingest corpus items and return ingested IDs.
+
+        Note: corpus_id is used as both ImageChunk ID and text Chunk ID.
 
         Returns:
-            A tuple of (ingested_corpus_ids, corpus_to_text_chunk) where:
-            - ingested_corpus_ids: Set of successfully ingested corpus IDs
-            - corpus_to_text_chunk: Mapping from corpus_id to text chunk DB ID (1:1 relation)
+            Set of successfully ingested corpus IDs
         """
         if self.service is None:
             raise ServiceNotSetError
 
         corpus_ds = load_dataset(dataset_path, "corpus", streaming=True, split="test")
         ingested_ids: set[int] = set()
-        corpus_to_text_chunk: dict[int, int | str] = {}
 
         page_key_to_db_id: dict[tuple[str, int], int] = {}
 
@@ -307,13 +303,8 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
             page_db_id = page_key_to_db_id.get(page_key)
 
             if markdown.strip() and page_db_id is not None:
-                caption_ids = self.service.add_captions([{"page_id": page_db_id, "contents": markdown}])
-                caption_db_id = caption_ids[0] if caption_ids else None
-
-                if caption_db_id is not None:
-                    chunk_ids = self._create_text_chunk(markdown, caption_db_id)
-                    if chunk_ids:
-                        corpus_to_text_chunk[corpus_id] = chunk_ids[0]
+                chunk_id = self._create_text_chunk(corpus_id, markdown)
+                self.service.link_page_to_chunks(page_db_id, [chunk_id])
 
             self.service.add_image_chunks([
                 {"id": corpus_id, "contents": img_bytes, "mimetype": mimetype, "parent_page": page_db_id}
@@ -321,7 +312,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
 
             ingested_ids.add(corpus_id)
 
-        return ingested_ids, corpus_to_text_chunk
+        return ingested_ids
 
     def _ingest_queries(
         self,
@@ -355,21 +346,21 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         selected_query_ids: list[int],
         query_types_map: dict[int, list[str]],
         ingested_corpus_ids: set[int],
-        corpus_to_text_chunk: dict[int, int | str],
         qrels_mode: QrelsMode,
     ) -> None:
         """Ingest query relevance relations based on qrels_mode.
+
+        Note: corpus_id is used as both ImageChunk ID and text Chunk ID.
 
         Args:
             qrels_df: DataFrame with query_id and corpus_id columns
             selected_query_ids: List of query IDs to process
             query_types_map: Mapping from query_id to list of query types
             ingested_corpus_ids: Set of successfully ingested corpus IDs
-            corpus_to_text_chunk: Mapping from corpus_id to text chunk DB ID (1:1 relation)
             qrels_mode: How to map qrels to chunks:
-                - "image-only": Map corpus_id to ImageChunk only
-                - "text-only": Map corpus_id to text Chunk(s) only
-                - "both": Map to both text Chunks and ImageChunk (OR relation)
+                - "image": Map corpus_id to ImageChunk only
+                - "text": Map corpus_id to text Chunk only
+                - "mixed": Map to both text Chunk and ImageChunk (OR relation)
         """
         if self.service is None:
             raise ServiceNotSetError
@@ -386,44 +377,41 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
             query_types = query_types_map.get(query_id, [])
             is_multi_hop = "multi-hop" in query_types
 
-            gt_expr = self._build_gt_expression(valid_corpus_ids, corpus_to_text_chunk, qrels_mode, is_multi_hop)
+            gt_expr = self._build_gt_expression(valid_corpus_ids, qrels_mode, is_multi_hop)
 
             if gt_expr is None:
                 continue
 
-            # Determine chunk_type based on qrels_mode
-            chunk_type = "mixed" if qrels_mode == "both" else ("image" if qrels_mode == "image-only" else "text")
-
             self.service.add_retrieval_gt(
                 query_id,
                 gt_expr,
-                chunk_type=chunk_type,
+                chunk_type=qrels_mode,
             )
 
     def _build_gt_expression(
         self,
         corpus_ids: list[int],
-        corpus_to_text_chunk: dict[int, int | str],
         qrels_mode: QrelsMode,
         is_multi_hop: bool,
     ) -> RetrievalGT | None:
         """Build ground truth expression based on qrels_mode and multi-hop status.
 
+        Note: corpus_id is used as both ImageChunk ID and text Chunk ID.
+
         Args:
             corpus_ids: List of valid corpus IDs for the query
-            corpus_to_text_chunk: Mapping from corpus_id to text chunk DB ID (1:1 relation)
             qrels_mode: How to map qrels to chunks
             is_multi_hop: Whether this is a multi-hop query (AND semantics)
 
         Returns:
             Ground truth expression, or None if no valid chunks found
         """
-        if qrels_mode == "image-only":
+        if qrels_mode == "image":
             return self._build_image_only_gt(corpus_ids, is_multi_hop)
-        elif qrels_mode == "text-only":
-            return self._build_text_only_gt(corpus_ids, corpus_to_text_chunk, is_multi_hop)
-        else:  # both
-            return self._build_both_gt(corpus_ids, corpus_to_text_chunk, is_multi_hop)
+        elif qrels_mode == "text":
+            return self._build_text_only_gt(corpus_ids, is_multi_hop)
+        else:  # mixed
+            return self._build_both_gt(corpus_ids, is_multi_hop)
 
     def _build_image_only_gt(
         self,
@@ -437,45 +425,37 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
     def _build_text_only_gt(
         self,
         corpus_ids: list[int],
-        corpus_to_text_chunk: dict[int, int | str],
         is_multi_hop: bool,
-    ) -> RetrievalGT | None:
-        """Build GT expression for text-only mode."""
-        chunk_ids = [corpus_to_text_chunk[cid] for cid in corpus_ids if cid in corpus_to_text_chunk]
-        if not chunk_ids:
-            return None
-        if is_multi_hop:
-            return and_all(chunk_ids, text)
-        else:
-            return or_all(chunk_ids, text)
+    ) -> RetrievalGT:
+        """Build GT expression for text-only mode.
+
+        Note: corpus_id is used as text Chunk ID.
+        """
+        ids: list[int | str] = list(corpus_ids)
+        return and_all(ids, text) if is_multi_hop else or_all(ids, text)
 
     def _build_both_gt(
         self,
         corpus_ids: list[int],
-        corpus_to_text_chunk: dict[int, int | str],
         is_multi_hop: bool,
-    ) -> RetrievalGT | None:
-        """Build GT expression for both mode (text and image chunks)."""
+    ) -> RetrievalGT:
+        """Build GT expression for both mode (text and image chunks).
+
+        Note: corpus_id is used as both ImageChunk ID and text Chunk ID.
+        """
         if is_multi_hop:
             # Multi-hop: (TextChunk OR ImageChunk) AND (TextChunk OR ImageChunk) ...
             and_groups: list[OrGroup | TextId | ImageId] = []
             for corpus_id in corpus_ids:
-                items: list[TextId | ImageId] = [ImageId(corpus_id)]
-                if corpus_id in corpus_to_text_chunk:
-                    items.append(TextId(corpus_to_text_chunk[corpus_id]))
+                items: list[TextId | ImageId] = [ImageId(corpus_id), TextId(corpus_id)]
                 and_groups.append(or_all_mixed(items))
-            if not and_groups:
-                return None
             return and_all_mixed(and_groups)  # type: ignore[return-value, arg-type]
         else:
             # Non-multi-hop: all text chunks and all image chunks are OR alternatives
             items: list[TextId | ImageId] = []
             for corpus_id in corpus_ids:
                 items.append(ImageId(corpus_id))
-                if corpus_id in corpus_to_text_chunk:
-                    items.append(TextId(corpus_to_text_chunk[corpus_id]))
-            if not items:
-                return None
+                items.append(TextId(corpus_id))
             return or_all_mixed(items)
 
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
