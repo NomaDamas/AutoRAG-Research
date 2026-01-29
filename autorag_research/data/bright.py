@@ -7,6 +7,7 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from autorag_research.data.base import QueryMetadata, TextEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
+from autorag_research.data.util import make_id
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import or_all
 
@@ -123,7 +124,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         # Step 3: Collect all gold IDs from selected queries
         gold_ids_set: set[str] = set()
         for qm in query_metadata_list:
-            gold_ids_set.update(_make_id(domain, gid) for gid in qm.gold_ids)
+            gold_ids_set.update(make_id(domain, gid) for gid in qm.gold_ids)
         logger.info(f"[{domain}] Total gold IDs: {len(gold_ids_set)}")
 
         # Step 4: Ingest corpus with filtering
@@ -143,7 +144,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         # Step 6: Ingest relations
         for qm in query_metadata_list:
             if qm.gold_ids:
-                chunk_ids = [_make_id(domain, gid) for gid in qm.gold_ids]
+                chunk_ids = [make_id(domain, gid) for gid in qm.gold_ids]
                 self.service.add_retrieval_gt(qm.query_id, or_all(chunk_ids), chunk_type="text")
 
     def _collect_query_metadata(self, domain: str) -> list[QueryMetadata]:
@@ -158,7 +159,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
             if not gold_ids:
                 continue
 
-            query_id = _make_id(domain, example_dict["id"])
+            query_id = make_id(domain, example_dict["id"])
             gold_answer = example_dict["gold_answer"]
             processed_answer = None if gold_answer == "N/A" else gold_answer
 
@@ -199,7 +200,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
 
         for doc in ds:
             doc_dict: dict[str, Any] = doc
-            chunk_id = _make_id(domain, doc_dict["id"])
+            chunk_id = make_id(domain, doc_dict["id"])
             chunk_data: dict[str, str | int | None] = {
                 "id": chunk_id,
                 "contents": doc_dict["content"],
@@ -244,7 +245,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
 
         for doc in ds:
             doc_dict: dict[str, Any] = doc
-            chunk_id = _make_id(domain, doc_dict["id"])
+            chunk_id = make_id(domain, doc_dict["id"])
             chunks.append({
                 "id": chunk_id,
                 "contents": doc_dict["content"],
@@ -261,10 +262,6 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
 
         logger.info(f"[{domain}] Total chunks ingested: {total_count}")
         return total_count
-
-
-def _make_id(domain: str, source_id: str) -> str:
-    return f"{domain}_{source_id}"
 
 
 def _get_gold_ids(example: dict[str, Any], document_mode: DocumentMode, domain: str) -> list[str]:
