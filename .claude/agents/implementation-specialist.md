@@ -74,6 +74,8 @@ from datasets import load_dataset
 
 6. **Modularity**: Break complex logic into small, focused private methods
 
+7. **Use Pandas**: It is always preferred to use Pandas for data manipulation when applicable
+
 ## Constraints You Must Follow
 
 - **File Location**: Always create files in `autorag_research/data/`
@@ -81,6 +83,7 @@ from datasets import load_dataset
 - **No Direct DB Access**: Services only, never repositories or raw queries
 - **Reuse Utilities**: Check `util.py` before implementing common functionality
 - **Error Handling**: Use appropriate exception handling for dataset loading and transformation
+- **Additional options**: Additional options for Dataset Ingestors should be in the `__init__` method as keyword arguments with default values.
 
 ## Verification Checklist
 

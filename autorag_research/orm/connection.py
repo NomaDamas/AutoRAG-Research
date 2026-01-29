@@ -167,6 +167,41 @@ class DBConnection:
 
         logger.info(f"Database '{self.database}' created and vector extensions installed.")
 
+    def terminate_connections(self):
+        """Terminate all connections to this database except the current one.
+
+        This is useful before dropping a database to ensure no active connections
+        prevent the DROP DATABASE command from executing.
+        """
+        if self.database is None:
+            raise MissingDBNameError
+
+        # Connect to 'postgres' database to terminate connections
+        admin_conn = DBConnection(
+            host=self.host,
+            port=self.port,
+            username=self.username,
+            password=self.password,
+            database="postgres",
+        )
+        engine = admin_conn.get_engine()
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text(
+                        """
+                        SELECT pg_terminate_backend(pid)
+                        FROM pg_stat_activity
+                        WHERE datname = :dbname AND pid <> pg_backend_pid()
+                        """
+                    ),
+                    {"dbname": self.database},
+                )
+                conn.commit()
+            logger.info(f"Terminated all connections to database '{self.database}'.")
+        finally:
+            engine.dispose()
+
     def drop_database(self):
         if self.database is None:
             raise MissingDBNameError
