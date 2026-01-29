@@ -1,4 +1,4 @@
-"""Tests for autorag_research.cli.commands.init_config module."""
+"""Tests for autorag_research.cli.commands.init module."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -48,7 +48,7 @@ class TestInitConfigCommand:
         assert result.exit_code == 0
 
     @patch("autorag_research.cli.commands.init.httpx.Client")
-    def test_init_config_creates_directory(
+    def test_init_creates_directory(
         self, mock_client_class: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """init creates config directory if it doesn't exist."""
@@ -71,11 +71,11 @@ class TestInitConfigCommand:
 
         assert config_dir.exists()
 
-    @patch("autorag_research.cli.commands.init_config.httpx.Client")
-    def test_init_config_downloads_files(
+    @patch("autorag_research.cli.commands.init.httpx.Client")
+    def test_init_downloads_files(
         self, mock_client_class: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """init_config downloads files from GitHub."""
+        """init downloads files from GitHub."""
         config_dir = tmp_path / "configs"
         config_dir.mkdir()
         monkeypatch.setattr(cli, "CONFIG_PATH", config_dir)
@@ -102,15 +102,15 @@ class TestInitConfigCommand:
         assert (config_dir / "db.yaml").exists()
         assert "localhost" in (config_dir / "db.yaml").read_text()
 
-    @patch("autorag_research.cli.commands.init_config.httpx.Client")
-    def test_init_config_skips_existing_files(
+    @patch("autorag_research.cli.commands.init.httpx.Client")
+    def test_init_skips_existing_files(
         self,
         mock_client_class: MagicMock,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture,
     ) -> None:
-        """init_config skips files that already exist."""
+        """init skips files that already exist."""
         config_dir = tmp_path / "configs"
         config_dir.mkdir()
         # Create existing file
@@ -133,11 +133,11 @@ class TestInitConfigCommand:
         # File should still have original content
         assert (config_dir / "db.yaml").read_text() == "existing content"
 
-    @patch("autorag_research.cli.commands.init_config.httpx.Client")
-    def test_init_config_raises_on_empty_response(
+    @patch("autorag_research.cli.commands.init.httpx.Client")
+    def test_init_raises_on_empty_response(
         self, mock_client_class: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """init_config raises RuntimeError when no files found."""
+        """init raises RuntimeError when no files found."""
         config_dir = tmp_path / "configs"
         config_dir.mkdir()
         monkeypatch.setattr(cli, "CONFIG_PATH", config_dir)
