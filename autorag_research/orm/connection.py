@@ -1,5 +1,6 @@
 import logging
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -187,9 +188,8 @@ class DBConnection:
         self,
         dump_file: str | Path,
         clean: bool = False,
-        create: bool = False,
+        create: bool = True,
         no_owner: bool = False,
-        install_extensions: bool = True,
         extra_args: list[str] | None = None,
     ) -> None:
         """Restore a PostgreSQL database from a dump file.
@@ -201,9 +201,8 @@ class DBConnection:
             dump_file: Path to the dump file to restore from.
             clean: If True, drop database objects before recreating them.
             create: If True, create the database before restoring.
+                Default is True.
             no_owner: If True, skip restoration of object ownership.
-            install_extensions: If True, install vector extensions (vchord, vectors,
-                vector) before restoring. Default is True.
             extra_args: Additional arguments to pass to pg_restore.
 
         Raises:
@@ -215,36 +214,15 @@ class DBConnection:
         if self.database is None:
             raise MissingDBNameError
 
-        import subprocess
-
-        from autorag_research.orm.util import create_database, install_vector_extensions
-
         dump_path = Path(dump_file)
         if not dump_path.exists():
             raise FileNotFoundError
 
-        # Create database if it doesn't exist
-        create_database(
-            host=self.host,
-            user=self.username,
-            password=self.password,
-            database=self.database,
-            port=self.port,
-        )
-
-        # Install vector extensions before restoring if requested
-        if install_extensions:
-            install_vector_extensions(
-                host=self.host,
-                user=self.username,
-                password=self.password,
-                database=self.database,
-                port=self.port,
-            )
+        if create:
+            self.create_database()
 
         optional_flags = [
             ("--clean", clean),
-            ("--create", create),
             ("--no-owner", no_owner),
         ]
         cmd = [
@@ -310,9 +288,6 @@ class DBConnection:
         """
         if self.database is None:
             raise MissingDBNameError
-
-        import os
-        import subprocess
 
         output_path = Path(output_file)
         output_path.parent.mkdir(parents=True, exist_ok=True)
