@@ -24,14 +24,18 @@ class EmbeddingError(Exception):
     """Raised when the embedding model is not set."""
 
     def __init__(self):
-        super().__init__("We don't know what is wrong, but your Embedding model is criminal. Scroll up to see the traceback and find your real reason.")
+        super().__init__(
+            "We don't know what is wrong, but your Embedding model is criminal. Scroll up to see the traceback and find your real reason."
+        )
 
 
 class LLMError(Exception):
     """Raised when the LLM model is not set."""
 
     def __init__(self):
-        super().__init__("We don't know what is wrong, but your LLM model is criminal. Scroll up to see the traceback and find your real reason.")
+        super().__init__(
+            "We don't know what is wrong, but your LLM model is criminal. Scroll up to see the traceback and find your real reason."
+        )
 
 
 class SessionNotSetError(Exception):
