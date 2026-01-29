@@ -183,6 +183,105 @@ class DBConnection:
 
         logger.info(f"Database '{self.database}' dropped.")
 
+    def restore_database(
+        self,
+        dump_file: str | Path,
+        clean: bool = False,
+        create: bool = False,
+        no_owner: bool = False,
+        install_extensions: bool = True,
+        extra_args: list[str] | None = None,
+    ) -> None:
+        """Restore a PostgreSQL database from a dump file.
+
+        Uses pg_restore to restore a database from a dump file created with
+        pg_dump in custom format (--format=custom).
+
+        Args:
+            dump_file: Path to the dump file to restore from.
+            clean: If True, drop database objects before recreating them.
+            create: If True, create the database before restoring.
+            no_owner: If True, skip restoration of object ownership.
+            install_extensions: If True, install vector extensions (vchord, vectors,
+                vector) before restoring. Default is True.
+            extra_args: Additional arguments to pass to pg_restore.
+
+        Raises:
+            MissingDBNameError: If database name is not set.
+            FileNotFoundError: If the dump file does not exist.
+            subprocess.CalledProcessError: If pg_restore fails.
+            RuntimeError: If pg_restore command is not found.
+        """
+        if self.database is None:
+            raise MissingDBNameError
+
+        import subprocess
+
+        from autorag_research.orm.util import create_database, install_vector_extensions
+
+        dump_path = Path(dump_file)
+        if not dump_path.exists():
+            raise FileNotFoundError
+
+        # Create database if it doesn't exist
+        create_database(
+            host=self.host,
+            user=self.username,
+            password=self.password,
+            database=self.database,
+            port=self.port,
+        )
+
+        # Install vector extensions before restoring if requested
+        if install_extensions:
+            install_vector_extensions(
+                host=self.host,
+                user=self.username,
+                password=self.password,
+                database=self.database,
+                port=self.port,
+            )
+
+        optional_flags = [
+            ("--clean", clean),
+            ("--create", create),
+            ("--no-owner", no_owner),
+        ]
+        cmd = [
+            "pg_restore",
+            f"--host={self.host}",
+            f"--port={self.port}",
+            f"--username={self.username}",
+            f"--dbname={self.database}",
+            f"--password={self.password}",
+            *[flag for flag, enabled in optional_flags if enabled],
+            *(extra_args or []),
+            str(dump_path),
+        ]
+
+        env = os.environ.copy()
+
+        logger.info(f"Restoring database '{self.database}' from '{dump_path}'")
+
+        try:
+            result = subprocess.run(  # noqa: S603
+                cmd,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if result.stdout:
+                logger.debug(result.stdout)
+        except FileNotFoundError as e:
+            msg = "pg_restore command not found. Ensure PostgreSQL client tools are installed."
+            raise RuntimeError(msg) from e
+        except subprocess.CalledProcessError as e:
+            logger.exception(f"pg_restore failed: {e.stderr}")
+            raise
+
+        logger.info(f"Database '{self.database}' restored successfully")
+
     def dump_database(
         self,
         output_file: str | Path,
