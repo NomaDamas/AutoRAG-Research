@@ -31,16 +31,16 @@ def health_check_embedding(model: EMBEDDING_MODEL_TYPES) -> int:
     Raises:
         EmbeddingNotSetError: If health check fails.
     """
-    from autorag_research.exceptions import EmbeddingNotSetError
+    from autorag_research.exceptions import EmbeddingError
 
     try:
         embedding = model.get_text_embedding("health check")
         return len(embedding)
     except Exception as e:
-        raise EmbeddingNotSetError from e
+        raise EmbeddingError from e
 
 
-def health_check_llm(model: BaseLLM) -> bool:
+def health_check_llm(model: BaseLLM) -> None:
     """Health check LLM by making a test call.
 
     Args:
@@ -52,13 +52,12 @@ def health_check_llm(model: BaseLLM) -> bool:
     Raises:
         LLMNotSetError: If health check fails.
     """
-    from autorag_research.exceptions import LLMNotSetError
+    from autorag_research.exceptions import LLMError
 
     try:
-        response = model.complete("Hello, world!")
-        return bool(response)
+        model.complete("Hello, world!")
     except Exception as e:
-        raise LLMNotSetError from e
+        raise LLMError from e
 
 
 class ModelManager(Generic[T]):
@@ -101,7 +100,10 @@ class ModelManager(Generic[T]):
         """
         yaml_path = get_config_dir() / self._config_subdir / f"{config_name}.yaml"
         if not yaml_path.exists():
-            raise FileNotFoundError
+            yaml_path = get_config_dir() / self._config_subdir / f"{config_name}.yml"
+        if not yaml_path.exists():
+            msg = f"Config file not found: {yaml_path}"
+            raise FileNotFoundError(msg)
 
         cfg = OmegaConf.load(yaml_path)
         model = instantiate(cfg)

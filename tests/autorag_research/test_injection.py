@@ -42,13 +42,13 @@ class TestHealthCheckEmbedding:
         """Raises EmbeddingNotSetError when embedding fails."""
         from llama_index.embeddings.openai import OpenAIEmbedding
 
-        from autorag_research.exceptions import EmbeddingNotSetError
+        from autorag_research.exceptions import EmbeddingError
 
         original_api_key = os.getenv("OPENAI_API_KEY")
         os.environ["OPENAI_API_KEY"] = "havertz"
 
         embedding_model = OpenAIEmbedding()
-        with pytest.raises(EmbeddingNotSetError):
+        with pytest.raises(EmbeddingError):
             health_check_embedding(embedding_model)
 
         if original_api_key:
@@ -62,21 +62,19 @@ class TestHealthCheckLlm:
         """Returns True when LLM responds successfully."""
         mock_llm = MockLLM()
 
-        result = health_check_llm(mock_llm)
-
-        assert result is True
+        health_check_llm(mock_llm)
 
     def test_raises_on_llm_failure(self) -> None:
         """Raises LLMNotSetError when LLM fails."""
         from llama_index.llms.openai import OpenAI
 
-        from autorag_research.exceptions import LLMNotSetError
+        from autorag_research.exceptions import LLMError
 
         original_api_key = os.getenv("OPENAI_API_KEY")
         os.environ["OPENAI_API_KEY"] = "havertz"
         model = OpenAI()
 
-        with pytest.raises(LLMNotSetError):
+        with pytest.raises(LLMError):
             health_check_llm(model)
 
         if original_api_key:
@@ -211,14 +209,14 @@ class TestLoadLlm:
     @patch("autorag_research.injection.instantiate")
     def test_health_check_failure_propagates(self, mock_instantiate: MagicMock) -> None:
         """Health check failure raises LLMNotSetError."""
-        from autorag_research.exceptions import LLMNotSetError
+        from autorag_research.exceptions import LLMError
 
         mock_instantiate.return_value = MockLLM()
 
         original_func = _llm_manager._health_check_func
-        _llm_manager._health_check_func = MagicMock(side_effect=LLMNotSetError())
+        _llm_manager._health_check_func = MagicMock(side_effect=LLMError())
         try:
-            with pytest.raises(LLMNotSetError):
+            with pytest.raises(LLMError):
                 load_llm("mock")
         finally:
             _llm_manager._health_check_func = original_func

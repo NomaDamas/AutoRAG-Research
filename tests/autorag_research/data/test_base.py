@@ -12,7 +12,7 @@ from llama_index.core.embeddings import MultiModalEmbedding
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor, TextEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.exceptions import EmbeddingNotSetError, ServiceNotSetError
+from autorag_research.exceptions import EmbeddingError, ServiceNotSetError
 
 EMBEDDING_DIM = 768
 
@@ -156,7 +156,7 @@ class TestMultiModalEmbeddingDataIngestorEmbedAll:
         """embed_all should raise EmbeddingNotSetError when embedding_model is not set."""
         ingestor = ConcreteMultiModalIngestor(embedding_model=None)
 
-        with pytest.raises(EmbeddingNotSetError):
+        with pytest.raises(EmbeddingError):
             ingestor.embed_all()
 
     def test_embed_all_raises_service_not_set_error(self, mock_multi_modal_embedding):
@@ -210,7 +210,7 @@ class TestMultiModalEmbeddingDataIngestorEmbedAllLateInteraction:
         """embed_all_late_interaction should raise EmbeddingNotSetError when model not set."""
         ingestor = ConcreteMultiModalIngestor(late_interaction_embedding_model=None)
 
-        with pytest.raises(EmbeddingNotSetError):
+        with pytest.raises(EmbeddingError):
             ingestor.embed_all_late_interaction()
 
     def test_embed_all_late_interaction_raises_service_not_set_error(self, mock_late_interaction_embedding):
