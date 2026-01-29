@@ -73,7 +73,7 @@ class BEIRIngestor(TextEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
 
         # Step 1: Sample queries and collect gold IDs (only when min_corpus_cnt is set)
         qids, filtered_qrels, gold_corpus_ids = self._sample_queries(

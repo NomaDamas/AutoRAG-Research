@@ -36,13 +36,8 @@ import operator
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import reduce
-from typing import TYPE_CHECKING
 
 from autorag_research.exceptions import EmptyIterableError
-
-if TYPE_CHECKING:
-    pass
-
 
 # =============================================================================
 # Chunk ID Wrappers
