@@ -83,7 +83,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
 
         # Step 1: Load queries and extract gold docids
         logger.info(f"Loading Mr. TyDi queries ({self.language}, {subset} split)...")

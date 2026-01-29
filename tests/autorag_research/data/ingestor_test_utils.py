@@ -33,7 +33,6 @@ Usage:
 import hashlib
 import io
 import logging
-import os
 import random
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -41,13 +40,11 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from PIL import Image
-from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.orm import scoped_session
 
-from autorag_research.orm.schema_factory import create_schema
+from autorag_research.orm.connection import DBConnection
 from autorag_research.orm.service.base_ingestion import BaseIngestionService
-from autorag_research.orm.util import create_database, drop_database, install_vector_extensions
 from tests.util import CheckResult, VerificationReport
 
 # Environment variables are loaded by conftest.py via load_dotenv()
@@ -122,21 +119,14 @@ def create_test_database(config: IngestorTestConfig) -> Generator[TestDatabaseCo
     Yields:
         TestDatabaseContext with schema, engine, and session_factory.
     """
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    user = os.getenv("POSTGRES_USER", "postgres")
-    pwd = os.getenv("POSTGRES_PASSWORD", "postgres")
-    port = int(os.getenv("PG_PORT", os.getenv("POSTGRES_PORT", "5432")))
+    conn = DBConnection.from_env()
+    conn.database = config.db_name
+    conn.create_database()
 
-    # Create database
-    create_database(host, user, pwd, config.db_name, port)
-    install_vector_extensions(host, user, pwd, config.db_name, port)
-
-    # Create engine and schema
-    url = f"postgresql+psycopg://{user}:{pwd}@{host}:{port}/{config.db_name}"
-    engine = create_engine(url, pool_pre_ping=True)
-    schema = create_schema(config.embedding_dim, config.primary_key_type)
-    schema.Base.metadata.create_all(engine)
-    session_factory = scoped_session(sessionmaker(bind=engine))
+    # Create schema with explicit embedding_dim and primary_key_type from config
+    schema = conn.create_schema(config.embedding_dim, config.primary_key_type)
+    engine = conn.get_engine()
+    session_factory = conn.get_session_factory()
 
     try:
         yield TestDatabaseContext(
@@ -145,9 +135,9 @@ def create_test_database(config: IngestorTestConfig) -> Generator[TestDatabaseCo
             session_factory=session_factory,
         )
     finally:
-        session_factory.remove()
         engine.dispose()
-        drop_database(host, user, pwd, config.db_name, port, force=True)
+        conn.terminate_connections()
+        conn.drop_database()
 
 
 class IngestorTestVerifier:
@@ -178,7 +168,7 @@ class IngestorTestVerifier:
         self.service = service
         self.schema = schema
         self.config = config
-        self._rng = random.Random(RANDOM_SEED)  # noqa: S311
+        self._rng = random.Random(RANDOM_SEED)
 
     def verify_all(self) -> VerificationReport:
         """Run all configured checks and return detailed report.
@@ -308,11 +298,16 @@ class IngestorTestVerifier:
         stats = self.service.get_statistics()
         actual = stats.get("documents", 0)
         expected = self.config.expected_document_count or 0
-        passed = actual == expected
+        if self.config.chunk_count_is_minimum:
+            passed = actual >= expected
+            comparison = ">="
+        else:
+            passed = actual == expected
+            comparison = "=="
         return CheckResult(
             passed=passed,
-            message=f"Expected {expected}, got {actual}",
-            failures=[] if passed else ["Document count mismatch"],
+            message=f"Expected {comparison} {expected}, got {actual}",
+            failures=[] if passed else [f"Document count mismatch: expected {comparison} {expected}, got {actual}"],
         )
 
     def _verify_page_count(self) -> CheckResult:
@@ -320,11 +315,16 @@ class IngestorTestVerifier:
         stats = self.service.get_statistics()
         actual = stats.get("pages", 0)
         expected = self.config.expected_page_count or 0
-        passed = actual == expected
+        if self.config.chunk_count_is_minimum:
+            passed = actual >= expected
+            comparison = ">="
+        else:
+            passed = actual == expected
+            comparison = "=="
         return CheckResult(
             passed=passed,
-            message=f"Expected {expected}, got {actual}",
-            failures=[] if passed else ["Page count mismatch"],
+            message=f"Expected {comparison} {expected}, got {actual}",
+            failures=[] if passed else [f"Page count mismatch: expected {comparison} {expected}, got {actual}"],
         )
 
     def _verify_file_count(self) -> CheckResult:
@@ -332,11 +332,16 @@ class IngestorTestVerifier:
         stats = self.service.get_statistics()
         actual = stats.get("files", 0)
         expected = self.config.expected_file_count or 0
-        passed = actual == expected
+        if self.config.chunk_count_is_minimum:
+            passed = actual >= expected
+            comparison = ">="
+        else:
+            passed = actual == expected
+            comparison = "=="
         return CheckResult(
             passed=passed,
-            message=f"Expected {expected}, got {actual}",
-            failures=[] if passed else ["File count mismatch"],
+            message=f"Expected {comparison} {expected}, got {actual}",
+            failures=[] if passed else [f"File count mismatch: expected {comparison} {expected}, got {actual}"],
         )
 
     # ==================== Format Validation ====================

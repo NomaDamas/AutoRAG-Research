@@ -109,7 +109,7 @@ class BRIGHTIngestor(TextEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
 
         # Step 1: Collect query metadata (streaming - just metadata, not embeddings)
         query_metadata_list = self._collect_query_metadata(domain)

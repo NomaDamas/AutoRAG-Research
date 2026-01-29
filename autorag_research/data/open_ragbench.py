@@ -63,7 +63,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
                 "Only query_limit is effective for this dataset."
             )
 
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
 
         queries_data = self._download_json("queries.json")
         answers_data = self._download_json("answers.json")
