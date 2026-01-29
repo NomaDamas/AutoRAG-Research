@@ -1,5 +1,5 @@
 # Database connection configuration
 host: localhost
-port: 5432
+port: ${oc.env:POSTGRES_PORT,5432}
 user: postgres
 password: ${oc.env:POSTGRES_PASSWORD,postgres} # Recommend not changing and use POSTGRES_PASSWORD environment variables

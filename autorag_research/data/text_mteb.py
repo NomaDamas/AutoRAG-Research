@@ -278,7 +278,7 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         split = self._resolve_subset(subset)
         corpus_df, queries_df, relevant_docs = self._get_split_data(split)
 
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
 
         # Step 1: Sample queries (only those with relevant docs above score_threshold)
         query_ids_with_relations = [qid for qid in queries_df.index if self._get_gold_ids(relevant_docs, qid)]

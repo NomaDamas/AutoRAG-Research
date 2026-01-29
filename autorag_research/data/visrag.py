@@ -387,7 +387,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         corpus_df = self._load("corpus")
         queries_df = self._load("queries")
         qrels_df = self._load("qrels")
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
 
         # Build indexes for row lookup
         query_index = {row["query-id"]: row.to_dict() for _, row in queries_df.iterrows()}
