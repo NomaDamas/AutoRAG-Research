@@ -445,13 +445,15 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         """
         if is_multi_hop:
             # Multi-hop: (TextChunk OR ImageChunk) AND (TextChunk OR ImageChunk) ...
-            and_groups: list[OrGroup | TextId | ImageId] = [or_all_mixed([
-                ImageId(corpus_id), TextId(corpus_id)
-            ]) for corpus_id in corpus_ids]
+            and_groups: list[OrGroup | TextId | ImageId] = [
+                or_all_mixed([ImageId(corpus_id), TextId(corpus_id)]) for corpus_id in corpus_ids
+            ]
             return and_all_mixed(and_groups)  # type: ignore[return-value, arg-type]
         else:
             # Non-multi-hop: all text chunks and all image chunks are OR alternatives
-            items: list[TextId | ImageId] = [ImageId(c_id) for c_id in corpus_ids] + [TextId(c_id) for c_id in corpus_ids]
+            items: list[TextId | ImageId] = [ImageId(c_id) for c_id in corpus_ids] + [
+                TextId(c_id) for c_id in corpus_ids
+            ]
             return or_all_mixed(items)
 
     def embed_all(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
