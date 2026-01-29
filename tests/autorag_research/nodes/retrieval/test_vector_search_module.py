@@ -17,8 +17,9 @@ class TestVectorSearchModuleModelDetection:
 
     def test_detects_single_vector_model(self, session_factory: sessionmaker[Session]):
         """Test that BaseEmbedding is detected as single-vector model."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
         from llama_index.core.base.embeddings.base import BaseEmbedding
+
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         # Create a mock BaseEmbedding
         mock_embedding = MagicMock(spec=BaseEmbedding)
@@ -33,9 +34,8 @@ class TestVectorSearchModuleModelDetection:
 
     def test_detects_multi_vector_model(self, session_factory: sessionmaker[Session]):
         """Test that MultiVectorBaseEmbedding is detected as multi-vector model."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
-
         from autorag_research.embeddings.base import MultiVectorBaseEmbedding
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         # Create a mock MultiVectorBaseEmbedding
         mock_embedding = MagicMock(spec=MultiVectorBaseEmbedding)
@@ -54,8 +54,9 @@ class TestVectorSearchModuleSingleVector:
 
     def test_single_vector_text_only(self, session_factory: sessionmaker[Session]):
         """Test single-vector search with TEXT_ONLY target."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
         from llama_index.core.base.embeddings.base import BaseEmbedding
+
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         # Mock embedding model
         mock_embedding = MagicMock(spec=BaseEmbedding)
@@ -73,9 +74,7 @@ class TestVectorSearchModuleSingleVector:
             target=RetrievalTarget.TEXT_ONLY,
         )
 
-        with patch(
-            "autorag_research.orm.repository.chunk.ChunkRepository.vector_search_with_scores"
-        ) as mock_search:
+        with patch("autorag_research.orm.repository.chunk.ChunkRepository.vector_search_with_scores") as mock_search:
             mock_search.return_value = mock_chunk_results
 
             results = module.run(["test query"], top_k=3, embedding_model=mock_embedding)
@@ -97,8 +96,9 @@ class TestVectorSearchModuleSingleVector:
 
     def test_single_vector_image_only(self, session_factory: sessionmaker[Session]):
         """Test single-vector search with IMAGE_ONLY target."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
         from llama_index.core.base.embeddings.base import BaseEmbedding
+
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         # Mock embedding model
         mock_embedding = MagicMock(spec=BaseEmbedding)
@@ -134,8 +134,9 @@ class TestVectorSearchModuleSingleVector:
 
     def test_single_vector_both_targets(self, session_factory: sessionmaker[Session]):
         """Test single-vector search with BOTH target - merge and sort results."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
         from llama_index.core.base.embeddings.base import BaseEmbedding
+
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         # Mock embedding model
         mock_embedding = MagicMock(spec=BaseEmbedding)
@@ -189,9 +190,8 @@ class TestVectorSearchModuleMultiVector:
 
     def test_multi_vector_text_only(self, session_factory: sessionmaker[Session]):
         """Test multi-vector MaxSim search with TEXT_ONLY target."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
-
         from autorag_research.embeddings.base import MultiVectorBaseEmbedding
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         # Mock multi-vector embedding model
         mock_embedding = MagicMock(spec=MultiVectorBaseEmbedding)
@@ -227,9 +227,8 @@ class TestVectorSearchModuleMultiVector:
 
     def test_multi_vector_image_only(self, session_factory: sessionmaker[Session]):
         """Test multi-vector MaxSim search with IMAGE_ONLY target."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
-
         from autorag_research.embeddings.base import MultiVectorBaseEmbedding
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         # Mock multi-vector embedding model
         mock_embedding = MagicMock(spec=MultiVectorBaseEmbedding)
@@ -262,9 +261,8 @@ class TestVectorSearchModuleMultiVector:
 
     def test_multi_vector_both_targets(self, session_factory: sessionmaker[Session]):
         """Test multi-vector MaxSim search with BOTH target - merge and sort."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
-
         from autorag_research.embeddings.base import MultiVectorBaseEmbedding
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         # Mock multi-vector embedding model
         mock_embedding = MagicMock(spec=MultiVectorBaseEmbedding)
@@ -288,7 +286,9 @@ class TestVectorSearchModuleMultiVector:
 
         with (
             patch("autorag_research.orm.repository.chunk.ChunkRepository.maxsim_search") as mock_chunk_search,
-            patch("autorag_research.orm.repository.image_chunk.ImageChunkRepository.maxsim_search") as mock_image_search,
+            patch(
+                "autorag_research.orm.repository.image_chunk.ImageChunkRepository.maxsim_search"
+            ) as mock_image_search,
         ):
             mock_chunk_search.return_value = mock_chunk_results
             mock_image_search.return_value = mock_image_results
@@ -310,8 +310,9 @@ class TestVectorSearchModuleEdgeCases:
 
     def test_empty_queries(self, session_factory: sessionmaker[Session]):
         """Test running with empty query list."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
         from llama_index.core.base.embeddings.base import BaseEmbedding
+
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         mock_embedding = MagicMock(spec=BaseEmbedding)
 
@@ -326,8 +327,9 @@ class TestVectorSearchModuleEdgeCases:
 
     def test_multiple_queries(self, session_factory: sessionmaker[Session]):
         """Test running with multiple queries."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
         from llama_index.core.base.embeddings.base import BaseEmbedding
+
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         mock_embedding = MagicMock(spec=BaseEmbedding)
         mock_embedding.get_text_embedding.return_value = [0.1, 0.2, 0.3]
@@ -342,9 +344,7 @@ class TestVectorSearchModuleEdgeCases:
             target=RetrievalTarget.TEXT_ONLY,
         )
 
-        with patch(
-            "autorag_research.orm.repository.chunk.ChunkRepository.vector_search_with_scores"
-        ) as mock_search:
+        with patch("autorag_research.orm.repository.chunk.ChunkRepository.vector_search_with_scores") as mock_search:
             mock_search.return_value = mock_chunk_results
 
             results = module.run(["query1", "query2", "query3"], top_k=3, embedding_model=mock_embedding)
@@ -354,8 +354,9 @@ class TestVectorSearchModuleEdgeCases:
 
     def test_distance_threshold(self, session_factory: sessionmaker[Session]):
         """Test that distance_threshold is passed to repository."""
-        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
         from llama_index.core.base.embeddings.base import BaseEmbedding
+
+        from autorag_research.nodes.retrieval.vector_search import RetrievalTarget, VectorSearchModule
 
         mock_embedding = MagicMock(spec=BaseEmbedding)
         mock_embedding.get_text_embedding.return_value = [0.1, 0.2, 0.3]
@@ -367,9 +368,7 @@ class TestVectorSearchModuleEdgeCases:
             distance_threshold=0.5,
         )
 
-        with patch(
-            "autorag_research.orm.repository.chunk.ChunkRepository.vector_search_with_scores"
-        ) as mock_search:
+        with patch("autorag_research.orm.repository.chunk.ChunkRepository.vector_search_with_scores") as mock_search:
             mock_search.return_value = []
 
             module.run(["test query"], top_k=3, embedding_model=mock_embedding)

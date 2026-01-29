@@ -331,11 +331,12 @@ class TestVectorSearchRetrievalPipelineTargets:
         cleanup_pipeline_results: list[int],
     ):
         """Test pipeline with TEXT_ONLY target."""
+        from llama_index.core.base.embeddings.base import BaseEmbedding
+
         from autorag_research.pipelines.retrieval.vector_search import (
             RetrievalTarget,
             VectorSearchRetrievalPipeline,
         )
-        from llama_index.core.base.embeddings.base import BaseEmbedding
 
         mock_embedding = MagicMock(spec=BaseEmbedding)
         mock_embedding.model_name = "test-model"
@@ -357,11 +358,12 @@ class TestVectorSearchRetrievalPipelineTargets:
         cleanup_pipeline_results: list[int],
     ):
         """Test pipeline with IMAGE_ONLY target."""
+        from llama_index.core.base.embeddings.base import BaseEmbedding
+
         from autorag_research.pipelines.retrieval.vector_search import (
             RetrievalTarget,
             VectorSearchRetrievalPipeline,
         )
-        from llama_index.core.base.embeddings.base import BaseEmbedding
 
         mock_embedding = MagicMock(spec=BaseEmbedding)
         mock_embedding.model_name = "test-model"
@@ -383,11 +385,12 @@ class TestVectorSearchRetrievalPipelineTargets:
         cleanup_pipeline_results: list[int],
     ):
         """Test pipeline with BOTH target."""
+        from llama_index.core.base.embeddings.base import BaseEmbedding
+
         from autorag_research.pipelines.retrieval.vector_search import (
             RetrievalTarget,
             VectorSearchRetrievalPipeline,
         )
-        from llama_index.core.base.embeddings.base import BaseEmbedding
 
         mock_embedding = MagicMock(spec=BaseEmbedding)
         mock_embedding.model_name = "test-model"
@@ -409,12 +412,13 @@ class TestVectorSearchPipelineConfig:
 
     def test_config_get_pipeline_class(self):
         """Test that config returns correct pipeline class."""
+        from llama_index.core.base.embeddings.base import BaseEmbedding
+
         from autorag_research.pipelines.retrieval.vector_search import (
             RetrievalTarget,
             VectorSearchPipelineConfig,
             VectorSearchRetrievalPipeline,
         )
-        from llama_index.core.base.embeddings.base import BaseEmbedding
 
         mock_embedding = MagicMock(spec=BaseEmbedding)
 
@@ -428,11 +432,12 @@ class TestVectorSearchPipelineConfig:
 
     def test_config_get_pipeline_kwargs(self):
         """Test that config returns correct pipeline kwargs."""
+        from llama_index.core.base.embeddings.base import BaseEmbedding
+
         from autorag_research.pipelines.retrieval.vector_search import (
             RetrievalTarget,
             VectorSearchPipelineConfig,
         )
-        from llama_index.core.base.embeddings.base import BaseEmbedding
 
         mock_embedding = MagicMock(spec=BaseEmbedding)
 
@@ -451,11 +456,12 @@ class TestVectorSearchPipelineConfig:
 
     def test_config_default_values(self):
         """Test that config has correct default values."""
+        from llama_index.core.base.embeddings.base import BaseEmbedding
+
         from autorag_research.pipelines.retrieval.vector_search import (
             RetrievalTarget,
             VectorSearchPipelineConfig,
         )
-        from llama_index.core.base.embeddings.base import BaseEmbedding
 
         mock_embedding = MagicMock(spec=BaseEmbedding)
 
