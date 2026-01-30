@@ -10,7 +10,6 @@ from llama_index.core import MockEmbedding
 from autorag_research.data.bright import (
     BRIGHTIngestor,
     _get_gold_ids,
-    _make_id,
 )
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
@@ -28,17 +27,6 @@ EMBEDDING_DIM = 768
 @pytest.fixture
 def mock_embedding_model():
     return MockEmbedding(EMBEDDING_DIM)
-
-
-# ==================== Unit Tests: Helper Functions ====================
-class TestMakeId:
-    def test_make_id_basic(self):
-        result = _make_id("economics", "doc_789")
-        assert result == "economics_doc_789"
-
-    def test_make_id_with_numeric_source_id(self):
-        result = _make_id("robotics", "12345")
-        assert result == "robotics_12345"
 
 
 class TestGetGoldIds:
