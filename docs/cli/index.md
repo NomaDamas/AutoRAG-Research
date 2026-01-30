@@ -2,24 +2,6 @@
 
 Command-line interface for AutoRAG-Research.
 
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| [init](init.md) | Download config templates |
-| [ingest](ingest.md) | Ingest dataset |
-| [run](run.md) | Execute pipelines |
-| [show](show.md) | List resources |
-| [data](data.md) | Manage datasets |
-
-## Global Options
-
-| Option | Description |
-|--------|-------------|
-| `--config-path`, `-cp` | Config directory (default: `./configs`) |
-| `--version`, `-V` | Show version |
-| `--help` | Show help |
-
 ## Environment Variables
 
 | Variable | Description |
@@ -28,3 +10,9 @@ Command-line interface for AutoRAG-Research.
 | POSTGRES_PORT | PostgreSQL port |
 | POSTGRES_USER | PostgreSQL user |
 | POSTGRES_PASSWORD | PostgreSQL password |
+
+## Commands
+
+::: mkdocs-typer2
+ :module: autorag_research.cli.app
+ :name: autorag-research
