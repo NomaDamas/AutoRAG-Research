@@ -17,7 +17,7 @@ class TestMainCallback:
         config_dir = tmp_path / "my_configs"
         config_dir.mkdir()
 
-        cli_runner.invoke(app, ["--config-path", str(config_dir), "list", "pipelines"])
+        cli_runner.invoke(app, ["--config-path", str(config_dir), "show", "pipelines"])
 
         assert config_dir.resolve() == cli.CONFIG_PATH
 
@@ -28,7 +28,7 @@ class TestMainCallback:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.chdir(tmpdir)
-            cli_runner.invoke(app, ["list", "pipelines"])
+            cli_runner.invoke(app, ["show", "pipelines"])
 
             expected = (Path(tmpdir) / "configs").resolve()
             assert expected == cli.CONFIG_PATH
@@ -41,7 +41,7 @@ class TestMainCallback:
         config_dir.mkdir()
 
         monkeypatch.setenv("AUTORAG_RESEARCH_CONFIG_PATH", str(config_dir))
-        cli_runner.invoke(app, ["list", "pipelines"])
+        cli_runner.invoke(app, ["show", "pipelines"])
 
         assert config_dir.resolve() == cli.CONFIG_PATH
 
@@ -55,9 +55,31 @@ class TestMainCallback:
         cli_dir.mkdir()
 
         monkeypatch.setenv("AUTORAG_RESEARCH_CONFIG_PATH", str(env_dir))
-        cli_runner.invoke(app, ["--config-path", str(cli_dir), "list", "pipelines"])
+        cli_runner.invoke(app, ["--config-path", str(cli_dir), "show", "pipelines"])
 
         assert cli_dir.resolve() == cli.CONFIG_PATH
+
+
+class TestVersionFlag:
+    """Tests for the --version flag."""
+
+    def test_version_flag_long(self, cli_runner: CliRunner) -> None:
+        """--version flag shows version and exits."""
+        result = cli_runner.invoke(app, ["--version"])
+
+        assert result.exit_code == 0
+        assert "autorag-research" in result.stdout
+        # Version should match pattern like "0.0.1" or "1.2.3"
+        import re
+
+        assert re.search(r"\d+\.\d+\.\d+", result.stdout)
+
+    def test_version_flag_short(self, cli_runner: CliRunner) -> None:
+        """-V flag shows version and exits."""
+        result = cli_runner.invoke(app, ["-V"])
+
+        assert result.exit_code == 0
+        assert "autorag-research" in result.stdout
 
 
 class TestAppStructure:
@@ -77,12 +99,12 @@ class TestAppStructure:
         assert result.exit_code == 0
         assert "AutoRAG-Research CLI" in result.stdout
 
-    def test_app_has_list_command(self, cli_runner: CliRunner) -> None:
-        """App has 'list' command registered."""
-        result = cli_runner.invoke(app, ["list", "--help"])
+    def test_app_has_show_command(self, cli_runner: CliRunner) -> None:
+        """App has 'show' command registered."""
+        result = cli_runner.invoke(app, ["show", "--help"])
 
         assert result.exit_code == 0
-        assert "list" in result.stdout.lower() and "resources" in result.stdout.lower()
+        assert "show" in result.stdout.lower() and "resources" in result.stdout.lower()
 
     def test_app_has_ingest_command(self, cli_runner: CliRunner) -> None:
         """App has 'ingest' command registered."""
@@ -91,13 +113,13 @@ class TestAppStructure:
         assert result.exit_code == 0
         assert "Usage:" in result.stdout
 
-    def test_app_has_init_config_command(self, cli_runner: CliRunner) -> None:
-        """App has 'init-config' command registered."""
-        result = cli_runner.invoke(app, ["init-config", "--help"])
+    def test_app_has_init_command(self, cli_runner: CliRunner) -> None:
+        """App has 'init' command registered."""
+        result = cli_runner.invoke(app, ["init", "--help"])
 
         assert result.exit_code == 0
         assert "Usage:" in result.stdout
-        assert "init-config" in result.stdout
+        assert "init" in result.stdout
 
     def test_app_has_run_command(self, cli_runner: CliRunner) -> None:
         """App has 'run' command registered."""

@@ -14,6 +14,9 @@ from autorag_research.exceptions import ServiceNotSetError, UnsupportedDataSubse
 
 logger = logging.getLogger("AutoRAG-Research")
 
+# Suppress verbose beir library output (Doc Example, Query Example logs)
+logging.getLogger("beir").setLevel(logging.WARNING)
+
 RANDOM_SEED = 42
 
 # BEIR available datasets
