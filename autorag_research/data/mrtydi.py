@@ -35,6 +35,7 @@ MRTYDI_CORPUS_BASE_URL = "https://huggingface.co/datasets/castorini/mr-tydi-corp
 @register_ingestor(
     name="mrtydi",
     description="Mr. TyDi multilingual retrieval benchmark",
+    hf_repo="mrtydi-dumps",
 )
 class MrTyDiIngestor(TextEmbeddingDataIngestor):
     """Ingestor for Mr. TyDi multilingual retrieval benchmark dataset.
@@ -83,7 +84,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
 
         # Step 1: Load queries and extract gold docids
         logger.info(f"Loading Mr. TyDi queries ({self.language}, {subset} split)...")

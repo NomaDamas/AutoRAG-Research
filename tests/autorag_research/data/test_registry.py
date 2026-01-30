@@ -147,6 +147,19 @@ class TestRegisterIngestor:
         # Cleanup
         del registry_module._INGESTOR_REGISTRY["test_ingestor_789"]
 
+    def test_register_ingestor_with_hf_repo(self):
+        """register_ingestor should store hf_repo parameter."""
+        import autorag_research.data.registry as registry_module
+
+        @register_ingestor(name="test_ingestor_hf", description="Test", hf_repo="test-dumps")
+        class TestIngestor:
+            pass
+
+        meta = registry_module._INGESTOR_REGISTRY["test_ingestor_hf"]
+        assert meta.hf_repo == "test-dumps"
+        # Cleanup
+        del registry_module._INGESTOR_REGISTRY["test_ingestor_hf"]
+
 
 class TestExtractParamsFromInit:
     """Tests for _extract_params_from_init function."""
@@ -382,3 +395,30 @@ class TestIngestorMeta:
             params=params,
         )
         assert len(meta.params) == 2
+
+    def test_ingestor_meta_with_hf_repo(self):
+        """Should create IngestorMeta with hf_repo."""
+
+        class DummyIngestor:
+            pass
+
+        meta = IngestorMeta(
+            name="test",
+            ingestor_class=DummyIngestor,
+            description="Test",
+            hf_repo="test-dumps",
+        )
+        assert meta.hf_repo == "test-dumps"
+
+    def test_ingestor_meta_hf_repo_default_none(self):
+        """Should have hf_repo default to None."""
+
+        class DummyIngestor:
+            pass
+
+        meta = IngestorMeta(
+            name="test",
+            ingestor_class=DummyIngestor,
+            description="Test",
+        )
+        assert meta.hf_repo is None

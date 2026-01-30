@@ -8,4 +8,4 @@ def mock_get_text_embedding_batch(
     show_progress: bool = False,
     **kwargs: Any,
 ) -> list[list[float]]:
-    return [[random() for _ in range(1536)] for _ in range(len(texts))]  # noqa: S311
+    return [[random() for _ in range(1536)] for _ in range(len(texts))]

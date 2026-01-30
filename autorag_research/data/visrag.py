@@ -86,6 +86,7 @@ _DATASET_CONFIGS: dict[VisRAGDatasetName, _DatasetConfig] = {
 @register_ingestor(
     name="visrag",
     description="Datasets that used in the VisRAG paper for benchmarking",
+    hf_repo="visrag-dumps",
 )
 class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
     """Unified ingestor for all VisRAG benchmark datasets.
@@ -386,7 +387,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
         corpus_df = self._load("corpus")
         queries_df = self._load("queries")
         qrels_df = self._load("qrels")
-        rng = random.Random(RANDOM_SEED)  # noqa: S311
+        rng = random.Random(RANDOM_SEED)
 
         # Build indexes for row lookup
         query_index = {row["query-id"]: row.to_dict() for _, row in queries_df.iterrows()}

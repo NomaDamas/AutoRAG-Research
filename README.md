@@ -2,7 +2,6 @@
 
 [![Release](https://img.shields.io/github/v/release/vkehfdl1/AutoRAG-Research)](https://img.shields.io/github/v/release/vkehfdl1/AutoRAG-Research)
 [![Build status](https://img.shields.io/github/actions/workflow/status/vkehfdl1/AutoRAG-Research/main.yml?branch=main)](https://github.com/vkehfdl1/AutoRAG-Research/actions/workflows/main.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/gh/vkehfdl1/AutoRAG-Research/branch/main/graph/badge.svg)](https://codecov.io/gh/vkehfdl1/AutoRAG-Research)
 [![Commit activity](https://img.shields.io/github/commit-activity/m/vkehfdl1/AutoRAG-Research)](https://img.shields.io/github/commit-activity/m/vkehfdl1/AutoRAG-Research)
 [![License](https://img.shields.io/github/license/vkehfdl1/AutoRAG-Research)](https://img.shields.io/github/license/vkehfdl1/AutoRAG-Research)
 
@@ -31,7 +30,7 @@ uv pip install autorag-research
 
 ```bash
 # 1. Initialize configuration files
-autorag-research init-config
+autorag-research init
 
 # 2. Edit database settings
 vim configs/db.yaml # OR your preferred editor
@@ -45,12 +44,12 @@ autorag-research run --db-name=beir_scifact_test
 
 ### Commands
 
-#### `init-config` - Initialize Configuration Files
+#### `init` - Initialize Configuration Files
 
 Downloads default configuration files to `./configs/` directory.
 
 ```bash
-autorag-research init-config
+autorag-research init
 ```
 
 This creates:

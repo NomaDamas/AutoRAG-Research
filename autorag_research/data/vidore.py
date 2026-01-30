@@ -104,7 +104,7 @@ class ViDoReArxivQAIngestor(ViDoReIngestor):
 
         # Sample indices if limit is less than total
         if effective_limit < total_count:
-            rng = random.Random(RANDOM_SEED)  # noqa: S311
+            rng = random.Random(RANDOM_SEED)
             selected_indices = sorted(rng.sample(range(total_count), effective_limit))
         else:
             selected_indices = list(range(total_count))
