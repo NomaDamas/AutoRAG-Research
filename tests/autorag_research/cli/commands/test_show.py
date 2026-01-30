@@ -1,51 +1,19 @@
-"""Tests for autorag_research.cli.commands.list_cmd module."""
+"""Tests for autorag_research.cli.commands.show module."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
 import autorag_research.cli as cli
 from autorag_research.cli.app import app
-from autorag_research.cli.commands.list_cmd import (
+from autorag_research.cli.commands.show import (
     print_databases,
     print_ingestors,
     print_metrics,
     print_pipelines,
 )
-
-
-class TestListResourcesCommand:
-    """Tests for the list_resources CLI command."""
-
-    def test_list_ingestors_calls_print_ingestors(self, cli_runner: CliRunner) -> None:
-        """'list ingestors' routes to print_ingestors."""
-        with patch("autorag_research.cli.commands.list_cmd.print_ingestors") as mock:
-            cli_runner.invoke(app, ["list", "ingestors"])
-            mock.assert_called_once()
-
-    def test_list_pipelines_calls_print_pipelines(self, cli_runner: CliRunner) -> None:
-        """'list pipelines' routes to print_pipelines."""
-        with patch("autorag_research.cli.commands.list_cmd.print_pipelines") as mock:
-            cli_runner.invoke(app, ["list", "pipelines"])
-            mock.assert_called_once()
-
-    def test_list_metrics_calls_print_metrics(self, cli_runner: CliRunner) -> None:
-        """'list metrics' routes to print_metrics."""
-        with patch("autorag_research.cli.commands.list_cmd.print_metrics") as mock:
-            cli_runner.invoke(app, ["list", "metrics"])
-            mock.assert_called_once()
-
-    def test_list_help_shows_options(self, cli_runner: CliRunner) -> None:
-        """'list --help' shows available resource types."""
-        result = cli_runner.invoke(app, ["list", "--help"])
-
-        assert result.exit_code == 0
-        assert "pipelines" in result.stdout
-        assert "metrics" in result.stdout
-        assert "ingestors" in result.stdout
-        assert "databases" in result.stdout
 
 
 def test_print_ingestors(capsys: pytest.CaptureFixture) -> None:
@@ -103,3 +71,33 @@ class TestPrintDatabases:
         # Should show server info (connection worked)
         assert "Server" in captured.out
         assert "testdb" in captured.out
+
+
+class TestPrintDatasets:
+    """Tests for print_datasets function."""
+
+    def test_shows_ingestors_with_hf_repos(self, capsys: pytest.CaptureFixture) -> None:
+        """Shows ingestors that have HuggingFace repos when no ingestor specified."""
+        from autorag_research.cli.commands.show import print_datasets
+
+        print_datasets()
+
+        captured = capsys.readouterr()
+        assert "beir" in captured.out
+        assert "HuggingFace" in captured.out or "datasets" in captured.out.lower()
+
+
+class TestShowDatasetsCommand:
+    """Tests for 'show datasets' command."""
+
+    @patch("autorag_research.data.hf_storage.list_available_dumps")
+    def test_show_datasets_with_ingestor(self, mock_list: MagicMock, cli_runner: CliRunner) -> None:
+        """'show datasets <ingestor>' shows available dumps."""
+        mock_list.return_value = ["scifact_openai-small", "nfcorpus_bge-small"]
+
+        result = cli_runner.invoke(app, ["show", "datasets", "beir"])
+
+        assert result.exit_code == 0
+        assert "scifact_openai-small" in result.stdout
+        assert "nfcorpus_bge-small" in result.stdout
+        mock_list.assert_called_once_with("beir")

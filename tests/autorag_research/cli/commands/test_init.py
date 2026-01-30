@@ -1,4 +1,4 @@
-"""Tests for autorag_research.cli.commands.init_config module."""
+"""Tests for autorag_research.cli.commands.init module."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 import autorag_research.cli as cli
 from autorag_research.cli.app import app
-from autorag_research.cli.commands.init_config import fetch_config_files_from_github, init_config
+from autorag_research.cli.commands.init import fetch_config_files_from_github, init
 
 
 @pytest.fixture
@@ -39,19 +39,19 @@ def mock_github_metrics_response() -> list[dict]:
 
 
 class TestInitConfigCommand:
-    """Tests for the init-config CLI command."""
+    """Tests for the init CLI command."""
 
-    def test_init_config_help(self, cli_runner: CliRunner) -> None:
-        """'init-config --help' shows help."""
-        result = cli_runner.invoke(app, ["init-config", "--help"])
+    def test_init_help(self, cli_runner: CliRunner) -> None:
+        """'init --help' shows help."""
+        result = cli_runner.invoke(app, ["init", "--help"])
 
         assert result.exit_code == 0
 
-    @patch("autorag_research.cli.commands.init_config.httpx.Client")
-    def test_init_config_creates_directory(
+    @patch("autorag_research.cli.commands.init.httpx.Client")
+    def test_init_creates_directory(
         self, mock_client_class: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """init_config creates config directory if it doesn't exist."""
+        """init creates config directory if it doesn't exist."""
         config_dir = tmp_path / "new_configs"
         monkeypatch.setattr(cli, "CONFIG_PATH", config_dir)
 
@@ -67,15 +67,15 @@ class TestInitConfigCommand:
         mock_response.text = "host: localhost"
         mock_client.get.return_value = mock_response
 
-        init_config()
+        init()
 
         assert config_dir.exists()
 
-    @patch("autorag_research.cli.commands.init_config.httpx.Client")
-    def test_init_config_downloads_files(
+    @patch("autorag_research.cli.commands.init.httpx.Client")
+    def test_init_downloads_files(
         self, mock_client_class: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """init_config downloads files from GitHub."""
+        """init downloads files from GitHub."""
         config_dir = tmp_path / "configs"
         config_dir.mkdir()
         monkeypatch.setattr(cli, "CONFIG_PATH", config_dir)
@@ -97,20 +97,20 @@ class TestInitConfigCommand:
 
         mock_client.get.side_effect = [api_response, raw_response]
 
-        init_config()
+        init()
 
         assert (config_dir / "db.yaml").exists()
         assert "localhost" in (config_dir / "db.yaml").read_text()
 
-    @patch("autorag_research.cli.commands.init_config.httpx.Client")
-    def test_init_config_skips_existing_files(
+    @patch("autorag_research.cli.commands.init.httpx.Client")
+    def test_init_skips_existing_files(
         self,
         mock_client_class: MagicMock,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture,
     ) -> None:
-        """init_config skips files that already exist."""
+        """init skips files that already exist."""
         config_dir = tmp_path / "configs"
         config_dir.mkdir()
         # Create existing file
@@ -128,16 +128,16 @@ class TestInitConfigCommand:
         api_response.json.return_value = [{"name": "db.yaml", "type": "file", "path": "configs/db.yaml"}]
         mock_client.get.return_value = api_response
 
-        init_config()
+        init()
 
         # File should still have original content
         assert (config_dir / "db.yaml").read_text() == "existing content"
 
-    @patch("autorag_research.cli.commands.init_config.httpx.Client")
-    def test_init_config_raises_on_empty_response(
+    @patch("autorag_research.cli.commands.init.httpx.Client")
+    def test_init_raises_on_empty_response(
         self, mock_client_class: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """init_config raises RuntimeError when no files found."""
+        """init raises RuntimeError when no files found."""
         config_dir = tmp_path / "configs"
         config_dir.mkdir()
         monkeypatch.setattr(cli, "CONFIG_PATH", config_dir)
@@ -154,7 +154,7 @@ class TestInitConfigCommand:
         mock_client.get.return_value = api_response
 
         with pytest.raises(RuntimeError, match="Failed to fetch config files"):
-            init_config()
+            init()
 
 
 class TestFetchConfigFilesFromGitHub:

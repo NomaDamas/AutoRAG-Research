@@ -1,4 +1,4 @@
-"""init-config command - Download default configuration files."""
+"""init command - Download default configuration files."""
 
 import logging
 from pathlib import Path
@@ -13,15 +13,15 @@ GITHUB_API_BASE = f"https://api.github.com/repos/{GITHUB_REPO}/contents"
 GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}"
 
 
-def init_config() -> None:
+def init() -> None:
     """Download default configuration files to the configured directory.
 
     Downloads configuration files from the AutoRAG-Research GitHub repository
     to your local configs directory. Existing files are not overwritten.
 
     Examples:
-      autorag-research init-config
-      autorag-research --config-path=/my/configs init-config
+      autorag-research init
+      autorag-research --config-path=/my/configs init
     """
     import autorag_research.cli as cli
 
