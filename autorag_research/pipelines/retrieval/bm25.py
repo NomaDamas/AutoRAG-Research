@@ -131,12 +131,6 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
 
     def _get_retrieval_func(self) -> Any:
         """Return BM25 retrieval function."""
-        from autorag_research.nodes.retrieval.bm25 import BM25Module
-
-        bm25 = BM25Module(
-            session_factory=self.session_factory,
-            tokenizer=self.tokenizer,
-            index_name=self.index_name,
-            schema=self._schema,
+        return lambda query_ids, top_k: self._service.bm25_search(
+            query_ids, top_k, tokenizer=self.tokenizer, index_name=self.index_name
         )
-        return bm25.run

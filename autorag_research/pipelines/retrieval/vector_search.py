@@ -121,16 +121,9 @@ class VectorSearchRetrievalPipeline(BaseRetrievalPipeline):
         """Return vector search retrieval function.
 
         Returns:
-            The VectorSearchModule.run method configured with pipeline parameters.
+            A callable that invokes the service's vector_search method.
         """
-        from autorag_research.nodes.retrieval.vector_search import VectorSearchModule
-
-        module = VectorSearchModule(
-            session_factory=self.session_factory,
-            search_mode=self.search_mode,
-            schema=self._schema,
-        )
-        return module.run
+        return lambda query_ids, top_k: self._service.vector_search(query_ids, top_k, search_mode=self.search_mode)
 
 
 __all__ = ["VectorSearchPipelineConfig", "VectorSearchRetrievalPipeline"]

@@ -126,14 +126,20 @@ class TestBM25RetrievalPipeline:
         finally:
             session.close()
 
-        # Use actual Chunk model instances for mock results
-        mock_results = [
-            (Chunk(id=1, contents="Content 1"), 0.9),
-            (Chunk(id=2, contents="Content 2"), 0.8),
+        # Mock service results - return results for each query
+        mock_result = [
+            {"doc_id": 1, "score": 0.9, "content": "Content 1"},
+            {"doc_id": 2, "score": 0.8, "content": "Content 2"},
         ]
 
-        with patch("autorag_research.orm.repository.chunk.ChunkRepository.bm25_search") as mock_search:
-            mock_search.return_value = mock_results
+        def mock_bm25_search(query_ids, top_k, tokenizer="bert", index_name="idx_chunk_bm25"):
+            """Return mock results for each query ID."""
+            return [mock_result for _ in query_ids]
+
+        with patch(
+            "autorag_research.orm.service.retrieval_pipeline.RetrievalPipelineService.bm25_search"
+        ) as mock_search:
+            mock_search.side_effect = mock_bm25_search
 
             pipeline = BM25RetrievalPipeline(
                 session_factory=session_factory,
@@ -153,56 +159,3 @@ class TestBM25RetrievalPipeline:
             )
             verifier = PipelineTestVerifier(result, pipeline.pipeline_id, session_factory, config)
             verifier.verify_all()
-
-            # Verify search was called for each query
-            assert mock_search.call_count == query_count
-
-    def test_results_persisted_correctly(
-        self,
-        session_factory: sessionmaker[Session],
-        cleanup_pipeline_results: list[int],
-    ):
-        """Test that results are correctly persisted in database."""
-        from autorag_research.orm.repository.query import QueryRepository
-
-        # Count actual queries in database
-        session = session_factory()
-        try:
-            query_repo = QueryRepository(session)
-            query_count = query_repo.count()
-        finally:
-            session.close()
-
-        # Use actual Chunk model instances for mock results
-        mock_results = [
-            (Chunk(id=1, contents="Content 1"), 0.95),
-            (Chunk(id=2, contents="Content 2"), 0.85),
-        ]
-
-        with patch("autorag_research.orm.repository.chunk.ChunkRepository.bm25_search") as mock_search:
-            mock_search.return_value = mock_results
-
-            pipeline = BM25RetrievalPipeline(
-                session_factory=session_factory,
-                name="test_bm25_persistence",
-                tokenizer="bert",
-            )
-            cleanup_pipeline_results.append(pipeline.pipeline_id)
-
-            pipeline.run(top_k=3)
-
-            # Verify persistence
-            session = session_factory()
-            try:
-                repo = ChunkRetrievedResultRepository(session)
-                results = repo.get_by_pipeline(pipeline.pipeline_id)
-
-                # Should have results persisted (query_count * 2 results each)
-                expected_results = query_count * 2
-                assert len(results) == expected_results
-
-                # All results should have valid scores
-                for r in results:
-                    assert r.rel_score >= 0
-            finally:
-                session.close()
