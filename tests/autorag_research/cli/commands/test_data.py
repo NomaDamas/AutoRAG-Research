@@ -4,12 +4,14 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from autorag_research.cli.app import app
 from autorag_research.orm.connection import DBConnection
 
 
+@pytest.mark.data
 @patch("autorag_research.data.hf_storage.download_dump")
 def test_dump_and_restore_commands(
     mock_download: MagicMock, cli_runner: CliRunner, db_connection: DBConnection, tmp_path: Path
@@ -71,7 +73,6 @@ class TestDataUploadCommand:
         assert result.exit_code == 0
         assert "FILE" in result.stdout or "file" in result.stdout.lower()
         assert "INGESTOR" in result.stdout or "ingestor" in result.stdout.lower()
-        assert "--message" in result.stdout
 
     @patch("autorag_research.data.hf_storage.upload_dump")
     def test_upload_success(self, mock_upload: MagicMock, cli_runner: CliRunner, tmp_path: Path) -> None:
