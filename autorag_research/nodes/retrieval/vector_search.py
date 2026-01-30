@@ -6,17 +6,13 @@ supporting both single-vector (cosine similarity) and multi-vector (MaxSim late 
 search modes for text chunks.
 """
 
-from typing import Any
+from typing import Any, Literal
 
-from llama_index.core.base.embeddings.base import BaseEmbedding
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.embeddings.base import MultiVectorBaseEmbedding
-from autorag_research.injection import with_embedding
 from autorag_research.nodes import BaseModule
 from autorag_research.orm.repository.chunk import ChunkRepository
-
-EMBEDDING_MODEL_TYPES = BaseEmbedding | MultiVectorBaseEmbedding
+from autorag_research.orm.repository.query import QueryRepository
 
 
 class VectorSearchModule(BaseModule):
@@ -24,13 +20,14 @@ class VectorSearchModule(BaseModule):
     Vector search retrieval module supporting single-vector and multi-vector embeddings.
 
     This module performs vector-based retrieval using PostgreSQL's VectorChord extension.
-    It automatically detects the embedding model type and uses the appropriate search method:
-    - Single-vector (BaseEmbedding): Uses cosine distance via vector_search_with_scores()
-    - Multi-vector (MultiVectorBaseEmbedding): Uses MaxSim via maxsim_search()
+    Queries must have pre-computed embeddings (via DataIngestor.embed_all()).
+    The search mode determines which embedding field to use:
+    - single: Uses query.embedding (single vector) with cosine distance
+    - multi: Uses query.embeddings (multiple vectors) with MaxSim
 
     Attributes:
         session_factory: SQLAlchemy sessionmaker for database connections.
-        embedding_model: The embedding model instance or config name string.
+        search_mode: Which embedding field to use ("single" or "multi").
         schema: Schema namespace from create_schema().
 
     Example:
@@ -43,16 +40,16 @@ class VectorSearchModule(BaseModule):
 
         module = VectorSearchModule(
             session_factory=session_factory,
-            embedding_model="openai-large",
+            search_mode="single",
         )
-        results = module.run(["What is machine learning?"], top_k=10)
+        results = module.run([1, 2, 3], top_k=10)  # Query IDs
         ```
     """
 
     def __init__(
         self,
         session_factory: sessionmaker[Session],
-        embedding_model: str | EMBEDDING_MODEL_TYPES,
+        search_mode: Literal["single", "multi"] = "single",
         schema: Any | None = None,
     ):
         """
@@ -60,12 +57,13 @@ class VectorSearchModule(BaseModule):
 
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
-            embedding_model: The embedding model instance or config name string.
-                Can be a LlamaIndex BaseEmbedding, MultiVectorBaseEmbedding, or a config name.
+            search_mode: Which embedding field to use for search.
+                - "single": Uses query.embedding (single vector) with cosine similarity
+                - "multi": Uses query.embeddings (multi-vector) with MaxSim
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """
         self.session_factory = session_factory
-        self.embedding_model = embedding_model
+        self.search_mode = search_mode
         self._schema = schema
 
     def _get_chunk_model(self) -> type:
@@ -76,31 +74,25 @@ class VectorSearchModule(BaseModule):
 
         return Chunk
 
-    def _is_multi_vector_model(self, model: EMBEDDING_MODEL_TYPES) -> bool:
-        """Check if embedding model is multi-vector type.
+    def _get_query_model(self) -> type:
+        """Get the Query model class from schema or default."""
+        if self._schema is not None:
+            return self._schema.Query
+        from autorag_research.orm.schema import Query
 
-        Args:
-            model: The embedding model to check.
+        return Query
 
-        Returns:
-            True if the model is a MultiVectorBaseEmbedding, False otherwise.
-        """
-        return isinstance(model, MultiVectorBaseEmbedding)
-
-    @with_embedding(param_name="embedding_model")
     def run(
         self,
-        queries: list[str],
+        query_ids: list[int | str],
         top_k: int = 10,
-        embedding_model: EMBEDDING_MODEL_TYPES | None = None,
     ) -> list[list[dict]]:
         """
-        Execute vector search for given queries.
+        Execute vector search for given query IDs.
 
         Args:
-            queries: List of query strings for batch processing.
+            query_ids: List of query IDs to search. Queries must have pre-computed embeddings.
             top_k: Number of top documents to retrieve per query.
-            embedding_model: The embedding model instance (injected by @with_embedding if string was passed).
 
         Returns:
             List of search results for each query. Each query returns a list of top_k results.
@@ -109,24 +101,26 @@ class VectorSearchModule(BaseModule):
             - doc_id: Chunk ID (int)
             - score: Similarity score (higher = more relevant)
             - content: Chunk text content
-        """
-        # embedding_model is injected by @with_embedding if string was passed
-        model = embedding_model or self.embedding_model
-        if isinstance(model, str):
-            # This shouldn't happen after @with_embedding, but handle it defensively
-            raise TypeError(f"embedding_model must be resolved to an instance, got string: {model}")  # noqa: TRY003
 
+        Raises:
+            ValueError: If a query is not found or has no embedding for the search mode.
+        """
         all_results = []
         with self.session_factory() as session:
-            for query in queries:
-                # Use isinstance directly for proper type narrowing
-                if isinstance(model, MultiVectorBaseEmbedding):
-                    query_embedding = model.get_query_embedding(query)
-                    results = self._search_multi_vector(session, query_embedding, top_k)
+            query_repo = QueryRepository(session, self._get_query_model())
+            for query_id in query_ids:
+                query = query_repo.get_by_id(query_id)
+                if query is None:
+                    raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
+
+                if self.search_mode == "multi":
+                    if query.embeddings is None:
+                        raise ValueError(f"Query {query_id} has no multi-vector embeddings")  # noqa: TRY003
+                    results = self._search_multi_vector(session, query.embeddings, top_k)
                 else:
-                    # model is BaseEmbedding here
-                    query_embedding = model.get_text_embedding(query)
-                    results = self._search_single_vector(session, query_embedding, top_k)
+                    if query.embedding is None:
+                        raise ValueError(f"Query {query_id} has no embedding")  # noqa: TRY003
+                    results = self._search_single_vector(session, list(query.embedding), top_k)
                 all_results.append(results)
         return all_results
 

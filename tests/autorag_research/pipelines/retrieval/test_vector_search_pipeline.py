@@ -1,10 +1,10 @@
 """Test cases for VectorSearchRetrievalPipeline.
 
 Tests the vector search retrieval pipeline logic using mocked vector search.
-Supports single-vector (BaseEmbedding) and multi-vector (MultiVectorBaseEmbedding) modes.
+Supports single-vector and multi-vector (MaxSim) search modes using pre-computed embeddings.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
@@ -35,33 +35,12 @@ class TestVectorSearchRetrievalPipeline:
         finally:
             session.close()
 
-    @pytest.fixture
-    def mock_single_vector_embedding(self):
-        """Create a mock single-vector embedding model (BaseEmbedding)."""
-        from llama_index.core.base.embeddings.base import BaseEmbedding
-
-        mock = MagicMock(spec=BaseEmbedding)
-        mock.model_name = "test-embedding-model"
-        mock.get_text_embedding.return_value = [0.1, 0.2, 0.3]
-        return mock
-
-    @pytest.fixture
-    def mock_multi_vector_embedding(self):
-        """Create a mock multi-vector embedding model (MultiVectorBaseEmbedding)."""
-        from autorag_research.embeddings.base import MultiVectorBaseEmbedding
-
-        mock = MagicMock(spec=MultiVectorBaseEmbedding)
-        mock.model_name = "test-multi-vector-model"
-        mock.get_query_embedding.return_value = [[0.1, 0.2], [0.3, 0.4]]
-        return mock
-
-    def test_pipeline_creation_single_vector(
+    def test_pipeline_creation_single_mode(
         self,
         session_factory: sessionmaker[Session],
         cleanup_pipeline_results: list[int],
-        mock_single_vector_embedding: MagicMock,
     ):
-        """Test that pipeline is created correctly with single-vector embedding."""
+        """Test that pipeline is created correctly with single search mode."""
         from autorag_research.pipelines.retrieval.vector_search import (
             VectorSearchRetrievalPipeline,
         )
@@ -69,20 +48,19 @@ class TestVectorSearchRetrievalPipeline:
         pipeline = VectorSearchRetrievalPipeline(
             session_factory=session_factory,
             name="test_vector_search_single",
-            embedding_model=mock_single_vector_embedding,
+            search_mode="single",
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
         assert pipeline.pipeline_id > 0
-        assert pipeline.embedding_model == mock_single_vector_embedding
+        assert pipeline.search_mode == "single"
 
-    def test_pipeline_creation_multi_vector(
+    def test_pipeline_creation_multi_mode(
         self,
         session_factory: sessionmaker[Session],
         cleanup_pipeline_results: list[int],
-        mock_multi_vector_embedding: MagicMock,
     ):
-        """Test that pipeline is created correctly with multi-vector embedding."""
+        """Test that pipeline is created correctly with multi search mode."""
         from autorag_research.pipelines.retrieval.vector_search import (
             VectorSearchRetrievalPipeline,
         )
@@ -90,20 +68,37 @@ class TestVectorSearchRetrievalPipeline:
         pipeline = VectorSearchRetrievalPipeline(
             session_factory=session_factory,
             name="test_vector_search_multi",
-            embedding_model=mock_multi_vector_embedding,
+            search_mode="multi",
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
         assert pipeline.pipeline_id > 0
-        assert pipeline.embedding_model == mock_multi_vector_embedding
+        assert pipeline.search_mode == "multi"
 
-    def test_pipeline_config_single_vector(
+    def test_pipeline_creation_default_mode(
         self,
         session_factory: sessionmaker[Session],
         cleanup_pipeline_results: list[int],
-        mock_single_vector_embedding: MagicMock,
     ):
-        """Test that pipeline config is correct for single-vector embedding."""
+        """Test that pipeline uses single mode by default."""
+        from autorag_research.pipelines.retrieval.vector_search import (
+            VectorSearchRetrievalPipeline,
+        )
+
+        pipeline = VectorSearchRetrievalPipeline(
+            session_factory=session_factory,
+            name="test_vector_search_default",
+        )
+        cleanup_pipeline_results.append(pipeline.pipeline_id)
+
+        assert pipeline.search_mode == "single"
+
+    def test_pipeline_config_single_mode(
+        self,
+        session_factory: sessionmaker[Session],
+        cleanup_pipeline_results: list[int],
+    ):
+        """Test that pipeline config is correct for single search mode."""
         from autorag_research.pipelines.retrieval.vector_search import (
             VectorSearchRetrievalPipeline,
         )
@@ -111,21 +106,20 @@ class TestVectorSearchRetrievalPipeline:
         pipeline = VectorSearchRetrievalPipeline(
             session_factory=session_factory,
             name="test_vector_search_config_single",
-            embedding_model=mock_single_vector_embedding,
+            search_mode="single",
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
         config = pipeline._get_pipeline_config()
         assert config["type"] == "vector_search"
-        assert config["embedding_model"] == "test-embedding-model"
+        assert config["search_mode"] == "single"
 
-    def test_pipeline_config_multi_vector(
+    def test_pipeline_config_multi_mode(
         self,
         session_factory: sessionmaker[Session],
         cleanup_pipeline_results: list[int],
-        mock_multi_vector_embedding: MagicMock,
     ):
-        """Test that pipeline config is correct for multi-vector embedding."""
+        """Test that pipeline config is correct for multi search mode."""
         from autorag_research.pipelines.retrieval.vector_search import (
             VectorSearchRetrievalPipeline,
         )
@@ -133,77 +127,18 @@ class TestVectorSearchRetrievalPipeline:
         pipeline = VectorSearchRetrievalPipeline(
             session_factory=session_factory,
             name="test_vector_search_config_multi",
-            embedding_model=mock_multi_vector_embedding,
+            search_mode="multi",
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
         config = pipeline._get_pipeline_config()
         assert config["type"] == "vector_search"
-        assert config["embedding_model"] == "test-multi-vector-model"
-
-    def test_pipeline_config_with_string_model_name(
-        self,
-        session_factory: sessionmaker[Session],
-        cleanup_pipeline_results: list[int],
-    ):
-        """Test that pipeline config handles string model name correctly."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchRetrievalPipeline,
-        )
-
-        pipeline = VectorSearchRetrievalPipeline(
-            session_factory=session_factory,
-            name="test_vector_search_config_string",
-            embedding_model="openai-large",  # String model name
-        )
-        cleanup_pipeline_results.append(pipeline.pipeline_id)
-
-        config = pipeline._get_pipeline_config()
-        assert config["embedding_model"] == "openai-large"
-
-    def test_retrieve_single_query(
-        self,
-        session_factory: sessionmaker[Session],
-        cleanup_pipeline_results: list[int],
-        mock_single_vector_embedding: MagicMock,
-    ):
-        """Test single query retrieval with mocked vector search."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchRetrievalPipeline,
-        )
-
-        # Mock module results
-        mock_module_results = [
-            [
-                {"doc_id": 1, "score": 0.95, "content": "Content 1"},
-                {"doc_id": 2, "score": 0.85, "content": "Content 2"},
-                {"doc_id": 3, "score": 0.75, "content": "Content 3"},
-            ]
-        ]
-
-        with patch("autorag_research.nodes.retrieval.vector_search.VectorSearchModule.run") as mock_run:
-            mock_run.return_value = mock_module_results
-
-            pipeline = VectorSearchRetrievalPipeline(
-                session_factory=session_factory,
-                name="test_vector_search_retrieve",
-                embedding_model=mock_single_vector_embedding,
-            )
-            cleanup_pipeline_results.append(pipeline.pipeline_id)
-
-            results = pipeline.retrieve("test query", top_k=3)
-
-            assert isinstance(results, list)
-            assert len(results) == 3
-            for i, result in enumerate(results):
-                assert result["doc_id"] == mock_module_results[0][i]["doc_id"]
-                assert result["score"] == mock_module_results[0][i]["score"]
+        assert config["search_mode"] == "multi"
 
     def test_run_full_pipeline(
         self,
         session_factory: sessionmaker[Session],
         cleanup_pipeline_results: list[int],
-        mock_single_vector_embedding: MagicMock,
     ):
         """Test running the full pipeline with mocked vector search."""
         from autorag_research.pipelines.retrieval.vector_search import (
@@ -223,7 +158,6 @@ class TestVectorSearchRetrievalPipeline:
             pipeline = VectorSearchRetrievalPipeline(
                 session_factory=session_factory,
                 name="test_vector_search_full_run",
-                embedding_model=mock_single_vector_embedding,
             )
             cleanup_pipeline_results.append(pipeline.pipeline_id)
 
@@ -243,7 +177,6 @@ class TestVectorSearchRetrievalPipeline:
         self,
         session_factory: sessionmaker[Session],
         cleanup_pipeline_results: list[int],
-        mock_single_vector_embedding: MagicMock,
     ):
         """Test that results are correctly persisted in database."""
         from autorag_research.pipelines.retrieval.vector_search import (
@@ -263,7 +196,6 @@ class TestVectorSearchRetrievalPipeline:
             pipeline = VectorSearchRetrievalPipeline(
                 session_factory=session_factory,
                 name="test_vector_search_persistence",
-                embedding_model=mock_single_vector_embedding,
             )
             cleanup_pipeline_results.append(pipeline.pipeline_id)
 
@@ -289,37 +221,56 @@ class TestVectorSearchPipelineConfig:
 
     def test_config_get_pipeline_class(self):
         """Test that config returns correct pipeline class."""
-        from llama_index.core.base.embeddings.base import BaseEmbedding
-
         from autorag_research.pipelines.retrieval.vector_search import (
             VectorSearchPipelineConfig,
             VectorSearchRetrievalPipeline,
         )
 
-        mock_embedding = MagicMock(spec=BaseEmbedding)
-
         config = VectorSearchPipelineConfig(
             name="test_config",
-            embedding_model=mock_embedding,
+            search_mode="single",
         )
 
         assert config.get_pipeline_class() == VectorSearchRetrievalPipeline
 
-    def test_config_get_pipeline_kwargs(self):
-        """Test that config returns correct pipeline kwargs."""
-        from llama_index.core.base.embeddings.base import BaseEmbedding
-
+    def test_config_get_pipeline_kwargs_single(self):
+        """Test that config returns correct pipeline kwargs for single mode."""
         from autorag_research.pipelines.retrieval.vector_search import (
             VectorSearchPipelineConfig,
         )
 
-        mock_embedding = MagicMock(spec=BaseEmbedding)
-
         config = VectorSearchPipelineConfig(
             name="test_config",
-            embedding_model=mock_embedding,
+            search_mode="single",
         )
 
         kwargs = config.get_pipeline_kwargs()
 
-        assert kwargs["embedding_model"] == mock_embedding
+        assert kwargs["search_mode"] == "single"
+
+    def test_config_get_pipeline_kwargs_multi(self):
+        """Test that config returns correct pipeline kwargs for multi mode."""
+        from autorag_research.pipelines.retrieval.vector_search import (
+            VectorSearchPipelineConfig,
+        )
+
+        config = VectorSearchPipelineConfig(
+            name="test_config",
+            search_mode="multi",
+        )
+
+        kwargs = config.get_pipeline_kwargs()
+
+        assert kwargs["search_mode"] == "multi"
+
+    def test_config_default_search_mode(self):
+        """Test that config uses single search mode by default."""
+        from autorag_research.pipelines.retrieval.vector_search import (
+            VectorSearchPipelineConfig,
+        )
+
+        config = VectorSearchPipelineConfig(
+            name="test_config",
+        )
+
+        assert config.search_mode == "single"
