@@ -141,19 +141,31 @@ class TestVectorSearchRetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test running the full pipeline with mocked vector search."""
+        from autorag_research.orm.repository.query import QueryRepository
         from autorag_research.pipelines.retrieval.vector_search import (
             VectorSearchRetrievalPipeline,
         )
 
-        # Mock module results - return results for each of 5 seed queries
+        # Count actual queries in database
+        session = session_factory()
+        try:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+        finally:
+            session.close()
+
+        # Mock module results - return results for each query
         mock_result = [
             {"doc_id": 1, "score": 0.9, "content": "Content 1"},
             {"doc_id": 2, "score": 0.8, "content": "Content 2"},
         ]
-        mock_module_results = [mock_result for _ in range(5)]  # 5 queries in seed data
+
+        def mock_run_func(query_ids, top_k):
+            """Return mock results for each query ID."""
+            return [mock_result for _ in query_ids]
 
         with patch("autorag_research.nodes.retrieval.vector_search.VectorSearchModule.run") as mock_run:
-            mock_run.return_value = mock_module_results
+            mock_run.side_effect = mock_run_func
 
             pipeline = VectorSearchRetrievalPipeline(
                 session_factory=session_factory,
@@ -166,7 +178,7 @@ class TestVectorSearchRetrievalPipeline:
             # Verify using test utilities
             config = PipelineTestConfig(
                 pipeline_type="retrieval",
-                expected_total_queries=5,  # Seed data has 5 queries
+                expected_total_queries=query_count,
                 expected_min_results=0,
                 check_persistence=True,
             )
@@ -179,19 +191,31 @@ class TestVectorSearchRetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test that results are correctly persisted in database."""
+        from autorag_research.orm.repository.query import QueryRepository
         from autorag_research.pipelines.retrieval.vector_search import (
             VectorSearchRetrievalPipeline,
         )
 
-        # Mock module results
+        # Count actual queries in database
+        session = session_factory()
+        try:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+        finally:
+            session.close()
+
+        # Mock module results - 2 results per query
         mock_result = [
             {"doc_id": 1, "score": 0.95, "content": "Content 1"},
             {"doc_id": 2, "score": 0.85, "content": "Content 2"},
         ]
-        mock_module_results = [mock_result for _ in range(5)]
+
+        def mock_run_func(query_ids, top_k):
+            """Return mock results for each query ID."""
+            return [mock_result for _ in query_ids]
 
         with patch("autorag_research.nodes.retrieval.vector_search.VectorSearchModule.run") as mock_run:
-            mock_run.return_value = mock_module_results
+            mock_run.side_effect = mock_run_func
 
             pipeline = VectorSearchRetrievalPipeline(
                 session_factory=session_factory,
@@ -207,8 +231,9 @@ class TestVectorSearchRetrievalPipeline:
                 repo = ChunkRetrievedResultRepository(session)
                 results = repo.get_by_pipeline(pipeline.pipeline_id)
 
-                # Should have results persisted (5 queries * 2 results each = 10)
-                assert len(results) == 10
+                # Should have results persisted (query_count * 2 results each)
+                expected_results = query_count * 2
+                assert len(results) == expected_results
 
                 # All results should have valid scores
                 assert all(r.rel_score >= 0 for r in results)

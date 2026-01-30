@@ -9,8 +9,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.nodes import BaseModule
+from autorag_research.nodes import BaseModule, make_retrieval_result
 from autorag_research.orm.repository.chunk import ChunkRepository
+from autorag_research.orm.repository.query import QueryRepository
 
 
 class BM25Module(BaseModule):
@@ -35,8 +36,8 @@ class BM25Module(BaseModule):
         engine = create_engine("postgresql://user:pass@localhost/dbname")
         session_factory = sessionmaker(bind=engine)
 
-        module = BM25DBModule(session_factory=session_factory)
-        results = module.run(["What is machine learning?"], top_k=10)
+        module = BM25Module(session_factory=session_factory)
+        results = module.run([1, 2, 3], top_k=10)  # Query IDs
         ```
     """
 
@@ -67,20 +68,61 @@ class BM25Module(BaseModule):
         self.index_name = index_name
         self._schema = schema
 
-    def _get_chunk_model(self) -> type:
-        """Get the Chunk model class from schema or default."""
-        if self._schema is not None:
-            return self._schema.Chunk
-        from autorag_research.orm.schema import Chunk
-
-        return Chunk
-
-    def run(self, queries: list[str], top_k: int = 10) -> list[list[dict]]:
+    def search(self, query_texts: list[str], top_k: int = 10) -> list[list[dict]]:
         """
-        Execute BM25 retrieval for given queries.
+        Execute BM25 retrieval with provided texts directly.
+
+        Bypasses Query table lookup - use for query expansion, rewriting, etc.
 
         Args:
-            queries: List of query strings for batch processing.
+            query_texts: Texts to search with.
+            top_k: Number of results per query.
+
+        Returns:
+            List of search results for each query. Each query returns a list of top_k results.
+
+            Each result dictionary contains:
+            - doc_id: Chunk ID (int)
+            - score: BM25 relevance score (higher = more relevant)
+            - content: Chunk text content
+
+        Example:
+            ```python
+            # Direct text search (e.g., query expansion)
+            expanded_queries = ["machine learning basics", "ML fundamentals"]
+            results = module.search(expanded_queries, top_k=10)
+
+            # Rewritten query search
+            rewritten = llm.complete("Rewrite: What is ML?").text
+            results = module.search([rewritten], top_k=10)
+            ```
+        """
+        if not query_texts:
+            return []
+
+        all_results = []
+        chunk_model = self._get_chunk_model()
+
+        with self.session_factory() as session:
+            chunk_repo = ChunkRepository(session, chunk_model)
+
+            for query_text in query_texts:
+                results = chunk_repo.bm25_search(
+                    query_text=query_text,
+                    index_name=self.index_name,
+                    limit=top_k,
+                    tokenizer=self.tokenizer,
+                )
+                all_results.append([make_retrieval_result(chunk, score) for chunk, score in results])
+
+        return all_results
+
+    def run(self, query_ids: list[int | str], top_k: int = 10) -> list[list[dict]]:
+        """
+        Execute BM25 retrieval for given query IDs.
+
+        Args:
+            query_ids: List of query IDs to search.
             top_k: Number of top documents to retrieve per query.
 
         Returns:
@@ -90,31 +132,31 @@ class BM25Module(BaseModule):
             - doc_id: Chunk ID (int)
             - score: BM25 relevance score (higher = more relevant)
             - content: Chunk text content
+
+        Raises:
+            ValueError: If a query is not found.
         """
         all_results = []
         chunk_model = self._get_chunk_model()
+        query_model = self._get_query_model()
 
         with self.session_factory() as session:
-            repo = ChunkRepository(session, chunk_model)
+            chunk_repo = ChunkRepository(session, chunk_model)
+            query_repo = QueryRepository(session, query_model)
 
-            for query in queries:
-                # Perform BM25 search
-                results = repo.bm25_search(
-                    query_text=query,
+            for query_id in query_ids:
+                # Look up query to get text
+                query = query_repo.get_by_id(query_id)
+                if query is None:
+                    raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
+
+                # Perform BM25 search using query text
+                results = chunk_repo.bm25_search(
+                    query_text=query.contents,
                     index_name=self.index_name,
                     limit=top_k,
                     tokenizer=self.tokenizer,
                 )
-
-                query_results = []
-                for chunk, score in results:
-                    result = {
-                        "doc_id": chunk.id,
-                        "score": score,
-                        "content": chunk.contents,
-                    }
-                    query_results.append(result)
-
-                all_results.append(query_results)
+                all_results.append([make_retrieval_result(chunk, score) for chunk, score in results])
 
         return all_results

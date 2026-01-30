@@ -116,6 +116,16 @@ class TestBM25RetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test running the full pipeline with mocked BM25 search."""
+        from autorag_research.orm.repository.query import QueryRepository
+
+        # Count actual queries in database
+        session = session_factory()
+        try:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+        finally:
+            session.close()
+
         # Use actual Chunk model instances for mock results
         mock_results = [
             (Chunk(id=1, contents="Content 1"), 0.9),
@@ -137,7 +147,7 @@ class TestBM25RetrievalPipeline:
             # Verify using test utilities
             config = PipelineTestConfig(
                 pipeline_type="retrieval",
-                expected_total_queries=5,  # Seed data has 5 queries
+                expected_total_queries=query_count,
                 expected_min_results=0,
                 check_persistence=True,
             )
@@ -145,7 +155,7 @@ class TestBM25RetrievalPipeline:
             verifier.verify_all()
 
             # Verify search was called for each query
-            assert mock_search.call_count == 5
+            assert mock_search.call_count == query_count
 
     def test_results_persisted_correctly(
         self,
@@ -153,6 +163,16 @@ class TestBM25RetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test that results are correctly persisted in database."""
+        from autorag_research.orm.repository.query import QueryRepository
+
+        # Count actual queries in database
+        session = session_factory()
+        try:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+        finally:
+            session.close()
+
         # Use actual Chunk model instances for mock results
         mock_results = [
             (Chunk(id=1, contents="Content 1"), 0.95),
@@ -177,8 +197,9 @@ class TestBM25RetrievalPipeline:
                 repo = ChunkRetrievedResultRepository(session)
                 results = repo.get_by_pipeline(pipeline.pipeline_id)
 
-                # Should have results persisted (5 queries * 2 results each = 10)
-                assert len(results) == 10
+                # Should have results persisted (query_count * 2 results each)
+                expected_results = query_count * 2
+                assert len(results) == expected_results
 
                 # All results should have valid scores
                 for r in results:

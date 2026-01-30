@@ -8,11 +8,15 @@ search modes for text chunks.
 
 from typing import Any, Literal
 
+from llama_index.core.embeddings import BaseEmbedding
 from sqlalchemy.orm import Session, sessionmaker
 
-from autorag_research.nodes import BaseModule
+from autorag_research.embeddings.base import MultiVectorBaseEmbedding
+from autorag_research.injection import with_embedding
+from autorag_research.nodes import BaseModule, make_retrieval_result
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.query import QueryRepository
+from autorag_research.util import to_list
 
 
 class VectorSearchModule(BaseModule):
@@ -66,21 +70,117 @@ class VectorSearchModule(BaseModule):
         self.search_mode = search_mode
         self._schema = schema
 
-    def _get_chunk_model(self) -> type:
-        """Get the Chunk model class from schema or default."""
-        if self._schema is not None:
-            return self._schema.Chunk
-        from autorag_research.orm.schema import Chunk
+    def search(
+        self,
+        query_embeddings: list[list[float]] | list[list[list[float]]],
+        top_k: int = 10,
+    ) -> list[list[dict]]:
+        """
+        Execute vector search with provided embeddings directly.
 
-        return Chunk
+        Bypasses Query table lookup - use for HyDE, query expansion, etc.
+        The search mode is automatically inferred from the embedding structure:
+        - If each item is a 1D list (single embedding), uses single-vector search
+        - If each item is a 2D list (multiple embeddings), uses multi-vector MaxSim search
 
-    def _get_query_model(self) -> type:
-        """Get the Query model class from schema or default."""
-        if self._schema is not None:
-            return self._schema.Query
-        from autorag_research.orm.schema import Query
+        Args:
+            query_embeddings: Embeddings to search with.
+                - Single-vector mode: list[list[float]] where each inner list is an embedding
+                - Multi-vector mode: list[list[list[float]]] where each query has multiple vectors
+            top_k: Number of results per query.
 
-        return Query
+        Returns:
+            List of search results for each query. Each query returns a list of top_k results.
+
+            Each result dictionary contains:
+            - doc_id: Chunk ID (int)
+            - score: Similarity score (higher = more relevant)
+            - content: Chunk text content
+
+        Example:
+            ```python
+            # Single-vector search (e.g., HyDE)
+            hypothetical_embedding = embed_model.get_text_embedding("hypothetical doc")
+            results = module.search([hypothetical_embedding], top_k=10)
+
+            # Multi-vector search (e.g., ColBERT-style)
+            token_embeddings = [[0.1, 0.2, ...], [0.3, 0.4, ...]]  # Multiple vectors per query
+            results = module.search([token_embeddings], top_k=10)
+            ```
+        """
+        if not query_embeddings:
+            return []
+
+        all_results = []
+        with self.session_factory() as session:
+            for embedding in query_embeddings:
+                # Infer mode from embedding structure
+                # If first element is a list of lists, it's multi-vector
+                if embedding and isinstance(embedding[0], list):
+                    # Multi-vector mode
+                    results = self._search_multi_vector(session, to_list(embedding), top_k)
+                else:
+                    # Single-vector mode
+                    results = self._search_single_vector(session, to_list(embedding), top_k)
+                all_results.append(results)
+        return all_results
+
+    @with_embedding()
+    def search_by_text(
+        self,
+        query_texts: list[str],
+        embedding_model: BaseEmbedding | MultiVectorBaseEmbedding | str,
+        top_k: int = 10,
+    ) -> list[list[dict]]:
+        """
+        Embed texts at runtime and execute vector search.
+
+        Convenience method that handles embedding generation internally.
+        Always uses single-vector search mode.
+
+        Args:
+            query_texts: Texts to embed and search.
+            embedding_model: LlamaIndex BaseEmbedding model instance or config name string.
+                If string, loads model from config file (e.g., "openai-large").
+            top_k: Number of results per query.
+
+        Returns:
+            List of search results for each query. Each query returns a list of top_k results.
+
+            Each result dictionary contains:
+            - doc_id: Chunk ID (int)
+            - score: Similarity score (higher = more relevant)
+            - content: Chunk text content
+
+        Example:
+            ```python
+            # With model instance
+            from llama_index.embeddings.openai import OpenAIEmbedding
+            embed_model = OpenAIEmbedding()
+            results = module.search_by_text(
+                ["What is machine learning?"],
+                embedding_model=embed_model,
+                top_k=10
+            )
+
+            # With config name (loads from config/embedding/openai-large.yaml)
+            results = module.search_by_text(
+                ["What is machine learning?"],
+                embedding_model="openai-large",
+                top_k=10
+            )
+            ```
+        """
+        if not query_texts:
+            return []
+
+        # Type guard: decorator ensures embedding_model is BaseEmbedding at runtime
+        if not isinstance(embedding_model, BaseEmbedding) or not isinstance(embedding_model, MultiVectorBaseEmbedding):
+            raise TypeError(f"embedding_model must be BaseEmbedding or MultiVectorBaseEmbedding, got {type(embedding_model)}")  # noqa: TRY003
+
+        # Generate embeddings using the provided model
+        embeddings = embedding_model.get_text_embedding_batch(query_texts)
+        return self.search(embeddings, top_k)
 
     def run(
         self,
@@ -116,61 +216,29 @@ class VectorSearchModule(BaseModule):
                 if self.search_mode == "multi":
                     if query.embeddings is None:
                         raise ValueError(f"Query {query_id} has no multi-vector embeddings")  # noqa: TRY003
-                    results = self._search_multi_vector(session, query.embeddings, top_k)
+                    results = self._search_multi_vector(session, to_list(query.embeddings), top_k)
                 else:
                     if query.embedding is None:
                         raise ValueError(f"Query {query_id} has no embedding")  # noqa: TRY003
-                    results = self._search_single_vector(session, list(query.embedding), top_k)
+                    results = self._search_single_vector(session, to_list(query.embedding), top_k)
                 all_results.append(results)
         return all_results
 
     def _search_single_vector(self, session: Session, query_embedding: list[float], top_k: int) -> list[dict]:
-        """Search using single-vector cosine similarity.
-
-        Args:
-            session: Database session.
-            query_embedding: Single query embedding vector.
-            top_k: Number of results to return.
-
-        Returns:
-            List of result dictionaries sorted by score descending.
-        """
+        """Search using single-vector cosine similarity."""
         chunk_repo = ChunkRepository(session, self._get_chunk_model())
         chunk_results = chunk_repo.vector_search_with_scores(
             query_vector=query_embedding,
             limit=top_k,
         )
-        results = []
-        for chunk, distance in chunk_results:
-            results.append({
-                "doc_id": chunk.id,
-                "score": 1 - distance,  # Convert distance to similarity
-                "content": chunk.contents,
-            })
-        return results
+        return [make_retrieval_result(chunk, 1 - distance) for chunk, distance in chunk_results]
 
     def _search_multi_vector(self, session: Session, query_embeddings: list[list[float]], top_k: int) -> list[dict]:
-        """Search using multi-vector MaxSim.
-
-        Args:
-            session: Database session.
-            query_embeddings: Multi-vector query embeddings (list of vectors).
-            top_k: Number of results to return.
-
-        Returns:
-            List of result dictionaries sorted by score descending.
-        """
+        """Search using multi-vector MaxSim."""
         chunk_repo = ChunkRepository(session, self._get_chunk_model())
         chunk_results = chunk_repo.maxsim_search(
             query_vectors=query_embeddings,
             vector_column="embeddings",
             limit=top_k,
         )
-        results = []
-        for chunk, distance in chunk_results:
-            results.append({
-                "doc_id": chunk.id,
-                "score": -distance,  # MaxSim: lower distance = higher similarity
-                "content": chunk.contents,
-            })
-        return results
+        return [make_retrieval_result(chunk, -distance) for chunk, distance in chunk_results]

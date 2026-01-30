@@ -20,9 +20,9 @@ __all__ = ["RetrievalFunc", "RetrievalPipelineService"]
 logger = logging.getLogger("AutoRAG-Research")
 
 # Type alias for retrieval function
-# Input: list of query strings, top_k
+# Input: list of query IDs, top_k
 # Output: list of list of dicts with 'doc_id' and 'score'
-RetrievalFunc = Callable[[list[str], int], list[list[dict[str, Any]]]]
+RetrievalFunc = Callable[[list[int | str], int], list[list[dict[str, Any]]]]
 
 
 class RetrievalPipelineService(BaseService):
@@ -127,7 +127,7 @@ class RetrievalPipelineService(BaseService):
 
         Args:
             retrieval_func: Function that performs retrieval.
-                Signature: (queries: list[str], top_k: int) -> list[list[dict]]
+                Signature: (query_ids: list[int | str], top_k: int) -> list[list[dict]]
                 Each result dict must have 'doc_id' (int) and 'score' keys.
             pipeline_id: ID of the pipeline.
             top_k: Number of top documents to retrieve per query.
@@ -151,12 +151,11 @@ class RetrievalPipelineService(BaseService):
                 if not queries:
                     break
 
-                # Extract query texts and IDs
-                query_texts = [q.contents for q in queries]
+                # Extract query IDs
                 query_ids = [q.id for q in queries]
 
-                # Run retrieval
-                results = retrieval_func(query_texts, top_k)
+                # Run retrieval with query IDs
+                results = retrieval_func(query_ids, top_k)
 
                 # Collect all results for batch insert
                 batch_results = []
