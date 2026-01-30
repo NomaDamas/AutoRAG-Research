@@ -25,8 +25,14 @@ class CohereReranker(BaseModule):
     relevance to the query.
 
     Attributes:
-        model: Cohere rerank model name (default: "rerank-v3.5").
+        model: Cohere rerank model name (default: "rerank-v4.0-fast").
+        max_tokens_per_doc: Maximum tokens per document (default: None, uses API default).
         max_concurrency: Maximum concurrent API calls (default: 10).
+
+    Available models (as of 2025):
+        - "rerank-v4.0-fast": Optimized for low latency and high throughput (recommended)
+        - "rerank-v4.0-pro": Optimized for state-of-the-art quality
+        - "rerank-v3.5": Legacy multilingual model
 
     Example:
         ```python
@@ -43,7 +49,8 @@ class CohereReranker(BaseModule):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "rerank-v3.5",
+        model: str = "rerank-v4.0-fast",
+        max_tokens_per_doc: int | None = None,
         max_concurrency: int = 10,
     ):
         """
@@ -52,7 +59,12 @@ class CohereReranker(BaseModule):
         Args:
             api_key: Cohere API key. If not provided, will try to get from
                 COHERE_API_KEY or CO_API_KEY environment variables.
-            model: Cohere rerank model name (default: "rerank-v3.5").
+            model: Cohere rerank model name. Options:
+                - "rerank-v4.0-fast": Low latency, high throughput (default)
+                - "rerank-v4.0-pro": State-of-the-art quality
+                - "rerank-v3.5": Legacy multilingual model
+            max_tokens_per_doc: Maximum tokens per document. Useful for long documents.
+                If None, uses API default. Rerank v4.0 supports up to 32k tokens.
             max_concurrency: Maximum number of concurrent API calls (default: 10).
 
         Raises:
@@ -63,6 +75,7 @@ class CohereReranker(BaseModule):
             raise CohereAPIKeyNotFoundError()
 
         self.model = model
+        self.max_tokens_per_doc = max_tokens_per_doc
         self.max_concurrency = max_concurrency
         self._client: cohere.AsyncClientV2 | None = None
 
@@ -91,7 +104,7 @@ class CohereReranker(BaseModule):
             - score: Cohere relevance score (0-1, higher = more relevant)
             - content: Document content
         """
-        return asyncio.run(self._run_async(queries, contents_list, ids_list, top_k))
+        return asyncio.run(self.arun(queries, contents_list, ids_list, top_k))
 
     @property
     def client(self) -> cohere.AsyncClientV2:
@@ -100,14 +113,14 @@ class CohereReranker(BaseModule):
             self._client = cohere.AsyncClientV2(api_key=self.api_key)
         return self._client
 
-    async def _run_async(
+    async def arun(
         self,
         queries: list[str],
         contents_list: list[list[str]],
         ids_list: list[list[int | str]],
-        top_k: int,
+        top_k: int = 10,
     ) -> list[list[dict[str, Any]]]:
-        """Async implementation of reranking."""
+        """Async version of run(). Use this in async environments (FastAPI, Jupyter, etc.)."""
 
         # Prepare rerank tasks
         tasks_data = list(zip(queries, contents_list, ids_list, strict=True))
@@ -121,12 +134,16 @@ class CohereReranker(BaseModule):
                 return []
 
             # Call Cohere rerank API
-            response = await self.client.rerank(
-                model=self.model,
-                query=query,
-                documents=contents,
-                top_n=min(top_k, len(contents)),
-            )
+            rerank_kwargs: dict[str, Any] = {
+                "model": self.model,
+                "query": query,
+                "documents": contents,
+                "top_n": min(top_k, len(contents)),
+            }
+            if self.max_tokens_per_doc is not None:
+                rerank_kwargs["max_tokens_per_doc"] = self.max_tokens_per_doc
+
+            response = await self.client.rerank(**rerank_kwargs)
 
             # Build results from reranked documents
             results = []
