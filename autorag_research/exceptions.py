@@ -186,3 +186,12 @@ class MissingDBNameError(Exception):
 
     def __init__(self):
         super().__init__("Database name is missing in the configuration.")
+
+
+class CohereAPIKeyNotFoundError(Exception):
+    """Raised when Cohere API key is not found."""
+
+    def __init__(self):
+        super().__init__(
+            "Cohere API key not found. Set COHERE_API_KEY or CO_API_KEY env var, or pass api_key to constructor."
+        )
