@@ -12,7 +12,7 @@ Set up a development environment for contributing.
 ## Clone Repository
 
 ```bash
-git clone https://github.com/vkehfdl1/AutoRAG-Research.git
+git clone https://github.com/NomaDamas/AutoRAG-Research.git
 cd AutoRAG-Research
 ```
 
