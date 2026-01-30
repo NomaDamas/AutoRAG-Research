@@ -11,7 +11,7 @@ pip install autorag-research
 For development installation:
 
 ```bash
-git clone https://github.com/vkehfdl1/AutoRAG-Research.git
+git clone https://github.com/NomaDamas/AutoRAG-Research.git
 cd AutoRAG-Research
 uv sync --all-extras
 ```
