@@ -25,7 +25,6 @@ class VectorSearchPipelineConfig(BaseRetrievalPipelineConfig):
     Attributes:
         name: Unique name for this pipeline instance.
         embedding_model: The embedding model instance or config name string.
-        distance_threshold: Optional maximum distance threshold for filtering results.
         top_k: Number of results to retrieve per query.
         batch_size: Number of queries to process in each batch.
 
@@ -48,13 +47,6 @@ class VectorSearchPipelineConfig(BaseRetrievalPipelineConfig):
     - A MultiVectorBaseEmbedding instance for MaxSim late interaction search
     """
 
-    distance_threshold: float | None = None
-    """Optional maximum distance threshold for filtering results.
-
-    Only applies to single-vector search. Results with distance greater
-    than this threshold will be filtered out.
-    """
-
     def get_pipeline_class(self) -> type["VectorSearchRetrievalPipeline"]:
         """Return the VectorSearchRetrievalPipeline class."""
         return VectorSearchRetrievalPipeline
@@ -63,7 +55,6 @@ class VectorSearchPipelineConfig(BaseRetrievalPipelineConfig):
         """Return kwargs for VectorSearchRetrievalPipeline constructor."""
         return {
             "embedding_model": self.embedding_model,
-            "distance_threshold": self.distance_threshold,
         }
 
 
@@ -107,7 +98,6 @@ class VectorSearchRetrievalPipeline(BaseRetrievalPipeline):
         session_factory: sessionmaker[Session],
         name: str,
         embedding_model: str | EMBEDDING_MODEL_TYPES,
-        distance_threshold: float | None = None,
         schema: Any | None = None,
     ):
         """Initialize vector search retrieval pipeline.
@@ -117,13 +107,11 @@ class VectorSearchRetrievalPipeline(BaseRetrievalPipeline):
             name: Name for this pipeline.
             embedding_model: The embedding model instance or config name string.
                 Can be a LlamaIndex BaseEmbedding, MultiVectorBaseEmbedding, or a config name.
-            distance_threshold: Optional maximum distance threshold for filtering results.
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """
         # Store parameters BEFORE calling super().__init__
         # because _get_pipeline_config() is called in super().__init__
         self.embedding_model = embedding_model
-        self.distance_threshold = distance_threshold
 
         super().__init__(session_factory, name, schema)
 
@@ -143,7 +131,6 @@ class VectorSearchRetrievalPipeline(BaseRetrievalPipeline):
         return {
             "type": "vector_search",
             "embedding_model": model_name,
-            "distance_threshold": self.distance_threshold,
         }
 
     def _get_retrieval_func(self) -> Any:
@@ -157,7 +144,6 @@ class VectorSearchRetrievalPipeline(BaseRetrievalPipeline):
         module = VectorSearchModule(
             session_factory=self.session_factory,
             embedding_model=self.embedding_model,
-            distance_threshold=self.distance_threshold,
             schema=self._schema,
         )
         return module.run

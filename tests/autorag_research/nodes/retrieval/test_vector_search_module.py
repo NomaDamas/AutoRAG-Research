@@ -175,26 +175,3 @@ class TestVectorSearchModuleEdgeCases:
             assert len(results) == 3  # Three queries
             assert mock_embedding.get_text_embedding.call_count == 3
 
-    def test_distance_threshold(self, session_factory: sessionmaker[Session]):
-        """Test that distance_threshold is passed to repository."""
-        from llama_index.core.base.embeddings.base import BaseEmbedding
-
-        from autorag_research.nodes.retrieval.vector_search import VectorSearchModule
-
-        mock_embedding = MagicMock(spec=BaseEmbedding)
-        mock_embedding.get_text_embedding.return_value = [0.1, 0.2, 0.3]
-
-        module = VectorSearchModule(
-            session_factory=session_factory,
-            embedding_model=mock_embedding,
-            distance_threshold=0.5,
-        )
-
-        with patch("autorag_research.orm.repository.chunk.ChunkRepository.vector_search_with_scores") as mock_search:
-            mock_search.return_value = []
-
-            module.run(["test query"], top_k=3, embedding_model=mock_embedding)
-
-            # Verify distance_threshold was passed
-            call_kwargs = mock_search.call_args[1]
-            assert call_kwargs["distance_threshold"] == 0.5

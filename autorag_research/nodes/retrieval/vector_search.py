@@ -31,7 +31,6 @@ class VectorSearchModule(BaseModule):
     Attributes:
         session_factory: SQLAlchemy sessionmaker for database connections.
         embedding_model: The embedding model instance or config name string.
-        distance_threshold: Optional maximum distance threshold for filtering results.
         schema: Schema namespace from create_schema().
 
     Example:
@@ -54,7 +53,6 @@ class VectorSearchModule(BaseModule):
         self,
         session_factory: sessionmaker[Session],
         embedding_model: str | EMBEDDING_MODEL_TYPES,
-        distance_threshold: float | None = None,
         schema: Any | None = None,
     ):
         """
@@ -64,12 +62,10 @@ class VectorSearchModule(BaseModule):
             session_factory: SQLAlchemy sessionmaker for database connections.
             embedding_model: The embedding model instance or config name string.
                 Can be a LlamaIndex BaseEmbedding, MultiVectorBaseEmbedding, or a config name.
-            distance_threshold: Optional maximum distance threshold for filtering results.
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """
         self.session_factory = session_factory
         self.embedding_model = embedding_model
-        self.distance_threshold = distance_threshold
         self._schema = schema
 
     def _get_chunk_model(self) -> type:
@@ -149,7 +145,6 @@ class VectorSearchModule(BaseModule):
         chunk_results = chunk_repo.vector_search_with_scores(
             query_vector=query_embedding,
             limit=top_k,
-            distance_threshold=self.distance_threshold,
         )
         results = []
         for chunk, distance in chunk_results:

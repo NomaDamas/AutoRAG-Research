@@ -112,14 +112,12 @@ class TestVectorSearchRetrievalPipeline:
             session_factory=session_factory,
             name="test_vector_search_config_single",
             embedding_model=mock_single_vector_embedding,
-            distance_threshold=0.5,
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
         config = pipeline._get_pipeline_config()
         assert config["type"] == "vector_search"
         assert config["embedding_model"] == "test-embedding-model"
-        assert config["distance_threshold"] == 0.5
 
     def test_pipeline_config_multi_vector(
         self,
@@ -320,27 +318,8 @@ class TestVectorSearchPipelineConfig:
         config = VectorSearchPipelineConfig(
             name="test_config",
             embedding_model=mock_embedding,
-            distance_threshold=0.3,
         )
 
         kwargs = config.get_pipeline_kwargs()
 
         assert kwargs["embedding_model"] == mock_embedding
-        assert kwargs["distance_threshold"] == 0.3
-
-    def test_config_default_values(self):
-        """Test that config has correct default values."""
-        from llama_index.core.base.embeddings.base import BaseEmbedding
-
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchPipelineConfig,
-        )
-
-        mock_embedding = MagicMock(spec=BaseEmbedding)
-
-        config = VectorSearchPipelineConfig(
-            name="test_config",
-            embedding_model=mock_embedding,
-        )
-
-        assert config.distance_threshold is None
