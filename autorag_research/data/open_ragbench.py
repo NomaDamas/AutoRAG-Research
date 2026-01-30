@@ -8,6 +8,7 @@ from llama_index.core.embeddings import MultiModalEmbedding
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
+from autorag_research.data.util import make_id
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import ImageId, TextId
@@ -18,11 +19,6 @@ logger = logging.getLogger("AutoRAG-Research")
 RANDOM_SEED = 42
 REPO_ID = "vectara/open_ragbench"
 DATA_PATH = "pdf/arxiv"
-
-
-def make_id(*parts: str | int) -> str:
-    """Generate ID by joining parts with underscore."""
-    return "_".join(str(p) for p in parts)
 
 
 @register_ingestor(
