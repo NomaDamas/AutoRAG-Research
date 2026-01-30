@@ -1,0 +1,16 @@
+# Vector Search Retrieval Pipeline Configuration
+#
+# Uses VectorChord for vector similarity search.
+# Requires pre-computed embeddings on chunks and queries.
+#
+# Parameters:
+#   search_mode: "single" for cosine similarity, "multi" for MaxSim
+#   top_k: Number of results to retrieve (default: 10)
+#   batch_size: Number of queries to process per batch (default: 100)
+#
+_target_: autorag_research.pipelines.retrieval.vector_search.VectorSearchPipelineConfig
+description: "Vector search retrieval with VectorChord"
+name: vector_search
+search_mode: single  # "single" (cosine) or "multi" (MaxSim)
+top_k: 10
+batch_size: 100

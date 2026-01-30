@@ -175,8 +175,9 @@ class VectorSearchModule(BaseModule):
             return []
 
         # Type guard: decorator ensures embedding_model is BaseEmbedding at runtime
-        if not isinstance(embedding_model, BaseEmbedding) or not isinstance(embedding_model, MultiVectorBaseEmbedding):
-            raise TypeError(f"embedding_model must be BaseEmbedding or MultiVectorBaseEmbedding, got {type(embedding_model)}")  # noqa: TRY003
+        if not isinstance(embedding_model, (BaseEmbedding, MultiVectorBaseEmbedding)):
+            msg = f"embedding_model must be BaseEmbedding or MultiVectorBaseEmbedding, got {type(embedding_model)}"
+            raise TypeError(msg)
 
         # Generate embeddings using the provided model
         embeddings = embedding_model.get_text_embedding_batch(query_texts)
