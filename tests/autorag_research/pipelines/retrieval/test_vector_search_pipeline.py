@@ -14,6 +14,10 @@ from tests.autorag_research.pipelines.pipeline_test_utils import (
     PipelineTestConfig,
     PipelineTestVerifier,
 )
+from autorag_research.pipelines.retrieval.vector_search import (
+            VectorSearchRetrievalPipeline,
+VectorSearchPipelineConfig,
+        )
 
 
 class TestVectorSearchRetrievalPipeline:
@@ -41,10 +45,6 @@ class TestVectorSearchRetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test that pipeline is created correctly with single search mode."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchRetrievalPipeline,
-        )
-
         pipeline = VectorSearchRetrievalPipeline(
             session_factory=session_factory,
             name="test_vector_search_single",
@@ -61,9 +61,6 @@ class TestVectorSearchRetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test that pipeline is created correctly with multi search mode."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchRetrievalPipeline,
-        )
 
         pipeline = VectorSearchRetrievalPipeline(
             session_factory=session_factory,
@@ -81,10 +78,6 @@ class TestVectorSearchRetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test that pipeline uses single mode by default."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchRetrievalPipeline,
-        )
-
         pipeline = VectorSearchRetrievalPipeline(
             session_factory=session_factory,
             name="test_vector_search_default",
@@ -99,10 +92,6 @@ class TestVectorSearchRetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test that pipeline config is correct for single search mode."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchRetrievalPipeline,
-        )
-
         pipeline = VectorSearchRetrievalPipeline(
             session_factory=session_factory,
             name="test_vector_search_config_single",
@@ -120,10 +109,6 @@ class TestVectorSearchRetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test that pipeline config is correct for multi search mode."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchRetrievalPipeline,
-        )
-
         pipeline = VectorSearchRetrievalPipeline(
             session_factory=session_factory,
             name="test_vector_search_config_multi",
@@ -142,9 +127,6 @@ class TestVectorSearchRetrievalPipeline:
     ):
         """Test running the full pipeline with mocked vector search."""
         from autorag_research.orm.repository.query import QueryRepository
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchRetrievalPipeline,
-        )
 
         # Count actual queries in database
         session = session_factory()
@@ -192,9 +174,6 @@ class TestVectorSearchRetrievalPipeline:
     ):
         """Test that results are correctly persisted in database."""
         from autorag_research.orm.repository.query import QueryRepository
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchRetrievalPipeline,
-        )
 
         # Count actual queries in database
         session = session_factory()
@@ -246,10 +225,6 @@ class TestVectorSearchPipelineConfig:
 
     def test_config_get_pipeline_class(self):
         """Test that config returns correct pipeline class."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchPipelineConfig,
-            VectorSearchRetrievalPipeline,
-        )
 
         config = VectorSearchPipelineConfig(
             name="test_config",
@@ -260,10 +235,6 @@ class TestVectorSearchPipelineConfig:
 
     def test_config_get_pipeline_kwargs_single(self):
         """Test that config returns correct pipeline kwargs for single mode."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchPipelineConfig,
-        )
-
         config = VectorSearchPipelineConfig(
             name="test_config",
             search_mode="single",
@@ -275,10 +246,6 @@ class TestVectorSearchPipelineConfig:
 
     def test_config_get_pipeline_kwargs_multi(self):
         """Test that config returns correct pipeline kwargs for multi mode."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchPipelineConfig,
-        )
-
         config = VectorSearchPipelineConfig(
             name="test_config",
             search_mode="multi",
@@ -290,10 +257,6 @@ class TestVectorSearchPipelineConfig:
 
     def test_config_default_search_mode(self):
         """Test that config uses single search mode by default."""
-        from autorag_research.pipelines.retrieval.vector_search import (
-            VectorSearchPipelineConfig,
-        )
-
         config = VectorSearchPipelineConfig(
             name="test_config",
         )
