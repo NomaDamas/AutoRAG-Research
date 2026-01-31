@@ -53,9 +53,8 @@ class VectorSearchPipelineConfig(BaseRetrievalPipelineConfig):
 class VectorSearchRetrievalPipeline(BaseRetrievalPipeline):
     """Pipeline for running vector search retrieval.
 
-    This pipeline wraps RetrievalPipelineService with VectorSearchModule,
-    providing a convenient interface for vector-based retrieval using
-    PostgreSQL's VectorChord extension.
+    This pipeline uses RetrievalPipelineService.vector_search() for
+    vector-based retrieval using PostgreSQL's VectorChord extension.
 
     Supports both single-vector (cosine similarity) and multi-vector (MaxSim)
     search modes for text chunks. Queries must have pre-computed embeddings
