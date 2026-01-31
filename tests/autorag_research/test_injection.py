@@ -3,10 +3,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from llama_index.core.base.embeddings.base import BaseEmbedding
-from llama_index.core.base.llms.base import BaseLLM
-from llama_index.core.embeddings.mock_embed_model import MockEmbedding
-from llama_index.core.llms.mock import MockLLM
+from langchain_core.embeddings import Embeddings
+from langchain_core.embeddings.fake import FakeEmbeddings
+from langchain_core.language_models import BaseLanguageModel
+from langchain_core.language_models.fake import FakeListLLM
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from autorag_research import cli
 from autorag_research.injection import (
@@ -32,7 +33,7 @@ class TestHealthCheckEmbedding:
 
     def test_returns_dimension_on_success(self) -> None:
         """Returns embedding dimension on success."""
-        mock_embedding = MockEmbedding(384)
+        mock_embedding = FakeEmbeddings(size=384)
 
         result = health_check_embedding(mock_embedding)
 
@@ -40,14 +41,12 @@ class TestHealthCheckEmbedding:
 
     def test_raises_on_embedding_failure(self) -> None:
         """Raises EmbeddingNotSetError when embedding fails."""
-        from llama_index.embeddings.openai import OpenAIEmbedding
-
         from autorag_research.exceptions import EmbeddingError
 
         original_api_key = os.getenv("OPENAI_API_KEY")
         os.environ["OPENAI_API_KEY"] = "havertz"
 
-        embedding_model = OpenAIEmbedding()
+        embedding_model = OpenAIEmbeddings()
         with pytest.raises(EmbeddingError):
             health_check_embedding(embedding_model)
 
@@ -60,19 +59,17 @@ class TestHealthCheckLlm:
 
     def test_returns_true_on_success(self) -> None:
         """Returns True when LLM responds successfully."""
-        mock_llm = MockLLM()
+        mock_llm = FakeListLLM(responses=["Mock response"])
 
         health_check_llm(mock_llm)
 
     def test_raises_on_llm_failure(self) -> None:
         """Raises LLMNotSetError when LLM fails."""
-        from llama_index.llms.openai import OpenAI
-
         from autorag_research.exceptions import LLMError
 
         original_api_key = os.getenv("OPENAI_API_KEY")
         os.environ["OPENAI_API_KEY"] = "havertz"
-        model = OpenAI()
+        model = ChatOpenAI()
 
         with pytest.raises(LLMError):
             health_check_llm(model)
@@ -95,33 +92,33 @@ class TestLoadEmbeddingModel:
             load_embedding_model("nonexistent")
 
     def test_returns_embedding_instance(self) -> None:
-        """Returns BaseEmbedding instance when config is valid."""
+        """Returns Embeddings instance when config is valid."""
         result = load_embedding_model("mock")
 
-        assert isinstance(result, BaseEmbedding)
+        assert isinstance(result, Embeddings)
 
 
 class TestWithEmbeddingDecorator:
     """Tests for with_embedding decorator."""
 
     def test_string_to_instance_conversion(self) -> None:
-        """Decorator converts string config name to BaseEmbedding instance."""
+        """Decorator converts string config name to Embeddings instance."""
 
         @with_embedding()
-        def my_func(embedding_model: BaseEmbedding | str) -> BaseEmbedding:
+        def my_func(embedding_model: Embeddings | str) -> Embeddings:
             return embedding_model  # type: ignore[return-value]
 
         result = my_func(embedding_model="mock")
-        assert isinstance(result, BaseEmbedding)
+        assert isinstance(result, Embeddings)
 
     def test_instance_passthrough(self) -> None:
-        """Decorator passes through BaseEmbedding instances unchanged."""
+        """Decorator passes through Embeddings instances unchanged."""
 
         @with_embedding()
         def my_func(embedding_model) -> object:
             return embedding_model
 
-        mock_model = MockEmbedding(embed_dim=384)
+        mock_model = FakeEmbeddings(size=384)
         result = my_func(embedding_model=mock_model)
         assert result is mock_model
 
@@ -145,7 +142,7 @@ class TestWithEmbeddingDecorator:
         def my_func(embedding_model) -> None:
             pass
 
-        with pytest.raises(TypeError, match="must be string, BaseEmbedding or MultiVectorBaseEmbedding"):
+        with pytest.raises(TypeError, match="must be string, Embeddings or MultiVectorBaseEmbedding"):
             my_func(embedding_model=123)  # type: ignore[arg-type]
 
     def test_invalid_param_name_raises_error(self) -> None:
@@ -164,8 +161,8 @@ class TestWithEmbeddingDecorator:
         def my_func(model, model2, other) -> object:
             return model, model2, other
 
-        mock_model = MockEmbedding(embed_dim=384)
-        mock_model2 = MockEmbedding(embed_dim=768)
+        mock_model = FakeEmbeddings(size=384)
+        mock_model2 = FakeEmbeddings(size=768)
         result1, result2, result3 = my_func(model=mock_model, model2=mock_model2, other=3)
         assert result1 is mock_model
         assert result2 is mock_model2
@@ -186,15 +183,15 @@ class TestLoadLlm:
             load_llm("nonexistent")
 
     def test_returns_llm_instance(self) -> None:
-        """Returns BaseLLM instance when config is valid."""
+        """Returns BaseLanguageModel instance when config is valid."""
         result = load_llm("mock")
 
-        assert isinstance(result, BaseLLM)
+        assert isinstance(result, BaseLanguageModel)
 
     @patch("autorag_research.injection.instantiate")
     def test_calls_health_check_on_load(self, mock_instantiate: MagicMock) -> None:
         """Health check is called during load."""
-        mock_model = MockLLM()
+        mock_model = FakeListLLM(responses=["Mock response"])
         mock_instantiate.return_value = mock_model
         mock_health_check = MagicMock()
 
@@ -211,7 +208,7 @@ class TestLoadLlm:
         """Health check failure raises LLMNotSetError."""
         from autorag_research.exceptions import LLMError
 
-        mock_instantiate.return_value = MockLLM()
+        mock_instantiate.return_value = FakeListLLM(responses=["Mock response"])
 
         original_func = _llm_manager._health_check_func
         _llm_manager._health_check_func = MagicMock(side_effect=LLMError())
@@ -234,23 +231,23 @@ class TestWithLlmDecorator:
         _llm_manager.clear_cache()
 
     def test_string_to_instance_conversion(self) -> None:
-        """Decorator converts string config name to BaseLLM instance."""
+        """Decorator converts string config name to BaseLanguageModel instance."""
 
         @with_llm()
-        def my_func(llm: BaseLLM | str) -> BaseLLM:
+        def my_func(llm: BaseLanguageModel | str) -> BaseLanguageModel:
             return llm  # type: ignore[return-value]
 
         result = my_func(llm="mock")
-        assert isinstance(result, BaseLLM)
+        assert isinstance(result, BaseLanguageModel)
 
     def test_instance_passthrough(self) -> None:
-        """Decorator passes through BaseLLM instances unchanged."""
+        """Decorator passes through BaseLanguageModel instances unchanged."""
 
         @with_llm()
         def my_func(llm) -> object:
             return llm
 
-        mock_model = MockLLM()
+        mock_model = FakeListLLM(responses=["Mock response"])
         result = my_func(llm=mock_model)
         assert result is mock_model
 
@@ -274,7 +271,7 @@ class TestWithLlmDecorator:
         def my_func(llm) -> None:
             pass
 
-        with pytest.raises(TypeError, match="must be string, BaseLLM"):
+        with pytest.raises(TypeError, match="must be string, BaseLanguageModel"):
             my_func(llm=123)  # type: ignore[arg-type]
 
     def test_invalid_param_name_raises_error(self) -> None:
@@ -292,7 +289,7 @@ class TestWithLlmDecorator:
         def my_func(model, other_arg) -> object:
             return model, other_arg
 
-        mock_model = MockLLM()
+        mock_model = FakeListLLM(responses=["Mock response"])
         result1, result2 = my_func(model=mock_model, other_arg=42)
         assert result1 is mock_model
         assert result2 == 42

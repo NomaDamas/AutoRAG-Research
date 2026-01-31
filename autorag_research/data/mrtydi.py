@@ -3,7 +3,7 @@ import random
 from typing import Literal, get_args
 
 from datasets import load_dataset
-from llama_index.core.base.embeddings.base import BaseEmbedding
+from langchain_core.embeddings import Embeddings
 
 from autorag_research.data.base import TextEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
@@ -47,7 +47,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
     Corpus: https://huggingface.co/datasets/castorini/mr-tydi-corpus
     """
 
-    def __init__(self, embedding_model: BaseEmbedding, language: MRTYDI_LANGUAGES = "english"):
+    def __init__(self, embedding_model: Embeddings, language: MRTYDI_LANGUAGES = "english"):
         """Initialize Mr. TyDi ingestor.
 
         Args:

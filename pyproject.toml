@@ -29,7 +29,8 @@ dependencies = [
     "hydra-core>=1.3.0",
     "httpx>=0.28.0",
     "huggingface-hub>=0.36.0",
-    "llama-index>=0.12.52",
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.3.0",
     "nltk>=3.9.2",
     "numpy>=2.2.6",
     "omegaconf>=2.3.0",
@@ -88,7 +89,6 @@ dev = [
     "pytest-env>=1.2.0",
     "pytest-asyncio>=1.3.0",
     "python-dotenv>=1.2.1",
-    "llama-index-embeddings-openai-like>=0.2.0",
 ]
 
 [build-system]
@@ -168,14 +168,7 @@ ignore = [
 preview = true
 
 [tool.deptry.per_rule_ignores]
-DEP002 = ["bert-score"]
+DEP002 = ["bert-score", "langchain-openai"]  # langchain-openai used via Hydra config instantiation
 
 [tool.deptry]
 exclude = ["tests/*", "scripts/*", ".venv/*", "venv/*"]
-
-[tool.coverage.report]
-skip_empty = true
-
-[tool.coverage.run]
-branch = true
-source = ["autorag_research"]

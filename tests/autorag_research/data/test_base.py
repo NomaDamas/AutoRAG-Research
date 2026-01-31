@@ -7,11 +7,11 @@ from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from llama_index.core import MockEmbedding
-from llama_index.core.embeddings import MultiModalEmbedding
+from langchain_core.embeddings import Embeddings
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor, TextEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import EmbeddingError, ServiceNotSetError
 
 EMBEDDING_DIM = 768
@@ -55,15 +55,18 @@ class ConcreteMultiModalIngestor(MultiModalEmbeddingDataIngestor):
 
 @pytest.fixture
 def mock_embedding_model():
-    return MockEmbedding(EMBEDDING_DIM)
+    """Create a mock Embeddings model following LangChain interface."""
+    mock = MagicMock(spec=Embeddings)
+    mock.aembed_query = AsyncMock(return_value=[0.1] * EMBEDDING_DIM)
+    return mock
 
 
 @pytest.fixture
 def mock_multi_modal_embedding():
-    """Create a mock MultiModalEmbedding model."""
-    mock = MagicMock(spec=MultiModalEmbedding)
-    mock.aget_query_embedding = AsyncMock(return_value=[0.1] * EMBEDDING_DIM)
-    mock.aget_image_embedding = AsyncMock(return_value=[0.2] * EMBEDDING_DIM)
+    """Create a mock BiPaliEmbeddings model."""
+    mock = MagicMock(spec=BiPaliEmbeddings)
+    mock.aembed_query = AsyncMock(return_value=[0.1] * EMBEDDING_DIM)
+    mock.aembed_image = AsyncMock(return_value=[0.2] * EMBEDDING_DIM)
     return mock
 
 
@@ -71,8 +74,8 @@ def mock_multi_modal_embedding():
 def mock_late_interaction_embedding():
     """Create a mock MultiVectorMultiModalEmbedding model."""
     mock = MagicMock(spec=MultiVectorMultiModalEmbedding)
-    mock.aget_query_embedding = AsyncMock(return_value=[[0.1] * EMBEDDING_DIM])
-    mock.aget_image_embedding = AsyncMock(return_value=[[0.2] * EMBEDDING_DIM])
+    mock.aembed_query = AsyncMock(return_value=[[0.1] * EMBEDDING_DIM])
+    mock.aembed_image = AsyncMock(return_value=[[0.2] * EMBEDDING_DIM])
     return mock
 
 
@@ -117,12 +120,12 @@ class TestTextEmbeddingDataIngestorEmbedAll:
         ingestor.embed_all(max_concurrency=8, batch_size=64)
 
         mock_text_service.embed_all_queries.assert_called_once_with(
-            mock_embedding_model.aget_query_embedding,
+            mock_embedding_model.aembed_query,
             batch_size=64,
             max_concurrency=8,
         )
         mock_text_service.embed_all_chunks.assert_called_once_with(
-            mock_embedding_model.aget_text_embedding,
+            mock_embedding_model.aembed_query,
             batch_size=64,
             max_concurrency=8,
         )
@@ -135,12 +138,12 @@ class TestTextEmbeddingDataIngestorEmbedAll:
         ingestor.embed_all()
 
         mock_text_service.embed_all_queries.assert_called_once_with(
-            mock_embedding_model.aget_query_embedding,
+            mock_embedding_model.aembed_query,
             batch_size=128,
             max_concurrency=16,
         )
         mock_text_service.embed_all_chunks.assert_called_once_with(
-            mock_embedding_model.aget_text_embedding,
+            mock_embedding_model.aembed_query,
             batch_size=128,
             max_concurrency=16,
         )
@@ -174,12 +177,12 @@ class TestMultiModalEmbeddingDataIngestorEmbedAll:
         ingestor.embed_all(max_concurrency=8, batch_size=64)
 
         mock_multi_modal_service.embed_all_queries.assert_called_once_with(
-            mock_multi_modal_embedding.aget_query_embedding,
+            mock_multi_modal_embedding.aembed_query,
             batch_size=64,
             max_concurrency=8,
         )
         mock_multi_modal_service.embed_all_image_chunks.assert_called_once_with(
-            mock_multi_modal_embedding.aget_image_embedding,
+            mock_multi_modal_embedding.aembed_image,
             batch_size=64,
             max_concurrency=8,
         )
@@ -192,12 +195,12 @@ class TestMultiModalEmbeddingDataIngestorEmbedAll:
         ingestor.embed_all()
 
         mock_multi_modal_service.embed_all_queries.assert_called_once_with(
-            mock_multi_modal_embedding.aget_query_embedding,
+            mock_multi_modal_embedding.aembed_query,
             batch_size=128,
             max_concurrency=16,
         )
         mock_multi_modal_service.embed_all_image_chunks.assert_called_once_with(
-            mock_multi_modal_embedding.aget_image_embedding,
+            mock_multi_modal_embedding.aembed_image,
             batch_size=128,
             max_concurrency=16,
         )
@@ -230,12 +233,12 @@ class TestMultiModalEmbeddingDataIngestorEmbedAllLateInteraction:
         ingestor.embed_all_late_interaction(max_concurrency=8, batch_size=64)
 
         mock_multi_modal_service.embed_all_queries_multi_vector.assert_called_once_with(
-            mock_late_interaction_embedding.aget_query_embedding,
+            mock_late_interaction_embedding.aembed_query,
             batch_size=64,
             max_concurrency=8,
         )
         mock_multi_modal_service.embed_all_image_chunks_multi_vector.assert_called_once_with(
-            mock_late_interaction_embedding.aget_image_embedding,
+            mock_late_interaction_embedding.aembed_image,
             batch_size=64,
             max_concurrency=8,
         )
@@ -250,12 +253,12 @@ class TestMultiModalEmbeddingDataIngestorEmbedAllLateInteraction:
         ingestor.embed_all_late_interaction()
 
         mock_multi_modal_service.embed_all_queries_multi_vector.assert_called_once_with(
-            mock_late_interaction_embedding.aget_query_embedding,
+            mock_late_interaction_embedding.aembed_query,
             batch_size=128,
             max_concurrency=16,
         )
         mock_multi_modal_service.embed_all_image_chunks_multi_vector.assert_called_once_with(
-            mock_late_interaction_embedding.aget_image_embedding,
+            mock_late_interaction_embedding.aembed_image,
             batch_size=128,
             max_concurrency=16,
         )

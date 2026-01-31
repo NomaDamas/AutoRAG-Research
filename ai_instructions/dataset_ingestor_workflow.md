@@ -98,7 +98,7 @@ The `IngestorTestVerifier.verify_all()` method automatically verifies:
 
 ```python
 import pytest
-from llama_index.core import MockEmbedding
+from langchain_core.embeddings.fake import FakeEmbeddings
 
 from autorag_research.data.my_dataset import MyDatasetIngestor
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
@@ -113,7 +113,7 @@ EMBEDDING_DIM = 768
 
 @pytest.fixture
 def mock_embedding_model():
-    return MockEmbedding(EMBEDDING_DIM)
+    return FakeEmbeddings(size=EMBEDDING_DIM)
 
 
 # ==================== Integration Tests ====================
@@ -194,7 +194,7 @@ CLI options are automatically extracted from the `__init__` signature.
 
 ```python
 from typing import Literal
-from llama_index.core.base.embeddings.base import BaseEmbedding
+from langchain_core.embeddings import Embeddings
 from autorag_research.data.registry import register_ingestor
 from autorag_research.data.base import TextEmbeddingDataIngestor
 
@@ -208,9 +208,9 @@ MY_DATASETS = Literal["dataset_a", "dataset_b", "dataset_c"]
 class MyDatasetIngestor(TextEmbeddingDataIngestor):
     def __init__(
         self,
-        embedding_model: BaseEmbedding,  # Skipped (known dependency)
-        config_name: MY_DATASETS,         # -> --config-name, choices=[...], required
-        batch_size: int = 100,            # -> --batch-size, default=100
+        embedding_model: Embeddings,  # Skipped (known dependency)
+        config_name: MY_DATASETS,      # -> --config-name, choices=[...], required
+        batch_size: int = 100,         # -> --batch-size, default=100
     ):
         super().__init__(embedding_model)
         self.config_name = config_name
@@ -221,7 +221,7 @@ class MyDatasetIngestor(TextEmbeddingDataIngestor):
 
 | `__init__` Parameter | CLI Option |
 |-------------------|---------|
-| `embedding_model: BaseEmbedding` | Skipped |
+| `embedding_model: Embeddings` | Skipped |
 | `name: Literal["a", "b"]` | `--name`, choices=["a", "b"], required |
 | `name: Literal["a", "b"] = "a"` | `--name`, choices=["a", "b"], default="a" |
 | `name: str` | `--name`, required |

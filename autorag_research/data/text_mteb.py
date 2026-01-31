@@ -6,7 +6,7 @@ from typing import Literal
 
 import mteb
 import pandas as pd
-from llama_index.core.base.embeddings.base import BaseEmbedding
+from langchain_core.embeddings import Embeddings
 
 from autorag_research.data.base import TextEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
@@ -63,7 +63,7 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
 
     def __init__(
         self,
-        embedding_model: BaseEmbedding,
+        embedding_model: Embeddings,
         task_name: str,
         score_threshold: int = 1,
         include_instruction: bool = True,
@@ -71,7 +71,7 @@ class TextMTEBDatasetIngestor(TextEmbeddingDataIngestor):
         """Initialize the MTEB dataset ingestor.
 
         Args:
-            embedding_model: LlamaIndex embedding model to use.
+            embedding_model: LangChain embedding model to use.
             task_name: MTEB task name (e.g., "NFCorpus", "SciFact", "MSMARCO").
                        Use exact name from MTEB registry.
             score_threshold: Minimum relevance score for a document to be

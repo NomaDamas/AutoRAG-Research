@@ -4,12 +4,12 @@ import random
 from typing import Any, Literal
 
 from huggingface_hub import hf_hub_download
-from llama_index.core.embeddings import MultiModalEmbedding
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
 from autorag_research.data.util import make_id
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import ImageId, TextId
 from autorag_research.util import extract_image_from_data_uri
@@ -29,7 +29,7 @@ DATA_PATH = "pdf/arxiv"
 class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,
-        embedding_model: MultiModalEmbedding | None = None,
+        embedding_model: BiPaliEmbeddings | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
         data_path: str = DATA_PATH,
     ):
@@ -229,7 +229,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
         if self.embedding_model is None or self.service is None:
             return
         self.service.embed_all_chunks(
-            self.embedding_model.aget_text_embedding, batch_size=batch_size, max_concurrency=max_concurrency
+            self.embedding_model.aembed_query, batch_size=batch_size, max_concurrency=max_concurrency
         )
 
     def embed_all_late_interaction(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
@@ -237,7 +237,7 @@ class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
         if self.late_interaction_embedding_model is None or self.service is None:
             return
         self.service.embed_all_chunks_multi_vector(
-            self.late_interaction_embedding_model.aget_text_embedding,
+            self.late_interaction_embedding_model.aembed_text,
             batch_size=batch_size,
             max_concurrency=max_concurrency,
         )

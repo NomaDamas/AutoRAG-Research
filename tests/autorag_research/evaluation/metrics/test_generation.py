@@ -2,7 +2,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from llama_index.embeddings.openai import OpenAIEmbedding
+from langchain_openai import OpenAIEmbeddings
 
 from autorag_research import cli
 from autorag_research.evaluation.metrics.generation import (
@@ -13,7 +13,7 @@ from autorag_research.evaluation.metrics.generation import (
     sem_score,
 )
 from autorag_research.schema import MetricInput
-from tests.mock import mock_get_text_embedding_batch
+from tests.mock import mock_embed_documents
 
 cli.CONFIG_PATH = Path(__file__).parent.parent.parent.parent.parent / "configs"
 
@@ -203,14 +203,15 @@ def test_rouge():
 
 
 @patch.object(
-    OpenAIEmbedding,
-    "get_text_embedding_batch",
-    mock_get_text_embedding_batch,
+    OpenAIEmbeddings,
+    "embed_documents",
+    mock_embed_documents,
 )
+@patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
 def test_sem_score_other_model():
     scores = sem_score(
         metric_inputs=similarity_generation_metric_inputs,
-        embedding_model=OpenAIEmbedding(),
+        embedding_model=OpenAIEmbeddings(),
     )
     assert len(scores) == len(generation_gts)
     assert all(isinstance(score, float) for score in scores)

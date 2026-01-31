@@ -3,7 +3,7 @@ import logging
 from typing import Any, Literal, get_args
 
 from datasets import load_dataset
-from llama_index.core.base.embeddings.base import BaseEmbedding
+from langchain_core.embeddings import Embeddings
 
 from autorag_research.data.base import TextEmbeddingDataIngestor
 from autorag_research.exceptions import ServiceNotSetError, UnsupportedDataSubsetError
@@ -73,7 +73,7 @@ from autorag_research.data.registry import register_ingestor  # noqa: E402
 class RAGBenchIngestor(TextEmbeddingDataIngestor):
     def __init__(
         self,
-        embedding_model: BaseEmbedding,
+        embedding_model: Embeddings,
         config: RAGBENCH_CONFIGS_LITERAL,
         batch_size: int = DEFAULT_BATCH_SIZE,
     ):

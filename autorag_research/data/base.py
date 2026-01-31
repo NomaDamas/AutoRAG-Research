@@ -2,10 +2,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Literal
 
-from llama_index.core.base.embeddings.base import BaseEmbedding
-from llama_index.core.embeddings import MultiModalEmbedding
+from langchain_core.embeddings import Embeddings
 
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import EmbeddingError, ServiceNotSetError
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
@@ -50,7 +50,7 @@ class DataIngestor(ABC):
 
 
 class TextEmbeddingDataIngestor(DataIngestor, ABC):
-    def __init__(self, embedding_model: BaseEmbedding, **kwargs):
+    def __init__(self, embedding_model: Embeddings, **kwargs):
         super().__init__()
         self.service: TextDataIngestionService | None = None
         self.embedding_model = embedding_model
@@ -62,12 +62,12 @@ class TextEmbeddingDataIngestor(DataIngestor, ABC):
         if self.embedding_model is None:
             raise EmbeddingError
         self.service.embed_all_queries(
-            self.embedding_model.aget_query_embedding,
+            self.embedding_model.aembed_query,
             batch_size=batch_size,
             max_concurrency=max_concurrency,
         )
         self.service.embed_all_chunks(
-            self.embedding_model.aget_text_embedding,
+            self.embedding_model.aembed_query,
             batch_size=batch_size,
             max_concurrency=max_concurrency,
         )
@@ -79,7 +79,7 @@ class TextEmbeddingDataIngestor(DataIngestor, ABC):
 class MultiModalEmbeddingDataIngestor(DataIngestor, ABC):
     def __init__(
         self,
-        embedding_model: MultiModalEmbedding | None = None,
+        embedding_model: BiPaliEmbeddings | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
         **kwargs,
     ):
@@ -98,12 +98,12 @@ class MultiModalEmbeddingDataIngestor(DataIngestor, ABC):
         if self.service is None:
             raise ServiceNotSetError
         self.service.embed_all_queries(
-            self.embedding_model.aget_query_embedding,
+            self.embedding_model.aembed_query,
             batch_size=batch_size,
             max_concurrency=max_concurrency,
         )
         self.service.embed_all_image_chunks(
-            self.embedding_model.aget_image_embedding,
+            self.embedding_model.aembed_image,
             batch_size=batch_size,
             max_concurrency=max_concurrency,
         )
@@ -115,12 +115,12 @@ class MultiModalEmbeddingDataIngestor(DataIngestor, ABC):
         if self.service is None:
             raise ServiceNotSetError
         self.service.embed_all_queries_multi_vector(
-            self.late_interaction_embedding_model.aget_query_embedding,
+            self.late_interaction_embedding_model.aembed_query,
             batch_size=batch_size,
             max_concurrency=max_concurrency,
         )
         self.service.embed_all_image_chunks_multi_vector(
-            self.late_interaction_embedding_model.aget_image_embedding,  # ty: ignore[invalid-argument-type]
+            self.late_interaction_embedding_model.aembed_image,
             batch_size=batch_size,
             max_concurrency=max_concurrency,
         )

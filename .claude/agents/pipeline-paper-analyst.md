@@ -74,7 +74,7 @@ Create `Pipeline_Analysis.json` in the project root (DO NOT commit this file).
   "parameters": {
     "param_name": "Description (type, default if any)"
   },
-  "dependencies": ["llama_index.llms", "llama_index.embeddings"],
+  "dependencies": ["langchain_core.language_models", "langchain_core.embeddings"],
   "notes": "Any important implementation considerations"
 }
 ```

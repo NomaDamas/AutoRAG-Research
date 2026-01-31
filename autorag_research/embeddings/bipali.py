@@ -7,12 +7,12 @@ from typing import Any, ClassVar
 
 import torch
 from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
-from llama_index.core.base.embeddings.base import Embedding
-from llama_index.core.embeddings import MultiModalEmbedding
-from llama_index.core.schema import ImageType
+from langchain_core.embeddings import Embeddings
 from PIL import Image
-from pydantic import Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr
 from transformers import PreTrainedModel
+
+from autorag_research.types import ImageType
 
 # Model type registry: maps model_type to (model_class, processor_class)
 MODEL_REGISTRY: dict[str, tuple[str, str]] = {
@@ -60,11 +60,13 @@ def _load_image(img_file_path: ImageType) -> Image.Image:
         raise TypeError(img_file_path)
 
 
-class BiPaliEmbeddings(MultiModalEmbedding):
+class BiPaliEmbeddings(Embeddings):
     """BiPali-style embeddings supporting multiple model types.
 
     This class provides a unified interface for BiEncoder models from colpali_engine
     that produce single-vector embeddings for both text and images.
+
+    Implements the LangChain Embeddings interface with additional image embedding support.
 
     Supported model types:
     - "modernvbert": BiModernVBert
@@ -78,9 +80,11 @@ class BiPaliEmbeddings(MultiModalEmbedding):
         ...     model_name="ModernVBERT/bimodernvbert",
         ...     model_type="modernvbert",
         ... )
-        >>> text_emb = embeddings.get_text_embedding("Hello world")
-        >>> image_emb = embeddings.get_image_embedding("image.png")
+        >>> text_emb = embeddings.embed_query("Hello world")
+        >>> image_emb = embeddings.embed_image("image.png")
     """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model_name: str = Field(description="HuggingFace model ID")
     model_type: str = Field(description="Model type (e.g., 'modernvbert')")
@@ -111,8 +115,59 @@ class BiPaliEmbeddings(MultiModalEmbedding):
         self._model.to(self.device)
         self._model.eval()
 
-    def _get_image_embedding(self, img_file_path: ImageType) -> Embedding:
-        """Get embedding for a single image."""
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a single query/text string.
+
+        Args:
+            text: The text to embed.
+
+        Returns:
+            Embedding vector as list of floats.
+        """
+        return self._embed_text(text)
+
+    async def aembed_query(self, text: str) -> list[float]:
+        """Embed a single query/text string asynchronously.
+
+        Args:
+            text: The text to embed.
+
+        Returns:
+            Embedding vector as list of floats.
+        """
+        return await asyncio.to_thread(self.embed_query, text)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed multiple documents/texts.
+
+        Args:
+            texts: List of texts to embed.
+
+        Returns:
+            List of embedding vectors.
+        """
+        return self._embed_texts_batch(texts)
+
+    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed multiple documents/texts asynchronously.
+
+        Args:
+            texts: List of texts to embed.
+
+        Returns:
+            List of embedding vectors.
+        """
+        return await asyncio.to_thread(self.embed_documents, texts)
+
+    def embed_image(self, img_file_path: ImageType) -> list[float]:
+        """Embed a single image.
+
+        Args:
+            img_file_path: Path to image file or bytes.
+
+        Returns:
+            Embedding vector as list of floats.
+        """
         image = _load_image(img_file_path)
         image_inputs = self._processor.process_images([image])
 
@@ -125,40 +180,27 @@ class BiPaliEmbeddings(MultiModalEmbedding):
         # Shape: (batch, hidden_dim) -> take first item
         return embeddings[0].cpu().tolist()
 
-    async def _aget_image_embedding(self, img_file_path: ImageType) -> Embedding:
-        """Get image embedding asynchronously."""
-        return await asyncio.to_thread(self._get_image_embedding, img_file_path)
+    async def aembed_image(self, img_file_path: ImageType) -> list[float]:
+        """Embed a single image asynchronously.
 
-    def _get_query_embedding(self, query: str) -> Embedding:
-        """Get embedding for a query string."""
-        return self._get_text_embedding(query)
+        Args:
+            img_file_path: Path to image file or bytes.
 
-    async def _aget_query_embedding(self, query: str) -> Embedding:
-        """Get query embedding asynchronously."""
-        return await asyncio.to_thread(self._get_query_embedding, query)
+        Returns:
+            Embedding vector as list of floats.
+        """
+        return await asyncio.to_thread(self.embed_image, img_file_path)
 
-    def _get_text_embedding(self, text: str) -> Embedding:
-        """Get embedding for a text string."""
-        text_inputs = self._processor.process_texts([text])
+    def embed_images(self, img_file_paths: list[ImageType]) -> list[list[float]]:
+        """Embed multiple images with batching.
 
-        # Move inputs to device
-        text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
+        Args:
+            img_file_paths: List of paths to image files or bytes.
 
-        with torch.no_grad():
-            embeddings = self._model(**text_inputs)
-
-        # Shape: (batch, hidden_dim) -> take first item
-        return embeddings[0].cpu().tolist()
-
-    async def _aget_text_embedding(self, text: str) -> Embedding:
-        """Get text embedding asynchronously."""
-        return await asyncio.to_thread(self._get_text_embedding, text)
-
-    def get_image_embedding_batch(
-        self, img_file_paths: list[ImageType], show_progress: bool = False
-    ) -> list[Embedding]:
-        """Get embeddings for multiple images with batching."""
-        all_embeddings: list[Embedding] = []
+        Returns:
+            List of embedding vectors.
+        """
+        all_embeddings: list[list[float]] = []
 
         for i in range(0, len(img_file_paths), self.embed_batch_size):
             batch_paths = img_file_paths[i : i + self.embed_batch_size]
@@ -176,14 +218,22 @@ class BiPaliEmbeddings(MultiModalEmbedding):
 
         return all_embeddings
 
-    def get_text_embedding_batch(
-        self,
-        texts: list[str],
-        show_progress: bool = False,
-        **kwargs: Any,
-    ) -> list[Embedding]:
-        """Get embeddings for multiple texts with batching."""
-        all_embeddings: list[Embedding] = []
+    def _embed_text(self, text: str) -> list[float]:
+        """Internal method to embed a single text."""
+        text_inputs = self._processor.process_texts([text])
+
+        # Move inputs to device
+        text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
+
+        with torch.no_grad():
+            embeddings = self._model(**text_inputs)
+
+        # Shape: (batch, hidden_dim) -> take first item
+        return embeddings[0].cpu().tolist()
+
+    def _embed_texts_batch(self, texts: list[str]) -> list[list[float]]:
+        """Internal method to embed multiple texts with batching."""
+        all_embeddings: list[list[float]] = []
 
         for i in range(0, len(texts), self.embed_batch_size):
             batch_texts = texts[i : i + self.embed_batch_size]
