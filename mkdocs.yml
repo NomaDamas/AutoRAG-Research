@@ -63,13 +63,7 @@ nav:
           - metrics/generation/rouge.md
           - metrics/generation/bert-score.md
           - metrics/generation/sem-score.md
-  - CLI Reference:
-      - cli/index.md
-      - cli/init.md
-      - cli/ingest.md
-      - cli/run.md
-      - cli/show.md
-      - cli/data.md
+  - CLI Reference: cli/index.md
   - API Reference: reference/index.md
   - Contributing:
       - contributing/index.md
@@ -84,6 +78,8 @@ plugins:
           options:
             show_source: false
             show_root_heading: true
+  - mkdocs-typer2:
+      pretty: true
 
 theme:
   name: material
