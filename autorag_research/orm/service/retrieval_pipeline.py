@@ -50,7 +50,7 @@ class RetrievalPipelineService(BaseService):
 
         # Or use run_pipeline for batch processing with result persistence
         pipeline_id = service.save_pipeline(
-            name="bm25_baseline",
+            name="bm25",
             config={"type": "bm25", "tokenizer": "bert"},
         )
         stats = service.run_pipeline(
