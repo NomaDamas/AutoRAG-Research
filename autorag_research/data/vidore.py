@@ -4,10 +4,10 @@ from abc import ABC
 from typing import Literal
 
 from datasets import load_dataset
-from llama_index.core.embeddings import MultiModalEmbedding
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import (
     InvalidDatasetNameError,
     ServiceNotSetError,
@@ -34,7 +34,7 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor, ABC):
     def __init__(
         self,
         dataset_name: str,
-        embedding_model: MultiModalEmbedding | None = None,
+        embedding_model: BiPaliEmbeddings | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         super().__init__(embedding_model, late_interaction_embedding_model)
@@ -58,7 +58,7 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor, ABC):
 class ViDoReArxivQAIngestor(ViDoReIngestor):
     def __init__(
         self,
-        embedding_model: MultiModalEmbedding | None = None,
+        embedding_model: BiPaliEmbeddings | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         super().__init__(

@@ -6,8 +6,7 @@ Implements simple single-call RAG: retrieve once -> build prompt -> generate onc
 from dataclasses import dataclass, field
 from typing import Any
 
-from llama_index.core.callbacks import CallbackManager, TokenCountingHandler
-from llama_index.core.llms import LLM
+from langchain_core.language_models import BaseLanguageModel
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseGenerationPipelineConfig
@@ -33,7 +32,7 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
         retrieval_pipeline_name: Name of the retrieval pipeline to use.
             The Executor will automatically load and instantiate this pipeline
             from configs/pipelines/{name}.yaml.
-        llm: LlamaIndex LLM instance for text generation.
+        llm: LangChain BaseLanguageModel instance for text generation.
         prompt_template: Template for building the generation prompt.
             Must contain {context} and {query} placeholders.
         top_k: Number of chunks to retrieve per query.
@@ -41,12 +40,12 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
 
     Example:
         ```python
-        from llama_index.llms.openai import OpenAI
+        from langchain_openai import ChatOpenAI
 
         config = BasicRAGPipelineConfig(
             name="basic_rag_v1",
             retrieval_pipeline_name="bm25_baseline",
-            llm=OpenAI(model="gpt-4"),
+            llm=ChatOpenAI(model="gpt-4"),
             prompt_template="Context:\\n{context}\\n\\nQ: {query}\\nA:",
             top_k=5,
         )
@@ -86,7 +85,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
 
     Example:
         ```python
-        from llama_index.llms.openai import OpenAI
+        from langchain_openai import ChatOpenAI
 
         from autorag_research.orm.connection import DBConnection
         from autorag_research.pipelines.generation.basic_rag import BasicRAGPipeline
@@ -106,7 +105,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         pipeline = BasicRAGPipeline(
             session_factory=session_factory,
             name="basic_rag_v1",
-            llm=OpenAI(model="gpt-4"),
+            llm=ChatOpenAI(model="gpt-4"),
             retrieval_pipeline=retrieval_pipeline,
         )
 
@@ -119,7 +118,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         self,
         session_factory: sessionmaker[Session],
         name: str,
-        llm: "LLM",
+        llm: "BaseLanguageModel",
         retrieval_pipeline: "BaseRetrievalPipeline",
         prompt_template: str = DEFAULT_PROMPT_TEMPLATE,
         schema: Any | None = None,
@@ -129,7 +128,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
             name: Name for this pipeline.
-            llm: LlamaIndex LLM instance for text generation.
+            llm: LangChain BaseLanguageModel instance for text generation.
             retrieval_pipeline: Retrieval pipeline for fetching relevant context.
             prompt_template: Template string with {context} and {query} placeholders.
             schema: Schema namespace from create_schema(). If None, uses default schema.
@@ -137,13 +136,6 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         # Store prompt template before calling super().__init__
         # because _get_pipeline_config() is called in super().__init__
         self._prompt_template = prompt_template
-
-        # Setup token counter for detailed token usage tracking
-        self._token_counter = TokenCountingHandler()
-        callback_manager = CallbackManager([self._token_counter])
-
-        # Set callback manager on the LLM for token counting
-        llm.callback_manager = callback_manager
 
         super().__init__(session_factory, name, llm, retrieval_pipeline, schema)
 
@@ -180,9 +172,6 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         Returns:
             GenerationResult containing the generated text and metadata.
         """
-        # Reset token counter before each generation
-        self._token_counter.reset_counts()
-
         # 1. Retrieve relevant chunks using composed retrieval pipeline
         retrieved = self._retrieval_pipeline.retrieve(query, top_k)
 
@@ -195,34 +184,34 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         prompt = self._prompt_template.format(context=context, query=query)
 
         # 4. Generate using LLM
-        response = self._llm.complete(prompt)
+        response = self._llm.invoke(prompt)
 
-        # Extract token usage from TokenCountingHandler
-        token_usage = {
-            "prompt_tokens": self._token_counter.prompt_llm_token_count,
-            "completion_tokens": self._token_counter.completion_llm_token_count,
-            "total_tokens": self._token_counter.total_llm_token_count,
-            "embedding_tokens": self._token_counter.total_embedding_token_count,
-        }
+        # 5. Extract token usage from response metadata
+        token_usage = None
 
-        # Fallback to response.raw for token usage if TokenCountingHandler didn't capture counts
-        # (e.g., when LLM doesn't support callbacks or in mock scenarios)
-        if token_usage["total_tokens"] == 0 and hasattr(response, "raw") and response.raw:
-            usage = response.raw.get("usage", {})
-            raw_prompt = usage.get("prompt_tokens", 0)
-            raw_completion = usage.get("completion_tokens", 0)
-            raw_total = usage.get("total_tokens", raw_prompt + raw_completion)
-            if raw_total > 0:
+        # Try to get usage from response metadata (LangChain style)
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            usage = response.usage_metadata
+            token_usage = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+            }
+        elif hasattr(response, "response_metadata"):
+            usage = response.response_metadata.get("token_usage", {})
+            if usage:
                 token_usage = {
-                    "prompt_tokens": raw_prompt,
-                    "completion_tokens": raw_completion,
-                    "total_tokens": raw_total,
-                    "embedding_tokens": 0,
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
                 }
 
+        # Extract text content from response
+        text = response.content if hasattr(response, "content") else str(response)
+
         return GenerationResult(
-            text=str(response),
-            token_usage=token_usage if token_usage["total_tokens"] > 0 else None,
+            text=text,
+            token_usage=token_usage,
             metadata={
                 "retrieved_chunk_ids": chunk_ids,
                 "retrieved_scores": [r["score"] for r in retrieved],

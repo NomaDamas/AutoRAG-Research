@@ -1,4 +1,4 @@
-_target_: llama_index.embeddings.openai_like.OpenAILikeEmbedding
-model_name: ${oc.env:EMBEDDING_MODEL_NAME,bge-m3}
-api_base: ${oc.env:EMBEDDING_API_BASE,http://localhost:8000}
+_target_: langchain_openai.OpenAIEmbeddings
+model: ${oc.env:EMBEDDING_MODEL_NAME,bge-m3}
+openai_api_base: ${oc.env:EMBEDDING_API_BASE,http://localhost:8000}
 api_key: ${oc.env:EMBEDDING_API_KEY,-}

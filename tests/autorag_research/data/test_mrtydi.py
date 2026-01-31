@@ -4,7 +4,7 @@ Integration tests use real Mr. TyDi dataset subsets against PostgreSQL.
 """
 
 import pytest
-from llama_index.core import MockEmbedding
+from langchain_core.embeddings.fake import FakeEmbeddings
 
 from autorag_research.data.mrtydi import MrTyDiIngestor
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
@@ -22,7 +22,7 @@ EMBEDDING_DIM = 768
 
 @pytest.fixture
 def mock_embedding_model():
-    return MockEmbedding(EMBEDDING_DIM)
+    return FakeEmbeddings(size=EMBEDDING_DIM)
 
 
 # ==================== Unit Tests ====================

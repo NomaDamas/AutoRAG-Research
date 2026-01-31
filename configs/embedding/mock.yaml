@@ -1,2 +1,2 @@
-_target_: llama_index.core.embeddings.mock_embed_model.MockEmbedding
-embed_dim: 384
+_target_: langchain_core.embeddings.fake.FakeEmbeddings
+size: 384

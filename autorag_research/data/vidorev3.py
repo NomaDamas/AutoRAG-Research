@@ -4,11 +4,11 @@ from typing import Any, Literal
 
 import pandas as pd
 from datasets import load_dataset
-from llama_index.core.embeddings import MultiModalEmbedding
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import (
     ImageId,
@@ -54,7 +54,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         self,
         config_name: VIDOREV3_CONFIGS,
         qrels_mode: QrelsMode = "image",
-        embedding_model: MultiModalEmbedding | None = None,
+        embedding_model: BiPaliEmbeddings | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         """
@@ -462,7 +462,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         if self.embedding_model is None or self.service is None:
             return
         self.service.embed_all_chunks(
-            self.embedding_model.aget_text_embedding, batch_size=batch_size, max_concurrency=max_concurrency
+            self.embedding_model.aembed_query, batch_size=batch_size, max_concurrency=max_concurrency
         )
 
     def embed_all_late_interaction(self, max_concurrency: int = 16, batch_size: int = 128) -> None:
@@ -470,7 +470,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         if self.late_interaction_embedding_model is None or self.service is None:
             return
         self.service.embed_all_chunks_multi_vector(
-            self.late_interaction_embedding_model.aget_text_embedding,
+            self.late_interaction_embedding_model.aembed_query,
             batch_size=batch_size,
             max_concurrency=max_concurrency,
         )

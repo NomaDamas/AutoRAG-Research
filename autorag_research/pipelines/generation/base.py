@@ -7,7 +7,7 @@ with retrieval pipelines.
 from abc import ABC, abstractmethod
 from typing import Any
 
-from llama_index.core.llms import LLM
+from langchain_core.language_models import BaseLanguageModel
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.service.generation_pipeline import GenerationPipelineService, GenerationResult
@@ -39,9 +39,9 @@ class BaseGenerationPipeline(BasePipeline, ABC):
                 # Build prompt and generate
                 context = "\\n\\n".join(chunks)
                 prompt = f"Context:\\n{context}\\n\\nQuestion: {query}\\n\\nAnswer:"
-                response = self._llm.complete(prompt)
+                response = self._llm.invoke(prompt)
 
-                return GenerationResult(text=str(response))
+                return GenerationResult(text=str(response.content))
         ```
     """
 
@@ -49,7 +49,7 @@ class BaseGenerationPipeline(BasePipeline, ABC):
         self,
         session_factory: sessionmaker[Session],
         name: str,
-        llm: "LLM",
+        llm: "BaseLanguageModel",
         retrieval_pipeline: "BaseRetrievalPipeline",
         schema: Any | None = None,
     ):
@@ -58,7 +58,7 @@ class BaseGenerationPipeline(BasePipeline, ABC):
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
             name: Name for this pipeline.
-            llm: LlamaIndex LLM instance for text generation.
+            llm: LangChain BaseLanguageModel instance for text generation.
             retrieval_pipeline: Retrieval pipeline instance for fetching relevant context.
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """

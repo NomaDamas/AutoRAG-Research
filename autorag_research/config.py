@@ -12,7 +12,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from llama_index.core.base.llms.base import BaseLLM
+    from langchain_core.language_models import BaseLanguageModel
 
     from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
@@ -126,14 +126,14 @@ class BaseGenerationPipelineConfig(BasePipelineConfig, ABC):
     When llm is set with a string, it automatically loads the LLM instance.
     """
 
-    llm: "str | BaseLLM"
+    llm: "str | BaseLanguageModel"
     retrieval_pipeline_name: str
     pipeline_type: PipelineType = field(default=PipelineType.GENERATION, init=False)
     # Runtime injection (Executor sets this)
     _retrieval_pipeline: "BaseRetrievalPipeline | None" = field(default=None, repr=False)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Auto-convert llm string to BaseLLM instance."""
+        """Auto-convert llm string to BaseLanguageModel instance."""
         if name == "llm" and isinstance(value, str):
             from autorag_research.injection import load_llm
 

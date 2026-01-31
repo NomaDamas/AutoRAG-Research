@@ -90,8 +90,8 @@ class TestBasicRAGPipeline:
         assert "retrieved_chunk_ids" in result.metadata
         assert len(result.metadata["retrieved_chunk_ids"]) == 3
 
-        # Verify LLM was called
-        mock_llm.complete.assert_called_once()
+        # Verify LLM was called (LangChain uses invoke)
+        mock_llm.invoke.assert_called_once()
 
     def test_run_pipeline(self, pipeline, session_factory):
         """Test running the full pipeline with PipelineTestVerifier."""
@@ -132,8 +132,8 @@ class TestBasicRAGPipeline:
 
         _ = pipeline._generate("Test query", top_k=2)
 
-        # Verify the custom template was used by checking the call
-        call_args = mock_llm.complete.call_args
+        # Verify the custom template was used by checking the call (LangChain uses invoke)
+        call_args = mock_llm.invoke.call_args
         prompt = call_args[0][0]
         assert "Documents:" in prompt
         assert "Response:" in prompt
@@ -158,14 +158,6 @@ class TestBasicRAGPipeline:
         assert result.text is not None
         assert result.metadata["retrieved_chunk_ids"] == []
 
-    def test_token_counting_handler_initialization(self, pipeline):
-        """Test that TokenCountingHandler is initialized properly."""
-        assert hasattr(pipeline, "_token_counter")
-        assert pipeline._token_counter is not None
-
-        # Verify the callback manager is set on the LLM
-        assert pipeline._llm.callback_manager is not None
-
     def test_token_usage_dict_structure(self, pipeline):
         """Test that _generate returns token_usage as a dict with expected keys."""
         result = pipeline._generate("What is AI?", top_k=2)
@@ -174,7 +166,6 @@ class TestBasicRAGPipeline:
         assert "prompt_tokens" in result.token_usage
         assert "completion_tokens" in result.token_usage
         assert "total_tokens" in result.token_usage
-        assert "embedding_tokens" in result.token_usage
 
     def test_token_counter_reset_between_generations(self, pipeline):
         """Test that token counter is reset between generations."""

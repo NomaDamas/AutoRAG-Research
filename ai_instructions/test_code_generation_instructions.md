@@ -25,7 +25,7 @@
 11. Make sure the setup will be identical to every test sessions.
 12. When you need to test async function, make sure to use `pytest.mark.asyncio` decorator.
 13. Avoid to use docstring annotation in the test functions. Let the test code speak itself.
-14. If the test function uses LLM API call like using LLM or Embedding model, it should be marked as `@pytest.mark.api` or uses mock object. Prefer to use mock object. (Use LlamaIndex MockLLM or MockEmbedding)
+14. If the test function uses LLM API call like using LLM or Embedding model, it should be marked as `@pytest.mark.api` or uses mock object. Prefer to use mock object. (Use LangChain FakeListLLM or FakeEmbeddings from langchain_core)
 15. If the test function uses GPU resource (like local model inference), it should be marked as `@pytest.mark.gpu`.
 16. Avoid to use `typing.List`, `typing.Dict` and `typing.Optional`. Use built-in `list`, `dict`, and `|` instead.
 

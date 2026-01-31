@@ -5,7 +5,7 @@ Integration tests use real data subsets against PostgreSQL.
 """
 
 import pytest
-from llama_index.core import MockEmbedding
+from langchain_core.embeddings.fake import FakeEmbeddings
 
 from autorag_research.data.ragbench import (
     RAGBenchIngestor,
@@ -28,7 +28,7 @@ EMBEDDING_DIM = 768
 
 @pytest.fixture
 def mock_embedding_model():
-    return MockEmbedding(EMBEDDING_DIM)
+    return FakeEmbeddings(size=EMBEDDING_DIM)
 
 
 # ==================== Unit Tests: Helper Functions ====================

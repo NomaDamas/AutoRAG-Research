@@ -95,7 +95,7 @@ ORM Models (orm/models/) - SQLAlchemy with pgvector
 @pytest.mark.asyncio   # Async test
 ```
 
-Prefer mocks over real API calls (use LlamaIndex MockLLM/MockEmbedding).
+Prefer mocks over real API calls (use LangChain FakeListLLM/FakeEmbeddings from langchain_core).
 
 ## Code Style
 
