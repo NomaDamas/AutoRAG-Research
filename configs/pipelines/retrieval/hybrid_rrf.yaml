@@ -1,0 +1,20 @@
+# Hybrid RRF Retrieval Pipeline Configuration
+#
+# Fuses two retrieval pipelines using Reciprocal Rank Fusion.
+# RRF uses ranks only (ignores scores), making it robust to score scale differences.
+#
+# Formula: RRF(d) = sum(1/(k + rank_i(d))) for each pipeline
+#
+# Parameters:
+#   retrieval_pipeline_1_name: First retrieval pipeline name (e.g., "vector_search")
+#   retrieval_pipeline_2_name: Second retrieval pipeline name (e.g., "bm25")
+#   rrf_k: RRF constant (default: 60, higher = more emphasis on top ranks)
+#
+_target_: autorag_research.pipelines.retrieval.hybrid.HybridRRFRetrievalPipelineConfig
+description: "Hybrid retrieval using Reciprocal Rank Fusion"
+name: hybrid_rrf
+retrieval_pipeline_1_name: vector_search
+retrieval_pipeline_2_name: bm25
+rrf_k: 60
+top_k: 10
+batch_size: 100

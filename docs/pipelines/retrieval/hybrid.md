@@ -34,8 +34,8 @@ Combines normalized scores with configurable weights.
 
 | Method | Description |
 |--------|-------------|
-| `mm` | Min-max scaling to [0, 1] |
-| `tmm` | Theoretical min-max with known bounds |
+| `mm` | Min-max scaling to [0, 1] using actual min/max |
+| `tmm` | Theoretical min with actual max (e.g., BM25 min=0, cosine min=-1) |
 | `z` | Z-score standardization |
 | `dbsf` | 3-sigma distribution-based |
 
@@ -88,10 +88,8 @@ top_k: 10
 |--------|------|---------|-------------|
 | weight | float | 0.5 | Weight for pipeline_1 (0=full pipeline_2, 1=full pipeline_1) |
 | normalize_method | str | mm | Normalization: mm, tmm, z, dbsf |
-| pipeline_1_min | float | None | Min score for tmm (pipeline_1) |
-| pipeline_1_max | float | None | Max score for tmm (pipeline_1) |
-| pipeline_2_min | float | None | Min score for tmm (pipeline_2) |
-| pipeline_2_max | float | None | Max score for tmm (pipeline_2) |
+| pipeline_1_min | float | None | Theoretical min score for tmm (pipeline_1) |
+| pipeline_2_min | float | None | Theoretical min score for tmm (pipeline_2) |
 
 ## Usage
 
