@@ -283,7 +283,9 @@ class RetrievalPipelineService(BaseService):
         Returns:
             List of result lists, one per query. Each result dict contains:
             - doc_id: Chunk ID
-            - score: Similarity score (1 - distance for single, -distance for multi)
+            - score: Relevance score in [-1, 1] range (higher = more relevant)
+                - single: 1 - cosine_distance (= cosine_similarity)
+                - multi: MaxSim / n_query_vectors (normalized late interaction)
             - content: Chunk text content
 
         Raises:
@@ -299,12 +301,17 @@ class RetrievalPipelineService(BaseService):
                 if search_mode == "multi":
                     if query.embeddings is None:
                         raise ValueError(f"Query {query_id} has no multi-vector embeddings")  # noqa: TRY003
+                    query_vectors = list(query.embeddings)
+                    n_query_vectors = len(query_vectors)
                     results = uow.chunks.maxsim_search(
-                        query_vectors=list(query.embeddings),
+                        query_vectors=query_vectors,
                         vector_column="embeddings",
                         limit=top_k,
                     )
-                    all_results.append([self._make_retrieval_result(chunk, -distance) for chunk, distance in results])
+                    # Normalize by number of query vectors to get [-1, 1] range
+                    all_results.append([
+                        self._make_retrieval_result(chunk, -distance / n_query_vectors) for chunk, distance in results
+                    ])
                 else:
                     if query.embedding is None:
                         raise ValueError(f"Query {query_id} has no embedding")  # noqa: TRY003

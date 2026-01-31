@@ -134,9 +134,10 @@ class TestVectorSearchMultiVector:
             assert len(results) == 1
             assert len(results[0]) == 2
 
-            # Verify score conversion (-distance for MaxSim)
+            # Verify score conversion: -distance / n_query_vectors for MaxSim
+            # With 2 query vectors: -(-0.8) / 2 = 0.4
             assert results[0][0]["doc_id"] == 1
-            assert results[0][0]["score"] == pytest.approx(0.8)  # -(-0.8)
+            assert results[0][0]["score"] == pytest.approx(0.4)
 
             # Verify maxsim_search was called with converted embeddings
             mock_search.assert_called_once()

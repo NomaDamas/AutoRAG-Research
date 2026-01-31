@@ -316,6 +316,8 @@ class BaseVectorRepository(GenericRepository[T]):
         Returns:
             List of tuples (entity, distance_score) ordered by similarity.
             Lower distance scores indicate higher similarity.
+            The score is the cosine distance, which is calculated as (1 - cosine_similarity).
+            0 means identical, 2 means opposite, and 1 means orthogonal.
 
         Note:
             Requires VectorChord extension and vchordrq index on the embedding column.
@@ -423,6 +425,8 @@ class BaseVectorRepository(GenericRepository[T]):
         Returns:
             List of tuples (entity, distance_score) ordered by similarity.
             Lower distance scores indicate higher similarity.
+            The distance score calculated by (1 - maxsim_score), thus the range is [-infinity, 0].
+            You might normalize this score by dividing by the number of query vectors.
 
         Note:
             Requires VectorChord extension and vchordrq index with vector_maxsim_ops.
