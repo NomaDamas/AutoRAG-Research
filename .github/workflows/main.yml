@@ -78,7 +78,7 @@ jobs:
           PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U postgres -d testdb -f postgresql/db/init/002-seed.sql
 
       - name: Run tests
-        run: uv run python -m pytest tests --cov --cov-config=pyproject.toml --cov-report=xml -m "not gpu and not data and not ci_skip"
+        run: uv run python -m pytest tests -m "not gpu and not data and not ci_skip"
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -88,12 +88,6 @@ jobs:
 
       - name: Check typing
         run: uv run ty check
-
-      - name: Upload coverage reports to Codecov with GitHub Action on Python 3.11
-        uses: codecov/codecov-action@v4
-        if: ${{ matrix.python-version == '3.11' }}
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   check-docs:
     runs-on: ubuntu-latest
