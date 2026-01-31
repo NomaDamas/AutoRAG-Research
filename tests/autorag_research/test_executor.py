@@ -61,7 +61,7 @@ class TestExecutorWithRealDB:
     def mock_bm25_search(self):
         """Create a mock bm25_search function for testing."""
 
-        def mock_search(query_ids: list[int | str], top_k: int = 10, **kwargs) -> list[list[dict]]:
+        def mock_search(self, query_ids: list[int | str], top_k: int = 10, **kwargs) -> list[list[dict]]:
             results = []
             for _ in query_ids:
                 results.append([{"doc_id": i + 1, "score": 0.9 - i * 0.1} for i in range(top_k)])
@@ -160,7 +160,7 @@ class TestExecutorWithRealDB:
 
         # Mock bm25_search to always fail
         def mock_failing_search(*args, **kwargs):
-            raise Exception("BM25 error")
+            raise RuntimeError("BM25 error")  # noqa: TRY003
 
         with patch(
             "autorag_research.orm.service.retrieval_pipeline.RetrievalPipelineService.bm25_search",
