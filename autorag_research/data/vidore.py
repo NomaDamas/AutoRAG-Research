@@ -50,9 +50,6 @@ VIDORE_V1_DATASETS = Literal[
     "syntheticDocQA_healthcare_industry_test",
 ]
 
-# Derive valid dataset names from Literal type (single source of truth)
-_VALID_DATASET_NAMES: list[str] = list(get_args(VIDORE_V1_DATASETS))
-
 
 @register_ingestor(
     name="vidore",
@@ -94,7 +91,7 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
             InvalidDatasetNameError: If dataset_name is not a valid ViDoRe V1 dataset.
         """
         super().__init__(embedding_model, late_interaction_embedding_model)
-        if dataset_name not in _VALID_DATASET_NAMES:
+        if dataset_name not in list(get_args(VIDORE_V1_DATASETS)):
             raise InvalidDatasetNameError(dataset_name)
         self.dataset_name = dataset_name
 
@@ -241,14 +238,11 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
         if subset != "test":
             logger.warning(f"ViDoRe V1 datasets only have 'test' split, ignoring subset='{subset}'")
 
-        # Load dataset with streaming to reduce memory usage
-        logger.info(f"Loading vidore/{self.dataset_name} with streaming...")
-        ds = load_dataset(f"vidore/{self.dataset_name}", split="test", streaming=True)
-
-        # Collect data from stream (must load all for random sampling)
-        rows: list[dict[str, Any]] = list(ds)
-        total_count = len(rows)
-        logger.info(f"Loaded {total_count} rows from stream")
+        # Load dataset (streaming disabled - random sampling requires knowing total count)
+        logger.info(f"Loading vidore/{self.dataset_name}...")
+        ds = load_dataset(f"vidore/{self.dataset_name}", split="test")
+        total_count = len(ds)  # ty: ignore[invalid-argument-type]
+        logger.info(f"Loaded dataset with {total_count} rows")
 
         # Calculate effective limit and select indices
         effective_limit = self._compute_effective_limit(query_limit, min_corpus_cnt)
@@ -256,18 +250,15 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
 
         logger.info(f"Selected {len(selected_indices)} items from {total_count} total")
 
-        # Extract only selected data (memory efficient)
-        selected_rows = [rows[i] for i in selected_indices]
+        ds_subset = ds.select(selected_indices)
 
-        # Process selected rows
-        image_list = [row["image"] for row in selected_rows]
-        queries = [row["query"] for row in selected_rows]
+        # Extract data from selected subset
+        image_list = list(ds_subset["image"])
+        queries = list(ds_subset["query"])
 
         # Get options for arxivqa (if available)
         options_list: list[str | None] = (
-            [row.get("options") for row in selected_rows]
-            if self.dataset_name == "arxivqa_test_subsampled"
-            else [None] * len(queries)
+            list(ds_subset["options"]) if self.dataset_name == "arxivqa_test_subsampled" else [None] * len(queries)
         )
 
         # Format queries (special handling for arxivqa)
@@ -276,7 +267,7 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
         # Parse answers (dataset-specific)
         has_answer_field = self.dataset_name != "tabfquad_test_subsampled"
         if has_answer_field:
-            raw_answers = [row.get("answer") for row in selected_rows]
+            raw_answers = list(ds_subset["answer"])
             answers: list[list[str] | None] = [self._parse_answer(ans) for ans in raw_answers]
         else:
             answers = [None] * len(queries)
