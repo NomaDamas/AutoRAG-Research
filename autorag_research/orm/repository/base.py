@@ -294,22 +294,8 @@ class BaseVectorRepository(GenericRepository[T]):
             Requires VectorChord extension and vchordrq index on the embedding column.
             Example index: CREATE INDEX ON table USING vchordrq (embedding vector_cosine_ops);
         """
-        if not query_vector:
-            return []
-
-        vec_str = _vec_to_pg_literal(query_vector)
-        table_name = self.model_cls.__tablename__  # ty: ignore[possibly-missing-attribute]
-        sql = text(f"""
-            SELECT id
-            FROM {table_name}
-            WHERE {vector_column} IS NOT NULL
-            ORDER BY {vector_column} <=> '{vec_str}'::vector
-            LIMIT :limit
-        """)  # noqa: S608
-
-        results = self.session.execute(sql, {"limit": limit}).fetchall()
-        ids = [row[0] for row in results]
-        return self.get_by_ids(ids)
+        results_with_scores = self.vector_search_with_scores(query_vector, vector_column, limit)
+        return [entity for entity, _ in results_with_scores]
 
     def vector_search_with_scores(
         self,
