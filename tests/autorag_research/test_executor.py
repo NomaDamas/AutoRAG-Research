@@ -58,20 +58,18 @@ class TestExecutorWithRealDB:
             session.close()
 
     @pytest.fixture
-    def mock_bm25_module(self):
-        """Create a mock BM25DBModule for testing."""
+    def mock_bm25_search(self):
+        """Create a mock bm25_search function for testing."""
 
-        def mock_run(queries: list[str], top_k: int) -> list[list[dict]]:
+        def mock_search(query_ids: list[int | str], top_k: int = 10, **kwargs) -> list[list[dict]]:
             results = []
-            for _ in queries:
+            for _ in query_ids:
                 results.append([{"doc_id": i + 1, "score": 0.9 - i * 0.1} for i in range(top_k)])
             return results
 
-        mock = MagicMock()
-        mock.run = mock_run
-        return mock
+        return mock_search
 
-    def test_run_successful_pipeline(self, session_factory, cleanup_pipelines, mock_bm25_module):
+    def test_run_successful_pipeline(self, session_factory, cleanup_pipelines, mock_bm25_search):
         """Test successful pipeline execution with real database."""
         config = ExecutorConfig(
             pipelines=[
@@ -88,8 +86,8 @@ class TestExecutorWithRealDB:
         executor = Executor(session_factory, config)
 
         with patch(
-            "autorag_research.nodes.retrieval.bm25.BM25Module",
-            return_value=mock_bm25_module,
+            "autorag_research.orm.service.retrieval_pipeline.RetrievalPipelineService.bm25_search",
+            mock_bm25_search,
         ):
             result = executor.run()
 
@@ -108,7 +106,7 @@ class TestExecutorWithRealDB:
         assert all(mr.success for mr in result.metric_results)
         assert all(mr.average is not None for mr in result.metric_results)
 
-    def test_multiple_pipelines_execution(self, session_factory, cleanup_pipelines, mock_bm25_module):
+    def test_multiple_pipelines_execution(self, session_factory, cleanup_pipelines, mock_bm25_search):
         """Test execution of multiple pipelines."""
         config = ExecutorConfig(
             pipelines=[
@@ -130,8 +128,8 @@ class TestExecutorWithRealDB:
         executor = Executor(session_factory, config)
 
         with patch(
-            "autorag_research.nodes.retrieval.bm25.BM25Module",
-            return_value=mock_bm25_module,
+            "autorag_research.orm.service.retrieval_pipeline.RetrievalPipelineService.bm25_search",
+            mock_bm25_search,
         ):
             result = executor.run()
 
@@ -160,13 +158,13 @@ class TestExecutorWithRealDB:
 
         executor = Executor(session_factory, config)
 
-        # Mock BM25DBModule to always fail
-        mock_module = MagicMock()
-        mock_module.run.side_effect = Exception("BM25 error")
+        # Mock bm25_search to always fail
+        def mock_failing_search(*args, **kwargs):
+            raise Exception("BM25 error")
 
         with patch(
-            "autorag_research.nodes.retrieval.bm25.BM25Module",
-            return_value=mock_module,
+            "autorag_research.orm.service.retrieval_pipeline.RetrievalPipelineService.bm25_search",
+            mock_failing_search,
         ):
             result = executor.run()
 
