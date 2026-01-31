@@ -323,3 +323,28 @@ class RetrievalPipelineService(BaseService):
                         self._make_retrieval_result(chunk, 1 - distance) for chunk, distance in results
                     ])
         return all_results
+
+    def vector_search_by_embedding(
+        self,
+        embedding: list[float],
+        top_k: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Execute vector search using a provided embedding directly.
+
+        This method enables retrieval pipelines that generate embeddings
+        dynamically (like HyDE) rather than using pre-computed query embeddings.
+
+        Args:
+            embedding: The embedding vector to search with.
+            top_k: Number of top results to return.
+
+        Returns:
+            List of result dicts containing doc_id, score, and content.
+            Score is cosine similarity in [-1, 1] range.
+        """
+        with self._create_uow() as uow:
+            results = uow.chunks.vector_search_with_scores(
+                query_vector=embedding,
+                limit=top_k,
+            )
+            return [self._make_retrieval_result(chunk, 1 - distance) for chunk, distance in results]
