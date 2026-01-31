@@ -385,3 +385,62 @@ def create_mock_llm(
     }
     mock.invoke.return_value = mock_response
     return mock
+
+
+def create_mock_retrieval_pipeline(
+    pipeline_id: int = 1,
+    default_results: list[dict[str, Any]] | None = None,
+) -> MagicMock:
+    """Create a mock retrieval pipeline for testing generation pipelines.
+
+    Args:
+        pipeline_id: The pipeline ID to return.
+        default_results: Default retrieval results. If None, returns seed data chunk IDs (1-6).
+
+    Returns:
+        MagicMock configured as a BaseRetrievalPipeline.
+        The mock.retrieve is a MagicMock with side_effect, so call_count is available.
+    """
+    mock = MagicMock()
+    mock.pipeline_id = pipeline_id
+
+    if default_results is not None:
+        mock.retrieve.return_value = default_results
+    else:
+        # Default: return chunk IDs that exist in seed data (1-6)
+        # Use side_effect to preserve call_count tracking on the MagicMock
+        def mock_retrieve(query_text: str, top_k: int):
+            return [{"doc_id": i, "score": 0.9 - i * 0.1} for i in range(1, min(top_k + 1, 7))]
+
+        mock.retrieve.side_effect = mock_retrieve
+
+    return mock
+
+
+def cleanup_pipeline_results_factory(session_factory):
+    """Factory for creating cleanup fixtures for pipeline results.
+
+    Usage in tests:
+        @pytest.fixture
+        def cleanup(self, session_factory):
+            yield from cleanup_pipeline_results_factory(session_factory)
+
+    Args:
+        session_factory: SQLAlchemy session factory.
+
+    Yields:
+        List to append pipeline IDs for cleanup.
+    """
+    from autorag_research.orm.repository.executor_result import ExecutorResultRepository
+
+    created_pipeline_ids: list[int] = []
+    yield created_pipeline_ids
+
+    session = session_factory()
+    try:
+        repo = ExecutorResultRepository(session)
+        for pipeline_id in created_pipeline_ids:
+            repo.delete_by_pipeline(pipeline_id)
+        session.commit()
+    finally:
+        session.close()
