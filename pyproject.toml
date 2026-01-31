@@ -89,6 +89,7 @@ dev = [
     "pytest-asyncio>=1.3.0",
     "python-dotenv>=1.2.1",
     "llama-index-embeddings-openai-like>=0.2.0",
+    "mkdocs-typer2>=0.2.0",
 ]
 
 [build-system]
