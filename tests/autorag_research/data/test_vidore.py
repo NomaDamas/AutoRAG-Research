@@ -1,15 +1,17 @@
-"""Tests for ViDoRe Ingestors.
+"""Tests for ViDoRe Unified Ingestor (TDD - written BEFORE implementation).
 
-Unit tests for helper functions and constructor validation.
-Integration tests use real data subsets against PostgreSQL.
+This test file follows the Test-Driven Development approach:
+1. Tests are written based on the Mapping_Strategy.md design document
+2. Tests define the expected behavior of ViDoReIngestor
+3. Implementation will be written to make these tests pass
+
+The unified ViDoReIngestor handles all 10 V1 datasets through a single
+parameterized class with dataset_name: VIDORE_V1_DATASETS.
 """
 
 import pytest
 
-from autorag_research.data.vidore import (
-    ViDoReArxivQAIngestor,
-    ViDoReDatasets,
-)
+from autorag_research.data.vidore import ViDoReIngestor
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestConfig,
@@ -17,79 +19,67 @@ from tests.autorag_research.data.ingestor_test_utils import (
     create_test_database,
 )
 
-# ==================== Unit Tests: Dataset Validation ====================
-
-
-class TestViDoReDatasetValidation:
-    """Test dataset name validation for ViDoReIngestor."""
-
-    def test_valid_dataset_names(self):
-        """Verify all valid dataset names are in the list."""
-        expected_datasets = [
-            "arxivqa_test_subsampled",
-            "docvqa_test_subsampled",
-            "infovqa_test_subsampled",
-            "tabfquad_test_subsampled",
-            "tatdqa_test",
-            "shiftproject_test",
-            "syntheticDocQA_artificial_intelligence_test",
-            "syntheticDocQA_energy_test",
-            "syntheticDocQA_government_reports_test",
-            "syntheticDocQA_healthcare_industry_test",
-        ]
-        assert ViDoReDatasets == expected_datasets
-
-
 # ==================== Integration Tests ====================
 
-
-VIDORE_INTEGRATION_CONFIG = IngestorTestConfig(
+VIDORE_CONFIG = IngestorTestConfig(
     expected_query_count=10,
-    expected_image_chunk_count=10,  # ViDoRe has 1:1 query to image mapping
-    chunk_count_is_minimum=False,  # Exact counts for ViDoRe
+    expected_image_chunk_count=10,  # 1:1 query-to-image mapping
     check_retrieval_relations=True,
-    check_generation_gt=True,  # ViDoRe arxivqa has answers
-    generation_gt_required_for_all=True,  # All queries must have generation_gt
-    primary_key_type="bigint",
-    db_name="vidore_integration_test",
+    check_generation_gt=True,  # arxivqa has answers
+    generation_gt_required_for_all=True,  # All arxivqa rows have answers
+    primary_key_type="string",
+    db_name="vidore_test",
 )
 
 
 @pytest.mark.data
-class TestViDoReArxivQAIngestorIntegration:
-    """Integration tests using real ViDoRe arxivqa dataset subsets."""
+class TestViDoReIngestorIntegration:
+    """Integration tests for unified ViDoReIngestor using arxivqa dataset."""
 
-    def test_ingest_arxivqa_subset(self):
-        """Test ingestion of arxivqa dataset with query limit."""
-        with create_test_database(VIDORE_INTEGRATION_CONFIG) as db:
+    def test_ingest_arxivqa_subset(self) -> None:
+        """Basic integration test - verify_all() handles all standard checks.
+
+        Tests against arxivqa_test_subsampled which has:
+        - 1:1 query-image mapping
+        - Single letter answers (A/B/C/D)
+        - Multiple choice options in query
+        """
+        with create_test_database(VIDORE_CONFIG) as db:
             service = MultiModalIngestionService(db.session_factory, schema=db.schema)
 
-            ingestor = ViDoReArxivQAIngestor()
+            ingestor = ViDoReIngestor(dataset_name="arxivqa_test_subsampled")
             ingestor.set_service(service)
-            ingestor.ingest(
-                query_limit=VIDORE_INTEGRATION_CONFIG.expected_query_count,
-            )
+            ingestor.ingest(query_limit=VIDORE_CONFIG.expected_query_count)
 
-            verifier = IngestorTestVerifier(service, db.schema, VIDORE_INTEGRATION_CONFIG)
+            verifier = IngestorTestVerifier(service, db.schema, VIDORE_CONFIG)
             verifier.verify_all()
 
-    def test_query_contents_format(self):
-        """Test that query contents include options in expected format (ArxivQA-specific)."""
+    def test_arxivqa_query_format_contains_options(self) -> None:
+        """Test arxivqa-specific query format includes options.
+
+        ArxivQA queries must be formatted as:
+        'Given the following query and options, select the correct option.
+
+        Query: <original query>
+
+        Options: <option1>
+        <option2>
+        ...'
+        """
         config = IngestorTestConfig(
-            expected_query_count=3,
-            expected_image_chunk_count=3,
-            chunk_count_is_minimum=False,
+            expected_query_count=5,
+            expected_image_chunk_count=5,
             check_retrieval_relations=True,
             check_generation_gt=True,
             generation_gt_required_for_all=True,
-            primary_key_type="bigint",
-            db_name="vidore_query_format_test",
+            primary_key_type="string",
+            db_name="vidore_arxivqa_format_test",
         )
 
         with create_test_database(config) as db:
             service = MultiModalIngestionService(db.session_factory, schema=db.schema)
 
-            ingestor = ViDoReArxivQAIngestor()
+            ingestor = ViDoReIngestor(dataset_name="arxivqa_test_subsampled")
             ingestor.set_service(service)
             ingestor.ingest(query_limit=config.expected_query_count)
 
@@ -98,6 +88,12 @@ class TestViDoReArxivQAIngestorIntegration:
                 queries = uow.queries.get_all(limit=10)
                 for query in queries:
                     # Check query contains expected format elements
-                    assert "Query:" in query.contents
-                    assert "Options:" in query.contents
-                    assert "Given the following query and options" in query.contents
+                    assert "Given the following query and options" in query.contents, (
+                        f"Query {query.id} missing header: {query.contents[:100]}..."
+                    )
+                    assert "Query:" in query.contents, (
+                        f"Query {query.id} missing 'Query:' label: {query.contents[:100]}..."
+                    )
+                    assert "Options:" in query.contents, (
+                        f"Query {query.id} missing 'Options:' label: {query.contents[:100]}..."
+                    )
