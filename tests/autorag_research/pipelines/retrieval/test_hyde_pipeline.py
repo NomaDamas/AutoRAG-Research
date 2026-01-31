@@ -13,7 +13,6 @@ from langchain_core.language_models.fake import FakeListLLM
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
-from autorag_research.orm.schema import Chunk
 from autorag_research.pipelines.retrieval.hyde import (
     DEFAULT_HYDE_PROMPT_TEMPLATE,
     HyDEPipelineConfig,
@@ -140,7 +139,6 @@ class TestHyDERetrievalPipeline:
         finally:
             session.close()
 
-
     def test_pipeline_creation_custom_template(
         self,
         session_factory: sessionmaker[Session],
@@ -184,7 +182,6 @@ class TestHyDERetrievalPipeline:
         config = pipeline._get_pipeline_config()
         assert config["type"] == "hyde"
         assert config["prompt_template"] == custom_template
-
 
     def test_generate_hypothetical_document_uses_template(
         self,

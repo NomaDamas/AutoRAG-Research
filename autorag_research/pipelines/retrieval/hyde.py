@@ -19,7 +19,7 @@ from langchain_core.language_models import BaseLanguageModel
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
-from autorag_research.injection import health_check_llm, health_check_embedding
+from autorag_research.injection import health_check_embedding, health_check_llm
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
 DEFAULT_HYDE_PROMPT_TEMPLATE = """Please write a passage to answer the question.
@@ -192,7 +192,7 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
                 with self.session_factory() as session:
                     query = session.get(Query, query_id)
                     if query is None:
-                        raise ValueError(f"Query {query_id} not found")
+                        raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
                     query_text = query.contents  # type: ignore[union-attr]
 
                 # Generate hypothetical document

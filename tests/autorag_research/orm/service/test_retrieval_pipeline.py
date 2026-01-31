@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.repository.query import QueryRepository
 from autorag_research.orm.schema import Chunk
