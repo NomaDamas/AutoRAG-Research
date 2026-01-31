@@ -256,3 +256,22 @@ class GenerationPipelineService(BaseService):
             deleted_count = uow.executor_results.delete_by_pipeline(pipeline_id)
             uow.commit()
             return deleted_count
+
+    def get_chunk_contents(self, chunk_ids: list[int]) -> list[str]:
+        """Get chunk contents by IDs, preserving order.
+
+        Args:
+            chunk_ids: List of chunk IDs to fetch.
+
+        Returns:
+            List of chunk content strings in the same order as input IDs.
+            Returns empty string for any ID not found.
+        """
+        if not chunk_ids:
+            return []
+
+        with self._create_uow() as uow:
+            chunks = uow.chunks.get_by_ids(chunk_ids)
+            # Create a map for preserving order
+            chunk_map = {chunk.id: chunk.contents for chunk in chunks}
+            return [chunk_map.get(cid, "") for cid in chunk_ids]

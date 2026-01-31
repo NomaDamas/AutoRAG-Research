@@ -227,3 +227,85 @@ def extract_image_from_data_uri(data_uri: str) -> tuple[bytes, str]:
     base64_data = match.group(2)
     image_bytes = base64.b64decode(base64_data)
     return image_bytes, mimetype
+
+
+def extract_langchain_token_usage(response: Any) -> dict[str, int] | None:
+    """Extract token usage from a LangChain LLM response.
+
+    Supports multiple LangChain response formats:
+    - usage_metadata (newer LangChain style with input_tokens/output_tokens)
+    - response_metadata.token_usage (older style with prompt_tokens/completion_tokens)
+
+    Args:
+        response: LangChain LLM response object (AIMessage, etc.)
+
+    Returns:
+        Dictionary with prompt_tokens, completion_tokens, total_tokens keys,
+        or None if token usage is not available.
+
+    Example:
+        ```python
+        response = llm.invoke("Hello")
+        token_usage = extract_langchain_token_usage(response)
+        if token_usage:
+            print(f"Total tokens: {token_usage['total_tokens']}")
+        ```
+    """
+    # Try newer LangChain style (usage_metadata with input_tokens/output_tokens)
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        usage = response.usage_metadata
+        return {
+            "prompt_tokens": usage.get("input_tokens", 0),
+            "completion_tokens": usage.get("output_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+        }
+
+    # Try older LangChain style (response_metadata.token_usage)
+    if hasattr(response, "response_metadata"):
+        usage = response.response_metadata.get("token_usage", {})
+        if usage:
+            return {
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+            }
+
+    return None
+
+
+def aggregate_token_usage(
+    current: dict[str, int] | None,
+    new: dict[str, int] | None,
+) -> dict[str, int] | None:
+    """Aggregate token usage from multiple LLM calls.
+
+    Combines token counts from multiple responses, useful for pipelines
+    that make multiple LLM calls (e.g., IRCoT iterative reasoning).
+
+    Args:
+        current: Current aggregated token usage (or None).
+        new: New token usage to add (or None).
+
+    Returns:
+        Aggregated token usage dict, or None if both inputs are None.
+
+    Example:
+        ```python
+        total = None
+        for response in responses:
+            usage = extract_langchain_token_usage(response)
+            total = aggregate_token_usage(total, usage)
+        print(f"Total tokens across all calls: {total['total_tokens']}")
+        ```
+    """
+    if new is None:
+        return current
+
+    if current is None:
+        return new.copy()
+
+    return {
+        "prompt_tokens": current.get("prompt_tokens", 0) + new.get("prompt_tokens", 0),
+        "completion_tokens": current.get("completion_tokens", 0) + new.get("completion_tokens", 0),
+        "total_tokens": current.get("total_tokens", 0) + new.get("total_tokens", 0),
+    }

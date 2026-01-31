@@ -16,9 +16,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
-from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.util import aggregate_token_usage, extract_langchain_token_usage
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -162,24 +162,6 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
             "llm_model": model_name,
         }
 
-    def _get_chunk_contents(self, chunk_ids: list[int]) -> list[str]:
-        """Get chunk contents by IDs.
-
-        Args:
-            chunk_ids: List of chunk IDs to fetch.
-
-        Returns:
-            List of chunk content strings in the same order as input IDs.
-        """
-        if not chunk_ids:
-            return []
-
-        with GenerationUnitOfWork(self.session_factory, self._schema) as uow:
-            chunks = uow.chunks.get_by_ids(chunk_ids)
-            # Create a map for preserving order
-            chunk_map = {chunk.id: chunk.contents for chunk in chunks}
-            return [chunk_map.get(cid, "") for cid in chunk_ids]
-
     def _extract_first_sentence(self, text: str) -> str:
         """Extract the first sentence from generated text.
 
@@ -260,57 +242,6 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
             paragraphs=numbered_paragraphs,
         )
 
-    def _extract_token_usage(self, response: Any) -> dict[str, int] | None:
-        """Extract token usage from LLM response.
-
-        Args:
-            response: LLM response object.
-
-        Returns:
-            Token usage dict or None if not available.
-        """
-        # Try to get usage from response metadata (LangChain style)
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = response.usage_metadata
-            return {
-                "prompt_tokens": usage.get("input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0),
-            }
-        elif hasattr(response, "response_metadata"):
-            usage = response.response_metadata.get("token_usage", {})
-            if usage:
-                return {
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                }
-        return None
-
-    def _aggregate_token_usage(
-        self, current: dict[str, int] | None, new: dict[str, int] | None
-    ) -> dict[str, int] | None:
-        """Aggregate token usage from multiple LLM calls.
-
-        Args:
-            current: Current aggregated token usage.
-            new: New token usage to add.
-
-        Returns:
-            Aggregated token usage dict.
-        """
-        if new is None:
-            return current
-
-        if current is None:
-            return new.copy()
-
-        return {
-            "prompt_tokens": current.get("prompt_tokens", 0) + new.get("prompt_tokens", 0),
-            "completion_tokens": current.get("completion_tokens", 0) + new.get("completion_tokens", 0),
-            "total_tokens": current.get("total_tokens", 0) + new.get("total_tokens", 0),
-        }
-
     def _generate(self, query: str, top_k: int) -> GenerationResult:
         """Generate answer using IRCoT: interleave retrieval with chain-of-thought.
 
@@ -356,7 +287,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
 
         # Get paragraph contents
         if chunk_ids:
-            paragraphs = self._get_chunk_contents(chunk_ids)
+            paragraphs = self._service.get_chunk_contents(chunk_ids)
 
         # 2. Iterative reasoning-retrieval loop
         for step in range(self.max_steps):
@@ -371,8 +302,8 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
             response_text = response.content if hasattr(response, "content") else str(response)
 
             # Aggregate token usage
-            token_usage = self._extract_token_usage(response)
-            total_token_usage = self._aggregate_token_usage(total_token_usage, token_usage)
+            token_usage = extract_langchain_token_usage(response)
+            total_token_usage = aggregate_token_usage(total_token_usage, token_usage)
 
             # b. Extract first sentence only and add to history
             first_sentence = self._extract_first_sentence(response_text)
@@ -396,7 +327,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
 
             # Get contents for new chunks
             if new_chunk_ids:
-                new_contents = self._get_chunk_contents(new_chunk_ids)
+                new_contents = self._service.get_chunk_contents(new_chunk_ids)
                 paragraphs.extend(new_contents)
 
             # f. Apply paragraph_budget cap (FIFO: keep first N)
@@ -412,8 +343,8 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
         answer_text = qa_response.content if hasattr(qa_response, "content") else str(qa_response)
 
         # Aggregate final token usage
-        qa_token_usage = self._extract_token_usage(qa_response)
-        total_token_usage = self._aggregate_token_usage(total_token_usage, qa_token_usage)
+        qa_token_usage = extract_langchain_token_usage(qa_response)
+        total_token_usage = aggregate_token_usage(total_token_usage, qa_token_usage)
 
         # 4. Build metadata
         metadata = {

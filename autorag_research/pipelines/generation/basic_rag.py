@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
-from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
@@ -147,21 +146,6 @@ class BasicRAGPipeline(BaseGenerationPipeline):
             "retrieval_pipeline_id": self._retrieval_pipeline.pipeline_id,
         }
 
-    def _get_chunk_contents(self, chunk_ids: list[int]) -> list[str]:
-        """Get chunk contents by IDs.
-
-        Args:
-            chunk_ids: List of chunk IDs to fetch.
-
-        Returns:
-            List of chunk content strings in the same order as input IDs.
-        """
-        with GenerationUnitOfWork(self.session_factory, self._schema) as uow:
-            chunks = uow.chunks.get_by_ids(chunk_ids)
-            # Create a map for preserving order
-            chunk_map = {chunk.id: chunk.contents for chunk in chunks}
-            return [chunk_map.get(cid, "") for cid in chunk_ids]
-
     def _generate(self, query: str, top_k: int) -> GenerationResult:
         """Generate answer using simple RAG: retrieve once, generate once.
 
@@ -175,9 +159,9 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         # 1. Retrieve relevant chunks using composed retrieval pipeline
         retrieved = self._retrieval_pipeline.retrieve(query, top_k)
 
-        # 2. Get chunk contents
+        # 2. Get chunk contents via service
         chunk_ids = [r["doc_id"] for r in retrieved]
-        chunk_contents = self._get_chunk_contents(chunk_ids)
+        chunk_contents = self._service.get_chunk_contents(chunk_ids)
 
         # 3. Build prompt with context
         context = "\n\n".join(chunk_contents)
@@ -187,24 +171,9 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         response = self._llm.invoke(prompt)
 
         # 5. Extract token usage from response metadata
-        token_usage = None
+        from autorag_research.util import extract_langchain_token_usage
 
-        # Try to get usage from response metadata (LangChain style)
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = response.usage_metadata
-            token_usage = {
-                "prompt_tokens": usage.get("input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0),
-            }
-        elif hasattr(response, "response_metadata"):
-            usage = response.response_metadata.get("token_usage", {})
-            if usage:
-                token_usage = {
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                }
+        token_usage = extract_langchain_token_usage(response)
 
         # Extract text content from response
         text = response.content if hasattr(response, "content") else str(response)
