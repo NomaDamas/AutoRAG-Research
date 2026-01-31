@@ -27,7 +27,7 @@ There are so many pipelines out there, like self-RAG, VisConde, HyDE, etc. Your 
 
 ## Remember this
 
-1. For the embedding model and LLM model, the LlamaIndex embedding model and LLM model are used by default.
+1. For the embedding model and LLM model, the Langchain embedding model and LLM model are used by default.
 2. For multi-modal embedding models like BiPali, and late interaction embedding models like ColPali or ColBERT, the custom class can be used in the `autorag_research/embeddings` subpackage.
 3. Do not initialize GPU-related models inside the pipeline. Always inject the dependency.
 4. Suppose the user is using the API-based models for embedding and an LLM model. Rerankers might be run in a local environment if an API-based model is not available.
