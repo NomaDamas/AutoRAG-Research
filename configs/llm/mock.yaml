@@ -1,2 +1,3 @@
-_target_: llama_index.core.llms.MockLLM
-max_tokens: 256
+_target_: langchain_core.language_models.fake.FakeListLLM
+responses:
+  - "This is a mock response for testing."

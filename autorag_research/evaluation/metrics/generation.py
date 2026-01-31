@@ -1,12 +1,14 @@
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from langchain_core.embeddings import Embeddings
 
 import evaluate
 import nltk
 import pandas as pd
-from llama_index.core.embeddings import BaseEmbedding
 from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
@@ -160,7 +162,7 @@ def rouge(
 @with_embedding()
 def sem_score(
     metric_inputs: list[MetricInput],
-    embedding_model: BaseEmbedding | str,
+    embedding_model: "Embeddings | str",
     truncate_length: int = 4096,
 ) -> list[float]:
     """Compute sem score between generation gt and pred with cosine similarity.
@@ -168,13 +170,15 @@ def sem_score(
     Args:
         metric_inputs: A list of MetricInput schema (Required Field -> "generation_gt", "generated_texts").
         embedding_model: Embedding model to use for compute cosine similarity.
-            Can be a BaseEmbedding instance or a string config name (e.g., "openai-large").
+            Can be an Embeddings instance or a string config name (e.g., "openai-large").
         truncate_length: Maximum length of texts to embedding. Default is 4096.
 
     Returns:
         A list of computed metric scores.
     """
-    if not isinstance(embedding_model, BaseEmbedding):
+    from langchain_core.embeddings import Embeddings
+
+    if not isinstance(embedding_model, Embeddings):
         raise EmbeddingError
 
     generations = [metric_input.generated_texts for metric_input in metric_inputs]
@@ -184,11 +188,10 @@ def sem_score(
     generations = truncate_texts(generations, max_tokens=truncate_length)  # ty: ignore
     generation_gt = [truncate_texts(gen_gt, max_tokens=truncate_length) for gen_gt in generation_gt]  # ty: ignore
 
-    embedded_pred: list[list[float]] = embedding_model.get_text_embedding_batch(generations, show_progress=True)
+    embedded_pred: list[list[float]] = embedding_model.embed_documents(generations)
     embedded_gt: list[list[float]] = unpack_and_run(
         generation_gt,
-        embedding_model.get_text_embedding_batch,
-        show_progress=True,
+        embedding_model.embed_documents,
     )
 
     result = []
@@ -339,12 +342,12 @@ class SemScoreConfig(BaseGenerationMetricConfig):
     """Configuration for SemScore (semantic similarity) metric.
 
     Attributes:
-        embedding_model: Embedding model config name (e.g., "openai-large") or BaseEmbedding instance.
+        embedding_model: Embedding model config name (e.g., "openai-large") or Embeddings instance.
         truncate_length: Maximum length of texts to embed.
     """
 
     truncate_length: int = 4096
-    embedding_model: BaseEmbedding | str = "openai-large"
+    embedding_model: "Embeddings | str" = "openai-large"
 
     def get_metric_func(self) -> Callable:
         """Return the metric function."""

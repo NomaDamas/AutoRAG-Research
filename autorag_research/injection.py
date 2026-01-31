@@ -5,8 +5,8 @@ from collections.abc import Callable
 from typing import Any, Generic, TypeVar
 
 from hydra.utils import instantiate
-from llama_index.core.base.embeddings.base import BaseEmbedding
-from llama_index.core.base.llms.base import BaseLLM
+from langchain_core.embeddings import Embeddings
+from langchain_core.language_models import BaseLanguageModel
 from omegaconf import OmegaConf
 
 from autorag_research.cli.utils import get_config_dir
@@ -14,7 +14,7 @@ from autorag_research.embeddings.base import MultiVectorBaseEmbedding
 
 logger = logging.getLogger("AutoRAG-Research")
 
-EMBEDDING_MODEL_TYPES = BaseEmbedding | MultiVectorBaseEmbedding
+EMBEDDING_MODEL_TYPES = Embeddings | MultiVectorBaseEmbedding
 
 T = TypeVar("T")
 
@@ -23,39 +23,39 @@ def health_check_embedding(model: EMBEDDING_MODEL_TYPES) -> int:
     """Health check embedding model and return embedding dimension.
 
     Args:
-        model: LlamaIndex BaseEmbedding instance.
+        model: LangChain Embeddings or MultiVectorBaseEmbedding instance.
 
     Returns:
         Embedding dimension (length of embedding vector).
 
     Raises:
-        EmbeddingNotSetError: If health check fails.
+        EmbeddingError: If health check fails.
     """
     from autorag_research.exceptions import EmbeddingError
 
     try:
-        embedding = model.get_text_embedding("health check")
+        embedding = model.embed_query("health check")
+        # For multi-vector models, embedding is list[list[float]], get the inner dimension
+        if embedding and isinstance(embedding[0], list):
+            return len(embedding[0])
         return len(embedding)
     except Exception as e:
         raise EmbeddingError from e
 
 
-def health_check_llm(model: BaseLLM) -> None:
+def health_check_llm(model: BaseLanguageModel) -> None:
     """Health check LLM by making a test call.
 
     Args:
-        model: LlamaIndex BaseLLM instance.
-
-    Returns:
-        True if the LLM responds successfully.
+        model: LangChain BaseLanguageModel instance.
 
     Raises:
-        LLMNotSetError: If health check fails.
+        LLMError: If health check fails.
     """
     from autorag_research.exceptions import LLMError
 
     try:
-        model.complete("Hello, world!")
+        model.invoke("Hello, world!")
     except Exception as e:
         raise LLMError from e
 
@@ -178,13 +178,13 @@ def _create_with_model_decorator(
 # Manager instances
 _embedding_manager: ModelManager[EMBEDDING_MODEL_TYPES] = ModelManager(
     config_subdir="embedding",
-    expected_types=(BaseEmbedding, MultiVectorBaseEmbedding),
+    expected_types=(Embeddings, MultiVectorBaseEmbedding),
     health_check_func=health_check_embedding,
 )
 
-_llm_manager: ModelManager[BaseLLM] = ModelManager(
+_llm_manager: ModelManager[BaseLanguageModel] = ModelManager(
     config_subdir="llm",
-    expected_types=(BaseLLM,),
+    expected_types=(BaseLanguageModel,),
     health_check_func=health_check_llm,
 )
 
@@ -195,14 +195,14 @@ _llm_manager: ModelManager[BaseLLM] = ModelManager(
 
 
 def load_embedding_model(config_name: str) -> EMBEDDING_MODEL_TYPES:
-    """Load LlamaIndex embedding model directly from YAML via Hydra instantiate.
+    """Load LangChain embedding model directly from YAML via Hydra instantiate.
 
     Args:
         config_name: Name of the embedding config file (without .yaml extension).
                     e.g., "openai-small", "openai-large", "openai-like"
 
     Returns:
-        LlamaIndex BaseEmbedding instance.
+        LangChain Embeddings or MultiVectorBaseEmbedding instance.
 
     Raises:
         FileNotFoundError: If the config file doesn't exist.
@@ -217,12 +217,12 @@ def with_embedding(param_name: str = "embedding_model"):
         param_name: Parameter name to inject. Defaults to "embedding_model".
 
     Behavior:
-        - String config name → cached BaseEmbedding instance (via load_embedding_model)
-        - BaseEmbedding instance → pass through unchanged
+        - String config name → cached Embeddings instance (via load_embedding_model)
+        - Embeddings instance → pass through unchanged
 
     Example:
         @with_embedding()
-        def my_func(embedding_model: BaseEmbedding | str):
+        def my_func(embedding_model: Embeddings | str):
             ...
 
         # Can be called with string (converted to cached instance):
@@ -236,7 +236,7 @@ def with_embedding(param_name: str = "embedding_model"):
     """
     return _create_with_model_decorator(
         manager=_embedding_manager,
-        valid_types=(BaseEmbedding, MultiVectorBaseEmbedding),
+        valid_types=(Embeddings, MultiVectorBaseEmbedding),
         param_name=param_name,
     )
 
@@ -246,19 +246,19 @@ def with_embedding(param_name: str = "embedding_model"):
 # ============================================================================
 
 
-def load_llm(config_name: str) -> BaseLLM:
-    """Load LlamaIndex LLM directly from YAML via Hydra instantiate.
+def load_llm(config_name: str) -> BaseLanguageModel:
+    """Load LangChain LLM directly from YAML via Hydra instantiate.
 
     Args:
         config_name: Name of the LLM config file (without .yaml extension).
                     e.g., "openai-gpt4", "mock"
 
     Returns:
-        LlamaIndex BaseLLM instance.
+        LangChain BaseLanguageModel instance.
 
     Raises:
         FileNotFoundError: If the config file doesn't exist.
-        TypeError: If instantiated object is not a BaseLLM.
+        TypeError: If instantiated object is not a BaseLanguageModel.
     """
     return _llm_manager.load(config_name)
 
@@ -270,12 +270,12 @@ def with_llm(param_name: str = "llm"):
         param_name: Parameter name to inject. Defaults to "llm".
 
     Behavior:
-        - String config name → cached BaseLLM instance (via get_cached_llm)
-        - BaseLLM instance → pass through unchanged
+        - String config name → cached BaseLanguageModel instance (via get_cached_llm)
+        - BaseLanguageModel instance → pass through unchanged
 
     Example:
         @with_llm()
-        def my_func(llm: BaseLLM | str):
+        def my_func(llm: BaseLanguageModel | str):
             ...
 
         # Can be called with string (converted to cached instance):
@@ -286,6 +286,6 @@ def with_llm(param_name: str = "llm"):
     """
     return _create_with_model_decorator(
         manager=_llm_manager,
-        valid_types=(BaseLLM,),
+        valid_types=(BaseLanguageModel,),
         param_name=param_name,
     )

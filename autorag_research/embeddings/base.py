@@ -3,8 +3,9 @@
 import asyncio
 from abc import abstractmethod
 
-from llama_index.core.schema import ImageType
 from pydantic import BaseModel, ConfigDict, Field
+
+from autorag_research.types import ImageType
 
 # Type alias for multi-vector embeddings (e.g., ColBERT, ColPali)
 # Each text/image produces multiple vectors (one per token/patch)
@@ -16,6 +17,10 @@ class MultiVectorBaseEmbedding(BaseModel):
 
     Unlike single-vector embeddings, multi-vector models produce one vector
     per token, enabling late interaction for more fine-grained retrieval.
+
+    Uses LangChain-style method names for consistency:
+    - embed_query: Embed a single query
+    - embed_documents: Embed multiple documents
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -24,45 +29,43 @@ class MultiVectorBaseEmbedding(BaseModel):
     embed_batch_size: int = Field(default=10, description="Batch size for embedding.")
 
     @abstractmethod
-    def get_query_embedding(self, query: str) -> MultiVectorEmbedding:
-        """Get query embedding."""
+    def embed_query(self, query: str) -> MultiVectorEmbedding:
+        """Embed a single query."""
 
     @abstractmethod
-    async def aget_query_embedding(self, query: str) -> MultiVectorEmbedding:
-        """Get query embedding asynchronously."""
+    async def aembed_query(self, query: str) -> MultiVectorEmbedding:
+        """Embed a single query asynchronously."""
 
     @abstractmethod
-    def get_text_embedding(self, text: str) -> MultiVectorEmbedding:
-        """Get text embedding."""
+    def embed_text(self, text: str) -> MultiVectorEmbedding:
+        """Embed a single text/document."""
 
     @abstractmethod
-    async def aget_text_embedding(self, text: str) -> MultiVectorEmbedding:
-        """Get text embedding asynchronously."""
+    async def aembed_text(self, text: str) -> MultiVectorEmbedding:
+        """Embed a single text/document asynchronously."""
 
-    def get_text_embeddings(self, texts: list[str]) -> list[MultiVectorEmbedding]:
-        """Embed multiple texts. Subclasses can override for batch optimization."""
-        return [self.get_text_embedding(text) for text in texts]
+    def embed_documents(self, texts: list[str]) -> list[MultiVectorEmbedding]:
+        """Embed multiple documents. Subclasses can override for batch optimization."""
+        return [self.embed_text(text) for text in texts]
 
-    async def aget_text_embeddings(self, texts: list[str]) -> list[MultiVectorEmbedding]:
-        """Embed multiple texts asynchronously."""
-        return await asyncio.gather(*[self.aget_text_embedding(t) for t in texts])
+    async def aembed_documents(self, texts: list[str]) -> list[MultiVectorEmbedding]:
+        """Embed multiple documents asynchronously."""
+        return await asyncio.gather(*[self.aembed_text(t) for t in texts])
 
-    def get_text_embedding_batch(self, texts: list[str], show_progress: bool = False) -> list[MultiVectorEmbedding]:
+    def embed_documents_batch(self, texts: list[str], show_progress: bool = False) -> list[MultiVectorEmbedding]:
         """Get embeddings for multiple texts with batching."""
         results: list[MultiVectorEmbedding] = []
         for i in range(0, len(texts), self.embed_batch_size):
             batch = texts[i : i + self.embed_batch_size]
-            results.extend(self.get_text_embeddings(batch))
+            results.extend(self.embed_documents(batch))
         return results
 
-    async def aget_text_embedding_batch(
-        self, texts: list[str], show_progress: bool = False
-    ) -> list[MultiVectorEmbedding]:
+    async def aembed_documents_batch(self, texts: list[str], show_progress: bool = False) -> list[MultiVectorEmbedding]:
         """Get embeddings for multiple texts asynchronously with batching."""
         results: list[MultiVectorEmbedding] = []
         for i in range(0, len(texts), self.embed_batch_size):
             batch = texts[i : i + self.embed_batch_size]
-            batch_results = await self.aget_text_embeddings(batch)
+            batch_results = await self.aembed_documents(batch)
             results.extend(batch_results)
         return results
 
@@ -75,38 +78,38 @@ class MultiVectorMultiModalEmbedding(MultiVectorBaseEmbedding):
     """
 
     @abstractmethod
-    def get_image_embedding(self, img_file_path: ImageType) -> MultiVectorEmbedding:
-        """Get image embedding."""
+    def embed_image(self, img_file_path: ImageType) -> MultiVectorEmbedding:
+        """Embed a single image."""
 
     @abstractmethod
-    async def aget_image_embedding(self, img_file_path: ImageType) -> MultiVectorEmbedding:
-        """Get image embedding asynchronously."""
+    async def aembed_image(self, img_file_path: ImageType) -> MultiVectorEmbedding:
+        """Embed a single image asynchronously."""
 
-    def get_image_embeddings(self, img_file_paths: list[ImageType]) -> list[MultiVectorEmbedding]:
+    def embed_images(self, img_file_paths: list[ImageType]) -> list[MultiVectorEmbedding]:
         """Embed multiple images. Subclasses can override for batch optimization."""
-        return [self.get_image_embedding(p) for p in img_file_paths]
+        return [self.embed_image(p) for p in img_file_paths]
 
-    async def aget_image_embeddings(self, img_file_paths: list[ImageType]) -> list[MultiVectorEmbedding]:
+    async def aembed_images(self, img_file_paths: list[ImageType]) -> list[MultiVectorEmbedding]:
         """Embed multiple images asynchronously."""
-        return await asyncio.gather(*[self.aget_image_embedding(p) for p in img_file_paths])
+        return await asyncio.gather(*[self.aembed_image(p) for p in img_file_paths])
 
-    def get_image_embedding_batch(
+    def embed_images_batch(
         self, img_file_paths: list[ImageType], show_progress: bool = False
     ) -> list[MultiVectorEmbedding]:
         """Get embeddings for multiple images with batching."""
         results: list[MultiVectorEmbedding] = []
         for i in range(0, len(img_file_paths), self.embed_batch_size):
             batch = img_file_paths[i : i + self.embed_batch_size]
-            results.extend(self.get_image_embeddings(batch))
+            results.extend(self.embed_images(batch))
         return results
 
-    async def aget_image_embedding_batch(
+    async def aembed_images_batch(
         self, img_file_paths: list[ImageType], show_progress: bool = False
     ) -> list[MultiVectorEmbedding]:
         """Get embeddings for multiple images asynchronously with batching."""
         results: list[MultiVectorEmbedding] = []
         for i in range(0, len(img_file_paths), self.embed_batch_size):
             batch = img_file_paths[i : i + self.embed_batch_size]
-            batch_results = await self.aget_image_embeddings(batch)
+            batch_results = await self.aembed_images(batch)
             results.extend(batch_results)
         return results

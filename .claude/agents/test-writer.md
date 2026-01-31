@@ -51,12 +51,12 @@ You are an expert Python test engineer specializing in writing comprehensive, ma
 - Build a new database for tests using `create_test_database()` context manager
 - DO NOT USE `db_session` fixture from conftest.py for DataIngestor tests
 - Be aware of primary key type (bigint or string) when configuring `IngestorTestConfig`
-- Use `MockEmbedding` - no actual embedding computation in tests
+- Use `FakeEmbeddings` from langchain_core - no actual embedding computation in tests
 
 **Reference:** See `ai_instructions/test_code_generation_instructions.md` for detailed patterns.
 
 ### Mocking Strategy
-- **Prefer mocks over real API calls** - use LlamaIndex's MockLLM and MockEmbedding
+- **Prefer mocks over real API calls** - use LangChain's FakeListLLM and FakeEmbeddings from langchain_core
 - DO NOT MOCK internal *Service* and *Repository* classes.
 - Mock external dependencies at the boundary (API clients, external services)
 - Use `pytest-mock` for mocking

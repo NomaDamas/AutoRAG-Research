@@ -3,7 +3,7 @@ import random
 from typing import Any, Literal
 
 from datasets import load_dataset
-from llama_index.core.base.embeddings.base import BaseEmbedding
+from langchain_core.embeddings import Embeddings
 
 from autorag_research.data.base import QueryMetadata, TextEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
@@ -57,7 +57,7 @@ BATCH_SIZE = 1000
 class BRIGHTIngestor(TextEmbeddingDataIngestor):
     def __init__(
         self,
-        embedding_model: BaseEmbedding,
+        embedding_model: Embeddings,
         domain: BRIGHT_DOMAINS_LITERAL,
         document_mode: DocumentMode = "short",
     ):

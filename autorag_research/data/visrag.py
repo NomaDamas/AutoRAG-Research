@@ -21,12 +21,12 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pandas as pd
-from llama_index.core.embeddings import MultiModalEmbedding
 from PIL import Image
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.util import pil_image_to_bytes
 
@@ -110,7 +110,7 @@ class VisRAGIngestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,
         dataset_name: VisRAGDatasetName,
-        embedding_model: MultiModalEmbedding | None = None,
+        embedding_model: BiPaliEmbeddings | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         super().__init__(embedding_model, late_interaction_embedding_model)

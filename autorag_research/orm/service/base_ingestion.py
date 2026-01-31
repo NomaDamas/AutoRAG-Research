@@ -9,6 +9,7 @@ import logging
 from abc import ABC
 from collections.abc import Awaitable, Callable
 from io import BytesIO
+from pathlib import Path
 from typing import Any, Literal
 
 from autorag_research.exceptions import (
@@ -21,8 +22,8 @@ from autorag_research.orm.service.base import BaseService
 from autorag_research.util import run_with_concurrency_limit
 
 # Type alias for embedding functions
-# Single-vector embedding functions
-ImageEmbeddingFunc = Callable[[str | BytesIO], Awaitable[list[float]]]
+# Single-vector embedding functions (supports LangChain ImageType: str | bytes | Path)
+ImageEmbeddingFunc = Callable[[str | bytes | Path | BytesIO], Awaitable[list[float]]]
 TextEmbeddingFunc = Callable[[str], Awaitable[list[float]]]
 # Multi-vector embedding functions (for late interaction models like ColPali)
 ImageMultiVectorEmbeddingFunc = Callable[[bytes], Awaitable[list[list[float]]]]

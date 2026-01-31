@@ -59,7 +59,7 @@ class PipelineTestConfig:
     check_token_usage: bool = False
     check_execution_time: bool = False
     expected_token_usage_keys: list[str] = field(
-        default_factory=lambda: ["prompt_tokens", "completion_tokens", "total_tokens", "embedding_tokens"]
+        default_factory=lambda: ["prompt_tokens", "completion_tokens", "total_tokens"]
     )
 
     # Persistence check
@@ -352,18 +352,18 @@ def create_mock_llm(
     response_text: str = "This is a generated answer.",
     token_usage: dict[str, int] | None = None,
 ) -> MagicMock:
-    """Create a mock LLM that returns predictable responses.
+    """Create a mock LLM that returns predictable responses (LangChain style).
 
     Note: We mock LLM because API calls are expensive and require API keys.
     For retrieval pipelines, use real BM25RetrievalPipeline with the
     bm25_index_path fixture from conftest.py.
 
     Args:
-        response_text: The text to return from complete().
+        response_text: The text to return from invoke().
         token_usage: Token usage dict. Defaults to standard values.
 
     Returns:
-        MagicMock configured as an LLM.
+        MagicMock configured as a LangChain BaseLanguageModel.
     """
     if token_usage is None:
         token_usage = {
@@ -374,8 +374,14 @@ def create_mock_llm(
 
     mock = MagicMock()
     mock_response = MagicMock()
-    mock_response.text = response_text
+    # LangChain uses 'content' attribute for response text
+    mock_response.content = response_text
     mock_response.__str__ = lambda x: response_text
-    mock_response.raw = {"usage": token_usage}
-    mock.complete.return_value = mock_response
+    # LangChain uses 'usage_metadata' for token counts
+    mock_response.usage_metadata = {
+        "input_tokens": token_usage["prompt_tokens"],
+        "output_tokens": token_usage["completion_tokens"],
+        "total_tokens": token_usage["total_tokens"],
+    }
+    mock.invoke.return_value = mock_response
     return mock

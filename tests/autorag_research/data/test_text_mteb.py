@@ -6,7 +6,7 @@ Integration tests use real MTEB dataset subsets against PostgreSQL.
 
 import pandas as pd
 import pytest
-from llama_index.core import MockEmbedding
+from langchain_core.embeddings.fake import FakeEmbeddings
 
 from autorag_research.data.text_mteb import (
     SUPPORTED_TASK_TYPES,
@@ -29,7 +29,7 @@ EMBEDDING_DIM = 768
 
 @pytest.fixture
 def mock_embedding_model():
-    return MockEmbedding(EMBEDDING_DIM)
+    return FakeEmbeddings(size=EMBEDDING_DIM)
 
 
 # ==================== Unit Tests: Helper Functions ====================

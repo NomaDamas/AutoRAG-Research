@@ -7,7 +7,6 @@ from typing import Any, ClassVar
 
 import torch
 from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
-from llama_index.core.schema import ImageType
 from pydantic import Field, PrivateAttr
 from transformers import PreTrainedModel
 
@@ -16,6 +15,7 @@ from autorag_research.embeddings.base import (
     MultiVectorMultiModalEmbedding,
 )
 from autorag_research.embeddings.bipali import _load_image
+from autorag_research.types import ImageType
 
 # Model type registry for Col* models: maps model_type to (model_class, processor_class)
 COL_MODEL_REGISTRY: dict[str, tuple[str, str]] = {
@@ -69,8 +69,8 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         ...     model_name="vidore/colpali-v1.3",
         ...     model_type="pali",
         ... )
-        >>> text_emb = embeddings.get_text_embedding("Hello world")  # list[list[float]]
-        >>> image_emb = embeddings.get_image_embedding("image.png")  # list[list[float]]
+        >>> text_emb = embeddings.embed_text("Hello world")  # list[list[float]]
+        >>> image_emb = embeddings.embed_image("image.png")  # list[list[float]]
     """
 
     model_name: str = Field(description="HuggingFace model ID")
@@ -101,8 +101,15 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         self._model.to(self.device)
         self._model.eval()
 
-    def get_text_embedding(self, text: str) -> MultiVectorEmbedding:
-        """Get multi-vector embedding for a text string."""
+    def embed_text(self, text: str) -> MultiVectorEmbedding:
+        """Embed a single text/document.
+
+        Args:
+            text: The text to embed.
+
+        Returns:
+            Multi-vector embedding as list[list[float]].
+        """
         text_inputs = self._processor.process_texts([text])
         text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
 
@@ -112,20 +119,48 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         # Shape: (batch=1, num_tokens, hidden_dim) -> list[list[float]]
         return embeddings[0].cpu().tolist()
 
-    async def aget_text_embedding(self, text: str) -> MultiVectorEmbedding:
-        """Get text embedding asynchronously."""
-        return await asyncio.to_thread(self.get_text_embedding, text)
+    async def aembed_text(self, text: str) -> MultiVectorEmbedding:
+        """Embed a single text/document asynchronously.
 
-    def get_query_embedding(self, query: str) -> MultiVectorEmbedding:
-        """Get multi-vector embedding for a query string."""
-        return self.get_text_embedding(query)
+        Args:
+            text: The text to embed.
 
-    async def aget_query_embedding(self, query: str) -> MultiVectorEmbedding:
-        """Get query embedding asynchronously."""
-        return await asyncio.to_thread(self.get_query_embedding, query)
+        Returns:
+            Multi-vector embedding as list[list[float]].
+        """
+        return await asyncio.to_thread(self.embed_text, text)
 
-    def get_image_embedding(self, img_file_path: ImageType) -> MultiVectorEmbedding:
-        """Get multi-vector embedding for a single image."""
+    def embed_query(self, query: str) -> MultiVectorEmbedding:
+        """Embed a single query string.
+
+        Args:
+            query: The query to embed.
+
+        Returns:
+            Multi-vector embedding as list[list[float]].
+        """
+        return self.embed_text(query)
+
+    async def aembed_query(self, query: str) -> MultiVectorEmbedding:
+        """Embed a single query string asynchronously.
+
+        Args:
+            query: The query to embed.
+
+        Returns:
+            Multi-vector embedding as list[list[float]].
+        """
+        return await asyncio.to_thread(self.embed_query, query)
+
+    def embed_image(self, img_file_path: ImageType) -> MultiVectorEmbedding:
+        """Embed a single image.
+
+        Args:
+            img_file_path: Path to image file or bytes.
+
+        Returns:
+            Multi-vector embedding as list[list[float]].
+        """
         image = _load_image(img_file_path)
         image_inputs = self._processor.process_images([image])
         image_inputs = {k: v.to(self.device) for k, v in image_inputs.items()}
@@ -136,12 +171,26 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         # Shape: (batch=1, num_patches, hidden_dim) -> list[list[float]]
         return embeddings[0].cpu().tolist()
 
-    async def aget_image_embedding(self, img_file_path: ImageType) -> MultiVectorEmbedding:
-        """Get image embedding asynchronously."""
-        return await asyncio.to_thread(self.get_image_embedding, img_file_path)
+    async def aembed_image(self, img_file_path: ImageType) -> MultiVectorEmbedding:
+        """Embed a single image asynchronously.
 
-    def get_text_embeddings(self, texts: list[str]) -> list[MultiVectorEmbedding]:
-        """Get multi-vector embeddings for multiple texts (GPU-optimized batch)."""
+        Args:
+            img_file_path: Path to image file or bytes.
+
+        Returns:
+            Multi-vector embedding as list[list[float]].
+        """
+        return await asyncio.to_thread(self.embed_image, img_file_path)
+
+    def embed_documents(self, texts: list[str]) -> list[MultiVectorEmbedding]:
+        """Embed multiple documents (GPU-optimized batch).
+
+        Args:
+            texts: List of texts to embed.
+
+        Returns:
+            List of multi-vector embeddings.
+        """
         if not texts:
             return []
 
@@ -154,8 +203,15 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         # Shape: (batch, num_tokens, hidden_dim) -> list[list[list[float]]]
         return [emb.cpu().tolist() for emb in embeddings]
 
-    def get_image_embeddings(self, img_file_paths: list[ImageType]) -> list[MultiVectorEmbedding]:
-        """Get multi-vector embeddings for multiple images (GPU-optimized batch)."""
+    def embed_images(self, img_file_paths: list[ImageType]) -> list[MultiVectorEmbedding]:
+        """Embed multiple images (GPU-optimized batch).
+
+        Args:
+            img_file_paths: List of paths to image files or bytes.
+
+        Returns:
+            List of multi-vector embeddings.
+        """
         if not img_file_paths:
             return []
 

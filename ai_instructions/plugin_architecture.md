@@ -286,7 +286,7 @@ Ingestor는 decorator + Literal 타입 힌트 기반 등록을 사용합니다.
 
 ```python
 from typing import Literal
-from llama_index.core.base.embeddings.base import BaseEmbedding
+from langchain_core.embeddings import Embeddings
 from autorag_research.data.registry import register_ingestor
 from autorag_research.data.base import TextEmbeddingDataIngestor
 
@@ -300,10 +300,10 @@ MY_DATASETS = Literal["dataset_a", "dataset_b", "dataset_c"]
 class ElasticsearchIngestor(TextEmbeddingDataIngestor):
     def __init__(
         self,
-        embedding_model: BaseEmbedding,  # Skipped (known dependency)
-        dataset_name: MY_DATASETS,        # -> --dataset-name, choices=[...], required
-        host: str = "localhost",          # -> --host, default="localhost"
-        port: int = 9200,                 # -> --port, type=int, default=9200
+        embedding_model: Embeddings,  # Skipped (known dependency)
+        dataset_name: MY_DATASETS,     # -> --dataset-name, choices=[...], required
+        host: str = "localhost",       # -> --host, default="localhost"
+        port: int = 9200,              # -> --port, type=int, default=9200
     ):
         super().__init__(embedding_model)
         self.dataset_name = dataset_name
@@ -333,7 +333,7 @@ autorag-research ingest elasticsearch \
 
 | `__init__` 파라미터 | CLI 옵션 |
 |-------------------|---------|
-| `embedding_model: BaseEmbedding` | 스킵 (주입됨) |
+| `embedding_model: Embeddings` | 스킵 (주입됨) |
 | `name: Literal["a", "b"]` | `--name`, choices=["a", "b"], required |
 | `name: Literal["a", "b"] = "a"` | `--name`, choices=["a", "b"], default="a" |
 | `name: str` | `--name`, required |
