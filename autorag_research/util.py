@@ -227,3 +227,105 @@ def extract_image_from_data_uri(data_uri: str) -> tuple[bytes, str]:
     base64_data = match.group(2)
     image_bytes = base64.b64decode(base64_data)
     return image_bytes, mimetype
+
+
+def extract_token_logprobs(
+    response: Any,
+    target_tokens: list[str] | None = None,
+) -> dict[str, float] | None:
+    """Extract log probabilities from LangChain LLM response.
+
+    Works with any LangChain LLM that stores logprobs in response_metadata["logprobs"]["content"].
+    Compatible providers include:
+    - OpenAI (ChatOpenAI, AzureChatOpenAI)
+    - Together AI, Fireworks AI, Anyscale
+    - Local models via vLLM, text-generation-inference, Ollama (with logprobs enabled)
+    - Any OpenAI-compatible API endpoint
+
+    To enable logprobs, use provider-specific configuration:
+    - OpenAI/vLLM: llm.bind(logprobs=True, top_logprobs=5)
+    - Other providers: Check provider documentation for logprobs support
+
+    LangChain stores logprobs in response.response_metadata["logprobs"]["content"].
+    Each token entry has: token, logprob, bytes, top_logprobs.
+
+    Args:
+        response: LangChain AIMessage or similar response object.
+        target_tokens: If provided, only return logprobs for these tokens.
+            Case-insensitive matching. If None, returns all token logprobs.
+
+    Returns:
+        Dict mapping token strings to their log probability values.
+        Returns None if logprobs not available in response.
+
+    Example:
+        >>> # Enable logprobs on the LLM (OpenAI example)
+        >>> llm = ChatOpenAI(model="gpt-4o-mini").bind(logprobs=True, top_logprobs=5)
+        >>> response = llm.invoke("Answer Yes or No: Is the sky blue?")
+        >>> logprobs = extract_token_logprobs(response, target_tokens=["Yes", "No"])
+        >>> # Returns: {"Yes": -0.0001, "No": -9.2} or None if not available
+
+    Note:
+        - log probability of 0.0 = 100% confidence
+        - More negative = less likely
+        - Convert to probability: exp(logprob)
+    """
+    # Check if response has response_metadata with logprobs
+    if not hasattr(response, "response_metadata"):
+        return None
+
+    metadata = response.response_metadata
+    if not isinstance(metadata, dict) or "logprobs" not in metadata:
+        return None
+
+    logprobs_data = metadata["logprobs"]
+    if not isinstance(logprobs_data, dict) or "content" not in logprobs_data:
+        return None
+
+    content = logprobs_data["content"]
+    if not content:
+        return None
+
+    result: dict[str, float] = {}
+
+    # Build lowercase target tokens set for case-insensitive matching
+    target_tokens_lower = {t.lower() for t in target_tokens} if target_tokens is not None else None
+
+    # Extract logprobs from each token
+    for token_data in content:
+        token = token_data.get("token", "")
+        logprob = token_data.get("logprob")
+        top_logprobs = token_data.get("top_logprobs", [])
+
+        if target_tokens_lower is not None:
+            # Targeted extraction mode - find all target tokens
+            _extract_target_logprobs(result, token, logprob, top_logprobs, target_tokens_lower)
+        elif logprob is not None:
+            # No target filter - return all tokens with valid logprobs
+            result[token] = logprob
+
+    return result if result else None
+
+
+def _extract_target_logprobs(
+    result: dict[str, float],
+    token: str,
+    logprob: float | None,
+    top_logprobs: list[dict],
+    target_tokens_lower: set[str],
+) -> None:
+    """Extract logprobs for target tokens from token data.
+
+    Helper function to reduce complexity in extract_token_logprobs.
+    """
+    # Check if main token is a target
+    if logprob is not None and token.lower() in target_tokens_lower:
+        result[token] = logprob
+
+    # Always check top_logprobs for other target tokens
+    for alt in top_logprobs:
+        alt_token = alt.get("token", "")
+        alt_logprob = alt.get("logprob")
+        # Only add if target token, has valid logprob, and not already present
+        if alt_token.lower() in target_tokens_lower and alt_logprob is not None and alt_token not in result:
+            result[alt_token] = alt_logprob
