@@ -227,3 +227,29 @@ def extract_image_from_data_uri(data_uri: str) -> tuple[bytes, str]:
     base64_data = match.group(2)
     image_bytes = base64.b64decode(base64_data)
     return image_bytes, mimetype
+
+
+def bytes_to_pil_image(image_bytes: bytes) -> Image.Image:
+    """Convert image bytes to PIL Image.
+
+    Args:
+        image_bytes: Raw image bytes (PNG, JPEG, etc.)
+
+    Returns:
+        PIL Image object.
+    """
+    return Image.open(io.BytesIO(image_bytes))
+
+
+def pil_image_to_data_uri(image: Image.Image) -> str:
+    """Convert PIL Image to data URI for multi-modal LLMs.
+
+    Args:
+        image: PIL Image object.
+
+    Returns:
+        Data URI string (e.g., "data:image/png;base64,iVBORw0...").
+    """
+    img_bytes, mimetype = pil_image_to_bytes(image)
+    b64_data = base64.b64encode(img_bytes).decode("utf-8")
+    return f"data:{mimetype};base64,{b64_data}"

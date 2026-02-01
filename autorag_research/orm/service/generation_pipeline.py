@@ -256,3 +256,18 @@ class GenerationPipelineService(BaseService):
             deleted_count = uow.executor_results.delete_by_pipeline(pipeline_id)
             uow.commit()
             return deleted_count
+
+    def get_image_chunk_contents(self, image_chunk_ids: list[int]) -> list[tuple[bytes, str]]:
+        """Fetch image chunk contents (bytes, mimetype) by IDs.
+
+        Args:
+            image_chunk_ids: List of image chunk IDs.
+
+        Returns:
+            List of (image_bytes, mimetype) tuples in same order as IDs.
+            Missing chunks return (b"", "image/png").
+        """
+        with self._create_uow() as uow:
+            image_chunks = uow.image_chunks.get_by_ids(image_chunk_ids)
+            chunk_map = {chunk.id: (chunk.contents, chunk.mimetype) for chunk in image_chunks}
+            return [chunk_map.get(cid, (b"", "image/png")) for cid in image_chunk_ids]
