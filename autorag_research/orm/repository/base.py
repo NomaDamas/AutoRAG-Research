@@ -18,6 +18,35 @@ T = TypeVar("T")
 logger = logging.getLogger("AutoRAG-Research")
 
 
+def _sanitize_text_value(value: Any) -> Any:
+    """Remove NUL bytes from string values for PostgreSQL compatibility.
+
+    PostgreSQL text fields cannot contain NUL (0x00) bytes. This function
+    sanitizes string values to prevent DataError during insertion.
+
+    Args:
+        value: Any value to sanitize.
+
+    Returns:
+        The value with NUL bytes removed if it's a string, otherwise unchanged.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    return value
+
+
+def _sanitize_dict(item: dict) -> dict:
+    """Sanitize all string values in a dict for PostgreSQL text fields.
+
+    Args:
+        item: Dictionary with values to sanitize.
+
+    Returns:
+        New dictionary with all string values sanitized.
+    """
+    return {k: _sanitize_text_value(v) for k, v in item.items()}
+
+
 def _vec_to_pg_literal(vec: list[float]) -> str:
     """Convert a vector to PostgreSQL literal format.
 
@@ -101,13 +130,18 @@ class GenericRepository(Generic[T]):
         Note:
             For 1000 records, this method uses ~3-5x less memory than add_all()
             because it bypasses ORM object creation and identity map tracking.
+            String values are automatically sanitized to remove NUL bytes for
+            PostgreSQL compatibility.
         """
         from sqlalchemy import insert
 
         if not items:
             return []
 
-        stmt = insert(self.model_cls).values(items).returning(self.model_cls.id)  # ty: ignore[possibly-missing-attribute]
+        # Sanitize all string values to remove NUL bytes for PostgreSQL compatibility
+        sanitized_items = [_sanitize_dict(item) for item in items]
+
+        stmt = insert(self.model_cls).values(sanitized_items).returning(self.model_cls.id)  # ty: ignore[possibly-missing-attribute]
         result = self.session.execute(stmt)
         return [row[0] for row in result]
 
