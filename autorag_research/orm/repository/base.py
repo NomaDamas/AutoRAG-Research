@@ -8,7 +8,6 @@ import logging
 from contextlib import contextmanager
 from typing import Any, Generic, TypeVar, cast
 
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import CursorResult, select, text
 from sqlalchemy.orm import Session
 
@@ -46,6 +45,29 @@ def _sanitize_dict(item: dict) -> dict:
         New dictionary with all string values sanitized.
     """
     return {k: _sanitize_text_value(v) for k, v in item.items()}
+def _vec_to_pg_literal(vec: list[float]) -> str:
+    """Convert a vector to PostgreSQL literal format.
+
+    Args:
+        vec: List of floats representing a vector.
+
+    Returns:
+        PostgreSQL vector literal string, e.g., "[0.1,0.2,0.3]"
+    """
+    return "[" + ",".join(str(float(x)) for x in vec) + "]"
+
+
+def _vecs_to_pg_array(vecs: list[list[float]]) -> str:
+    """Convert multiple vectors to PostgreSQL array literal format.
+
+    Args:
+        vecs: List of vectors (list of lists of floats).
+
+    Returns:
+        PostgreSQL array of vectors literal, e.g., "ARRAY['[0.1,0.2]'::vector, '[0.3,0.4]'::vector]"
+    """
+    vector_literals = [f"'{_vec_to_pg_literal(vec)}'::vector" for vec in vecs]
+    return f"ARRAY[{','.join(vector_literals)}]"
 
 
 class GenericRepository(Generic[T]):
@@ -286,83 +308,76 @@ class BaseVectorRepository(GenericRepository[T]):
         query_vector: list[float],
         vector_column: str = "embedding",
         limit: int = 10,
-        distance_threshold: float | None = None,
     ) -> list[T]:
-        """Perform vector similarity search using VectorChord.
+        """Perform vector similarity search using VectorChord's cosine distance.
+
+        Uses raw SQL with VectorChord's <=> operator for cosine distance.
+        This approach avoids SQLAlchemy type processing issues with Vector objects.
 
         Args:
-            query_vector: The query embedding vector.
+            query_vector: The query embedding vector as a plain Python list of floats.
             vector_column: Name of the vector column to search.
             limit: Maximum number of results to return.
-            distance_threshold: Optional maximum distance threshold.
 
         Returns:
-            List of entities ordered by similarity.
+            List of entities ordered by similarity (most similar first).
 
         Note:
-            Uses pgvector's cosine distance operator (<=>).
-            Requires VectorChord index on embedding column for performance.
+            Requires VectorChord extension and vchordrq index on the embedding column.
+            Example index: CREATE INDEX ON table USING vchordrq (embedding vector_cosine_ops);
         """
-        # Convert list to pgvector format
-        query_embedding = Vector(query_vector)
-
-        # Get the vector column dynamically
-        vector_col = getattr(self.model_cls, vector_column)
-
-        # Build query with distance ordering
-        stmt = (
-            select(self.model_cls).where(vector_col.is_not(None)).order_by(vector_col.cosine_distance(query_embedding))
-        )
-
-        # Apply distance threshold if provided
-        if distance_threshold is not None:
-            stmt = stmt.where(vector_col.cosine_distance(query_embedding) <= distance_threshold)
-
-        # Apply limit
-        stmt = stmt.limit(limit)
-
-        return list(self.session.execute(stmt).scalars().all())
+        results_with_scores = self.vector_search_with_scores(query_vector, vector_column, limit)
+        return [entity for entity, _ in results_with_scores]
 
     def vector_search_with_scores(
         self,
         query_vector: list[float],
         vector_column: str = "embedding",
         limit: int = 10,
-        distance_threshold: float | None = None,
     ) -> list[tuple[T, float]]:
-        """Perform vector similarity search and return entities with their distance scores.
+        """Perform vector similarity search using VectorChord's cosine distance.
+
+        Uses raw SQL with VectorChord's <=> operator for cosine distance.
+        This approach avoids SQLAlchemy type processing issues with Vector objects.
 
         Args:
-            query_vector: The query embedding vector.
+            query_vector: The query embedding vector as a plain Python list of floats.
             vector_column: Name of the vector column to search.
             limit: Maximum number of results to return.
-            distance_threshold: Optional maximum distance threshold.
 
         Returns:
             List of tuples (entity, distance_score) ordered by similarity.
+            Lower distance scores indicate higher similarity.
+            The score is the cosine distance, which is calculated as (1 - cosine_similarity).
+            0 means identical, 2 means opposite, and 1 means orthogonal.
 
         Note:
-            Lower distance scores indicate higher similarity.
+            Requires VectorChord extension and vchordrq index on the embedding column.
+            Example index: CREATE INDEX ON table USING vchordrq (embedding vector_cosine_ops);
         """
-        # Convert list to pgvector format
-        query_embedding = Vector(query_vector)
+        if not query_vector:
+            return []
 
-        # Get the vector column dynamically
-        vector_col = getattr(self.model_cls, vector_column)
+        vec_str = _vec_to_pg_literal(query_vector)
+        table_name = self.model_cls.__tablename__  # ty: ignore[possibly-missing-attribute]
+        sql = text(f"""
+            SELECT id, {vector_column} <=> '{vec_str}'::vector AS distance
+            FROM {table_name}
+            WHERE {vector_column} IS NOT NULL
+            ORDER BY distance
+            LIMIT :limit
+        """)  # noqa: S608
 
-        # Build query with distance as a column
-        distance = vector_col.cosine_distance(query_embedding).label("distance")
-        stmt = select(self.model_cls, distance).where(vector_col.is_not(None)).order_by(distance)
+        results = self.session.execute(sql, {"limit": limit}).fetchall()
 
-        # Apply distance threshold if provided
-        if distance_threshold is not None:
-            stmt = stmt.where(distance <= distance_threshold)
+        # Batch fetch entities to avoid N+1 queries
+        ids = [row[0] for row in results]
+        scores = {row[0]: float(row[1]) for row in results}
+        entities = self.get_by_ids(ids)
 
-        # Apply limit
-        stmt = stmt.limit(limit)
-
-        results = self.session.execute(stmt).all()
-        return [(entity, float(dist)) for entity, dist in results]
+        # Preserve order from SQL results
+        entity_map = {e.id: e for e in entities}  # ty: ignore[unresolved-attribute]
+        return [(entity_map[id_], scores[id_]) for id_ in ids if id_ in entity_map]
 
     def set_multi_vector_embedding(
         self,
@@ -388,16 +403,7 @@ class BaseVectorRepository(GenericRepository[T]):
         if not embeddings:
             return False
 
-        # Build vector array literal for PostgreSQL
-        # Format: ARRAY['[1,2,3]'::vector, '[4,5,6]'::vector]
-        vector_literals = []
-        for vec in embeddings:
-            vec_str = "[" + ",".join(str(float(x)) for x in vec) + "]"
-            vector_literals.append(f"'{vec_str}'::vector")
-
-        array_literal = f"ARRAY[{','.join(vector_literals)}]"
-
-        # Build and execute raw SQL UPDATE
+        array_literal = _vecs_to_pg_array(embeddings)
         table_name = self.model_cls.__tablename__  # ty: ignore[possibly-missing-attribute]
         sql = text(f"UPDATE {table_name} SET {vector_column} = {array_literal} WHERE {id_column} = :entity_id")  # noqa: S608
 
@@ -451,6 +457,8 @@ class BaseVectorRepository(GenericRepository[T]):
         Returns:
             List of tuples (entity, distance_score) ordered by similarity.
             Lower distance scores indicate higher similarity.
+            The distance score calculated by (1 - maxsim_score), thus the range is [-infinity, 0].
+            You might normalize this score by dividing by the number of query vectors.
 
         Note:
             Requires VectorChord extension and vchordrq index with vector_maxsim_ops.
@@ -459,18 +467,10 @@ class BaseVectorRepository(GenericRepository[T]):
         if not query_vectors:
             return []
 
-        # Build query vector array literal
-        query_vec_literals = []
-        for vec in query_vectors:
-            vec_str = "[" + ",".join(str(float(x)) for x in vec) + "]"
-            query_vec_literals.append(f"'{vec_str}'::vector")
-
-        query_array = f"ARRAY[{','.join(query_vec_literals)}]"
-
-        # Build MaxSim query using @# operator
+        query_array = _vecs_to_pg_array(query_vectors)
         table_name = self.model_cls.__tablename__  # ty: ignore[possibly-missing-attribute]
         sql = text(f"""
-            SELECT *, {vector_column} @# {query_array} AS distance
+            SELECT id, {vector_column} @# {query_array} AS distance
             FROM {table_name}
             WHERE {vector_column} IS NOT NULL
             ORDER BY distance
@@ -479,16 +479,14 @@ class BaseVectorRepository(GenericRepository[T]):
 
         results = self.session.execute(sql, {"limit": limit}).fetchall()
 
-        # Map results back to entities
-        entity_scores = []
-        for row in results:
-            # Get the entity by ID from the first column (assuming id is first)
-            entity = self.get_by_id(row[0])
-            if entity:
-                # Distance is the last column
-                entity_scores.append((entity, float(row[-1])))
+        # Batch fetch entities to avoid N+1 queries
+        ids = [row[0] for row in results]
+        scores = {row[0]: float(row[1]) for row in results}
+        entities = self.get_by_ids(ids)
 
-        return entity_scores
+        # Preserve order from SQL results
+        entity_map = {e.id: e for e in entities}  # ty: ignore[unresolved-attribute]
+        return [(entity_map[id_], scores[id_]) for id_ in ids if id_ in entity_map]
 
     def maxsim_search_with_ids(
         self,
@@ -513,15 +511,7 @@ class BaseVectorRepository(GenericRepository[T]):
         if not query_vectors:
             return []
 
-        # Build query vector array literal
-        query_vec_literals = []
-        for vec in query_vectors:
-            vec_str = "[" + ",".join(str(float(x)) for x in vec) + "]"
-            query_vec_literals.append(f"'{vec_str}'::vector")
-
-        query_array = f"ARRAY[{','.join(query_vec_literals)}]"
-
-        # Build MaxSim query using @# operator
+        query_array = _vecs_to_pg_array(query_vectors)
         table_name = self.model_cls.__tablename__  # ty: ignore[possibly-missing-attribute]
         sql = text(f"""
             SELECT {id_column}, {vector_column} @# {query_array} AS distance

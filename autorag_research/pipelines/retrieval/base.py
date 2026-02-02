@@ -54,9 +54,17 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
         """Return the retrieval function to use.
 
         Returns:
-            A callable with signature: (queries: list[str], top_k: int) -> list[list[dict]]
+            A callable with signature: (query_ids: list[int | str], top_k: int) -> list[list[dict]]
         """
         pass
+
+    def _get_query_model(self) -> type:
+        """Get the Query model class from schema or default."""
+        if self._schema is not None:
+            return self._schema.Query
+        from autorag_research.orm.schema import Query
+
+        return Query
 
     def retrieve(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
         """Retrieve chunks for a single query (used by GenerationPipeline).
@@ -65,6 +73,9 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
         `run()` method. It's designed for use within GenerationPipeline where
         queries are processed one at a time.
 
+        Creates a Query entity for the retrieval. The query is persisted to the
+        database for audit trail and potential future analysis.
+
         Args:
             query_text: The query text to retrieve for.
             top_k: Number of chunks to retrieve.
@@ -72,8 +83,19 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
         Returns:
             List of dicts with 'doc_id' (chunk ID) and 'score' keys.
         """
+        Query = self._get_query_model()
+
+        # Create and persist query for retrieval
+        with self.session_factory() as session:
+            query = Query(contents=query_text)
+            session.add(query)
+            session.commit()
+            query_id = query.id
+
+        # Run retrieval with the query ID
         retrieval_func = self._get_retrieval_func()
-        results = retrieval_func([query_text], top_k)
+        results = retrieval_func([query_id], top_k)
+
         return results[0]  # Single query → single result list
 
     def run(

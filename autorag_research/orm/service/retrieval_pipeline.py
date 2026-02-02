@@ -8,7 +8,7 @@ Provides service layer for running retrieval pipelines:
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -20,9 +20,9 @@ __all__ = ["RetrievalFunc", "RetrievalPipelineService"]
 logger = logging.getLogger("AutoRAG-Research")
 
 # Type alias for retrieval function
-# Input: list of query strings, top_k
+# Input: list of query IDs, top_k
 # Output: list of list of dicts with 'doc_id' and 'score'
-RetrievalFunc = Callable[[list[str], int], list[list[dict[str, Any]]]]
+RetrievalFunc = Callable[[list[int | str], int], list[list[dict[str, Any]]]]
 
 
 class RetrievalPipelineService(BaseService):
@@ -40,23 +40,21 @@ class RetrievalPipelineService(BaseService):
     Example:
         ```python
         from autorag_research.orm.service import RetrievalPipelineService
-        from autorag_research.nodes.retrieval.bm25 import BM25Module
-
-        # Initialize BM25 module
-        bm25 = BM25Module(index_path="/path/to/index")
 
         # Create service
         service = RetrievalPipelineService(session_factory, schema)
 
-        # Create pipeline
-        pipeline_id = service.create_pipeline(
-            name="bm25_baseline",
-            config={"type": "bm25", "index_path": "/path/to/index"},
-        )
+        # Direct search (for single-query use cases)
+        results = service.bm25_search(query_ids=[1, 2, 3], top_k=10)
+        results = service.vector_search(query_ids=[1, 2, 3], top_k=10)
 
-        # Run pipeline with BM25 retrieval function
-        results = service.run_pipeline(
-            retrieval_func=bm25.run,
+        # Or use run_pipeline for batch processing with result persistence
+        pipeline_id = service.save_pipeline(
+            name="bm25",
+            config={"type": "bm25", "tokenizer": "bert"},
+        )
+        stats = service.run_pipeline(
+            retrieval_func=lambda ids, k: service.bm25_search(ids, k),
             pipeline_id=pipeline_id,
             top_k=10,
         )
@@ -127,7 +125,7 @@ class RetrievalPipelineService(BaseService):
 
         Args:
             retrieval_func: Function that performs retrieval.
-                Signature: (queries: list[str], top_k: int) -> list[list[dict]]
+                Signature: (query_ids: list[int | str], top_k: int) -> list[list[dict]]
                 Each result dict must have 'doc_id' (int) and 'score' keys.
             pipeline_id: ID of the pipeline.
             top_k: Number of top documents to retrieve per query.
@@ -151,12 +149,11 @@ class RetrievalPipelineService(BaseService):
                 if not queries:
                     break
 
-                # Extract query texts and IDs
-                query_texts = [q.contents for q in queries]
+                # Extract query IDs
                 query_ids = [q.id for q in queries]
 
-                # Run retrieval
-                results = retrieval_func(query_texts, top_k)
+                # Run retrieval with query IDs
+                results = retrieval_func(query_ids, top_k)
 
                 # Collect all results for batch insert
                 batch_results = []
@@ -212,3 +209,117 @@ class RetrievalPipelineService(BaseService):
             deleted_count = uow.chunk_results.delete_by_pipeline(pipeline_id)
             uow.commit()
             return deleted_count
+
+    def _make_retrieval_result(self, chunk: Any, score: float) -> dict[str, Any]:
+        """Create a standardized retrieval result dictionary.
+
+        Args:
+            chunk: Chunk ORM model instance.
+            score: Relevance score for this chunk.
+
+        Returns:
+            Dictionary with doc_id, score, and content keys.
+        """
+        return {"doc_id": chunk.id, "score": score, "content": chunk.contents}
+
+    def bm25_search(
+        self,
+        query_ids: list[int | str],
+        top_k: int = 10,
+        tokenizer: str = "bert",
+        index_name: str = "idx_chunk_bm25",
+    ) -> list[list[dict[str, Any]]]:
+        """Execute BM25 retrieval for given query IDs.
+
+        Uses VectorChord-BM25 full-text search on the chunks table.
+
+        Args:
+            query_ids: List of query IDs to search for.
+            top_k: Number of top results to return per query.
+            tokenizer: Tokenizer to use for BM25 (default: "bert").
+            index_name: Name of the BM25 index (default: "idx_chunk_bm25").
+
+        Returns:
+            List of result lists, one per query. Each result dict contains:
+            - doc_id: Chunk ID
+            - score: BM25 relevance score
+            - content: Chunk text content
+
+        Raises:
+            ValueError: If a query ID is not found in the database.
+        """
+        all_results: list[list[dict[str, Any]]] = []
+        with self._create_uow() as uow:
+            for query_id in query_ids:
+                query = uow.queries.get_by_id(query_id)
+                if query is None:
+                    raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
+
+                results = uow.chunks.bm25_search(
+                    query_text=query.contents,
+                    index_name=index_name,
+                    limit=top_k,
+                    tokenizer=tokenizer,
+                )
+                all_results.append([self._make_retrieval_result(chunk, score) for chunk, score in results])
+        return all_results
+
+    def vector_search(
+        self,
+        query_ids: list[int | str],
+        top_k: int = 10,
+        search_mode: Literal["single", "multi"] = "single",
+    ) -> list[list[dict[str, Any]]]:
+        """Execute vector search for given query IDs.
+
+        Supports single-vector (cosine similarity) and multi-vector (MaxSim)
+        search modes using VectorChord extension.
+
+        Args:
+            query_ids: List of query IDs to search for.
+            top_k: Number of top results to return per query.
+            search_mode: "single" for dense retrieval, "multi" for late interaction.
+
+        Returns:
+            List of result lists, one per query. Each result dict contains:
+            - doc_id: Chunk ID
+            - score: Relevance score in [-1, 1] range (higher = more relevant)
+                - single: 1 - cosine_distance (= cosine_similarity)
+                - multi: MaxSim / n_query_vectors (normalized late interaction)
+            - content: Chunk text content
+
+        Raises:
+            ValueError: If a query ID is not found or lacks required embeddings.
+        """
+        all_results: list[list[dict[str, Any]]] = []
+        with self._create_uow() as uow:
+            for query_id in query_ids:
+                query = uow.queries.get_by_id(query_id)
+                if query is None:
+                    raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
+
+                if search_mode == "multi":
+                    if query.embeddings is None:
+                        raise ValueError(f"Query {query_id} has no multi-vector embeddings")  # noqa: TRY003
+                    query_vectors = list(query.embeddings)
+                    n_query_vectors = len(query_vectors)
+                    results = uow.chunks.maxsim_search(
+                        query_vectors=query_vectors,
+                        vector_column="embeddings",
+                        limit=top_k,
+                    )
+                    # Normalize by number of query vectors to get [-1, 1] range
+                    all_results.append([
+                        self._make_retrieval_result(chunk, -distance / n_query_vectors) for chunk, distance in results
+                    ])
+                else:
+                    if query.embedding is None:
+                        raise ValueError(f"Query {query_id} has no embedding")  # noqa: TRY003
+                    results = uow.chunks.vector_search_with_scores(
+                        query_vector=list(query.embedding),
+                        limit=top_k,
+                    )
+                    all_results.append([
+                        self._make_retrieval_result(chunk, 1 - distance) for chunk, distance in results
+                    ])
+        return all_results
