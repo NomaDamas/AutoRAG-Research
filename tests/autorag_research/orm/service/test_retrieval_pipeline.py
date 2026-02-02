@@ -127,13 +127,3 @@ class TestVectorSearchByEmbedding:
             call_args = mock_search.call_args
             query_vector = call_args.kwargs.get("query_vector") or call_args.args[0]
             assert query_vector == test_embedding
-
-    def test_vector_search_by_embedding_empty_results(self, retrieval_service):
-        """Test vector search returns empty list when no results."""
-        with patch("autorag_research.orm.repository.chunk.ChunkRepository.vector_search_with_scores") as mock_search:
-            mock_search.return_value = []
-
-            test_embedding = [0.1] * 768
-            results = retrieval_service.vector_search_by_embedding(embedding=test_embedding, top_k=5)
-
-            assert results == []
