@@ -191,11 +191,12 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
         try:
             llm.invoke([message])
         except Exception as e:
-            raise ValueError(
+            msg = (
                 f"LLM '{type(llm).__name__}' does not support multi-modal input. "
                 f"VisRAG-Gen requires a Vision Language Model (VLM) such as GPT-4o, "
                 f"Qwen2-VL, or Claude 3. Error: {e}"
-            ) from e # noqa: TRY003
+            )
+            raise ValueError(msg) from e
 
     def _get_pipeline_config(self) -> dict[str, Any]:
         """Return VisRAG-Gen pipeline configuration."""
@@ -257,7 +258,8 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
             ValueError: If no images provided.
         """
         if not images:
-            raise ValueError("No images to concatenate")
+            msg = "No images to concatenate"
+            raise ValueError(msg)
 
         if len(images) == 1:
             return images[0]
@@ -346,6 +348,46 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
         concatenated = self._concatenate_images(images, self._concatenation_direction)
         return self._generate_single_image(query, concatenated)
 
+    def _generate_text_only_fallback(self, query: str, metadata_key: str) -> GenerationResult:
+        """Generate answer using text-only mode when no valid images are available.
+
+        Args:
+            query: The query text.
+            metadata_key: Key to set in metadata indicating fallback reason.
+
+        Returns:
+            GenerationResult with metadata indicating fallback mode.
+        """
+        content: list[str | dict] = [{"type": "text", "text": self._prompt_template.format(query=query)}]
+        message = HumanMessage(content=content)
+        response = self._llm.invoke([message])
+        result = self._extract_generation_result(response)
+        if result.metadata is None:
+            result.metadata = {}
+        result.metadata[metadata_key] = True
+        return result
+
+    def _convert_to_pil_images(self, image_contents: list[tuple[bytes, str]]) -> list[Image.Image]:
+        """Convert raw image bytes to PIL Images, skipping invalid ones.
+
+        Args:
+            image_contents: List of (bytes, mimetype) tuples.
+
+        Returns:
+            List of valid PIL Images.
+        """
+        images: list[Image.Image] = []
+        for img_bytes, _mimetype in image_contents:
+            if img_bytes:
+                try:
+                    img = bytes_to_pil_image(img_bytes)
+                    if img.mode not in ("RGB", "RGBA"):
+                        img = img.convert("RGB")
+                    images.append(img)
+                except Exception:
+                    logger.debug("Skipping invalid image during VisRAG-Gen processing")
+        return images
+
     def _generate(self, query: str, top_k: int) -> GenerationResult:
         """Generate answer using VisRAG-Gen with retrieved document images.
 
@@ -371,17 +413,8 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
 
         # Handle empty retrieval results (text-only fallback)
         if not retrieved:
-            logger.warning(f"No images retrieved for query: {query}")
-            content: list[str | dict] = [
-                {"type": "text", "text": self._prompt_template.format(query=query)}
-            ]
-            message = HumanMessage(content=content)
-            response = self._llm.invoke([message])
-            result = self._extract_generation_result(response)
-            if result.metadata is None:
-                result.metadata = {}
-            result.metadata["no_images_retrieved"] = True
-            return result
+            logger.warning("No images retrieved for query: %s", query)
+            return self._generate_text_only_fallback(query, "no_images_retrieved")
 
         # 2. Get image chunk contents via service layer
         image_chunk_ids = [r["doc_id"] for r in retrieved]
@@ -389,29 +422,11 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
         image_contents = self._service.get_image_chunk_contents(image_chunk_ids)
 
         # 3. Convert to PIL Images (skip empty/invalid images)
-        images: list[Image.Image] = []
-        for img_bytes, mimetype in image_contents:
-            if img_bytes:
-                try:
-                    img = bytes_to_pil_image(img_bytes)
-                    # Convert to RGB if needed for consistency
-                    if img.mode not in ("RGB", "RGBA"):
-                        img = img.convert("RGB")
-                    images.append(img)
-                except Exception:
-                    # Skip invalid images
-                    pass
+        images = self._convert_to_pil_images(image_contents)
 
         # Handle case where all images are invalid
         if not images:
-            fallback_content: list[str | dict] = [{"type": "text", "text": self._prompt_template.format(query=query)}]
-            message = HumanMessage(content=fallback_content)
-            response = self._llm.invoke([message])
-            result = self._extract_generation_result(response)
-            if result.metadata is None:
-                result.metadata = {}
-            result.metadata["all_images_invalid"] = True
-            return result
+            return self._generate_text_only_fallback(query, "all_images_invalid")
 
         # 4. Apply image processing based on mode
         if self._image_processing_mode == "multi_image":

@@ -170,10 +170,7 @@ class TestVisRAGGenerationPipelineUnit:
         images = [original]
 
         # Single image should return as-is (per design: len(images) == 1 returns images[0])
-        if len(images) == 1:
-            result = images[0]
-        else:
-            result = None
+        result = images[0] if len(images) == 1 else None
 
         assert result is original
         assert result.width == 30
@@ -185,7 +182,8 @@ class TestVisRAGGenerationPipelineUnit:
 
         with pytest.raises(ValueError, match="No images to concatenate"):
             if not images:
-                raise ValueError("No images to concatenate")
+                msg = "No images to concatenate"
+                raise ValueError(msg)
 
     # ==================== pil_image_to_data_uri Tests (using util) ====================
 
@@ -506,11 +504,7 @@ class TestVisRAGGenerationPipelineEdgeCases:
 
         # Pipeline should handle empty retrieval gracefully
         # Per design: generate answer without images (text-only mode)
-        if not retrieved:
-            # Build text-only message
-            content = [{"type": "text", "text": "No images available. Query: What is this?"}]
-        else:
-            content = []
+        content = [{"type": "text", "text": "No images available. Query: What is this?"}] if not retrieved else []
 
         assert len(content) == 1
         assert content[0]["type"] == "text"
@@ -519,12 +513,8 @@ class TestVisRAGGenerationPipelineEdgeCases:
         """Test handling when retrieval returns exactly one image."""
         images = [create_test_image(10, 10)]
 
-        # Single image case
-        if len(images) == 1:
-            # No concatenation needed, use image directly
-            result_image = images[0]
-        else:
-            result_image = None
+        # Single image case - no concatenation needed, use image directly
+        result_image = images[0] if len(images) == 1 else None
 
         assert result_image is not None
         assert result_image.size == (10, 10)
@@ -551,15 +541,8 @@ class TestVisRAGGenerationPipelineEdgeCases:
         gray_img = Image.new("L", (10, 10), color=128)
 
         # Convert to RGB
-        if rgba_img.mode != "RGB":
-            rgb_from_rgba = rgba_img.convert("RGB")
-        else:
-            rgb_from_rgba = rgba_img
-
-        if gray_img.mode != "RGB":
-            rgb_from_gray = gray_img.convert("RGB")
-        else:
-            rgb_from_gray = gray_img
+        rgb_from_rgba = rgba_img.convert("RGB") if rgba_img.mode != "RGB" else rgba_img
+        rgb_from_gray = gray_img.convert("RGB") if gray_img.mode != "RGB" else gray_img
 
         assert rgb_from_rgba.mode == "RGB"
         assert rgb_from_gray.mode == "RGB"
@@ -808,9 +791,7 @@ class TestVisRAGGenerationPipelineIntegration:
             assert result["token_usage"]["prompt_tokens"] == 1000  # 5 * 200
             assert result["token_usage"]["completion_tokens"] == 250  # 5 * 50
 
-    def test_custom_prompt_template(
-        self, session_factory, mock_vlm, mock_retrieval_pipeline, cleanup_pipeline_results
-    ):
+    def test_custom_prompt_template(self, session_factory, mock_vlm, mock_retrieval_pipeline, cleanup_pipeline_results):
         """Test pipeline with custom prompt template."""
         from autorag_research.pipelines.generation.visrag_gen import VisRAGGenerationPipeline
 
