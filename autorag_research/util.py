@@ -235,7 +235,7 @@ def extract_token_logprobs(
 ) -> dict[str, float] | None:
     """Extract log probabilities from LangChain LLM response.
 
-    Works with any LangChain LLM that stores logprobs in response_metadata["logprobs"]["content"].
+    Works with any LangChain LLM that stores logprobs in ``response_metadata["logprobs"]["content"]``.
     Compatible providers include:
     - OpenAI (ChatOpenAI, AzureChatOpenAI)
     - Together AI, Fireworks AI, Anyscale
@@ -246,7 +246,7 @@ def extract_token_logprobs(
     - OpenAI/vLLM: llm.bind(logprobs=True, top_logprobs=5)
     - Other providers: Check provider documentation for logprobs support
 
-    LangChain stores logprobs in response.response_metadata["logprobs"]["content"].
+    LangChain stores logprobs in ``response.response_metadata["logprobs"]["content"]``.
     Each token entry has: token, logprob, bytes, top_logprobs.
 
     Args:
