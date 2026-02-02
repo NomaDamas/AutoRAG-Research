@@ -1,0 +1,26 @@
+# Hybrid CC Retrieval Pipeline Configuration
+#
+# Fuses two retrieval pipelines using Convex Combination.
+# Normalizes scores and combines with configurable weight.
+#
+# Formula: combined = weight * norm(scores_1) + (1-weight) * norm(scores_2)
+#
+# Parameters:
+#   retrieval_pipeline_1_name: First retrieval pipeline name
+#   retrieval_pipeline_2_name: Second retrieval pipeline name
+#   weight: Weight for pipeline_1 (0-1), default 0.5
+#   normalize_method: Score normalization ("mm", "tmm", "z", "dbsf")
+#
+_target_: autorag_research.pipelines.retrieval.hybrid.HybridCCRetrievalPipelineConfig
+description: "Hybrid retrieval using Convex Combination"
+name: hybrid_cc
+retrieval_pipeline_1_name: vector_search
+retrieval_pipeline_2_name: bm25
+weight: 0.5
+normalize_method: mm  # mm (min-max), tmm (theoretical min-max), z (z-score), dbsf (3-sigma)
+# For tmm normalization - uses theoretical min and actual max from results:
+# pipeline_1_min: -1.0  # e.g., cosine similarity min
+# pipeline_2_min: 0.0   # e.g., BM25 min
+fetch_k_multiplier: 2
+top_k: 10
+batch_size: 100

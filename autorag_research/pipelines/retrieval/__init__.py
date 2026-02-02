@@ -1,8 +1,13 @@
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.pipelines.retrieval.bm25 import BM25RetrievalPipeline
 from autorag_research.pipelines.retrieval.hyde import (
     HyDEPipelineConfig,
     HyDERetrievalPipeline,
+from autorag_research.pipelines.retrieval.bm25 import BM25PipelineConfig, BM25RetrievalPipeline
+from autorag_research.pipelines.retrieval.hybrid import (
+    HybridCCRetrievalPipeline,
+    HybridCCRetrievalPipelineConfig,
+    HybridRRFRetrievalPipeline,
+    HybridRRFRetrievalPipelineConfig,
 )
 from autorag_research.pipelines.retrieval.vector_search import (
     VectorSearchPipelineConfig,
@@ -10,10 +15,15 @@ from autorag_research.pipelines.retrieval.vector_search import (
 )
 
 __all__ = [
+    "BM25PipelineConfig",
     "BM25RetrievalPipeline",
     "BaseRetrievalPipeline",
     "HyDEPipelineConfig",
     "HyDERetrievalPipeline",
+    "HybridCCRetrievalPipeline",
+    "HybridCCRetrievalPipelineConfig",
+    "HybridRRFRetrievalPipeline",
+    "HybridRRFRetrievalPipelineConfig",
     "VectorSearchPipelineConfig",
     "VectorSearchRetrievalPipeline",
 ]
