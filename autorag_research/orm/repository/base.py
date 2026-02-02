@@ -592,6 +592,42 @@ class BaseEmbeddingRepository(GenericRepository[T]):
         stmt = select(self.model_cls).where(self.model_cls.embeddings.is_not(None))  # ty: ignore[possibly-missing-attribute]
         return self._execute_with_offset_limit(stmt, limit, offset)
 
+    # ==================== Count Methods ====================
+
+    def count_without_embeddings(self) -> int:
+        """Count entities without single-vector embeddings.
+
+        Returns:
+            Number of entities where embedding is NULL.
+        """
+        from sqlalchemy import func
+
+        stmt = (
+            select(func.count())
+            .select_from(self.model_cls)
+            .where(
+                self.model_cls.embedding.is_(None)  # ty: ignore[possibly-missing-attribute]
+            )
+        )
+        return self.session.execute(stmt).scalar() or 0
+
+    def count_without_multi_embeddings(self) -> int:
+        """Count entities without multi-vector embeddings.
+
+        Returns:
+            Number of entities where embeddings is NULL.
+        """
+        from sqlalchemy import func
+
+        stmt = (
+            select(func.count())
+            .select_from(self.model_cls)
+            .where(
+                self.model_cls.embeddings.is_(None)  # ty: ignore[possibly-missing-attribute]
+            )
+        )
+        return self.session.execute(stmt).scalar() or 0
+
     # ==================== BM25 Methods ====================
 
     def batch_update_bm25_tokens(self, tokenizer: str = "bert", batch_size: int = 1000) -> int:

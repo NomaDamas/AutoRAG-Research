@@ -310,13 +310,13 @@ def ingest(  # noqa: C901
 
     # 12. Embed data (unless skipped)
     if not skip_embedding:
-        with console.status(
-            f"[bold blue]Embedding all data (batch_size={embed_batch_size}, concurrency={embed_concurrency})..."
-        ):
-            if isinstance(embed_model, MultiVectorMultiModalEmbedding):
-                ingestor.embed_all_late_interaction(max_concurrency=embed_concurrency, batch_size=embed_batch_size)  # ty: ignore[possibly-missing-attribute]
-            else:
-                ingestor.embed_all(max_concurrency=embed_concurrency, batch_size=embed_batch_size)
+        console.print(
+            f"[bold blue]Embedding all data (batch_size={embed_batch_size}, concurrency={embed_concurrency})...[/bold blue]"
+        )
+        if isinstance(embed_model, MultiVectorMultiModalEmbedding):
+            ingestor.embed_all_late_interaction(max_concurrency=embed_concurrency, batch_size=embed_batch_size)  # ty: ignore[possibly-missing-attribute]
+        else:
+            ingestor.embed_all(max_concurrency=embed_concurrency, batch_size=embed_batch_size)
         console.print("[green]✓[/green] Embedding complete")
     else:
         console.print("[yellow]⊘[/yellow] Skipping embedding step (--skip-embedding)")
