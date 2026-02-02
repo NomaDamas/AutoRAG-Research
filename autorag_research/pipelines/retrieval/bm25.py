@@ -23,8 +23,11 @@ class BM25PipelineConfig(BaseRetrievalPipelineConfig):
         name: Unique name for this pipeline instance.
         tokenizer: Tokenizer name for BM25 (default: "bert" for bert_base_uncased).
         index_name: Name of the BM25 index in PostgreSQL.
-        top_k: Number of results to retrieve per query.
-        batch_size: Number of queries to process in each batch.
+        top_k: Number of results to retrieve per query. Default: 10.
+        batch_size: Number of queries to fetch from DB at once. Default: 128.
+        max_concurrency: Maximum concurrent async operations. Default: 16.
+        max_retries: Maximum retry attempts for failed queries. Default: 3.
+        retry_delay: Base delay (seconds) for exponential backoff. Default: 1.0.
 
     Example:
         ```python
@@ -32,6 +35,7 @@ class BM25PipelineConfig(BaseRetrievalPipelineConfig):
             name="bm25_baseline",
             tokenizer="bert",
             top_k=10,
+            max_concurrency=32,  # More parallelism for I/O-bound workloads
         )
         ```
     """

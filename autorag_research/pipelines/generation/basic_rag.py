@@ -34,8 +34,11 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
         llm: LangChain BaseLanguageModel instance for text generation.
         prompt_template: Template for building the generation prompt.
             Must contain {context} and {query} placeholders.
-        top_k: Number of chunks to retrieve per query.
-        batch_size: Number of queries to process in each batch.
+        top_k: Number of chunks to retrieve per query. Default: 10.
+        batch_size: Number of queries to fetch from DB at once. Default: 128.
+        max_concurrency: Maximum concurrent async operations. Default: 16.
+        max_retries: Maximum retry attempts for failed queries. Default: 3.
+        retry_delay: Base delay (seconds) for exponential backoff. Default: 1.0.
 
     Example:
         ```python
@@ -47,6 +50,7 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
             llm=ChatOpenAI(model="gpt-4"),
             prompt_template="Context:\\n{context}\\n\\nQ: {query}\\nA:",
             top_k=5,
+            max_concurrency=8,  # Limit parallelism to avoid rate limits
         )
         ```
     """

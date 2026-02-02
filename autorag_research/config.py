@@ -40,9 +40,13 @@ class BasePipelineConfig(ABC):
 
     Attributes:
         name: Unique name for this pipeline instance.
+        description: Optional description of the pipeline.
         pipeline_type: Type of pipeline (RETRIEVAL or GENERATION).
-        top_k: Number of results to retrieve per query.
-        batch_size: Number of queries to process in each batch.
+        top_k: Number of results to retrieve per query. Default: 10.
+        batch_size: Number of queries to fetch from DB at once. Default: 128.
+        max_concurrency: Maximum concurrent async operations (semaphore limit). Default: 16.
+        max_retries: Maximum retry attempts for failed queries (uses tenacity). Default: 3.
+        retry_delay: Base delay in seconds for exponential backoff between retries. Default: 1.0.
 
     Example:
         ```python
