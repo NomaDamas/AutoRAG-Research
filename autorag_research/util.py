@@ -440,3 +440,26 @@ def aggregate_token_usage(results: list[dict]) -> tuple[int, int, int, int]:
         execution_time_ms += result["execution_time"]
 
     return prompt_tokens, completion_tokens, embedding_tokens, execution_time_ms
+
+
+def image_chunk_to_pil_images(image_chunks: list[tuple[bytes, str]]) -> list[Image.Image]:
+    """Convert raw image bytes to PIL Images, skipping invalid ones.
+
+    Args:
+        image_chunks: List of (bytes, mimetype) tuples.
+            It can be a result of the GET operation from the ImageChunk repository.
+
+    Returns:
+        List of valid PIL Images.
+    """
+        images: list[Image.Image] = []
+        for img_bytes, _mimetype in image_chunks:
+            if img_bytes:
+                try:
+                    img = bytes_to_pil_image(img_bytes)
+                    if img.mode not in ("RGB", "RGBA"):
+                        img = img.convert("RGB")
+                    images.append(img)
+                except Exception:
+                    logger.debug("Skipping invalid image during VisRAG-Gen processing")
+        return images

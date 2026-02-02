@@ -2,8 +2,8 @@
 
 Tests cover:
 1. Pipeline initialization with different image_processing_modes
-2. _generate_multi_image() - multi-image VLM call
-3. _generate_concatenated() - image concatenation logic
+2. _generate_multi_image() - multi-image VLM call (async)
+3. _generate_concatenated() - image concatenation logic (async)
 4. _concatenate_images() - horizontal and vertical concatenation
 5. _pil_image_to_data_uri() - image conversion (now in util)
 6. _verify_multimodal_support() - VLM capability health check
@@ -60,10 +60,12 @@ class TestVisRAGGenerationPipelineUnit:
     @pytest.fixture
     def mock_retrieval_pipeline(self):
         """Create a mock retrieval pipeline for image chunks."""
+        from unittest.mock import AsyncMock
+
         mock = MagicMock()
         mock.pipeline_id = 1
 
-        def mock_retrieve(query_text: str, top_k: int):
+        async def mock_retrieve_by_id(query_id: int, top_k: int):
             # Return mock image chunk IDs (using image_chunk IDs from seed data: 1-5)
             return [
                 {"doc_id": 1, "score": 0.95},
@@ -71,7 +73,7 @@ class TestVisRAGGenerationPipelineUnit:
                 {"doc_id": 3, "score": 0.75},
             ][:top_k]
 
-        mock.retrieve = mock_retrieve
+        mock._retrieve_by_id = AsyncMock(side_effect=mock_retrieve_by_id)
         return mock
 
     @pytest.fixture
@@ -624,10 +626,12 @@ class TestVisRAGGenerationPipelineIntegration:
     @pytest.fixture
     def mock_retrieval_pipeline(self):
         """Create a mock retrieval pipeline that returns image chunk IDs."""
+        from unittest.mock import AsyncMock
+
         mock = MagicMock()
         mock.pipeline_id = 1
 
-        def mock_retrieve(query_text: str, top_k: int):
+        async def mock_retrieve_by_id(query_id: int, top_k: int):
             # Return image chunk IDs (1-5 exist in seed data)
             return [
                 {"doc_id": 1, "score": 0.95},
@@ -635,7 +639,7 @@ class TestVisRAGGenerationPipelineIntegration:
                 {"doc_id": 3, "score": 0.75},
             ][:top_k]
 
-        mock.retrieve = mock_retrieve
+        mock._retrieve_by_id = AsyncMock(side_effect=mock_retrieve_by_id)
         return mock
 
     @pytest.fixture
@@ -714,7 +718,10 @@ class TestVisRAGGenerationPipelineIntegration:
         assert config["max_tokens"] == 500
         assert config["retrieval_pipeline_id"] == mock_retrieval_pipeline.pipeline_id
 
-    def test_generate_single_query(self, session_factory, mock_vlm, mock_retrieval_pipeline, cleanup_pipeline_results):
+    @pytest.mark.asyncio
+    async def test_generate_single_query(
+        self, session_factory, mock_vlm, mock_retrieval_pipeline, cleanup_pipeline_results
+    ):
         """Test generation for a single query."""
         from autorag_research.pipelines.generation.visrag_gen import VisRAGGenerationPipeline
 
@@ -731,7 +738,9 @@ class TestVisRAGGenerationPipelineIntegration:
             )
             cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-            result = pipeline._generate("What is shown in the document?", top_k=3)
+            # Mock _get_query_text to return test query text
+            with patch.object(pipeline, "_get_query_text", return_value="What is shown in the document?"):
+                result = await pipeline._generate(query_id=1, top_k=3)
 
             assert result.text == "This is the answer based on document images."
             assert result.token_usage is not None
@@ -791,7 +800,10 @@ class TestVisRAGGenerationPipelineIntegration:
             assert result["token_usage"]["prompt_tokens"] == 1000  # 5 * 200
             assert result["token_usage"]["completion_tokens"] == 250  # 5 * 50
 
-    def test_custom_prompt_template(self, session_factory, mock_vlm, mock_retrieval_pipeline, cleanup_pipeline_results):
+    @pytest.mark.asyncio
+    async def test_custom_prompt_template(
+        self, session_factory, mock_vlm, mock_retrieval_pipeline, cleanup_pipeline_results
+    ):
         """Test pipeline with custom prompt template."""
         from autorag_research.pipelines.generation.visrag_gen import VisRAGGenerationPipeline
 
@@ -810,13 +822,15 @@ class TestVisRAGGenerationPipelineIntegration:
             )
             cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-            _ = pipeline._generate("Test query", top_k=2)
+            # Mock _get_query_text to return test query text
+            with patch.object(pipeline, "_get_query_text", return_value="Test query"):
+                _ = await pipeline._generate(query_id=1, top_k=2)
 
             # Verify the VLM was called with correct message structure
-            # Note: invoke is called once for health check, then for generation
-            # Get the last call (generation call)
-            call_args = mock_vlm.invoke.call_args_list[-1]
-            # invoke is called with a list of messages: invoke([message])
+            # Note: ainvoke is called for generation (invoke is used for health check)
+            # Get the last ainvoke call (generation call)
+            call_args = mock_vlm.ainvoke.call_args_list[-1]
+            # ainvoke is called with a list of messages: ainvoke([message])
             message_list = call_args[0][0]
             assert len(message_list) == 1
             message = message_list[0]

@@ -18,7 +18,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.util import bytes_to_pil_image, pil_image_to_data_uri
+from autorag_research.util import pil_image_to_data_uri, image_chunk_to_pil_images
 
 DEFAULT_VISRAG_PROMPT = """Based on the provided document images, answer the following question:
 
@@ -289,7 +289,7 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
 
         return concatenated
 
-    def _generate_single_image(self, query: str, image: Image.Image) -> GenerationResult:
+    async def _generate_single_image(self, query: str, image: Image.Image) -> GenerationResult:
         """Generate answer using VLM with a single image.
 
         Args:
@@ -306,10 +306,10 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
         ]
 
         message = HumanMessage(content=content)
-        response = self._llm.invoke([message])
+        response = await self._llm.ainvoke([message])
         return self._extract_generation_result(response)
 
-    def _generate_multi_image(self, query: str, images: list[Image.Image]) -> GenerationResult:
+    async def _generate_multi_image(self, query: str, images: list[Image.Image]) -> GenerationResult:
         """Generate answer using VLM with multiple images in single call.
 
         Best performance for VLMs supporting multi-image input (GPT-4o, Qwen2-VL, etc.).
@@ -329,10 +329,10 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
             content.append({"type": "image_url", "image_url": {"url": data_uri}})
 
         message = HumanMessage(content=content)
-        response = self._llm.invoke([message])
+        response = await self._llm.ainvoke([message])
         return self._extract_generation_result(response)
 
-    def _generate_concatenated(self, query: str, images: list[Image.Image]) -> GenerationResult:
+    async def _generate_concatenated(self, query: str, images: list[Image.Image]) -> GenerationResult:
         """Generate answer by concatenating images into single composite image.
 
         Fallback for VLMs accepting only one image. Performance degrades with many
@@ -346,9 +346,9 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
             GenerationResult from VLM.
         """
         concatenated = self._concatenate_images(images, self._concatenation_direction)
-        return self._generate_single_image(query, concatenated)
+        return await self._generate_single_image(query, concatenated)
 
-    def _generate_text_only_fallback(self, query: str, metadata_key: str) -> GenerationResult:
+    async def _generate_text_only_fallback(self, query: str, metadata_key: str) -> GenerationResult:
         """Generate answer using text-only mode when no valid images are available.
 
         Args:
@@ -360,84 +360,67 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
         """
         content: list[str | dict] = [{"type": "text", "text": self._prompt_template.format(query=query)}]
         message = HumanMessage(content=content)
-        response = self._llm.invoke([message])
+        response = await self._llm.ainvoke([message])
         result = self._extract_generation_result(response)
         if result.metadata is None:
             result.metadata = {}
         result.metadata[metadata_key] = True
         return result
 
-    def _convert_to_pil_images(self, image_contents: list[tuple[bytes, str]]) -> list[Image.Image]:
-        """Convert raw image bytes to PIL Images, skipping invalid ones.
-
-        Args:
-            image_contents: List of (bytes, mimetype) tuples.
-
-        Returns:
-            List of valid PIL Images.
-        """
-        images: list[Image.Image] = []
-        for img_bytes, _mimetype in image_contents:
-            if img_bytes:
-                try:
-                    img = bytes_to_pil_image(img_bytes)
-                    if img.mode not in ("RGB", "RGBA"):
-                        img = img.convert("RGB")
-                    images.append(img)
-                except Exception:
-                    logger.debug("Skipping invalid image during VisRAG-Gen processing")
-        return images
-
-    def _generate(self, query: str, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
         """Generate answer using VisRAG-Gen with retrieved document images.
 
         Algorithm Flow:
-        1. Retrieve top-k document images using retrieval pipeline
-        2. Fetch image chunks (PIL Images) and retrieval scores from database
-        3. Apply image processing based on mode:
+        1. Get query text from database
+        2. Retrieve top-k document images using retrieval pipeline (async)
+        3. Fetch image chunks (PIL Images) and retrieval scores from database
+        4. Apply image processing based on mode:
            a. multi_image: Pass all images to VLM in single call
            b. concatenate: Merge images into single composite image
-        4. Construct multi-modal LangChain message with images
-        5. Call VLM to generate answer
-        6. Return GenerationResult with text, token usage, metadata
+        5. Construct multi-modal LangChain message with images
+        6. Call VLM to generate answer (async)
+        7. Return GenerationResult with text, token usage, metadata
 
         Args:
-            query: The query text to answer.
+            query_id: The query ID to answer.
             top_k: Number of image chunks to retrieve.
 
         Returns:
             GenerationResult containing generated text, token usage, and metadata.
         """
-        # 1. Retrieve relevant image chunks using composed retrieval pipeline
-        retrieved = self._retrieval_pipeline.retrieve(query, top_k)
+        # 1. Get query text from database
+        query = self._get_query_text(query_id)
+
+        # 2. Retrieve relevant image chunks using composed retrieval pipeline (async)
+        retrieved = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
 
         # Handle empty retrieval results (text-only fallback)
         if not retrieved:
-            logger.warning("No images retrieved for query: %s", query)
-            return self._generate_text_only_fallback(query, "no_images_retrieved")
+            logger.warning("No images retrieved for query_id: %s", query_id)
+            return await self._generate_text_only_fallback(query, "no_images_retrieved")
 
-        # 2. Get image chunk contents via service layer
+        # 3. Get image chunk contents via service layer
         image_chunk_ids = [r["doc_id"] for r in retrieved]
         retrieval_scores = [r["score"] for r in retrieved]
         image_contents = self._service.get_image_chunk_contents(image_chunk_ids)
 
-        # 3. Convert to PIL Images (skip empty/invalid images)
-        images = self._convert_to_pil_images(image_contents)
+        # 4. Convert to PIL Images (skip empty/invalid images)
+        images = image_chunk_to_pil_images(image_contents)
 
         # Handle case where all images are invalid
         if not images:
-            return self._generate_text_only_fallback(query, "all_images_invalid")
+            return await self._generate_text_only_fallback(query, "all_images_invalid")
 
-        # 4. Apply image processing based on mode
+        # 5. Apply image processing based on mode
         if self._image_processing_mode == "multi_image":
-            result = self._generate_multi_image(query, images)
+            result = await self._generate_multi_image(query, images)
         elif self._image_processing_mode == "concatenate":
-            result = self._generate_concatenated(query, images)
+            result = await self._generate_concatenated(query, images)
         else:
             msg = f"Unknown image_processing_mode: {self._image_processing_mode}"
             raise ValueError(msg)
 
-        # 5. Add metadata about retrieval
+        # 6. Add metadata about retrieval
         if result.metadata is None:
             result.metadata = {}
         result.metadata["retrieved_image_chunk_ids"] = image_chunk_ids
