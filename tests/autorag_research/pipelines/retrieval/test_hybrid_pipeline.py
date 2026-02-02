@@ -554,7 +554,7 @@ class TestHybridRRFRetrievalPipeline:
         results_1 = [{"doc_id": 1, "score": 0.9}, {"doc_id": 2, "score": 0.8}]
         results_2 = [{"doc_id": 2, "score": 0.95}, {"doc_id": 1, "score": 0.85}]
 
-        fused = pipeline._fuse_results(results_1, results_2, top_k=2)
+        fused = pipeline._fuse_results(results_1, results_2, top_k=2, fetch_k=4)
 
         assert len(fused) == 2
         # Both docs should have same RRF score (symmetric ranks)
@@ -674,7 +674,7 @@ class TestHybridCCRetrievalPipeline:
         results_1 = [{"doc_id": 1, "score": 1.0}, {"doc_id": 2, "score": 0.0}]
         results_2 = [{"doc_id": 2, "score": 1.0}, {"doc_id": 1, "score": 0.0}]
 
-        fused = pipeline._fuse_results(results_1, results_2, top_k=2)
+        fused = pipeline._fuse_results(results_1, results_2, top_k=2, fetch_k=4)
 
         # With weight=1.0, doc_1 should be first (highest in pipeline_1)
         assert fused[0]["doc_id"] == 1
