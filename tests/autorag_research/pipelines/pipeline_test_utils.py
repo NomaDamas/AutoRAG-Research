@@ -33,7 +33,7 @@ Usage:
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from sqlalchemy.orm import scoped_session
 
@@ -411,10 +411,7 @@ def create_mock_llm(
     # Sync invoke method
     mock.invoke.return_value = mock_response
 
-    # Async ainvoke method - returns a coroutine that yields the same response
-    async def async_invoke(*args, **kwargs):
-        return mock_response
-
-    mock.ainvoke = async_invoke
+    # Async ainvoke method - use AsyncMock for proper assertion support
+    mock.ainvoke = AsyncMock(return_value=mock_response)
 
     return mock
