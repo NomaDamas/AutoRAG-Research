@@ -183,15 +183,18 @@ class TestHyDERetrievalPipeline:
         assert config["type"] == "hyde"
         assert config["prompt_template"] == custom_template
 
-    def test_generate_hypothetical_document_uses_template(
+    @pytest.mark.asyncio
+    async def test_generate_hypothetical_document_uses_template(
         self,
         session_factory: sessionmaker[Session],
         mock_embedding,
         cleanup_pipeline_results: list[int],
     ):
         """Test that hypothetical document generation uses prompt template."""
+        from unittest.mock import AsyncMock
+
         llm = MagicMock()
-        llm.invoke.return_value = "Hypothetical response"
+        llm.ainvoke = AsyncMock(return_value="Hypothetical response")
         custom_template = "Custom prompt for: {question}"
 
         pipeline = HyDERetrievalPipeline(
@@ -203,10 +206,10 @@ class TestHyDERetrievalPipeline:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        pipeline._generate_hypothetical_document("test query")
+        await pipeline._generate_hypothetical_document("test query")
 
         # Verify the template was used
-        llm.invoke.assert_called_once_with("Custom prompt for: test query")
+        llm.ainvoke.assert_called_once_with("Custom prompt for: test query")
 
     def test_run_full_pipeline(
         self,
@@ -257,7 +260,8 @@ class TestHyDERetrievalPipeline:
             verifier = PipelineTestVerifier(result, pipeline.pipeline_id, session_factory, config)
             verifier.verify_all()
 
-    def test_retrieve_single_query(
+    @pytest.mark.asyncio
+    async def test_retrieve_single_query(
         self,
         session_factory: sessionmaker[Session],
         mock_llm,
@@ -282,7 +286,7 @@ class TestHyDERetrievalPipeline:
             )
             cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-            results = pipeline.retrieve("What is deep learning?", top_k=5)
+            results = await pipeline.retrieve("What is deep learning?", top_k=5)
 
             assert len(results) == 1
             assert results[0]["doc_id"] == 1

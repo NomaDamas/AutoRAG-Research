@@ -159,7 +159,7 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
             "prompt_template": self.prompt_template,
         }
 
-    def _generate_hypothetical_document(self, query_text: str) -> str:
+    async def _generate_hypothetical_document(self, query_text: str) -> str:
         """Generate a hypothetical document using the LLM.
 
         Args:
@@ -169,7 +169,7 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
             Generated hypothetical document text.
         """
         prompt = self.prompt_template.format(question=query_text)
-        response = self.llm.invoke(prompt)
+        response = await self.llm.ainvoke(prompt)
         return self._extract_response_content(response)
 
     @staticmethod
@@ -186,65 +186,50 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
             return str(response.content)
         return str(response)
 
-    def _get_retrieval_func(self) -> Any:
-        """Return HyDE retrieval function with parallel processing.
+    async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:
+        """Retrieve documents using query ID.
+
+        Fetches query text from DB, generates hypothetical document,
+        embeds it, and performs vector search.
+
+        Args:
+            query_id: The query ID to retrieve for.
+            top_k: Number of top documents to retrieve.
 
         Returns:
-            A callable that generates hypothetical documents, embeds them,
-            and performs vector search. LLM and embedding calls are parallelized.
+            List of result dicts with doc_id and score.
         """
+        # Get query text from DB
+        query_texts = self._service.fetch_query_texts([int(query_id)])
+        if not query_texts:
+            return []
 
-        def hyde_retrieval(query_ids: list[int], top_k: int) -> list[list[dict[str, Any]]]:
-            import asyncio
+        query_text = query_texts[0]
+        return await self._retrieve_by_text(query_text, top_k)
 
-            from autorag_research.util import run_with_concurrency_limit
+    async def _retrieve_by_text(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
+        """Retrieve documents using raw query text.
 
-            batch_size = len(query_ids)
+        Generates hypothetical document, embeds it, and performs vector search.
 
-            # Step 1: Batch fetch all query texts
-            query_texts = self._service.fetch_query_texts(query_ids)
+        Args:
+            query_text: The query text to retrieve for.
+            top_k: Number of top documents to retrieve.
 
-            # Step 2: Build prompts
-            prompts = [self.prompt_template.format(question=q) for q in query_texts]
+        Returns:
+            List of result dicts with doc_id and score.
+        """
+        # Step 1: Generate hypothetical document
+        hypothetical_doc = await self._generate_hypothetical_document(query_text)
 
-            # Step 3: Parallel LLM generation
-            responses = asyncio.run(
-                run_with_concurrency_limit(
-                    prompts,
-                    self.llm.ainvoke,
-                    batch_size,
-                    "Failed to generate hypothetical document",
-                )
-            )
+        # Step 2: Embed the hypothetical document
+        embedding = await self.embedding.aembed_query(hypothetical_doc)
 
-            # Step 4: Extract content and filter valid docs for embedding
-            hypothetical_docs = [None if resp is None else self._extract_response_content(resp) for resp in responses]
-            valid_pairs = [(i, doc) for i, doc in enumerate(hypothetical_docs) if doc is not None]
-            valid_indices = [i for i, _ in valid_pairs]
-            valid_docs = [doc for _, doc in valid_pairs]
-
-            # Step 5: Parallel embedding
-            embeddings = asyncio.run(
-                run_with_concurrency_limit(
-                    valid_docs,
-                    self.embedding.aembed_query,
-                    batch_size,
-                    "Failed to embed hypothetical document",
-                )
-            )
-
-            # Step 6: Vector search for each embedding
-            all_results: list[list[dict[str, Any]]] = [[] for _ in query_ids]
-            for idx, embedding in zip(valid_indices, embeddings, strict=True):
-                if embedding is not None:
-                    all_results[idx] = self._service.vector_search_by_embedding(
-                        embedding=embedding,
-                        top_k=top_k,
-                    )
-
-            return all_results
-
-        return hyde_retrieval
+        # Step 3: Vector search with the embedding
+        return self._service.vector_search_by_embedding(
+            embedding=embedding,
+            top_k=top_k,
+        )
 
 
 __all__ = ["DEFAULT_HYDE_PROMPT_TEMPLATE", "HyDEPipelineConfig", "HyDERetrievalPipeline"]
