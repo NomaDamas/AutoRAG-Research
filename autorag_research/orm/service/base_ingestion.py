@@ -312,9 +312,14 @@ class BaseIngestionService(BaseService, ABC):
         Raises:
             RepositoryNotSupportedError: If the required repository is not available in the UoW.
         """
+        from tqdm import tqdm
+
         # Get entity configuration from dictionary
         repo_attr, data_attr, display_name, filter_none = ENTITY_CONFIG[entity_type]
         fetch_method_name = "get_without_embeddings" if embedding_type == "single" else "get_without_multi_embeddings"
+        count_method_name = (
+            "count_without_embeddings" if embedding_type == "single" else "count_without_multi_embeddings"
+        )
         is_multi_vector = embedding_type == "multi_vector"
 
         # Determine log/error messages
@@ -322,47 +327,59 @@ class BaseIngestionService(BaseService, ABC):
         is_image = entity_type == "image_chunk"
         error_msg = f"Failed to embed {'image' if is_image else 'text'}{embedding_suffix}"
 
+        # Get total count for progress bar
+        with self._create_uow() as uow:
+            repository = getattr(uow, repo_attr, None)
+            if repository is None:
+                raise RepositoryNotSupportedError(repo_attr, type(uow).__name__)
+            total_to_embed = getattr(repository, count_method_name)()
+
+        if total_to_embed == 0:
+            logger.info(f"No {display_name} to embed{embedding_suffix}")
+            return 0
+
         total_embedded = 0
 
-        while True:
-            # Fetch entities without embeddings
-            with self._create_uow() as uow:
-                # Check if repository exists
-                repository = getattr(uow, repo_attr, None)
-                if repository is None:
-                    raise RepositoryNotSupportedError(repo_attr, type(uow).__name__)
+        with tqdm(total=total_to_embed, desc=f"Embedding {display_name}", unit="items") as pbar:
+            while True:
+                # Fetch entities without embeddings
+                with self._create_uow() as uow:
+                    # Check if repository exists
+                    repository = getattr(uow, repo_attr, None)
+                    if repository is None:
+                        raise RepositoryNotSupportedError(repo_attr, type(uow).__name__)
 
-                # Get fetch method and call it
-                fetch_method = getattr(repository, fetch_method_name)
-                entities = fetch_method(limit=batch_size)
-                if not entities:
-                    break
+                    # Get fetch method and call it
+                    fetch_method = getattr(repository, fetch_method_name)
+                    entities = fetch_method(limit=batch_size)
+                    if not entities:
+                        break
 
-                # Extract (id, data) pairs using data_attr
-                items_to_embed = [(e.id, getattr(e, data_attr)) for e in entities]
+                    # Extract (id, data) pairs using data_attr
+                    items_to_embed = [(e.id, getattr(e, data_attr)) for e in entities]
 
-            # Filter None content if required (for image chunks)
-            if filter_none:
-                valid_items = [(item_id, data) for item_id, data in items_to_embed if data is not None]
-                if not valid_items:
-                    break
-            else:
-                valid_items = items_to_embed
+                # Filter None content if required (for image chunks)
+                if filter_none:
+                    valid_items = [(item_id, data) for item_id, data in items_to_embed if data is not None]
+                    if not valid_items:
+                        break
+                else:
+                    valid_items = items_to_embed
 
-            # Run embedding
-            data_list = [data for _, data in valid_items]
-            embeddings = asyncio.run(run_with_concurrency_limit(data_list, embed_func, max_concurrency, error_msg))  # ty: ignore[invalid-argument-type]
+                # Run embedding
+                data_list = [data for _, data in valid_items]
+                embeddings = asyncio.run(run_with_concurrency_limit(data_list, embed_func, max_concurrency, error_msg))  # ty: ignore[invalid-argument-type]
 
-            # Filter out None embeddings and update entities
-            valid_updates = [
-                (item_id, emb) for (item_id, _), emb in zip(valid_items, embeddings, strict=True) if emb is not None
-            ]
-            if valid_updates:
-                ids_to_update = [item_id for item_id, _ in valid_updates]
-                embeddings_to_update = [emb for _, emb in valid_updates]
-                total_embedded += self._set_embeddings(ids_to_update, embeddings_to_update, repo_attr, is_multi_vector)
-
-            logger.info(f"Embedded {total_embedded} {display_name}{embedding_suffix} so far")
+                # Filter out None embeddings and update entities
+                valid_updates = [
+                    (item_id, emb) for (item_id, _), emb in zip(valid_items, embeddings, strict=True) if emb is not None
+                ]
+                if valid_updates:
+                    ids_to_update = [item_id for item_id, _ in valid_updates]
+                    embeddings_to_update = [emb for _, emb in valid_updates]
+                    batch_count = self._set_embeddings(ids_to_update, embeddings_to_update, repo_attr, is_multi_vector)
+                    total_embedded += batch_count
+                    pbar.update(batch_count)
 
         # Generate BM25 tokens for chunks/queries if tokenizer is specified
         if entity_type in ("chunk", "query") and bm25_tokenizer is not None:
