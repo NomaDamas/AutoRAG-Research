@@ -242,7 +242,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
             paragraphs=numbered_paragraphs,
         )
 
-    def _generate(self, query: str, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
         """Generate answer using IRCoT: interleave retrieval with chain-of-thought.
 
         Algorithm:
@@ -259,17 +259,20 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
         5. Return answer + metadata (C, chunk IDs, token usage)
 
         Args:
-            query: The query text to answer.
+            query_id: The query ID to answer.
             top_k: Number of chunks to retrieve (used for k_per_step if specified).
 
         Returns:
             GenerationResult containing the generated text and metadata.
         """
+        # Get query text from database
+        query = self._get_query_text(query_id)
+
         # Use k_per_step for retrieval count
         k = self.k_per_step
 
         # Initialize collections
-        chunk_ids: list[int] = []  # Track unique chunk IDs
+        chunk_ids: list[int | str] = []  # Track unique chunk IDs
         paragraphs: list[str] = []  # Paragraph contents
         cot_sentences: list[str] = []  # Chain-of-thought history
         total_token_usage: dict[str, int] | None = None
@@ -277,7 +280,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
 
         # 1. Initial retrieval with original query
         logger.debug(f"IRCoT: Initial retrieval for query: {query[:50]}...")
-        initial_results = self._retrieval_pipeline.retrieve(query, k)
+        initial_results = await self._retrieval_pipeline.retrieve(query, k)
 
         # Extract chunk IDs and get contents
         for result in initial_results:
@@ -296,7 +299,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
 
             # a. Generate CoT sentence
             reasoning_prompt = self._build_reasoning_prompt(query, paragraphs, cot_sentences)
-            response = self._llm.invoke(reasoning_prompt)
+            response = await self._llm.ainvoke(reasoning_prompt)
 
             # Extract response text
             response_text = response.content if hasattr(response, "content") else str(response)
@@ -315,10 +318,10 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
                 break
 
             # d. Retrieve more paragraphs using CoT sentence as query
-            new_results = self._retrieval_pipeline.retrieve(first_sentence, k)
+            new_results = await self._retrieval_pipeline.retrieve(first_sentence, k)
 
             # e. Extend paragraph collection with new chunks
-            new_chunk_ids = []
+            new_chunk_ids: list[int | str] = []
             for result in new_results:
                 doc_id = result.get("doc_id")
                 if doc_id is not None and doc_id not in chunk_ids:
@@ -337,7 +340,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
 
         # 3. Generate final answer
         qa_prompt = self._build_qa_prompt(query, paragraphs)
-        qa_response = self._llm.invoke(qa_prompt)
+        qa_response = await self._llm.ainvoke(qa_prompt)
 
         # Extract final answer text
         answer_text = qa_response.content if hasattr(qa_response, "content") else str(qa_response)
