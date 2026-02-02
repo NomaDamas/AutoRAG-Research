@@ -289,5 +289,38 @@ This approach adds overhead from context switching but avoids code duplication. 
 We use "VectorChord" for vector search in AutoRAG-Research.
 Also, use pgvector "Vector" type for vector column in SQLAlchemy ORM model.
 
+## RetrievalPipelineService Search Methods
+
+The `RetrievalPipelineService` provides built-in search methods that retrieval pipelines should use:
+
+```python
+from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
+
+service = RetrievalPipelineService(session_factory, schema)
+
+# BM25 full-text search (uses VectorChord-BM25)
+results = service.bm25_search(
+    query_ids=[1, 2, 3],
+    top_k=10,
+    tokenizer="bert",           # default: "bert"
+    index_name="idx_chunk_bm25" # default: "idx_chunk_bm25"
+)
+
+# Vector similarity search (uses VectorChord)
+results = service.vector_search(
+    query_ids=[1, 2, 3],
+    top_k=10,
+    search_mode="single"  # "single" for dense, "multi" for MaxSim
+)
+```
+
+**Return format:** `list[list[dict]]` - One result list per query
+- Each dict contains: `{"doc_id": int, "score": float, "content": str}`
+
+**Score conversion:**
+- BM25: Direct BM25 score (higher = more relevant)
+- Vector single: `1 - cosine_distance` (higher = more similar)
+- Vector multi (MaxSim): `-maxsim_distance` (higher = more similar)
+
 # READ THIS
 We use pyscopg (a.k.a pyscopg3) as the latest PostgreSQL driver. Rememeber it!
