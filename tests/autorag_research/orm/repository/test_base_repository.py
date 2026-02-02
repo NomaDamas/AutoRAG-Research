@@ -7,8 +7,10 @@ Uses existing database data for read operations.
 import pytest
 from sqlalchemy.orm import Session
 
+from autorag_research.orm.repository.base import _sanitize_dict, _sanitize_text_value
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.query import QueryRepository
+from autorag_research.orm.schema import Chunk
 
 
 @pytest.fixture
@@ -105,7 +107,7 @@ class TestCountWithoutMultiEmbeddings:
             chunk.embeddings = None
             db_session.flush()
 
-            
+
 class TestSanitizeTextValue:
     """Tests for _sanitize_text_value helper function."""
 
@@ -143,17 +145,15 @@ class TestSanitizeDict:
 class TestAddBulkSanitization:
     """Tests for add_bulk method with NUL byte sanitization."""
 
-    def test_add_bulk_handles_multiple_items_with_nul(self, db_session: Session):
+    def test_add_bulk_handles_multiple_items_with_nul(self, db_session: Session, chunk_repository: ChunkRepository):
         """Test add_bulk with multiple items containing NUL bytes."""
-        repo = GenericRepository(db_session, Chunk)
-
         items = [
             {"contents": "First\x00chunk"},
             {"contents": "Second\x00\x00chunk"},
             {"contents": "Clean chunk"},
         ]
 
-        ids = repo.add_bulk(items)
+        ids = chunk_repository.add_bulk(items)
         db_session.flush()
 
         assert len(ids) == 3
@@ -168,8 +168,7 @@ class TestAddBulkSanitization:
             db_session.delete(chunk)
         db_session.commit()
 
-    def test_add_bulk_empty_list(self, db_session: Session):
+    def test_add_bulk_empty_list(self, db_session: Session, chunk_repository: ChunkRepository):
         """Test add_bulk with empty list returns empty list."""
-        repo = GenericRepository(db_session, Chunk)
-        result = repo.add_bulk([])
+        result = chunk_repository.add_bulk([])
         assert result == []
