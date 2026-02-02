@@ -1547,7 +1547,7 @@ class TestCalculateBinaryLogprobScore:
         assert score == 0.0
 
 
-@pytest.mark.api
+@pytest.mark.ci_skip
 class TestLogprobsWithOpenAI:
     """Integration tests for logprobs extraction with real OpenAI API.
 

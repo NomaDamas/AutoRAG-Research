@@ -85,7 +85,6 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           TEST_DB_NAME: testdb
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Check typing
         run: uv run ty check
