@@ -66,7 +66,10 @@ class BasePipelineConfig(ABC):
     description: str = ""
     pipeline_type: PipelineType = field(init=False)
     top_k: int = 10
-    batch_size: int = 100
+    batch_size: int = 128
+    max_concurrency: int = 16
+    max_retries: int = 3
+    retry_delay: float = 1.0
 
     @abstractmethod
     def get_pipeline_class(self) -> type["BaseRetrievalPipeline"]:
