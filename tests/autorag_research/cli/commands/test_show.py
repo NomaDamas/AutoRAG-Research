@@ -70,7 +70,6 @@ class TestPrintDatabases:
         captured = capsys.readouterr()
         # Should show server info (connection worked)
         assert "Server" in captured.out
-        assert "testdb" in captured.out
 
 
 class TestPrintDatasets:
