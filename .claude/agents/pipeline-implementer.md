@@ -140,15 +140,47 @@ __all__ = [..., "AlgorithmPipeline"]
 
 Core method: `_get_retrieval_func()`
 
-```python
-def _get_retrieval_func(self) -> Callable[[str, int], list[NodeWithScore]]:
-    """Return function that retrieves chunks for a query."""
-    def retrieve(query: str, top_k: int) -> list[NodeWithScore]:
-        # 1. Process query
-        # 2. Retrieve chunks
-        # 3. Return results
-        return results
+The retrieval function signature is: `(query_ids: list[int | str], top_k: int) -> list[list[dict]]`
 
+Each result dict contains: `{"doc_id": int, "score": float, "content": str}`
+
+**Using RetrievalPipelineService Search Methods (Recommended)**
+
+The service provides built-in search methods:
+- `self._service.bm25_search(query_ids, top_k, tokenizer, index_name)` - Full-text BM25 search
+- `self._service.vector_search(query_ids, top_k, search_mode)` - Vector similarity search
+
+```python
+def _get_retrieval_func(self) -> Any:
+    """Return function that retrieves chunks for a query."""
+    # For BM25-based retrieval:
+    return lambda query_ids, top_k: self._service.bm25_search(
+        query_ids, top_k, tokenizer=self.tokenizer, index_name=self.index_name
+    )
+
+    # For vector-based retrieval:
+    return lambda query_ids, top_k: self._service.vector_search(
+        query_ids, top_k, search_mode=self.search_mode
+    )
+```
+
+**Custom Retrieval Logic**
+
+For custom retrieval algorithms, use the UoW pattern directly:
+
+```python
+def _get_retrieval_func(self) -> Any:
+    """Return function that retrieves chunks for a query."""
+    def retrieve(query_ids: list[int | str], top_k: int) -> list[list[dict]]:
+        all_results = []
+        with self._service._create_uow() as uow:
+            for query_id in query_ids:
+                query = uow.queries.get_by_id(query_id)
+                # Custom retrieval logic using uow.chunks repository
+                results = [{"doc_id": chunk.id, "score": score, "content": chunk.contents}
+                           for chunk, score in ...]
+                all_results.append(results)
+        return all_results
     return retrieve
 ```
 

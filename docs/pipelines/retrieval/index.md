@@ -7,6 +7,7 @@ Algorithms that take a query and return relevant documents.
 | Pipeline | Algorithm | Modality |
 |----------|-----------|----------|
 | [BM25](bm25.md) | Sparse (term frequency) | Text |
+| [Vector Search](vector-search.md) | Dense (vector similarity) | Text |
 
 ## Base Class
 
