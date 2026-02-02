@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
-from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 

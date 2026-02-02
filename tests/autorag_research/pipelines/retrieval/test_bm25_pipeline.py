@@ -72,12 +72,16 @@ class TestBM25RetrievalPipeline:
         assert config["tokenizer"] == "bert"
         assert config["index_name"] == "custom_index"
 
-    def test_retrieve_single_query(
+    @pytest.mark.asyncio
+    async def test_retrieve_single_query(
         self,
         session_factory: sessionmaker[Session],
         cleanup_pipeline_results: list[int],
     ):
-        """Test single query retrieval with mocked BM25 search."""
+        """Test single query retrieval with mocked BM25 search.
+
+        Uses bm25_search_by_text since the query doesn't exist in DB.
+        """
         # Use actual Chunk model instances for mock results
         mock_results = [
             (Chunk(id=1, contents="Machine learning content"), 0.95),
@@ -95,7 +99,8 @@ class TestBM25RetrievalPipeline:
             )
             cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-            results = pipeline.retrieve("machine learning", top_k=3)
+            # retrieve() is now async - uses _retrieve_by_text for new queries
+            results = await pipeline.retrieve("machine learning", top_k=3)
 
             assert isinstance(results, list)
             assert len(results) == 3
@@ -115,7 +120,11 @@ class TestBM25RetrievalPipeline:
         session_factory: sessionmaker[Session],
         cleanup_pipeline_results: list[int],
     ):
-        """Test running the full pipeline with mocked BM25 search."""
+        """Test running the full pipeline with mocked BM25 search.
+
+        The run() method uses _retrieve_by_id which calls bm25_search with a list
+        containing a single query_id.
+        """
         from autorag_research.orm.repository.query import QueryRepository
 
         # Count actual queries in database
@@ -126,14 +135,14 @@ class TestBM25RetrievalPipeline:
         finally:
             session.close()
 
-        # Mock service results - return results for each query
+        # Mock service results - return results for a single query ID
         mock_result = [
             {"doc_id": 1, "score": 0.9, "content": "Content 1"},
             {"doc_id": 2, "score": 0.8, "content": "Content 2"},
         ]
 
         def mock_bm25_search(query_ids, top_k, tokenizer="bert", index_name="idx_chunk_bm25"):
-            """Return mock results for each query ID."""
+            """Return mock results for each query ID (single-element list per call)."""
             return [mock_result for _ in query_ids]
 
         with patch(

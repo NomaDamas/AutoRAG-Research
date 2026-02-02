@@ -17,8 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.service.base import BaseService
 from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
-from autorag_research.pipelines.generation.util import aggregate_token_usage
-from autorag_research.util import run_with_concurrency_limit
+from autorag_research.util import aggregate_token_usage, run_with_concurrency_limit
 
 __all__ = ["GenerateFunc", "GenerationPipelineService", "GenerationResult"]
 
@@ -137,6 +136,28 @@ class GenerationPipelineService(BaseService):
             uow.commit()
             return pipeline_id
 
+    def _filter_valid_results(
+        self,
+        query_ids: list[int],
+        batch_results: list[dict | None],
+        failed_queries: list[int],
+    ) -> list[dict]:
+        """Filter valid results and track failed queries."""
+        valid_results = []
+        for query_id, result in zip(query_ids, batch_results, strict=True):
+            if result is None:
+                failed_queries.append(query_id)
+            else:
+                valid_results.append(result)
+        return valid_results
+
+    def _save_executor_results(self, uow: GenerationUnitOfWork, valid_results: list[dict]) -> None:
+        """Save executor results to database."""
+        if valid_results:
+            executor_result_class = self._get_schema_classes()["ExecutorResult"]
+            entities = [executor_result_class(**item) for item in valid_results]
+            uow.executor_results.add_all(entities)
+
     def run_pipeline(
         self,
         generate_func: GenerateFunc,
@@ -203,13 +224,11 @@ class GenerationPipelineService(BaseService):
                             "execution_time": execution_time_ms,
                             "result_metadata": result.metadata,
                         }
-            except RetryError as e:
-                logger.exception(f"Generation failed for query {query_id} after {max_retries} attempts: {e}")
-                return None
-            except Exception as e:
-                logger.exception(f"Generation failed for query {query_id}: {e}")
-                return None
-            return None  # Should not reach here
+            except RetryError:
+                logger.exception(f"Generation failed for query {query_id} after {max_retries} attempts")
+            except Exception:
+                logger.exception(f"Generation failed for query {query_id}")
+            return None
 
         async def process_batch(query_ids: list[int]) -> list[dict | None]:
             """Process a batch of queries with concurrency limit."""
@@ -222,38 +241,21 @@ class GenerationPipelineService(BaseService):
 
         while True:
             with self._create_uow() as uow:
-                # Fetch batch of queries
                 queries = uow.queries.get_all(limit=batch_size, offset=offset)
                 if not queries:
                     break
 
-                # Extract query IDs
                 query_ids = [q.id for q in queries]
-
-                # Run async batch processing with retry
                 batch_results = asyncio.run(process_batch(query_ids))
+                valid_results = self._filter_valid_results(query_ids, batch_results, failed_queries)
 
-                # Track failed queries and filter valid results
-                valid_results = []
-                for query_id, result in zip(query_ids, batch_results, strict=True):
-                    if result is None:
-                        failed_queries.append(query_id)
-                    else:
-                        valid_results.append(result)
-
-                # Aggregate stats
                 prompt, completion, embedding, exec_time = aggregate_token_usage(valid_results)
                 total_prompt_tokens += prompt
                 total_completion_tokens += completion
                 total_embedding_tokens += embedding
                 total_execution_time_ms += exec_time
 
-                # Batch insert executor results
-                if valid_results:
-                    executor_result_class = self._get_schema_classes()["ExecutorResult"]
-                    entities = [executor_result_class(**item) for item in valid_results]
-                    uow.executor_results.add_all(entities)
-
+                self._save_executor_results(uow, valid_results)
                 total_queries += len(valid_results)
                 offset += batch_size
                 uow.commit()
@@ -310,7 +312,6 @@ class GenerationPipelineService(BaseService):
             deleted_count = uow.executor_results.delete_by_pipeline(pipeline_id)
             uow.commit()
             return deleted_count
-
 
     def get_chunk_contents(self, chunk_ids: list[int | str]) -> list[str]:
         """Get chunk contents by IDs.
