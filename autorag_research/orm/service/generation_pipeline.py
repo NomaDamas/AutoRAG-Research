@@ -72,6 +72,7 @@ def aggregate_batch_token_usage(results: list[dict]) -> tuple[int, int, int, int
 
     return prompt_tokens, completion_tokens, embedding_tokens, execution_time_ms
 
+
 class GenerationPipelineService(BaseService):
     """Service for running generation pipelines.
 
