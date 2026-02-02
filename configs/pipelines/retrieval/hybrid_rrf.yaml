@@ -18,4 +18,7 @@ retrieval_pipeline_2_name: bm25
 rrf_k: 60
 fetch_k_multiplier: 2
 top_k: 10
-batch_size: 100
+batch_size: 128
+max_concurrency: 16
+max_retries: 3
+retry_delay: 1.0
