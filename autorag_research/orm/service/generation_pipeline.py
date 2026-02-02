@@ -6,9 +6,10 @@ Provides service layer for running generation pipelines:
 3. Store generation results (ExecutorResult)
 """
 
+import asyncio
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +17,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.service.base import BaseService
 from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
+from autorag_research.pipelines.generation.util import aggregate_token_usage
+from autorag_research.util import run_with_concurrency_limit
 
 __all__ = ["GenerateFunc", "GenerationPipelineService", "GenerationResult"]
 
@@ -41,10 +44,10 @@ class GenerationResult:
     metadata: dict | None = None
 
 
-# Type alias for generation function
-# Signature: (query_text: str, top_k: int) -> GenerationResult
+# Type alias for async generation function - processes ONE query
+# Signature: (query_id: int, top_k: int) -> Awaitable[GenerationResult]
 # The function has internal access to retrieval pipeline via closure/method binding
-GenerateFunc = Callable[[str, int], GenerationResult | str]
+GenerateFunc = Callable[[int, int], Awaitable[GenerationResult]]
 
 
 class GenerationPipelineService(BaseService):
@@ -72,9 +75,9 @@ class GenerationPipelineService(BaseService):
             config={"type": "naive_rag", "llm_model": "gpt-4"},
         )
 
-        # Run pipeline with generation function
+        # Run pipeline with async generation function
         results = service.run_pipeline(
-            generate_func=my_generate_func,  # Handles retrieval + generation
+            generate_func=my_async_generate_func,  # Async: handles retrieval + generation
             pipeline_id=pipeline_id,
             top_k=10,
         )
@@ -139,31 +142,83 @@ class GenerationPipelineService(BaseService):
         generate_func: GenerateFunc,
         pipeline_id: int,
         top_k: int = 10,
-        batch_size: int = 100,
+        batch_size: int = 128,
+        max_concurrency: int = 16,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ) -> dict[str, Any]:
-        """Run generation pipeline for all queries.
+        """Run generation pipeline for all queries with parallel execution and retry.
 
         Args:
-            generate_func: Function that performs retrieval + generation.
-                Signature: (query_text: str, top_k: int) -> GenerationResult
+            generate_func: Async function that performs retrieval + generation.
+                Signature: async (query_id: int, top_k: int) -> GenerationResult
                 The function should handle retrieval internally.
             pipeline_id: ID of the pipeline.
             top_k: Number of top documents to retrieve per query.
-            batch_size: Number of queries to process in each batch.
+            batch_size: Number of queries to fetch from DB at once.
+            max_concurrency: Maximum number of concurrent async operations.
+            max_retries: Maximum number of retry attempts for failed queries.
+            retry_delay: Base delay in seconds for exponential backoff between retries.
 
         Returns:
             Dictionary with pipeline execution statistics:
             - pipeline_id: The pipeline ID
-            - total_queries: Number of queries processed
+            - total_queries: Number of queries processed successfully
             - token_usage: Aggregated token usage dict (prompt_tokens, completion_tokens, total_tokens, embedding_tokens)
             - avg_execution_time_ms: Average execution time per query
+            - failed_queries: List of query IDs that failed after all retries
         """
+        from tenacity import (
+            AsyncRetrying,
+            RetryError,
+            stop_after_attempt,
+            wait_exponential,
+        )
+
         total_queries = 0
         total_prompt_tokens = 0
         total_completion_tokens = 0
         total_embedding_tokens = 0
         total_execution_time_ms = 0
+        failed_queries: list[int] = []
         offset = 0
+
+        async def process_query_with_retry(query_id: int) -> dict | None:
+            """Process a single query with retry logic."""
+            start_time = time.time()
+            try:
+                async for attempt in AsyncRetrying(
+                    stop=stop_after_attempt(max_retries),
+                    wait=wait_exponential(multiplier=retry_delay, min=retry_delay, max=60),
+                    reraise=True,
+                ):
+                    with attempt:
+                        result = await generate_func(query_id, top_k)
+                        execution_time_ms = int((time.time() - start_time) * 1000)
+                        return {
+                            "query_id": query_id,
+                            "pipeline_id": pipeline_id,
+                            "generation_result": result.text,
+                            "token_usage": result.token_usage,
+                            "execution_time": execution_time_ms,
+                            "result_metadata": result.metadata,
+                        }
+            except RetryError as e:
+                logger.exception(f"Generation failed for query {query_id} after {max_retries} attempts: {e}")
+                return None
+            except Exception as e:
+                logger.exception(f"Generation failed for query {query_id}: {e}")
+                return None
+            return None  # Should not reach here
+
+        async def process_batch(query_ids: list[int]) -> list[dict | None]:
+            """Process a batch of queries with concurrency limit."""
+            return await run_with_concurrency_limit(
+                items=query_ids,
+                async_func=process_query_with_retry,
+                max_concurrency=max_concurrency,
+                error_message="Generation failed",
+            )
 
         while True:
             with self._create_uow() as uow:
@@ -172,43 +227,41 @@ class GenerationPipelineService(BaseService):
                 if not queries:
                     break
 
-                # Process each query
-                batch_results = []
-                for query in queries:
-                    # Time the generation
-                    start_time = time.time()
-                    result = generate_func(query.contents, top_k)
-                    if isinstance(result, str):
-                        result = GenerationResult(text=result)
-                    execution_time_ms = int((time.time() - start_time) * 1000)
+                # Extract query IDs
+                query_ids = [q.id for q in queries]
 
-                    batch_results.append({
-                        "query_id": query.id,
-                        "pipeline_id": pipeline_id,
-                        "generation_result": result.text,
-                        "token_usage": result.token_usage,
-                        "execution_time": execution_time_ms,
-                        "result_metadata": result.metadata,
-                    })
+                # Run async batch processing with retry
+                batch_results = asyncio.run(process_batch(query_ids))
 
-                    # Aggregate token usage from dict
-                    if result.token_usage:
-                        total_prompt_tokens += result.token_usage.get("prompt_tokens", 0)
-                        total_completion_tokens += result.token_usage.get("completion_tokens", 0)
-                        total_embedding_tokens += result.token_usage.get("embedding_tokens", 0)
-                    total_execution_time_ms += execution_time_ms
+                # Track failed queries and filter valid results
+                valid_results = []
+                for query_id, result in zip(query_ids, batch_results, strict=True):
+                    if result is None:
+                        failed_queries.append(query_id)
+                    else:
+                        valid_results.append(result)
+
+                # Aggregate stats
+                prompt, completion, embedding, exec_time = aggregate_token_usage(valid_results)
+                total_prompt_tokens += prompt
+                total_completion_tokens += completion
+                total_embedding_tokens += embedding
+                total_execution_time_ms += exec_time
 
                 # Batch insert executor results
-                if batch_results:
+                if valid_results:
                     executor_result_class = self._get_schema_classes()["ExecutorResult"]
-                    entities = [executor_result_class(**item) for item in batch_results]
+                    entities = [executor_result_class(**item) for item in valid_results]
                     uow.executor_results.add_all(entities)
 
-                total_queries += len(queries)
+                total_queries += len(valid_results)
                 offset += batch_size
                 uow.commit()
 
                 logger.info(f"Processed {total_queries} queries")
+
+        if failed_queries:
+            logger.warning(f"Failed to process {len(failed_queries)} queries after retries")
 
         avg_execution_time_ms = total_execution_time_ms / total_queries if total_queries > 0 else 0
 
@@ -228,6 +281,7 @@ class GenerationPipelineService(BaseService):
             "total_queries": total_queries,
             "token_usage": token_usage,
             "avg_execution_time_ms": avg_execution_time_ms,
+            "failed_queries": failed_queries,
         }
 
     def get_pipeline_config(self, pipeline_id: int) -> dict | None:

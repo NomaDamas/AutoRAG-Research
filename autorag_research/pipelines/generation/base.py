@@ -25,21 +25,24 @@ class BaseGenerationPipeline(BasePipeline, ABC):
     - Abstract generate method for subclasses to implement
 
     Subclasses must implement:
-    - `_generate()`: Generate an answer given a query (has access to a retrieval pipeline)
+    - `_generate()`: Async generate method given a query ID (has access to a retrieval pipeline)
     - `_get_pipeline_config()`: Return the pipeline configuration dict
 
     Example:
         ```python
         class BasicRAGPipeline(BaseGenerationPipeline):
-            def _generate(self, query: str, top_k: int) -> GenerationResult:
-                # Retrieve relevant chunks
-                results = self._retrieval_pipeline.retrieve(query, top_k)
+            async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+                # Get query text
+                query_text = self._get_query_text(query_id)
+
+                # Retrieve relevant chunks (async)
+                results = await self._retrieval_pipeline.retrieve(query_text, top_k)
                 chunks = [self._get_chunk_content(r["doc_id"]) for r in results]
 
-                # Build prompt and generate
+                # Build prompt and generate (async)
                 context = "\\n\\n".join(chunks)
-                prompt = f"Context:\\n{context}\\n\\nQuestion: {query}\\n\\nAnswer:"
-                response = self._llm.invoke(prompt)
+                prompt = f"Context:\\n{context}\\n\\nQuestion: {query_text}\\n\\nAnswer:"
+                response = await self._llm.ainvoke(prompt)
 
                 return GenerationResult(text=str(response.content))
         ```
@@ -76,20 +79,39 @@ class BaseGenerationPipeline(BasePipeline, ABC):
             config=self._get_pipeline_config(),
         )
 
-    @abstractmethod
-    def _generate(self, query: str, top_k: int) -> GenerationResult:
-        """Generate an answer for a query.
+    def _get_query_text(self, query_id: int) -> str:
+        """Get query text by ID from database.
 
-        This method has full access to self._retrieval_pipeline for:
-        - Single retrieval: self._retrieval_pipeline.retrieve(query, top_k)
-        - Multiple retrievals: call retrieve() in a loop
-        - Query rewriting: modify query, retrieve again
-        - Agent-style: decide next action based on results
+        Args:
+            query_id: The query ID.
+
+        Returns:
+            The query text content.
+
+        Raises:
+            ValueError: If query not found.
+        """
+        from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
+
+        with GenerationUnitOfWork(self.session_factory, self._schema) as uow:
+            query = uow.queries.get_by_id(query_id)
+            if query is None:
+                raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
+            return query.contents
+
+    @abstractmethod
+    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+        """Generate an answer for a query (async).
+
+        This method has full access to retrieval pipelines.
+
+        Use self._get_query_text(query_id) to get the query text.
+        Use self._llm.ainvoke() for async LLM calls.
 
         Subclasses implement their generation strategy.
 
         Args:
-            query: The query text to answer.
+            query_id: The query ID to answer.
             top_k: Number of chunks to retrieve.
 
         Returns:
@@ -100,24 +122,34 @@ class BaseGenerationPipeline(BasePipeline, ABC):
     def run(
         self,
         top_k: int = 10,
-        batch_size: int = 100,
+        batch_size: int = 128,
+        max_concurrency: int = 16,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ) -> dict[str, Any]:
         """Run the generation pipeline.
 
         Args:
             top_k: Number of top documents to retrieve per query.
-            batch_size: Number of queries to process in each batch.
+            batch_size: Number of queries to fetch from DB at once.
+            max_concurrency: Maximum number of concurrent async operations.
+            max_retries: Maximum number of retry attempts for failed queries.
+            retry_delay: Base delay in seconds for exponential backoff between retries.
 
         Returns:
             Dictionary with pipeline execution statistics:
             - pipeline_id: The pipeline ID
-            - total_queries: Number of queries processed
+            - total_queries: Number of queries processed successfully
             - total_tokens: Total tokens used (if available)
             - avg_execution_time_ms: Average execution time per query
+            - failed_queries: List of query IDs that failed after all retries
         """
         return self._service.run_pipeline(
             generate_func=self._generate,
             pipeline_id=self.pipeline_id,
             top_k=top_k,
             batch_size=batch_size,
+            max_concurrency=max_concurrency,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
         )
