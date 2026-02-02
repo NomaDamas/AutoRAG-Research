@@ -40,9 +40,13 @@ class BasePipelineConfig(ABC):
 
     Attributes:
         name: Unique name for this pipeline instance.
+        description: Optional description of the pipeline.
         pipeline_type: Type of pipeline (RETRIEVAL or GENERATION).
-        top_k: Number of results to retrieve per query.
-        batch_size: Number of queries to process in each batch.
+        top_k: Number of results to retrieve per query. Default: 10.
+        batch_size: Number of queries to fetch from DB at once. Default: 128.
+        max_concurrency: Maximum concurrent async operations (semaphore limit). Default: 16.
+        max_retries: Maximum retry attempts for failed queries (uses tenacity). Default: 3.
+        retry_delay: Base delay in seconds for exponential backoff between retries. Default: 1.0.
 
     Example:
         ```python
@@ -66,7 +70,10 @@ class BasePipelineConfig(ABC):
     description: str = ""
     pipeline_type: PipelineType = field(init=False)
     top_k: int = 10
-    batch_size: int = 100
+    batch_size: int = 128
+    max_concurrency: int = 16
+    max_retries: int = 3
+    retry_delay: float = 1.0
 
     @abstractmethod
     def get_pipeline_class(self) -> type["BaseRetrievalPipeline"]:
@@ -115,7 +122,13 @@ class BaseRetrievalPipelineConfig(BasePipelineConfig, ABC):
             Dictionary of keyword arguments for the run method.
         """
         ...
-        return {"top_k": self.top_k, "batch_size": self.batch_size}
+        return {
+            "top_k": self.top_k,
+            "batch_size": self.batch_size,
+            "max_concurrency": self.max_concurrency,
+            "max_retries": self.max_retries,
+            "retry_delay": self.retry_delay,
+        }
 
 
 @dataclass(kw_only=True)
@@ -146,7 +159,13 @@ class BaseGenerationPipelineConfig(BasePipelineConfig, ABC):
         Returns:
             Dictionary of keyword arguments for the run method.
         """
-        return {"top_k": self.top_k, "batch_size": self.batch_size}
+        return {
+            "top_k": self.top_k,
+            "batch_size": self.batch_size,
+            "max_concurrency": self.max_concurrency,
+            "max_retries": self.max_retries,
+            "retry_delay": self.retry_delay,
+        }
 
     def inject_retrieval_pipeline(self, pipeline: "BaseRetrievalPipeline") -> None:
         """Inject the retrieval pipeline instance.

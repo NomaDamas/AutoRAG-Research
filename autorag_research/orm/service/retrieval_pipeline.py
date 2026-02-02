@@ -6,8 +6,9 @@ Provides service layer for running retrieval pipelines:
 3. Store retrieval results (ChunkRetrievedResult)
 """
 
+import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from typing import Any, Literal
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -19,10 +20,10 @@ __all__ = ["RetrievalFunc", "RetrievalPipelineService"]
 
 logger = logging.getLogger("AutoRAG-Research")
 
-# Type alias for retrieval function
-# Input: list of query IDs, top_k
-# Output: list of list of dicts with 'doc_id' and 'score'
-RetrievalFunc = Callable[[list[int | str], int], list[list[dict[str, Any]]]]
+# Type alias for async retrieval function - processes ONE query
+# Input: query_id (int or str), top_k
+# Output: list of dicts with 'doc_id' and 'score'
+RetrievalFunc = Callable[[int | str, int], Coroutine[Any, Any, list[dict[str, Any]]]]
 
 
 class RetrievalPipelineService(BaseService):
@@ -114,73 +115,131 @@ class RetrievalPipelineService(BaseService):
             uow.commit()
             return pipeline_id
 
+    def _collect_retrieval_results(
+        self,
+        query_ids: list[int],
+        results: list[list[dict] | None],
+        pipeline_id: int,
+        failed_queries: list[int],
+    ) -> list[dict]:
+        """Collect valid retrieval results and track failed queries.
+
+        Args:
+            query_ids: List of query IDs that were processed.
+            results: Results from batch processing (None for failed queries).
+            pipeline_id: Pipeline ID for result records.
+            failed_queries: List to append failed query IDs to (mutated).
+
+        Returns:
+            List of result dicts ready for batch insert.
+        """
+        batch_results = []
+        for query_id, query_results in zip(query_ids, results, strict=True):
+            if query_results is None:
+                failed_queries.append(query_id)
+                continue
+            for result in query_results:
+                batch_results.append({
+                    "query_id": query_id,
+                    "pipeline_id": pipeline_id,
+                    "chunk_id": result["doc_id"],
+                    "rel_score": result["score"],
+                })
+        return batch_results
+
     def run_pipeline(
         self,
         retrieval_func: RetrievalFunc,
         pipeline_id: int,
         top_k: int = 10,
-        batch_size: int = 100,
+        batch_size: int = 128,
+        max_concurrency: int = 16,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ) -> dict[str, Any]:
-        """Run retrieval pipeline for all queries.
+        """Run retrieval pipeline for all queries with parallel execution and retry.
 
         Args:
-            retrieval_func: Function that performs retrieval.
-                Signature: (query_ids: list[int | str], top_k: int) -> list[list[dict]]
+            retrieval_func: Async function that performs retrieval for a single query.
+                Signature: async (query_id: int | str, top_k: int) -> list[dict]
                 Each result dict must have 'doc_id' (int) and 'score' keys.
             pipeline_id: ID of the pipeline.
             top_k: Number of top documents to retrieve per query.
-            batch_size: Number of queries to process in each batch.
+            batch_size: Number of queries to fetch from DB at once.
+            max_concurrency: Maximum number of concurrent async operations.
+            max_retries: Maximum number of retry attempts for failed queries.
+            retry_delay: Base delay in seconds for exponential backoff between retries.
 
         Returns:
             Dictionary with pipeline execution statistics:
             - pipeline_id: The pipeline ID
-            - total_queries: Number of queries processed
+            - total_queries: Number of queries processed successfully
             - total_results: Number of results stored
+            - failed_queries: List of query IDs that failed after all retries
         """
-        # Process queries in batches
+        from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
+
+        from autorag_research.util import run_with_concurrency_limit
+
+        async def process_query_with_retry(query_id: int) -> list[dict] | None:
+            """Process a single query with retry logic."""
+            try:
+                async for attempt in AsyncRetrying(
+                    stop=stop_after_attempt(max_retries),
+                    wait=wait_exponential(multiplier=retry_delay, min=retry_delay, max=60),
+                    reraise=True,
+                ):
+                    with attempt:
+                        return await retrieval_func(query_id, top_k)
+            except RetryError:
+                logger.exception(f"Retrieval failed for query {query_id} after {max_retries} attempts")
+            except Exception:
+                logger.exception(f"Retrieval failed for query {query_id}")
+            return None
+
+        async def process_batch(query_ids: list[int]) -> list[list[dict] | None]:
+            """Process a batch of queries with concurrency limit."""
+            return await run_with_concurrency_limit(
+                items=query_ids,
+                async_func=process_query_with_retry,
+                max_concurrency=max_concurrency,
+                error_message="Retrieval failed",
+            )
+
         total_queries = 0
         total_results = 0
+        failed_queries: list[int] = []
         offset = 0
 
         while True:
             with self._create_uow() as uow:
-                # Fetch batch of queries
                 queries = uow.queries.get_all(limit=batch_size, offset=offset)
                 if not queries:
                     break
 
-                # Extract query IDs
                 query_ids = [q.id for q in queries]
+                results = asyncio.run(process_batch(query_ids))
 
-                # Run retrieval with query IDs
-                results = retrieval_func(query_ids, top_k)
+                batch_results = self._collect_retrieval_results(query_ids, results, pipeline_id, failed_queries)
 
-                # Collect all results for batch insert
-                batch_results = []
-                for query_id, query_results in zip(query_ids, results, strict=True):
-                    for result in query_results:
-                        batch_results.append({
-                            "query_id": query_id,
-                            "pipeline_id": pipeline_id,
-                            "chunk_id": result["doc_id"],
-                            "rel_score": result["score"],
-                        })
-
-                # Batch insert all results at once
                 if batch_results:
                     uow.chunk_results.bulk_insert(batch_results)
                     total_results += len(batch_results)
 
-                total_queries += len(queries)
+                total_queries += len([r for r in results if r is not None])
                 offset += batch_size
                 uow.commit()
 
                 logger.info(f"Processed {total_queries} queries, stored {total_results} results")
 
+        if failed_queries:
+            logger.warning(f"Failed to process {len(failed_queries)} queries after retries: {failed_queries}")
+
         return {
             "pipeline_id": pipeline_id,
             "total_queries": total_queries,
             "total_results": total_results,
+            "failed_queries": failed_queries,
         }
 
     def get_pipeline_config(self, pipeline_id: int) -> dict | None:
@@ -221,6 +280,67 @@ class RetrievalPipelineService(BaseService):
             Dictionary with doc_id, score, and content keys.
         """
         return {"doc_id": chunk.id, "score": score, "content": chunk.contents}
+
+    def find_query_by_text(self, query_text: str) -> Any | None:
+        """Find existing query by text content.
+
+        Args:
+            query_text: The query text to search for.
+
+        Returns:
+            The query if found, None otherwise.
+        """
+        with self._create_uow() as uow:
+            return uow.queries.find_by_contents(query_text)
+
+    def bm25_search_by_text(
+        self,
+        query_text: str,
+        top_k: int = 10,
+        tokenizer: str = "bert",
+        index_name: str = "idx_chunk_bm25",
+    ) -> list[dict[str, Any]]:
+        """Execute BM25 retrieval using raw query text (no Query entity needed).
+
+        Args:
+            query_text: The query text to search for.
+            top_k: Number of top results to return.
+            tokenizer: Tokenizer to use for BM25 (default: "bert").
+            index_name: Name of the BM25 index (default: "idx_chunk_bm25").
+
+        Returns:
+            List of result dicts containing doc_id, score, and content.
+        """
+        with self._create_uow() as uow:
+            results = uow.chunks.bm25_search(
+                query_text=query_text,
+                index_name=index_name,
+                limit=top_k,
+                tokenizer=tokenizer,
+            )
+            return [self._make_retrieval_result(chunk, score) for chunk, score in results]
+
+    def vector_search_by_embedding(
+        self,
+        query_embedding: list[float],
+        top_k: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Execute vector search using raw embedding vector (no Query entity needed).
+
+        Args:
+            query_embedding: The query embedding vector.
+            top_k: Number of top results to return.
+
+        Returns:
+            List of result dicts containing doc_id, score (cosine similarity), and content.
+        """
+        with self._create_uow() as uow:
+            results = uow.chunks.vector_search_with_scores(
+                query_vector=query_embedding,
+                limit=top_k,
+            )
+            # Convert distance to similarity: score = 1 - distance
+            return [self._make_retrieval_result(chunk, 1 - distance) for chunk, distance in results]
 
     def bm25_search(
         self,
