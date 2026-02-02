@@ -140,13 +140,17 @@ AskUserQuestion:
   question: "Validation complete. Review the results and decide next step."
   header: "Final Review"
   options:
-    - label: "Approve & Commit"
-      description: "All checks pass. Ready to commit and create PR."
+    - label: "Approve"
+      description: "All checks pass. Ready to wrap up."
     - label: "Fix Issues"
       description: "Some issues need fixing. Return to implementation."
     - label: "Cancel"
       description: "Abort the workflow."
 ```
+
+## Phase 6: Wrap up
+
+- Write a config YAML file in the `configs/` directory for the new pipeline.
 
 ---
 

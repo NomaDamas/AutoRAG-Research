@@ -43,6 +43,7 @@ nav:
       - Retrieval:
           - pipelines/retrieval/index.md
           - pipelines/retrieval/bm25.md
+          - pipelines/retrieval/vector-search.md
       - Generation:
           - pipelines/generation/index.md
           - pipelines/generation/basic-rag.md
