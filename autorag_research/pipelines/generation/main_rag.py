@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
-from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
@@ -291,27 +290,6 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             "final_predictor_user_prompt": self._final_predictor_user_prompt,
         }
 
-    def _invoke_llm(self, system_prompt: str, user_prompt: str, **format_kwargs: Any) -> tuple[Any, dict]:
-        """Invoke LLM with system/user prompts and return response with token usage.
-
-        Args:
-            system_prompt: System prompt for the LLM.
-            user_prompt: User prompt template with format placeholders.
-            **format_kwargs: Values to format into the user prompt.
-
-        Returns:
-            Tuple of (response, token_usage_dict).
-        """
-        from langchain_core.messages import HumanMessage, SystemMessage
-
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt.format(**format_kwargs)),
-        ]
-        response = self._llm.invoke(messages)
-        token_usage = self._extract_token_usage(response)
-        return response, token_usage
-
     def _get_response_text(self, response: Any) -> str:
         """Extract text content from LLM response.
 
@@ -322,74 +300,6 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             Text content of the response.
         """
         return response.content if hasattr(response, "content") else str(response)
-
-    def _agent_predict(self, query: str, document: str) -> tuple[str, dict]:
-        """Agent-1: Generate candidate answer for a single document.
-
-        Args:
-            query: The query text.
-            document: The document content.
-
-        Returns:
-            Tuple of (answer_text, token_usage_dict).
-        """
-        response, token_usage = self._invoke_llm(
-            self._predictor_system_prompt,
-            self._predictor_user_prompt,
-            query=query,
-            document=document,
-        )
-        return self._get_response_text(response), token_usage
-
-    def _agent_judge(self, query: str, document: str, answer: str) -> tuple[float, dict]:
-        """Agent-2: Score document relevance using log probabilities.
-
-        Args:
-            query: The query text.
-            document: The document content.
-            answer: The candidate answer from Agent-1.
-
-        Returns:
-            Tuple of (relevance_score, token_usage_dict).
-
-        Raises:
-            LogprobsNotSupportedError: If LLM does not support logprobs.
-        """
-        from autorag_research.exceptions import LogprobsNotSupportedError
-
-        response, token_usage = self._invoke_llm(
-            self._judge_system_prompt,
-            self._judge_user_prompt,
-            query=query,
-            document=document,
-            answer=answer,
-        )
-
-        score, used_logprobs = calculate_binary_logprob_score(response)
-
-        if not used_logprobs:
-            raise LogprobsNotSupportedError(self.name)
-
-        return score, token_usage
-
-    def _agent_final_predict(self, query: str, documents: list[str]) -> tuple[str, dict]:
-        """Agent-3: Generate final answer from filtered documents.
-
-        Args:
-            query: The query text.
-            documents: List of filtered document contents.
-
-        Returns:
-            Tuple of (answer_text, token_usage_dict).
-        """
-        formatted_docs = "\n\n".join(f"[Document {i + 1}]\n{doc}" for i, doc in enumerate(documents))
-        response, token_usage = self._invoke_llm(
-            self._final_predictor_system_prompt,
-            self._final_predictor_user_prompt,
-            query=query,
-            documents=formatted_docs,
-        )
-        return self._get_response_text(response), token_usage
 
     # ==================== Async Methods for Parallel Execution ====================
 
@@ -482,99 +392,6 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         )
         return self._get_response_text(response), token_usage
 
-    async def _run_predictors_parallel(
-        self, query: str, documents: list[str], max_concurrency: int
-    ) -> tuple[list[str], list[dict]]:
-        """Run Agent-1 (Predictor) in parallel for all documents.
-
-        Args:
-            query: The query text.
-            documents: List of document contents.
-            max_concurrency: Maximum number of concurrent LLM calls.
-
-        Returns:
-            Tuple of (answers, token_usages) lists in same order as documents.
-        """
-        from autorag_research.util import run_with_concurrency_limit
-
-        async def predict_one(doc: str) -> tuple[str, dict]:
-            return await self._aagent_predict(query, doc)
-
-        results = await run_with_concurrency_limit(
-            documents,
-            predict_one,
-            max_concurrency=max_concurrency,
-            error_message="Agent-1 (Predictor) failed",
-        )
-
-        # Unzip results, handle None values from failed calls
-        answers: list[str] = []
-        usages: list[dict] = []
-        for result in results:
-            if result is not None:
-                answers.append(result[0])
-                usages.append(result[1])
-            else:
-                answers.append("")
-                usages.append({})
-        return answers, usages
-
-    async def _run_judges_parallel(
-        self, query: str, documents: list[str], answers: list[str], max_concurrency: int
-    ) -> tuple[list[float], list[dict]]:
-        """Run Agent-2 (Judge) in parallel for all (document, answer) pairs.
-
-        Args:
-            query: The query text.
-            documents: List of document contents.
-            answers: List of candidate answers from Agent-1.
-            max_concurrency: Maximum number of concurrent LLM calls.
-
-        Returns:
-            Tuple of (scores, token_usages) lists in same order as documents.
-
-        Raises:
-            LogprobsNotSupportedError: If the LLM does not support logprobs.
-                This is a structural error that should fail fast.
-        """
-        from autorag_research.util import run_with_concurrency_limit
-
-        # First, run a single judge call to check for LogprobsNotSupportedError.
-        # This error is structural and should fail-fast rather than be silently caught.
-        if documents and answers:
-            first_score, first_usage = await self._aagent_judge(query, documents[0], answers[0])
-
-            # If only one document, return immediately
-            if len(documents) == 1:
-                return [first_score], [first_usage]
-
-            # Run remaining judges in parallel
-            async def judge_one(item: tuple[str, str]) -> tuple[float, dict]:
-                doc, answer = item
-                return await self._aagent_judge(query, doc, answer)
-
-            remaining_items = list(zip(documents[1:], answers[1:], strict=True))
-            remaining_results = await run_with_concurrency_limit(
-                remaining_items,
-                judge_one,
-                max_concurrency=max_concurrency,
-                error_message="Agent-2 (Judge) failed",
-            )
-
-            # Combine first result with remaining results
-            scores: list[float] = [first_score]
-            usages: list[dict] = [first_usage]
-            for result in remaining_results:
-                if result is not None:
-                    scores.append(result[0])
-                    usages.append(result[1])
-                else:
-                    scores.append(0.0)
-                    usages.append({})
-            return scores, usages
-
-        return [], []
-
     @staticmethod
     def _calculate_adaptive_threshold(scores: list[float], std_multiplier: float) -> float:
         """Calculate adaptive filtering threshold (static method for testing).
@@ -610,11 +427,11 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         # threshold = mean - n * std
         return score_mean - std_multiplier * score_std
 
-    async def _agenerate(self, query: str, top_k: int, max_concurrency: int) -> GenerationResult:
-        """Async version of _generate with parallel Agent-1 and Agent-2 execution.
+    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+        """Generate an answer using the MAIN-RAG algorithm with parallel agent execution.
 
         Implements the 6-phase MAIN-RAG algorithm with parallel execution:
-        1. Retrieval: Get documents using retrieval pipeline (sync)
+        1. Retrieval: Get documents using retrieval pipeline
         2. Agent-1 (Predictor): Generate candidate answers per document (PARALLEL)
         3. Agent-2 (Judge): Score document relevance (PARALLEL)
         4. Adaptive Filtering: Filter documents by threshold
@@ -622,17 +439,18 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         6. Agent-3 (Final Predictor): Generate final answer
 
         Args:
-            query: The query text to answer.
+            query_id: The query ID to answer.
             top_k: Number of chunks to retrieve.
-            max_concurrency: Maximum number of concurrent LLM calls.
 
         Returns:
             GenerationResult containing the generated text and metadata.
         """
+        # Get query text from database
+        query = self._get_query_text(query_id)
         all_token_usages: list[dict] = []
 
         # ==================== Phase 1: Retrieval ====================
-        retrieved = self._retrieval_pipeline.retrieve(query, top_k)
+        retrieved = await self._retrieval_pipeline.retrieve(query, top_k)
 
         # Edge case: Empty retrieval results
         if not retrieved:
@@ -651,17 +469,11 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         # Get chunk IDs and contents
         chunk_ids = [r["doc_id"] for r in retrieved]
         retrieval_scores = [r["score"] for r in retrieved]
-        chunk_contents = self._get_chunk_contents(chunk_ids)
+        chunk_contents = self._service.get_chunk_contents(chunk_ids)
 
         # Edge case: Single document - skip filtering
         if len(chunk_contents) == 1:
             logger.debug("Single document retrieved, skipping filtering phase")
-
-            # Still run Agent-1 for candidate answer (maintains algorithm consistency)
-            _, predict_usage = await self._aagent_predict(query, chunk_contents[0])
-            all_token_usages.append(predict_usage)
-
-            # Skip Agent-2 (Judge) and go directly to Agent-3
             final_answer, final_usage = await self._aagent_final_predict(query, chunk_contents)
             all_token_usages.append(final_usage)
 
@@ -681,15 +493,19 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                 },
             )
 
-        # ==================== Phase 2: Agent-1 (Predictor) - PARALLEL ====================
-        candidate_answers, predict_usages = await self._run_predictors_parallel(query, chunk_contents, max_concurrency)
-        all_token_usages.extend(predict_usages)
+        # ==================== Phase 2: Agent-1 (Predictor) ====================
+        candidate_answers: list[str] = []
+        for doc in chunk_contents:
+            answer, usage = await self._aagent_predict(query, doc)
+            candidate_answers.append(answer)
+            all_token_usages.append(usage)
 
-        # ==================== Phase 3: Agent-2 (Judge) - PARALLEL ====================
-        relevance_scores, judge_usages = await self._run_judges_parallel(
-            query, chunk_contents, candidate_answers, max_concurrency
-        )
-        all_token_usages.extend(judge_usages)
+        # ==================== Phase 3: Agent-2 (Judge) ====================
+        relevance_scores: list[float] = []
+        for doc, answer in zip(chunk_contents, candidate_answers, strict=True):
+            score, usage = await self._aagent_judge(query, doc, answer)
+            relevance_scores.append(score)
+            all_token_usages.append(usage)
 
         # ==================== Phase 4: Adaptive Filtering ====================
         threshold = self._calculate_adaptive_threshold(relevance_scores, self._std_multiplier)
@@ -736,46 +552,6 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                 "relevance_scores": relevance_scores_metadata,
             },
         )
-
-    def _generate(self, query: str, top_k: int, max_concurrency: int = 10) -> GenerationResult:
-        """Execute the MAIN-RAG generation pipeline with parallel agent execution.
-
-        This method wraps the async _agenerate method for synchronous execution.
-
-        Implements the 6-phase MAIN-RAG algorithm:
-        1. Retrieval: Get documents using retrieval pipeline
-        2. Agent-1 (Predictor): Generate candidate answers per document (parallel)
-        3. Agent-2 (Judge): Score document relevance (parallel)
-        4. Adaptive Filtering: Filter documents by threshold
-        5. Ranking: Sort filtered documents by score
-        6. Agent-3 (Final Predictor): Generate final answer
-
-        Args:
-            query: The query text to answer.
-            top_k: Number of chunks to retrieve.
-            max_concurrency: Maximum number of concurrent LLM calls (default: 10).
-
-        Returns:
-            GenerationResult containing the generated text and metadata.
-        """
-        import asyncio
-
-        return asyncio.run(self._agenerate(query, top_k, max_concurrency))
-
-    def _get_chunk_contents(self, chunk_ids: list[int]) -> list[str]:
-        """Get chunk contents by IDs.
-
-        Args:
-            chunk_ids: List of chunk IDs to fetch.
-
-        Returns:
-            List of chunk content strings in the same order as input IDs.
-        """
-        with GenerationUnitOfWork(self.session_factory, self._schema) as uow:
-            chunks = uow.chunks.get_by_ids(chunk_ids)
-            # Create a map for preserving order
-            chunk_map = {chunk.id: chunk.contents for chunk in chunks}
-            return [chunk_map.get(cid, "") for cid in chunk_ids]
 
     def _extract_token_usage(self, response: Any) -> dict[str, int]:
         """Extract token usage from LLM response.
@@ -831,29 +607,3 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                 total["completion_tokens"] += usage.get("completion_tokens", 0)
                 total["total_tokens"] += usage.get("total_tokens", 0)
         return total
-
-    def run(
-        self,
-        top_k: int = 10,
-        batch_size: int = 10,
-    ) -> dict[str, Any]:
-        """Run the MAIN-RAG pipeline with parallel agent execution.
-
-        Args:
-            top_k: Number of top documents to retrieve per query.
-            batch_size: Number of concurrent LLM calls per query (max_concurrency).
-                Controls how many Agent-1/Agent-2 calls run in parallel.
-
-        Returns:
-            Dictionary with pipeline execution statistics:
-            - pipeline_id: The pipeline ID
-            - total_queries: Number of queries processed
-            - total_tokens: Total tokens used (if available)
-            - avg_execution_time_ms: Average execution time per query
-        """
-        return self._service.run_pipeline(
-            generate_func=lambda q, k: self._generate(q, k, max_concurrency=batch_size),
-            pipeline_id=self.pipeline_id,
-            top_k=top_k,
-            batch_size=batch_size,
-        )

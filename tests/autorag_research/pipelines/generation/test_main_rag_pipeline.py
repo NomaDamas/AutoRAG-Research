@@ -42,7 +42,7 @@ class TestMAINRAGPipelineUnit:
         mock = MagicMock()
         mock.pipeline_id = 1
 
-        def mock_retrieve(query_text: str, top_k: int):
+        async def mock_retrieve(query_text: str, top_k: int):
             # Return mock chunk IDs that simulate retrieval results
             return [
                 {"doc_id": 1, "score": 0.95},
@@ -160,36 +160,8 @@ class TestMAINRAGPipelineUnit:
         assert threshold < expected_mean  # Lower threshold is more permissive
 
     # ==================== LogprobsNotSupportedError Tests ====================
-
-    def test_agent_judge_raises_error_without_logprobs(
-        self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
-    ):
-        """Test that _agent_judge raises LogprobsNotSupportedError when LLM doesn't support logprobs.
-
-        MAIN-RAG requires logprobs for accurate scoring. If the LLM doesn't provide them,
-        the pipeline should fail-fast with a clear error message.
-        """
-        from autorag_research.exceptions import LogprobsNotSupportedError
-        from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
-
-        # Create mock LLM WITHOUT logprobs
-        mock_llm = create_mock_llm(response_text="Yes", include_logprobs=False)
-
-        pipeline = MAINRAGPipeline(
-            session_factory=session_factory,
-            name="test_main_rag_no_logprobs",
-            llm=mock_llm,
-            retrieval_pipeline=mock_retrieval_pipeline,
-        )
-        cleanup_pipeline_results.append(pipeline.pipeline_id)
-
-        with pytest.raises(LogprobsNotSupportedError) as exc_info:
-            pipeline._agent_judge("test query", "test document", "test answer")
-
-        assert "test_main_rag_no_logprobs" in str(exc_info.value)
-        assert "logprobs" in str(exc_info.value).lower()
-
-    def test_generate_raises_error_without_logprobs(
+    @pytest.mark.asyncio
+    async def test_generate_raises_error_without_logprobs(
         self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
     ):
         """Test that _generate raises LogprobsNotSupportedError when LLM doesn't support logprobs.
@@ -213,7 +185,7 @@ class TestMAINRAGPipelineUnit:
 
         # This should raise LogprobsNotSupportedError during the Judge phase
         with pytest.raises(LogprobsNotSupportedError):
-            pipeline._generate("test query", top_k=3)
+            await pipeline._generate(query_id=1, top_k=3)
 
     # ==================== Pipeline Configuration Tests ====================
 
@@ -314,7 +286,7 @@ class TestMAINRAGPipelineIntegration:
         mock = MagicMock()
         mock.pipeline_id = 1
 
-        def mock_retrieve(query_text: str, top_k: int):
+        async def mock_retrieve(query_text: str, top_k: int):
             # Return chunk IDs that exist in seed data (002-seed.sql)
             return [
                 {"doc_id": 1, "score": 0.95},
@@ -507,14 +479,19 @@ class TestMAINRAGEdgeCases:
         finally:
             session.close()
 
-    def test_empty_retrieval_returns_error_metadata(self, session_factory, cleanup_pipeline_results):
+    @pytest.mark.asyncio
+    async def test_empty_retrieval_returns_error_metadata(self, session_factory, cleanup_pipeline_results):
         """Test that empty retrieval results produce error in metadata."""
         from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
 
         mock_llm = create_mock_llm()
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 999
-        mock_retrieval.retrieve.return_value = []
+
+        async def mock_retrieve(query_text: str, top_k: int):
+            return []
+
+        mock_retrieval.retrieve = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -524,14 +501,16 @@ class TestMAINRAGEdgeCases:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Query with no results", top_k=5)
+        # Use query_id=1 from seed data
+        result = await pipeline._generate(query_id=1, top_k=5)
 
         # Should handle gracefully with error metadata
         assert result.text == ""
         assert result.metadata is not None
         assert "error" in result.metadata
 
-    def test_all_documents_filtered_uses_top_one(self, session_factory, cleanup_pipeline_results):
+    @pytest.mark.asyncio
+    async def test_all_documents_filtered_uses_top_one(self, session_factory, cleanup_pipeline_results):
         """Test that when all documents are filtered, the top-scoring document is used.
 
         MAIN-RAG design: never produce empty results - use best available doc.
@@ -575,25 +554,23 @@ class TestMAINRAGEdgeCases:
             response.usage_metadata = {"input_tokens": 50, "output_tokens": 20, "total_tokens": 70}
             return response
 
-        def mock_invoke(prompt):
-            idx = call_count[0]
-            call_count[0] += 1
-            return create_response(idx)
-
         async def mock_ainvoke(prompt):
             idx = call_count[0]
             call_count[0] += 1
             return create_response(idx)
 
-        mock_llm.invoke = mock_invoke
         mock_llm.ainvoke = mock_ainvoke
 
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 1
-        mock_retrieval.retrieve.return_value = [
-            {"doc_id": 1, "score": 0.9},
-            {"doc_id": 2, "score": 0.7},
-        ]
+
+        async def mock_retrieve(query, top_k):
+            return [
+                {"doc_id": 1, "score": 0.9},
+                {"doc_id": 2, "score": 0.7},
+            ]
+
+        mock_retrieval.retrieve = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -603,14 +580,15 @@ class TestMAINRAGEdgeCases:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Test query", top_k=2)
+        result = await pipeline._generate(query_id=1, top_k=2)
 
         # Should still produce an answer using the top-scoring document
         assert result.text != ""
         assert result.metadata is not None
         assert result.metadata.get("filtered_doc_count", 0) >= 1
 
-    def test_single_document_skips_filtering(self, session_factory, cleanup_pipeline_results):
+    @pytest.mark.asyncio
+    async def test_single_document_skips_filtering(self, session_factory, cleanup_pipeline_results):
         """Test that single document retrieval skips the filtering phase.
 
         With only one document, filtering would be meaningless.
@@ -634,22 +612,20 @@ class TestMAINRAGEdgeCases:
             response.usage_metadata = {"input_tokens": 50, "output_tokens": 20, "total_tokens": 70}
             return response
 
-        def mock_invoke(prompt):
-            idx = call_count[0]
-            call_count[0] += 1
-            return create_response(idx)
-
         async def mock_ainvoke(prompt):
             idx = call_count[0]
             call_count[0] += 1
             return create_response(idx)
 
-        mock_llm.invoke = mock_invoke
         mock_llm.ainvoke = mock_ainvoke
 
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 1
-        mock_retrieval.retrieve.return_value = [{"doc_id": 1, "score": 0.95}]
+
+        async def mock_retrieve(query, top_k):
+            return [{"doc_id": 1, "score": 0.95}]
+
+        mock_retrieval.retrieve = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -659,14 +635,15 @@ class TestMAINRAGEdgeCases:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Test query", top_k=1)
+        result = await pipeline._generate(query_id=1, top_k=1)
 
         # Should produce result and indicate filtering was skipped
         assert result.text != ""
         assert result.metadata is not None
         assert result.metadata.get("skipped_filtering") is True
 
-    def test_filtering_preserves_document_order_by_score(self, session_factory, cleanup_pipeline_results):
+    @pytest.mark.asyncio
+    async def test_filtering_preserves_document_order_by_score(self, session_factory, cleanup_pipeline_results):
         """Test that filtered documents are ordered by relevance score (descending)."""
         from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
 
@@ -708,26 +685,24 @@ class TestMAINRAGEdgeCases:
             response.usage_metadata = {"input_tokens": 50, "output_tokens": 20, "total_tokens": 70}
             return response
 
-        def mock_invoke(prompt):
-            idx = call_count[0]
-            call_count[0] += 1
-            return create_response(idx)
-
         async def mock_ainvoke(prompt):
             idx = call_count[0]
             call_count[0] += 1
             return create_response(idx)
 
-        mock_llm.invoke = mock_invoke
         mock_llm.ainvoke = mock_ainvoke
 
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 1
-        mock_retrieval.retrieve.return_value = [
-            {"doc_id": 1, "score": 0.95},
-            {"doc_id": 2, "score": 0.85},
-            {"doc_id": 3, "score": 0.75},
-        ]
+
+        async def mock_retrieve(query, top_k):
+            return [
+                {"doc_id": 1, "score": 0.95},
+                {"doc_id": 2, "score": 0.85},
+                {"doc_id": 3, "score": 0.75},
+            ]
+
+        mock_retrieval.retrieve = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -737,7 +712,7 @@ class TestMAINRAGEdgeCases:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Test query", top_k=3)
+        result = await pipeline._generate(query_id=1, top_k=3)
 
         # Check that relevance_scores in metadata are sorted descending
         assert result.metadata is not None
@@ -746,7 +721,8 @@ class TestMAINRAGEdgeCases:
             scores = [s["score"] for s in relevance_scores]
             assert scores == sorted(scores, reverse=True), "Scores should be in descending order"
 
-    def test_metadata_contains_filtering_statistics(self, session_factory, cleanup_pipeline_results):
+    @pytest.mark.asyncio
+    async def test_metadata_contains_filtering_statistics(self, session_factory, cleanup_pipeline_results):
         """Test that result metadata contains filtering statistics."""
         from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
 
@@ -783,26 +759,24 @@ class TestMAINRAGEdgeCases:
             response.usage_metadata = {"input_tokens": 50, "output_tokens": 20, "total_tokens": 70}
             return response
 
-        def mock_invoke(prompt):
-            idx = call_count[0]
-            call_count[0] += 1
-            return create_response(idx)
-
         async def mock_ainvoke(prompt):
             idx = call_count[0]
             call_count[0] += 1
             return create_response(idx)
 
-        mock_llm.invoke = mock_invoke
         mock_llm.ainvoke = mock_ainvoke
 
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 1
-        mock_retrieval.retrieve.return_value = [
-            {"doc_id": 1, "score": 0.95},
-            {"doc_id": 2, "score": 0.85},
-            {"doc_id": 3, "score": 0.75},
-        ]
+
+        async def mock_retrieve(query, top_k):
+            return [
+                {"doc_id": 1, "score": 0.95},
+                {"doc_id": 2, "score": 0.85},
+                {"doc_id": 3, "score": 0.75},
+            ]
+
+        mock_retrieval.retrieve = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -812,7 +786,7 @@ class TestMAINRAGEdgeCases:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Test query", top_k=3)
+        result = await pipeline._generate(query_id=1, top_k=3)
 
         # Verify metadata contains MAIN-RAG specific statistics
         assert result.metadata is not None
@@ -840,7 +814,7 @@ class TestMAINRAGParallelExecution:
         mock = MagicMock()
         mock.pipeline_id = 1
 
-        def mock_retrieve(query_text: str, top_k: int):
+        async def mock_retrieve(query_text: str, top_k: int):
             # Return chunk IDs that exist in seed data (002-seed.sql)
             return [
                 {"doc_id": 1, "score": 0.95},
@@ -1049,142 +1023,8 @@ class TestMAINRAGParallelExecution:
         with pytest.raises(LogprobsNotSupportedError):
             await pipeline._aagent_judge("test query", "test document", "test answer")
 
-    @pytest.mark.asyncio
-    async def test_run_predictors_parallel_executes_all_documents(
-        self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
-    ):
-        """Test that _run_predictors_parallel executes for all documents."""
-        from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
-
-        mock_llm = self._create_async_mock_llm(num_docs=3)
-
-        pipeline = MAINRAGPipeline(
-            session_factory=session_factory,
-            name="test_parallel_predictors",
-            llm=mock_llm,
-            retrieval_pipeline=mock_retrieval_pipeline,
-        )
-        cleanup_pipeline_results.append(pipeline.pipeline_id)
-
-        documents = ["doc1", "doc2", "doc3"]
-        answers, usages = await pipeline._run_predictors_parallel("test query", documents, max_concurrency=3)
-
-        assert len(answers) == 3
-        assert len(usages) == 3
-        # All answers should be non-empty
-        for answer in answers:
-            assert answer != ""
-        # All usages should have token counts
-        for usage in usages:
-            assert usage.get("total_tokens", 0) > 0
-
-    @pytest.mark.asyncio
-    async def test_run_judges_parallel_executes_all_documents(
-        self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
-    ):
-        """Test that _run_judges_parallel executes for all (document, answer) pairs."""
-        from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
-
-        # Create mock that always returns judge response with logprobs
-        mock_llm = MagicMock()
-        call_count = [0]
-
-        async def mock_ainvoke(prompt):
-            call_count[0] += 1
-            response = MagicMock()
-            response.content = "Yes"
-            response.response_metadata = {
-                "logprobs": {
-                    "content": [
-                        {
-                            "token": "Yes",
-                            "logprob": -0.1,
-                            "bytes": [89, 101, 115],
-                            "top_logprobs": [
-                                {"token": "Yes", "logprob": -0.1, "bytes": [89, 101, 115]},
-                                {"token": "No", "logprob": -2.5, "bytes": [78, 111]},
-                            ],
-                        }
-                    ]
-                }
-            }
-            response.usage_metadata = {
-                "input_tokens": 50,
-                "output_tokens": 20,
-                "total_tokens": 70,
-            }
-            return response
-
-        mock_llm.ainvoke = mock_ainvoke
-        mock_llm.invoke = MagicMock()
-
-        pipeline = MAINRAGPipeline(
-            session_factory=session_factory,
-            name="test_parallel_judges",
-            llm=mock_llm,
-            retrieval_pipeline=mock_retrieval_pipeline,
-        )
-        cleanup_pipeline_results.append(pipeline.pipeline_id)
-
-        documents = ["doc1", "doc2", "doc3"]
-        answers = ["answer1", "answer2", "answer3"]
-        scores, usages = await pipeline._run_judges_parallel("test query", documents, answers, max_concurrency=3)
-
-        assert len(scores) == 3
-        assert len(usages) == 3
-        # All scores should be the same (2.4) since mock returns same logprobs
-        for score in scores:
-            assert abs(score - 2.4) < 0.001
-        # All usages should have token counts
-        for usage in usages:
-            assert usage.get("total_tokens", 0) > 0
-
-    def test_generate_with_parallel_execution(self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results):
-        """Test that _generate with parallel execution produces correct results."""
-        from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
-
-        mock_llm = self._create_async_mock_llm(num_docs=3)
-
-        pipeline = MAINRAGPipeline(
-            session_factory=session_factory,
-            name="test_generate_parallel",
-            llm=mock_llm,
-            retrieval_pipeline=mock_retrieval_pipeline,
-        )
-        cleanup_pipeline_results.append(pipeline.pipeline_id)
-
-        result = pipeline._generate("test query", top_k=3, max_concurrency=3)
-
-        assert result.text != ""
-        assert result.token_usage is not None
-        # Should have token usage aggregated from all 7 calls (3 predictor + 3 judge + 1 final)
-        expected_total_tokens = 7 * 70  # 490
-        assert result.token_usage["total_tokens"] == expected_total_tokens
-
-    def test_generate_default_max_concurrency(self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results):
-        """Test that _generate has a sensible default max_concurrency."""
-        from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
-
-        mock_llm = self._create_async_mock_llm(num_docs=3)
-
-        pipeline = MAINRAGPipeline(
-            session_factory=session_factory,
-            name="test_generate_default_concurrency",
-            llm=mock_llm,
-            retrieval_pipeline=mock_retrieval_pipeline,
-        )
-        cleanup_pipeline_results.append(pipeline.pipeline_id)
-
-        # Call without specifying max_concurrency
-        result = pipeline._generate("test query", top_k=3)
-
-        assert result.text != ""
-        assert result.token_usage is not None
-
-    def test_run_passes_batch_size_as_max_concurrency(
-        self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
-    ):
-        """Test that run() passes batch_size as max_concurrency to _generate."""
+    def test_run_with_batch_size(self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results):
+        """Test that run() works correctly with batch_size parameter."""
         from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
 
         mock_llm = self._create_async_mock_llm(num_docs=3)
@@ -1204,7 +1044,8 @@ class TestMAINRAGParallelExecution:
         assert result["pipeline_id"] == pipeline.pipeline_id
         assert result["total_queries"] > 0
 
-    def test_token_usage_aggregation_with_parallel_execution(
+    @pytest.mark.asyncio
+    async def test_token_usage_aggregation_with_parallel_execution(
         self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
     ):
         """Test that token usage is correctly aggregated from parallel calls."""
@@ -1220,7 +1061,7 @@ class TestMAINRAGParallelExecution:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("test query", top_k=3, max_concurrency=3)
+        result = await pipeline._generate(query_id=1, top_k=3)
 
         # Per call: 50 prompt + 20 completion = 70 total
         # Total calls: 3 predictor + 3 judge + 1 final = 7
@@ -1229,7 +1070,8 @@ class TestMAINRAGParallelExecution:
         assert result.token_usage["completion_tokens"] == 7 * 20  # 140
         assert result.token_usage["total_tokens"] == 7 * 70  # 490
 
-    def test_single_document_uses_async_methods(self, session_factory, cleanup_pipeline_results):
+    @pytest.mark.asyncio
+    async def test_single_document_uses_async_methods(self, session_factory, cleanup_pipeline_results):
         """Test that single document case uses async methods correctly."""
         from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
 
@@ -1253,11 +1095,14 @@ class TestMAINRAGParallelExecution:
             return response
 
         mock_llm.ainvoke = mock_ainvoke
-        mock_llm.invoke = MagicMock()
 
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 1
-        mock_retrieval.retrieve.return_value = [{"doc_id": 1, "score": 0.95}]
+
+        async def mock_retrieve(query, top_k):
+            return [{"doc_id": 1, "score": 0.95}]
+
+        mock_retrieval.retrieve = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -1267,12 +1112,12 @@ class TestMAINRAGParallelExecution:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("test query", top_k=1)
+        result = await pipeline._generate(query_id=1, top_k=1)
 
         assert result.text != ""
         assert result.metadata.get("skipped_filtering") is True
-        # Should have 2 calls (predictor + final)
-        assert result.token_usage["total_tokens"] == 2 * 70
+        # Should have 1 call (final predictor only - predictor skipped for single doc)
+        assert result.token_usage["total_tokens"] == 70
 
 
 class TestMAINRAGPipelineConfig:
