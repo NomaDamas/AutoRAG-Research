@@ -333,6 +333,7 @@ dependencies = [
     { name = "sacrebleu" },
     { name = "sqlalchemy" },
     { name = "tiktoken" },
+    { name = "tqdm" },
     { name = "typer" },
     { name = "typing-extensions" },
 ]
@@ -407,6 +408,7 @@ requires-dist = [
     { name = "tiktoken", specifier = ">=0.12.0" },
     { name = "torch", marker = "extra == 'all'", specifier = ">=2.8.0" },
     { name = "torch", marker = "extra == 'gpu'", specifier = ">=2.8.0" },
+    { name = "tqdm", specifier = ">=4.60.0" },
     { name = "transformers", marker = "extra == 'all'", specifier = ">=4.57.1" },
     { name = "transformers", marker = "extra == 'gpu'", specifier = ">=4.57.1" },
     { name = "typer", specifier = ">=0.15.0" },
@@ -2266,9 +2268,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e1/fb/7f1b0fe2eecbcc2700bc8a857f5470ba3c71fc81a727851312c67670dd35/mkdocs_typer2-0.2.0.tar.gz", hash = "sha256:3f389b83f3d5f8d270bf81a2840f9307b74dbce9575243ab1f96d0e89ccbe5a1", size = 29342, upload-time = "2026-01-15T03:19:25.588Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/fb/7f1b0fe2eecbcc2700bc8a857f5470ba3c71fc81a727851312c67670dd35/mkdocs_typer2-0.2.0.tar.gz", hash = "sha256:3f389b83f3d5f8d270bf81a2840f9307b74dbce9575243ab1f96d0e89ccbe5a1", size = 29342 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ab/6e/4b82657b44567f430e35e62c4c22b5cd5fd1f40f369873e2fd92fb77a662/mkdocs_typer2-0.2.0-py3-none-any.whl", hash = "sha256:079fab0b30889f509f9f29a190722aa5cb29a8cf13c231571155fdb69838ec18", size = 14636, upload-time = "2026-01-15T03:19:24.497Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/6e/4b82657b44567f430e35e62c4c22b5cd5fd1f40f369873e2fd92fb77a662/mkdocs_typer2-0.2.0-py3-none-any.whl", hash = "sha256:079fab0b30889f509f9f29a190722aa5cb29a8cf13c231571155fdb69838ec18", size = 14636 },
 ]
 
 [[package]]
