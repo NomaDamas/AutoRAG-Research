@@ -18,7 +18,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.util import pil_image_to_data_uri, image_chunk_to_pil_images
+from autorag_research.util import image_chunk_to_pil_images, pil_image_to_data_uri
 
 DEFAULT_VISRAG_PROMPT = """Based on the provided document images, answer the following question:
 

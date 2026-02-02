@@ -452,14 +452,14 @@ def image_chunk_to_pil_images(image_chunks: list[tuple[bytes, str]]) -> list[Ima
     Returns:
         List of valid PIL Images.
     """
-        images: list[Image.Image] = []
-        for img_bytes, _mimetype in image_chunks:
-            if img_bytes:
-                try:
-                    img = bytes_to_pil_image(img_bytes)
-                    if img.mode not in ("RGB", "RGBA"):
-                        img = img.convert("RGB")
-                    images.append(img)
-                except Exception:
-                    logger.debug("Skipping invalid image during VisRAG-Gen processing")
-        return images
+    images: list[Image.Image] = []
+    for img_bytes, _mimetype in image_chunks:
+        if img_bytes:
+            try:
+                img = bytes_to_pil_image(img_bytes)
+                if img.mode not in ("RGB", "RGBA"):
+                    img = img.convert("RGB")
+                images.append(img)
+            except Exception:
+                logger.debug("Skipping invalid image during VisRAG-Gen processing")
+    return images
