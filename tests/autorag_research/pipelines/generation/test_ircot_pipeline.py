@@ -183,7 +183,8 @@ class TestIRCoTPipelineInitialization:
 class TestIRCoTAlgorithm:
     """Tests for IRCoT core algorithm behavior."""
 
-    def test_terminates_on_answer_string(self, session_factory, cleanup):
+    @pytest.mark.asyncio
+    async def test_terminates_on_answer_string(self, session_factory, cleanup):
         """Test generation terminates when 'answer is:' is detected."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
@@ -205,14 +206,15 @@ class TestIRCoTAlgorithm:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Question?", top_k=4)
+        result = await pipeline._generate("Question?", top_k=4)
 
         # Verify early termination via metadata
         assert result.metadata is not None
         assert result.metadata.get("steps", 0) < 8  # Should terminate early
         assert result.text is not None
 
-    def test_terminates_on_max_steps(self, session_factory, cleanup):
+    @pytest.mark.asyncio
+    async def test_terminates_on_max_steps(self, session_factory, cleanup):
         """Test generation terminates at max_steps limit."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
@@ -229,28 +231,31 @@ class TestIRCoTAlgorithm:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Question?", top_k=4)
+        result = await pipeline._generate("Question?", top_k=4)
 
         # Verify steps completed matches max_steps
         assert result.metadata is not None
         assert result.metadata.get("steps") == max_steps
         assert result.text is not None
 
-    def test_applies_paragraph_budget(self, session_factory, cleanup):
+    @pytest.mark.asyncio
+    async def test_applies_paragraph_budget(self, session_factory, cleanup):
         """Test paragraph_budget caps total paragraphs collected."""
+        from unittest.mock import AsyncMock
+
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
         fake_llm = FakeListLLM(responses=["Thought.", "Thought.", "Thought.", "Answer."])
 
         call_count = [0]
 
-        def mock_retrieve(query, top_k):
+        async def mock_retrieve(query, top_k):
             call_count[0] += 1
             return [{"doc_id": call_count[0] * 10 + i, "score": 0.9} for i in range(top_k)]
 
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 1
-        mock_retrieval.retrieve.side_effect = mock_retrieve
+        mock_retrieval.retrieve = AsyncMock(side_effect=mock_retrieve)
 
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
@@ -263,12 +268,13 @@ class TestIRCoTAlgorithm:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Query", top_k=4)
+        result = await pipeline._generate("Query", top_k=4)
 
         assert result.metadata is not None
         assert len(result.metadata.get("chunk_ids", [])) <= 5
 
-    def test_aggregates_token_usage(self, session_factory, cleanup):
+    @pytest.mark.asyncio
+    async def test_aggregates_token_usage(self, session_factory, cleanup):
         """Test token usage is aggregated across all LLM calls."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
@@ -298,12 +304,13 @@ class TestIRCoTAlgorithm:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Query", top_k=4)
+        result = await pipeline._generate("Query", top_k=4)
 
         assert result.token_usage is not None
         assert result.token_usage["total_tokens"] == call_count[0] * tokens_per_call
 
-    def test_case_insensitive_termination(self, session_factory, cleanup):
+    @pytest.mark.asyncio
+    async def test_case_insensitive_termination(self, session_factory, cleanup):
         """Test termination detection is case-insensitive."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
@@ -319,7 +326,7 @@ class TestIRCoTAlgorithm:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Test", top_k=2)
+        result = await pipeline._generate("Test", top_k=2)
 
         # Verify early termination (step 1, not 5)
         assert result.metadata is not None
@@ -364,7 +371,8 @@ class TestIRCoTPipelineIntegration:
         verifier = PipelineTestVerifier(result, pipeline.pipeline_id, session_factory, config)
         verifier.verify_all()
 
-    def test_handles_empty_retrieval(self, session_factory, cleanup):
+    @pytest.mark.asyncio
+    async def test_handles_empty_retrieval(self, session_factory, cleanup):
         """Test IRCoT handles empty retrieval results gracefully."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
@@ -377,13 +385,14 @@ class TestIRCoTPipelineIntegration:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Query", top_k=5)
+        result = await pipeline._generate("Query", top_k=5)
 
         # Verify generation completes without error
         assert result.text is not None
         assert result.metadata is not None
 
-    def test_metadata_contains_cot_history(self, session_factory, cleanup):
+    @pytest.mark.asyncio
+    async def test_metadata_contains_cot_history(self, session_factory, cleanup):
         """Test result metadata includes chain-of-thought history."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
@@ -396,12 +405,13 @@ class TestIRCoTPipelineIntegration:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Query", top_k=3)
+        result = await pipeline._generate("Query", top_k=3)
 
         assert result.metadata is not None
         assert "cot_sentences" in result.metadata
 
-    def test_metadata_contains_chunk_ids(self, session_factory, cleanup):
+    @pytest.mark.asyncio
+    async def test_metadata_contains_chunk_ids(self, session_factory, cleanup):
         """Test result metadata includes retrieved chunk IDs."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
@@ -414,12 +424,13 @@ class TestIRCoTPipelineIntegration:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Query", top_k=3)
+        result = await pipeline._generate("Query", top_k=3)
 
         assert result.metadata is not None
         assert "chunk_ids" in result.metadata
 
-    def test_custom_prompt_templates(self, session_factory, cleanup):
+    @pytest.mark.asyncio
+    async def test_custom_prompt_templates(self, session_factory, cleanup):
         """Test IRCoT with custom prompt templates."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
@@ -445,12 +456,13 @@ class TestIRCoTPipelineIntegration:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        pipeline._generate("Test", top_k=2)
+        await pipeline._generate("Test", top_k=2)
 
         assert "CUSTOM_REASONING:" in captured_prompts[0]
         assert "CUSTOM_QA:" in captured_prompts[1]
 
-    def test_extracts_first_sentence_only(self, session_factory, cleanup):
+    @pytest.mark.asyncio
+    async def test_extracts_first_sentence_only(self, session_factory, cleanup):
         """Test only first sentence is extracted for CoT history."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
@@ -469,7 +481,7 @@ class TestIRCoTPipelineIntegration:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Query", top_k=2)
+        result = await pipeline._generate("Query", top_k=2)
 
         cot = result.metadata.get("cot_sentences", [])
         assert len(cot) > 0

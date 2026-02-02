@@ -33,7 +33,7 @@ Usage:
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from sqlalchemy.orm import scoped_session
 
@@ -365,7 +365,6 @@ def create_mock_llm(
     Returns:
         MagicMock configured as a LangChain BaseLanguageModel.
     """
-    from unittest.mock import AsyncMock
 
     if token_usage is None:
         token_usage = {
@@ -403,20 +402,20 @@ def create_mock_retrieval_pipeline(
 
     Returns:
         MagicMock configured as a BaseRetrievalPipeline.
-        The mock.retrieve is a MagicMock with side_effect, so call_count is available.
+        The mock.retrieve is an AsyncMock with side_effect, so call_count is available.
     """
     mock = MagicMock()
     mock.pipeline_id = pipeline_id
 
     if default_results is not None:
-        mock.retrieve.return_value = default_results
+        mock.retrieve = AsyncMock(return_value=default_results)
     else:
         # Default: return chunk IDs that exist in seed data (1-6)
-        # Use side_effect to preserve call_count tracking on the MagicMock
-        def mock_retrieve(query_text: str, top_k: int):
+        # Use side_effect to preserve call_count tracking on the AsyncMock
+        async def mock_retrieve(query_text: str, top_k: int):
             return [{"doc_id": i, "score": 0.9 - i * 0.1} for i in range(1, min(top_k + 1, 7))]
 
-        mock.retrieve.side_effect = mock_retrieve
+        mock.retrieve = AsyncMock(side_effect=mock_retrieve)
 
     return mock
 
