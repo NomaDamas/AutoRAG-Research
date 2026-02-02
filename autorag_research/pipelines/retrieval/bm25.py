@@ -68,6 +68,9 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
     providing a convenient interface for BM25-based retrieval using
     PostgreSQL's VectorChord-BM25 extension.
 
+    BM25 does not require embeddings, so both _retrieve_by_id() and
+    _retrieve_by_text() work without any embedding model.
+
     Example:
         ```python
         from autorag_research.orm.connection import DBConnection
@@ -87,7 +90,7 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
         results = pipeline.run(top_k=10)
 
         # Or retrieve for a single query
-        chunks = pipeline.retrieve("What is machine learning?", top_k=10)
+        chunks = await pipeline.retrieve("What is machine learning?", top_k=10)
         ```
     """
 
@@ -129,8 +132,33 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
             "index_name": self.index_name,
         }
 
-    def _get_retrieval_func(self) -> Any:
-        """Return BM25 retrieval function."""
-        return lambda query_ids, top_k: self._service.bm25_search(
-            query_ids, top_k, tokenizer=self.tokenizer, index_name=self.index_name
+    async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:
+        """BM25 search using query ID.
+
+        Args:
+            query_id: The query ID to retrieve for.
+            top_k: Number of top documents to retrieve.
+
+        Returns:
+            List of result dicts with doc_id, score, and content.
+        """
+        # Sync DB call (fast) - no need for true async
+        results = self._service.bm25_search([query_id], top_k, tokenizer=self.tokenizer, index_name=self.index_name)
+        return results[0] if results else []
+
+    async def _retrieve_by_text(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
+        """BM25 search using raw text (no embedding needed).
+
+        BM25 can search directly with text, no embedding computation required.
+
+        Args:
+            query_text: The query text to retrieve for.
+            top_k: Number of top documents to retrieve.
+
+        Returns:
+            List of result dicts with doc_id, score, and content.
+        """
+        # BM25 can search directly with text - no embedding needed
+        return self._service.bm25_search_by_text(
+            query_text, top_k, tokenizer=self.tokenizer, index_name=self.index_name
         )

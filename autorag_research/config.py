@@ -118,7 +118,8 @@ class BaseRetrievalPipelineConfig(BasePipelineConfig, ABC):
             Dictionary of keyword arguments for the run method.
         """
         ...
-        return {"top_k": self.top_k, "batch_size": self.batch_size}
+        return {"top_k": self.top_k, "batch_size": self.batch_size, "max_concurrency": self.max_concurrency,
+                "max_retries": self.max_retries, "retry_delay": self.retry_delay}
 
 
 @dataclass(kw_only=True)
@@ -149,7 +150,8 @@ class BaseGenerationPipelineConfig(BasePipelineConfig, ABC):
         Returns:
             Dictionary of keyword arguments for the run method.
         """
-        return {"top_k": self.top_k, "batch_size": self.batch_size}
+        return {"top_k": self.top_k, "batch_size": self.batch_size, "max_concurrency": self.max_concurrency,
+                "max_retries": self.max_retries, "retry_delay": self.retry_delay,}
 
     def inject_retrieval_pipeline(self, pipeline: "BaseRetrievalPipeline") -> None:
         """Inject the retrieval pipeline instance.
