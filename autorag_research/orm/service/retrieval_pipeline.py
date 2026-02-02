@@ -320,28 +320,6 @@ class RetrievalPipelineService(BaseService):
             )
             return [self._make_retrieval_result(chunk, score) for chunk, score in results]
 
-    def vector_search_by_embedding(
-        self,
-        query_embedding: list[float],
-        top_k: int = 10,
-    ) -> list[dict[str, Any]]:
-        """Execute vector search using raw embedding vector (no Query entity needed).
-
-        Args:
-            query_embedding: The query embedding vector.
-            top_k: Number of top results to return.
-
-        Returns:
-            List of result dicts containing doc_id, score (cosine similarity), and content.
-        """
-        with self._create_uow() as uow:
-            results = uow.chunks.vector_search_with_scores(
-                query_vector=query_embedding,
-                limit=top_k,
-            )
-            # Convert distance to similarity: score = 1 - distance
-            return [self._make_retrieval_result(chunk, 1 - distance) for chunk, distance in results]
-
     def bm25_search(
         self,
         query_ids: list[int | str],
