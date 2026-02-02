@@ -8,6 +8,7 @@ Algorithms that take a query and return relevant documents.
 |----------|-----------|----------|
 | [BM25](bm25.md) | Sparse (term frequency) | Text |
 | [Hybrid](hybrid.md) | RRF / Convex Combination | Text |
+| [Vector Search](vector-search.md) | Dense (vector similarity) | Text |
 
 ## Base Class
 
