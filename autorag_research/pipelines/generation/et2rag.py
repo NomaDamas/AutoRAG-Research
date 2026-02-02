@@ -301,9 +301,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
             )
 
         # Step 4: Generate partial responses for each subset
-        partial_responses, partial_token_usages = asyncio.run(
-            self._generate_partial_responses_async(query, subsets)
-        )
+        partial_responses, partial_token_usages = asyncio.run(self._generate_partial_responses_async(query, subsets))
 
         # Handle single subset case - skip voting
         if len(subsets) == 1:
@@ -322,7 +320,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         full_response, full_token_usage = self._generate_full_response(query, selected_subset)
 
         # Step 8: Aggregate token usage (all partial + full)
-        total_token_usage = self._aggregate_token_usage(partial_token_usages + [full_token_usage])
+        total_token_usage = self._aggregate_token_usage([*partial_token_usages, full_token_usage])
 
         # Build metadata
         metadata = {
@@ -344,9 +342,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
             metadata=metadata,
         )
 
-    def _create_subsets(
-        self, documents: list[tuple[int, str]]
-    ) -> list[list[tuple[int, str]]]:
+    def _create_subsets(self, documents: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
         """Create context subsets based on organization strategy.
 
         Args:
@@ -364,9 +360,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         handler = strategy_handlers[self._organization_strategy]
         return handler(documents)
 
-    def _create_qa_subsets(
-        self, documents: list[tuple[int, str]]
-    ) -> list[list[tuple[int, str]]]:
+    def _create_qa_subsets(self, documents: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
         """Create QA-style subsets: always include top1 + one additional.
 
         For factoid QA, top1 is usually relevant. Subsets explore different
@@ -393,9 +387,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         return subsets
 
-    def _create_recipe_subsets(
-        self, documents: list[tuple[int, str]]
-    ) -> list[list[tuple[int, str]]]:
+    def _create_recipe_subsets(self, documents: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
         """Create Recipe-style subsets: single document per subset.
 
         For long documents (recipes, articles), each document is self-contained.
@@ -413,9 +405,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         num_subsets = self._num_subsets or min(len(documents), 5)
         return [[doc] for doc in documents[:num_subsets]]
 
-    def _create_image_subsets(
-        self, documents: list[tuple[int, str]]
-    ) -> list[list[tuple[int, str]]]:
+    def _create_image_subsets(self, documents: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
         """Create Image-style subsets: 4 captions per subset from top-20.
 
         For image captioning (COCO), multiple captions provide context.
@@ -491,9 +481,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         return responses, token_usages
 
-    async def _generate_single_async(
-        self, prompt: str, max_tokens: int | None = None
-    ) -> tuple[str, dict]:
+    async def _generate_single_async(self, prompt: str, max_tokens: int | None = None) -> tuple[str, dict]:
         """Generate a single response asynchronously.
 
         Args:
@@ -514,9 +502,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         return text, token_usage
 
-    def _generate_full_response(
-        self, query: str, subset: list[tuple[int, str]]
-    ) -> tuple[str, dict]:
+    def _generate_full_response(self, query: str, subset: list[tuple[int, str]]) -> tuple[str, dict]:
         """Generate the final full response with the selected subset.
 
         This is the SECOND stage of generation, after voting has selected

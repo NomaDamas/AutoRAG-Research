@@ -1191,9 +1191,7 @@ class TestET2RAGPipelineIntegration:
         expected_total = 5 * 3 * 150
         assert result["token_usage"]["total_tokens"] == expected_total
 
-    def test_metadata_contains_new_algorithm_fields(
-        self, pipeline, session_factory: sessionmaker[Session]
-    ):
+    def test_metadata_contains_new_algorithm_fields(self, pipeline, session_factory: sessionmaker[Session]):
         """Test that executor results contain new ET2RAG algorithm metadata."""
         pipeline.run(top_k=2, batch_size=10)
 
