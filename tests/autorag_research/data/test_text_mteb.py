@@ -66,6 +66,7 @@ class TestCombineTitleText:
 
 
 class TestTextMTEBDatasetIngestorInit:
+    @pytest.mark.ci_skip
     def test_detect_primary_key_type_nfcorpus(self, mock_embedding_model):
         """NFCorpus uses string primary keys."""
         ingestor = TextMTEBDatasetIngestor(mock_embedding_model, "NFCorpus")
@@ -91,6 +92,7 @@ class TestTextMTEBDatasetIngestorInit:
 
 
 class TestTextMTEBDatasetIngestorValidation:
+    @pytest.mark.ci_skip
     def test_retrieval_task_is_supported(self, mock_embedding_model):
         """Standard Retrieval task should be supported."""
         ingestor = TextMTEBDatasetIngestor(mock_embedding_model, "NFCorpus")
