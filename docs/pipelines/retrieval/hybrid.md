@@ -24,6 +24,10 @@ Combines results based on rank positions, ignoring raw scores.
 - Robust to different retrieval methods
 - No normalization needed
 
+**Missing Document Handling:**
+
+Documents that appear in only one pipeline are assigned rank `fetch_k + 1` for the missing pipeline, giving them a small but non-zero contribution: `1/(k + fetch_k + 1)`. This prevents documents from being unfairly penalized when they're highly relevant in one pipeline but absent from the other.
+
 ### Convex Combination (CC)
 
 Combines normalized scores with configurable weights.
@@ -32,12 +36,21 @@ Combines normalized scores with configurable weights.
 
 **Normalization Methods:**
 
-| Method | Description |
-|--------|-------------|
-| `mm` | Min-max scaling to [0, 1] using actual min/max |
-| `tmm` | Theoretical min with actual max (e.g., BM25 min=0, cosine min=-1) |
-| `z` | Z-score standardization |
-| `dbsf` | 3-sigma distribution-based |
+| Method | Description | Missing Score Floor |
+|--------|-------------|---------------------|
+| `mm` | Min-max scaling to [0, 1] using actual min/max | 0.0 |
+| `tmm` | Theoretical min with actual max (e.g., BM25 min=0, cosine min=-1) | 0.0 |
+| `z` | Z-score standardization | -3.0 |
+| `dbsf` | 3-sigma distribution-based | 0.0 |
+
+**Missing Document Handling:**
+
+Documents that appear in only one pipeline receive a semantically correct floor value after normalization:
+
+- Missing scores are excluded from normalization statistics (min/max/mean/std)
+- After normalization, missing scores are replaced with method-specific floor values
+- For z-score, -3.0 represents 3 standard deviations below the mean (very low relevance)
+- For other methods, 0.0 represents the minimum of the normalized range
 
 ## Configuration
 
@@ -49,6 +62,7 @@ name: hybrid_rrf
 retrieval_pipeline_1_name: vector_search
 retrieval_pipeline_2_name: bm25
 rrf_k: 60
+fetch_k_multiplier: 2
 top_k: 10
 ```
 
@@ -61,6 +75,7 @@ retrieval_pipeline_1_name: vector_search
 retrieval_pipeline_2_name: bm25
 weight: 0.5
 normalize_method: mm
+fetch_k_multiplier: 2
 top_k: 10
 ```
 
@@ -73,6 +88,7 @@ top_k: 10
 | name | str | required | Unique pipeline name |
 | retrieval_pipeline_1_name | str | required | First pipeline name |
 | retrieval_pipeline_2_name | str | required | Second pipeline name |
+| fetch_k_multiplier | int | 2 | Multiplier for top_k when fetching from sub-pipelines. Each sub-pipeline fetches `top_k * fetch_k_multiplier` results before fusion. |
 | top_k | int | 10 | Results per query |
 | batch_size | int | 100 | Queries per batch |
 
@@ -98,6 +114,7 @@ top_k: 10
 ```python
 from autorag_research.pipelines.retrieval import (
     HybridRRFRetrievalPipeline,
+    HybridCCRetrievalPipeline,
     VectorSearchRetrievalPipeline,
     BM25RetrievalPipeline,
 )
@@ -106,25 +123,28 @@ from autorag_research.pipelines.retrieval import (
 vector = VectorSearchRetrievalPipeline(session_factory, "vector")
 bm25 = BM25RetrievalPipeline(session_factory, "bm25")
 
-# Create hybrid with instantiated pipelines
-hybrid = HybridRRFRetrievalPipeline(
+# Create RRF hybrid with instantiated pipelines
+hybrid_rrf = HybridRRFRetrievalPipeline(
     session_factory=session_factory,
     name="hybrid_rrf",
     retrieval_pipeline_1=vector,
     retrieval_pipeline_2=bm25,
     rrf_k=60,
+    fetch_k_multiplier=2,  # Fetch 2x top_k from each pipeline
 )
 
-# Or create with pipeline names (auto-loaded from YAML)
-hybrid = HybridRRFRetrievalPipeline(
+# Create CC hybrid with pipeline names (auto-loaded from YAML)
+hybrid_cc = HybridCCRetrievalPipeline(
     session_factory=session_factory,
-    name="hybrid_rrf",
+    name="hybrid_cc",
     retrieval_pipeline_1="vector_search",  # Loads from configs/
     retrieval_pipeline_2="bm25",
-    rrf_k=60,
+    weight=0.6,  # 60% vector, 40% BM25
+    normalize_method="mm",
+    fetch_k_multiplier=3,  # Fetch 3x top_k for better fusion
 )
 
-results = hybrid.retrieve("What is machine learning?", top_k=10)
+results = hybrid_rrf.retrieve("What is machine learning?", top_k=10)
 ```
 
 ### CLI
