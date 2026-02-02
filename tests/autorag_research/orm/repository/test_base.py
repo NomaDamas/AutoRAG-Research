@@ -91,7 +91,10 @@ class TestCountWithoutMultiEmbeddings:
         chunks = chunk_repository.get_without_multi_embeddings(limit=1)
         if chunks:
             chunk = chunks[0]
-            chunk.embeddings = [[0.1] * 768, [0.2] * 768]  # Set dummy multi-vector embeddings (768 dims = testdb schema)
+            chunk.embeddings = [
+                [0.1] * 768,
+                [0.2] * 768,
+            ]  # Set dummy multi-vector embeddings (768 dims = testdb schema)
             db_session.flush()
 
             # Count should decrease by 1
