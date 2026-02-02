@@ -6,7 +6,6 @@ from autorag_research.pipelines.retrieval.hybrid import (
     HybridRRFRetrievalPipeline,
     HybridRRFRetrievalPipelineConfig,
 )
-
 from autorag_research.pipelines.retrieval.vector_search import (
     VectorSearchPipelineConfig,
     VectorSearchRetrievalPipeline,
