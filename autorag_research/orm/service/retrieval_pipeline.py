@@ -348,3 +348,24 @@ class RetrievalPipelineService(BaseService):
                 limit=top_k,
             )
             return [self._make_retrieval_result(chunk, 1 - distance) for chunk, distance in results]
+
+    def fetch_query_texts(self, query_ids: list[int]) -> list[str]:
+        """Batch fetch query texts from database.
+
+        Args:
+            query_ids: List of query IDs to fetch.
+
+        Returns:
+            List of query text contents in the same order as query_ids.
+
+        Raises:
+            ValueError: If a query ID is not found.
+        """
+        query_texts: list[str] = []
+        with self._create_uow() as uow:
+            for query_id in query_ids:
+                query = uow.queries.get_by_id(query_id)
+                if query is None:
+                    raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
+                query_texts.append(query.contents)
+        return query_texts
