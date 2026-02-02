@@ -78,3 +78,11 @@ def test_query_has_embedding_attributes(query_repository: QueryRepository):
 def test_vector_search_capability(query_repository: QueryRepository):
     assert hasattr(query_repository, "vector_search")
     assert hasattr(query_repository, "vector_search_with_scores")
+
+
+def test_find_by_contents(query_repository: QueryRepository):
+    result = query_repository.find_by_contents("What is Doc One about?")
+
+    assert result is not None
+    assert result.contents == "What is Doc One about?"
+    assert result.id == 1

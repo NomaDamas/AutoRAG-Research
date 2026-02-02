@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -20,11 +20,11 @@ class TestBasicRAGPipeline:
 
     @pytest.fixture
     def mock_retrieval_pipeline(self, session_factory):
-        """Create a mock retrieval pipeline."""
+        """Create a mock retrieval pipeline with async _retrieve_by_id method."""
         mock = MagicMock()
         mock.pipeline_id = 1
 
-        def mock_retrieve(query_text: str, top_k: int):
+        async def mock_retrieve_by_id(query_id: int, top_k: int):
             # Return mock chunk IDs that exist in seed data
             return [
                 {"doc_id": 1, "score": 0.9},
@@ -32,7 +32,7 @@ class TestBasicRAGPipeline:
                 {"doc_id": 3, "score": 0.7},
             ][:top_k]
 
-        mock.retrieve = mock_retrieve
+        mock._retrieve_by_id = mock_retrieve_by_id
         return mock
 
     @pytest.fixture
@@ -76,9 +76,11 @@ class TestBasicRAGPipeline:
         assert config["retrieval_pipeline_id"] == mock_retrieval_pipeline.pipeline_id
         assert "prompt_template" in config
 
-    def test_generate_single_query(self, pipeline, mock_llm, mock_retrieval_pipeline):
-        """Test generation for a single query."""
-        result = pipeline._generate("What is the meaning of life?", top_k=3)
+    @pytest.mark.asyncio
+    async def test_generate_single_query(self, pipeline, mock_llm, mock_retrieval_pipeline):
+        """Test generation for a single query using query_id from seed data."""
+        # Use query_id=1 from seed data
+        result = await pipeline._generate(query_id=1, top_k=3)
 
         assert result.text == "This is a generated answer."
         # token_usage is now a dict
@@ -90,17 +92,24 @@ class TestBasicRAGPipeline:
         assert "retrieved_chunk_ids" in result.metadata
         assert len(result.metadata["retrieved_chunk_ids"]) == 3
 
-        # Verify LLM was called (LangChain uses invoke)
-        mock_llm.invoke.assert_called_once()
+        # Verify LLM was called (async ainvoke)
+        mock_llm.ainvoke.assert_called_once()
 
     def test_run_pipeline(self, pipeline, session_factory):
         """Test running the full pipeline with PipelineTestVerifier."""
+        from autorag_research.orm.repository.query import QueryRepository
+
+        # Count actual queries in database
+        with session_factory() as session:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+
         result = pipeline.run(top_k=2, batch_size=10)
 
         # Use PipelineTestVerifier for standard output validation
         config = PipelineTestConfig(
             pipeline_type="generation",
-            expected_total_queries=5,  # Seed data has 5 queries
+            expected_total_queries=query_count,
             check_token_usage=True,
             check_execution_time=True,
             check_persistence=True,
@@ -108,16 +117,26 @@ class TestBasicRAGPipeline:
         verifier = PipelineTestVerifier(result, pipeline.pipeline_id, session_factory, config)
         verifier.verify_all()
 
-    def test_run_pipeline_token_aggregation(self, pipeline):
+    def test_run_pipeline_token_aggregation(self, pipeline, session_factory):
         """Test that token usage is correctly aggregated across all queries."""
+        from autorag_research.orm.repository.query import QueryRepository
+
+        # Count actual queries in database
+        with session_factory() as session:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+
         result = pipeline.run(top_k=2, batch_size=10)
 
-        # Verify aggregated token_usage values (5 queries * mock token counts)
-        assert result["token_usage"]["total_tokens"] == 750  # 5 * 150
-        assert result["token_usage"]["prompt_tokens"] == 500  # 5 * 100
-        assert result["token_usage"]["completion_tokens"] == 250  # 5 * 50
+        # Verify aggregated token_usage values (N queries * mock token counts)
+        assert result["token_usage"]["total_tokens"] == query_count * 150
+        assert result["token_usage"]["prompt_tokens"] == query_count * 100
+        assert result["token_usage"]["completion_tokens"] == query_count * 50
 
-    def test_custom_prompt_template(self, session_factory, mock_llm, mock_retrieval_pipeline, cleanup_pipeline_results):
+    @pytest.mark.asyncio
+    async def test_custom_prompt_template(
+        self, session_factory, mock_llm, mock_retrieval_pipeline, cleanup_pipeline_results
+    ):
         """Test pipeline with custom prompt template."""
         custom_template = "Documents:\n{context}\n\nQuery: {query}\n\nResponse:"
 
@@ -130,19 +149,21 @@ class TestBasicRAGPipeline:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        _ = pipeline._generate("Test query", top_k=2)
+        # Use query_id=1 from seed data
+        _ = await pipeline._generate(query_id=1, top_k=2)
 
-        # Verify the custom template was used by checking the call (LangChain uses invoke)
-        call_args = mock_llm.invoke.call_args
+        # Verify the custom template was used by checking the call (async ainvoke)
+        call_args = mock_llm.ainvoke.call_args
         prompt = call_args[0][0]
         assert "Documents:" in prompt
         assert "Response:" in prompt
 
-    def test_empty_retrieval_results(self, session_factory, mock_llm, cleanup_pipeline_results):
+    @pytest.mark.asyncio
+    async def test_empty_retrieval_results(self, session_factory, mock_llm, cleanup_pipeline_results):
         """Test handling of empty retrieval results."""
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 999
-        mock_retrieval.retrieve.return_value = []
+        mock_retrieval._retrieve_by_id = AsyncMock(return_value=[])
 
         pipeline = BasicRAGPipeline(
             session_factory=session_factory,
@@ -152,28 +173,31 @@ class TestBasicRAGPipeline:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Query with no results", top_k=5)
+        # Use query_id=1 from seed data
+        result = await pipeline._generate(query_id=1, top_k=5)
 
         # Should still produce a result even with no context
         assert result.text is not None
         assert result.metadata["retrieved_chunk_ids"] == []
 
-    def test_token_usage_dict_structure(self, pipeline):
+    @pytest.mark.asyncio
+    async def test_token_usage_dict_structure(self, pipeline):
         """Test that _generate returns token_usage as a dict with expected keys."""
-        result = pipeline._generate("What is AI?", top_k=2)
+        result = await pipeline._generate(query_id=1, top_k=2)
 
         assert result.token_usage is not None
         assert "prompt_tokens" in result.token_usage
         assert "completion_tokens" in result.token_usage
         assert "total_tokens" in result.token_usage
 
-    def test_token_counter_reset_between_generations(self, pipeline):
+    @pytest.mark.asyncio
+    async def test_token_counter_reset_between_generations(self, pipeline):
         """Test that token counter is reset between generations."""
-        # First generation
-        result1 = pipeline._generate("First query", top_k=2)
+        # First generation (use query_id=1 from seed data)
+        result1 = await pipeline._generate(query_id=1, top_k=2)
 
-        # Second generation
-        result2 = pipeline._generate("Second query", top_k=2)
+        # Second generation (use query_id=2 from seed data)
+        result2 = await pipeline._generate(query_id=2, top_k=2)
 
         # Token counts should be independent (not accumulated)
         # Since we're using mock LLM with raw response, values should be present
@@ -183,9 +207,10 @@ class TestBasicRAGPipeline:
         assert "total_tokens" in result1.token_usage
         assert "total_tokens" in result2.token_usage
 
-    def test_token_usage_total_consistency(self, pipeline):
+    @pytest.mark.asyncio
+    async def test_token_usage_total_consistency(self, pipeline):
         """Test that total_tokens equals prompt_tokens + completion_tokens."""
-        result = pipeline._generate("Test query", top_k=2)
+        result = await pipeline._generate(query_id=1, top_k=2)
 
         if result.token_usage:
             expected_total = result.token_usage["prompt_tokens"] + result.token_usage["completion_tokens"]
