@@ -24,26 +24,51 @@ from autorag_research.util import (
 
 NormalizationMethod = Literal["mm", "tmm", "z", "dbsf"]
 
+# Floor values for missing scores after normalization
+# These represent semantically correct "missing" values for each method:
+# - mm: 0.0 (minimum of [0,1] range)
+# - tmm: 0.0 (normalized theoretical minimum)
+# - z: -3.0 (mean - 3*std, since z-normalized mean=0, std=1)
+# - dbsf: 0.0 (lower bound of [0,1] range)
+MISSING_SCORE_FLOORS: dict[NormalizationMethod, float] = {
+    "mm": 0.0,
+    "tmm": 0.0,
+    "z": -3.0,
+    "dbsf": 0.0,
+}
+
 
 def _rrf_fuse(
     results_1: list[dict[str, Any]],
     results_2: list[dict[str, Any]],
     k: int,
     top_k: int,
+    fetch_k: int,
 ) -> list[dict[str, Any]]:
     """Fuse two result lists using Reciprocal Rank Fusion.
 
     RRF(d) = Σ 1/(k + rank_i(d)) for each result list i
+
+    Documents missing from one pipeline are treated as having rank fetch_k + 1
+    (just beyond the retrieved results), giving them a small but non-zero contribution.
 
     Args:
         results_1: First result list with 'doc_id' and 'score' keys.
         results_2: Second result list with 'doc_id' and 'score' keys.
         k: RRF constant (typically 60). Higher values give more weight to top ranks.
         top_k: Number of results to return.
+        fetch_k: Number of results fetched from each pipeline (used for missing rank).
 
     Returns:
         Fused results sorted by RRF score (descending).
     """
+    # Floor contribution for missing documents (rank = fetch_k + 1)
+    missing_rank_contribution = 1.0 / (k + fetch_k + 1)
+
+    # Build doc_id sets for each pipeline
+    doc_ids_1 = {r["doc_id"] for r in results_1}
+    doc_ids_2 = {r["doc_id"] for r in results_2}
+
     rrf_scores: dict[int, float] = {}
 
     # Process first result list
@@ -55,6 +80,12 @@ def _rrf_fuse(
     for rank, result in enumerate(results_2, start=1):
         doc_id = result["doc_id"]
         rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank)
+
+    # Add floor contribution for documents missing from one pipeline
+    for doc_id in doc_ids_1 - doc_ids_2:
+        rrf_scores[doc_id] += missing_rank_contribution
+    for doc_id in doc_ids_2 - doc_ids_1:
+        rrf_scores[doc_id] += missing_rank_contribution
 
     # Sort by RRF score and return top_k
     sorted_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
@@ -74,6 +105,9 @@ def _cc_fuse(
 
     combined = weight x norm(scores_1) + (1-weight) x norm(scores_2)
 
+    Documents missing from one pipeline receive a floor value after normalization,
+    which represents a semantically correct "missing" score for each normalization method.
+
     Args:
         results_1: First result list with 'doc_id' and 'score' keys.
         results_2: Second result list with 'doc_id' and 'score' keys.
@@ -86,16 +120,22 @@ def _cc_fuse(
     Returns:
         Fused results sorted by combined score (descending).
     """
-    # Extract doc_ids and scores
-    doc_ids_1 = [r["doc_id"] for r in results_1]
-    scores_1 = [r["score"] for r in results_1]
-    doc_ids_2 = [r["doc_id"] for r in results_2]
-    scores_2 = [r["score"] for r in results_2]
+    # Build raw score maps from original results
+    score_map_1_raw = {r["doc_id"]: r["score"] for r in results_1}
+    score_map_2_raw = {r["doc_id"]: r["score"] for r in results_2}
 
-    # Normalize scores
+    # Get unified list of all doc_ids
+    all_doc_ids = list(set(score_map_1_raw.keys()) | set(score_map_2_raw.keys()))
+
+    # Create score lists with None for missing docs
+    # None values will be excluded from normalization statistics
+    scores_1_with_missing: list[float | None] = [score_map_1_raw.get(doc_id) for doc_id in all_doc_ids]
+    scores_2_with_missing: list[float | None] = [score_map_2_raw.get(doc_id) for doc_id in all_doc_ids]
+
+    # Normalize scores (None values are preserved and excluded from statistics)
     if normalize_method == "mm":
-        norm_scores_1 = normalize_minmax(scores_1)
-        norm_scores_2 = normalize_minmax(scores_2)
+        norm_scores_1 = normalize_minmax(scores_1_with_missing)
+        norm_scores_2 = normalize_minmax(scores_2_with_missing)
     elif normalize_method == "tmm":
         if pipeline_1_min is None:
             msg = "TMM normalization requires pipeline_1_min"
@@ -103,29 +143,28 @@ def _cc_fuse(
         if pipeline_2_min is None:
             msg = "TMM normalization requires pipeline_2_min"
             raise ValueError(msg)
-        norm_scores_1 = normalize_tmm(scores_1, pipeline_1_min)
-        norm_scores_2 = normalize_tmm(scores_2, pipeline_2_min)
+        norm_scores_1 = normalize_tmm(scores_1_with_missing, pipeline_1_min)
+        norm_scores_2 = normalize_tmm(scores_2_with_missing, pipeline_2_min)
     elif normalize_method == "z":
-        norm_scores_1 = normalize_zscore(scores_1)
-        norm_scores_2 = normalize_zscore(scores_2)
+        norm_scores_1 = normalize_zscore(scores_1_with_missing)
+        norm_scores_2 = normalize_zscore(scores_2_with_missing)
     elif normalize_method == "dbsf":
-        norm_scores_1 = normalize_dbsf(scores_1)
-        norm_scores_2 = normalize_dbsf(scores_2)
+        norm_scores_1 = normalize_dbsf(scores_1_with_missing)
+        norm_scores_2 = normalize_dbsf(scores_2_with_missing)
     else:
         msg = f"Unknown normalization method: {normalize_method}"
         raise ValueError(msg)
 
-    # Build score maps
-    score_map_1 = dict(zip(doc_ids_1, norm_scores_1, strict=True))
-    score_map_2 = dict(zip(doc_ids_2, norm_scores_2, strict=True))
+    # Get floor value for missing scores
+    floor = MISSING_SCORE_FLOORS[normalize_method]
 
-    # Combine scores for all unique documents
-    all_doc_ids = set(doc_ids_1) | set(doc_ids_2)
+    # Combine scores, replacing None with floor value
     combined_scores: dict[int, float] = {}
-
-    for doc_id in all_doc_ids:
-        score_1 = score_map_1.get(doc_id, 0.0)
-        score_2 = score_map_2.get(doc_id, 0.0)
+    for i, doc_id in enumerate(all_doc_ids):
+        ns1 = norm_scores_1[i]
+        ns2 = norm_scores_2[i]
+        score_1: float = ns1 if ns1 is not None else floor
+        score_2: float = ns2 if ns2 is not None else floor
         combined_scores[doc_id] = weight * score_1 + (1 - weight) * score_2
 
     # Sort by combined score and return top_k
@@ -141,12 +180,15 @@ class HybridRetrievalPipelineConfig(BaseRetrievalPipelineConfig, ABC):
         name: Unique name for this pipeline instance.
         retrieval_pipeline_1_name: Name of the first retrieval pipeline.
         retrieval_pipeline_2_name: Name of the second retrieval pipeline.
+        fetch_k_multiplier: Multiplier for top_k when fetching from sub-pipelines.
+            Each sub-pipeline fetches top_k * fetch_k_multiplier results before fusion.
         top_k: Number of results to retrieve per query.
         batch_size: Number of queries to process in each batch.
     """
 
     retrieval_pipeline_1_name: str
     retrieval_pipeline_2_name: str
+    fetch_k_multiplier: int = 2
 
 
 @dataclass(kw_only=True)
@@ -185,6 +227,7 @@ class HybridRRFRetrievalPipelineConfig(HybridRetrievalPipelineConfig):
             "retrieval_pipeline_1": self.retrieval_pipeline_1_name,
             "retrieval_pipeline_2": self.retrieval_pipeline_2_name,
             "rrf_k": self.rrf_k,
+            "fetch_k_multiplier": self.fetch_k_multiplier,
         }
 
 
@@ -234,6 +277,7 @@ class HybridCCRetrievalPipelineConfig(HybridRetrievalPipelineConfig):
             "normalize_method": self.normalize_method,
             "pipeline_1_min": self.pipeline_1_min,
             "pipeline_2_min": self.pipeline_2_min,
+            "fetch_k_multiplier": self.fetch_k_multiplier,
         }
 
 
@@ -253,6 +297,7 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
         name: str,
         retrieval_pipeline_1: "BaseRetrievalPipeline | str",
         retrieval_pipeline_2: "BaseRetrievalPipeline | str",
+        fetch_k_multiplier: int = 2,
         schema: Any | None = None,
         config_dir: Path | None = None,
     ):
@@ -263,6 +308,8 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
             name: Name for this pipeline.
             retrieval_pipeline_1: First retrieval pipeline (instance or name string).
             retrieval_pipeline_2: Second retrieval pipeline (instance or name string).
+            fetch_k_multiplier: Multiplier for top_k when fetching from sub-pipelines.
+                Each sub-pipeline fetches top_k * fetch_k_multiplier results before fusion.
             schema: Schema namespace from create_schema(). If None, uses default schema.
             config_dir: Directory containing pipeline configs (for loading by name).
         """
@@ -275,6 +322,7 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
         # Store pipelines before super().__init__ (needed for _get_pipeline_config)
         self._retrieval_pipeline_1 = retrieval_pipeline_1
         self._retrieval_pipeline_2 = retrieval_pipeline_2
+        self.fetch_k_multiplier = fetch_k_multiplier
 
         super().__init__(session_factory, name, schema)
 
@@ -320,6 +368,7 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
         results_1: list[dict[str, Any]],
         results_2: list[dict[str, Any]],
         top_k: int,
+        fetch_k: int,
     ) -> list[dict[str, Any]]:
         """Fuse results from two pipelines.
 
@@ -327,6 +376,7 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
             results_1: Results from pipeline_1.
             results_2: Results from pipeline_2.
             top_k: Number of results to return.
+            fetch_k: Number of results fetched from each pipeline.
 
         Returns:
             Fused results sorted by combined score.
@@ -340,11 +390,11 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
 
         def hybrid_retrieval(query_ids: list[int], top_k: int) -> list[list[dict]]:
             # Fetch more results from each pipeline for better fusion
-            fetch_k = top_k * 2
+            fetch_k = top_k * self.fetch_k_multiplier
             results_1 = func_1(query_ids, fetch_k)
             results_2 = func_2(query_ids, fetch_k)
 
-            return [self._fuse_results(r1, r2, top_k) for r1, r2 in zip(results_1, results_2, strict=True)]
+            return [self._fuse_results(r1, r2, top_k, fetch_k) for r1, r2 in zip(results_1, results_2, strict=True)]
 
         return hybrid_retrieval
 
@@ -397,6 +447,7 @@ class HybridRRFRetrievalPipeline(HybridRetrievalPipeline):
         retrieval_pipeline_1: "BaseRetrievalPipeline | str",
         retrieval_pipeline_2: "BaseRetrievalPipeline | str",
         rrf_k: int = 60,
+        fetch_k_multiplier: int = 2,
         schema: Any | None = None,
         config_dir: Path | None = None,
     ):
@@ -408,6 +459,7 @@ class HybridRRFRetrievalPipeline(HybridRetrievalPipeline):
             retrieval_pipeline_1: First retrieval pipeline (instance or name string).
             retrieval_pipeline_2: Second retrieval pipeline (instance or name string).
             rrf_k: RRF constant (default: 60). Higher values emphasize top ranks.
+            fetch_k_multiplier: Multiplier for top_k when fetching from sub-pipelines.
             schema: Schema namespace from create_schema(). If None, uses default schema.
             config_dir: Directory containing pipeline configs (for loading by name).
         """
@@ -417,6 +469,7 @@ class HybridRRFRetrievalPipeline(HybridRetrievalPipeline):
             name,
             retrieval_pipeline_1,
             retrieval_pipeline_2,
+            fetch_k_multiplier,
             schema,
             config_dir,
         )
@@ -428,6 +481,7 @@ class HybridRRFRetrievalPipeline(HybridRetrievalPipeline):
             "retrieval_pipeline_1": self._retrieval_pipeline_1.name,
             "retrieval_pipeline_2": self._retrieval_pipeline_2.name,
             "rrf_k": self.rrf_k,
+            "fetch_k_multiplier": self.fetch_k_multiplier,
         }
 
     def _fuse_results(
@@ -435,9 +489,10 @@ class HybridRRFRetrievalPipeline(HybridRetrievalPipeline):
         results_1: list[dict[str, Any]],
         results_2: list[dict[str, Any]],
         top_k: int,
+        fetch_k: int,
     ) -> list[dict[str, Any]]:
         """Fuse results using Reciprocal Rank Fusion."""
-        return _rrf_fuse(results_1, results_2, self.rrf_k, top_k)
+        return _rrf_fuse(results_1, results_2, self.rrf_k, top_k, fetch_k)
 
 
 class HybridCCRetrievalPipeline(HybridRetrievalPipeline):
@@ -479,6 +534,7 @@ class HybridCCRetrievalPipeline(HybridRetrievalPipeline):
         normalize_method: NormalizationMethod = "mm",
         pipeline_1_min: float | None = None,
         pipeline_2_min: float | None = None,
+        fetch_k_multiplier: int = 2,
         schema: Any | None = None,
         config_dir: Path | None = None,
     ):
@@ -493,6 +549,7 @@ class HybridCCRetrievalPipeline(HybridRetrievalPipeline):
             normalize_method: Score normalization method ("mm", "tmm", "z", "dbsf").
             pipeline_1_min: Theoretical min score for TMM (pipeline_1).
             pipeline_2_min: Theoretical min score for TMM (pipeline_2).
+            fetch_k_multiplier: Multiplier for top_k when fetching from sub-pipelines.
             schema: Schema namespace from create_schema(). If None, uses default schema.
             config_dir: Directory containing pipeline configs (for loading by name).
         """
@@ -505,6 +562,7 @@ class HybridCCRetrievalPipeline(HybridRetrievalPipeline):
             name,
             retrieval_pipeline_1,
             retrieval_pipeline_2,
+            fetch_k_multiplier,
             schema,
             config_dir,
         )
@@ -517,6 +575,7 @@ class HybridCCRetrievalPipeline(HybridRetrievalPipeline):
             "retrieval_pipeline_2": self._retrieval_pipeline_2.name,
             "weight": self.weight,
             "normalize_method": self.normalize_method,
+            "fetch_k_multiplier": self.fetch_k_multiplier,
         }
         if self.normalize_method == "tmm":
             config["pipeline_1_min"] = self.pipeline_1_min
@@ -528,6 +587,7 @@ class HybridCCRetrievalPipeline(HybridRetrievalPipeline):
         results_1: list[dict[str, Any]],
         results_2: list[dict[str, Any]],
         top_k: int,
+        fetch_k: int,
     ) -> list[dict[str, Any]]:
         """Fuse results using Convex Combination with score normalization."""
         return _cc_fuse(

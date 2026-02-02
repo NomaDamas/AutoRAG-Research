@@ -229,132 +229,164 @@ def extract_image_from_data_uri(data_uri: str) -> tuple[bytes, str]:
     return image_bytes, mimetype
 
 
-def normalize_minmax(scores: list[float]) -> list[float]:
+def normalize_minmax(scores: list[float | None]) -> list[float | None]:
     """Min-max normalization to [0, 1] range.
 
     Scales scores linearly so that the minimum becomes 0 and maximum becomes 1.
     If all scores are equal, returns a list of 0.5 values.
+    None values are preserved and excluded from statistics calculation.
 
     Args:
-        scores: List of numeric scores to normalize.
+        scores: List of numeric scores to normalize. None values are preserved.
 
     Returns:
-        List of normalized scores in [0, 1] range.
+        List of normalized scores in [0, 1] range, with None preserved.
 
     Example:
         >>> normalize_minmax([1.0, 2.0, 3.0])
         [0.0, 0.5, 1.0]
+        >>> normalize_minmax([1.0, None, 3.0])
+        [0.0, None, 1.0]
     """
     if not scores:
         return []
 
-    min_score = min(scores)
-    max_score = max(scores)
+    valid_scores = [s for s in scores if s is not None]
+    if not valid_scores:
+        return list(scores)
+
+    min_score = min(valid_scores)
+    max_score = max(valid_scores)
     score_range = max_score - min_score
 
     if score_range == 0:
-        return [0.5] * len(scores)
+        return [0.5 if s is not None else None for s in scores]
 
-    return [(s - min_score) / score_range for s in scores]
+    return [(s - min_score) / score_range if s is not None else None for s in scores]
 
 
 def normalize_tmm(
-    scores: list[float],
+    scores: list[float | None],
     theoretical_min: float,
-) -> list[float]:
+) -> list[float | None]:
     """Theoretical min-max normalization using theoretical min and actual max.
 
     Uses the theoretical minimum bound and actual maximum from the data.
     This is useful when the minimum is known (e.g., 0 for BM25) but the
     maximum varies per query.
+    None values are preserved and excluded from statistics calculation.
 
     Args:
-        scores: List of numeric scores to normalize.
+        scores: List of numeric scores to normalize. None values are preserved.
         theoretical_min: Known minimum possible score (e.g., 0 for BM25, -1 for cosine).
 
     Returns:
-        List of normalized scores in [0, 1] range.
+        List of normalized scores in [0, 1] range, with None preserved.
 
     Example:
         >>> normalize_tmm([0.0, 50.0, 100.0], theoretical_min=0.0)
         [0.0, 0.5, 1.0]
+        >>> normalize_tmm([0.0, None, 100.0], theoretical_min=0.0)
+        [0.0, None, 1.0]
     """
     if not scores:
         return []
 
-    actual_max = max(scores)
+    valid_scores = [s for s in scores if s is not None]
+    if not valid_scores:
+        return list(scores)
+
+    actual_max = max(valid_scores)
     score_range = actual_max - theoretical_min
     if score_range == 0:
-        return [0.5] * len(scores)
+        return [0.5 if s is not None else None for s in scores]
 
-    return [(s - theoretical_min) / score_range for s in scores]
+    return [(s - theoretical_min) / score_range if s is not None else None for s in scores]
 
 
-def normalize_zscore(scores: list[float]) -> list[float]:
+def normalize_zscore(scores: list[float | None]) -> list[float | None]:
     """Z-score standardization (mean=0, std=1).
 
     Centers scores around mean and scales by standard deviation.
     If standard deviation is 0 (all scores equal), returns all zeros.
+    None values are preserved and excluded from statistics calculation.
 
     Args:
-        scores: List of numeric scores to normalize.
+        scores: List of numeric scores to normalize. None values are preserved.
 
     Returns:
-        List of z-score normalized values.
+        List of z-score normalized values, with None preserved.
 
     Example:
         >>> normalize_zscore([1.0, 2.0, 3.0])
         [-1.2247..., 0.0, 1.2247...]
+        >>> normalize_zscore([1.0, None, 3.0])
+        [-1.0, None, 1.0]
     """
     if not scores:
         return []
 
-    n = len(scores)
-    mean = sum(scores) / n
-    variance = sum((s - mean) ** 2 for s in scores) / n
+    valid_scores = [s for s in scores if s is not None]
+    if not valid_scores:
+        return list(scores)
+
+    n = len(valid_scores)
+    mean = sum(valid_scores) / n
+    variance = sum((s - mean) ** 2 for s in valid_scores) / n
     std = variance**0.5
 
     if std == 0:
-        return [0.0] * n
+        return [0.0 if s is not None else None for s in scores]
 
-    return [(s - mean) / std for s in scores]
+    return [(s - mean) / std if s is not None else None for s in scores]
 
 
-def normalize_dbsf(scores: list[float]) -> list[float]:
+def normalize_dbsf(scores: list[float | None]) -> list[float | None]:
     """3-sigma distribution-based score fusion normalization.
 
     Normalizes using mean ± 3*std as bounds, then clips to [0, 1].
     This method is robust to outliers and works well when combining
     scores from different distributions.
+    None values are preserved and excluded from statistics calculation.
 
     Reference: "Score Normalization in Multi-Engine Text Retrieval"
 
     Args:
-        scores: List of numeric scores to normalize.
+        scores: List of numeric scores to normalize. None values are preserved.
 
     Returns:
-        List of normalized scores clipped to [0, 1] range.
+        List of normalized scores clipped to [0, 1] range, with None preserved.
 
     Example:
         >>> normalize_dbsf([1.0, 2.0, 3.0, 4.0, 5.0])
         [0.0, 0.25, 0.5, 0.75, 1.0]  # approximately
+        >>> normalize_dbsf([1.0, None, 3.0, 4.0, 5.0])
+        [0.0, None, 0.333..., 0.5, 0.666...]  # approximately
     """
     if not scores:
         return []
 
-    n = len(scores)
-    mean = sum(scores) / n
-    variance = sum((s - mean) ** 2 for s in scores) / n
+    valid_scores = [s for s in scores if s is not None]
+    if not valid_scores:
+        return list(scores)
+
+    n = len(valid_scores)
+    mean = sum(valid_scores) / n
+    variance = sum((s - mean) ** 2 for s in valid_scores) / n
     std = variance**0.5
 
     if std == 0:
-        return [0.5] * n
+        return [0.5 if s is not None else None for s in scores]
 
     # Use 3-sigma bounds
     lower_bound = mean - 3 * std
     upper_bound = mean + 3 * std
     score_range = upper_bound - lower_bound
 
-    normalized = [(s - lower_bound) / score_range for s in scores]
-    # Clip to [0, 1]
-    return [max(0.0, min(1.0, s)) for s in normalized]
+    def normalize_single(s: float | None) -> float | None:
+        if s is None:
+            return None
+        normalized = (s - lower_bound) / score_range
+        return max(0.0, min(1.0, normalized))
+
+    return [normalize_single(s) for s in scores]

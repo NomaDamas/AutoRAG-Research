@@ -16,5 +16,6 @@ name: hybrid_rrf
 retrieval_pipeline_1_name: vector_search
 retrieval_pipeline_2_name: bm25
 rrf_k: 60
+fetch_k_multiplier: 2
 top_k: 10
 batch_size: 100

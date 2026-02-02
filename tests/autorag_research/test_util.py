@@ -462,3 +462,197 @@ class TestNormalizeDbsf:
         assert all(0.0 <= v <= 1.0 for v in result)
         # Should maintain order
         assert result == sorted(result)
+
+
+class TestNormalizeMinmaxWithNone:
+    """Tests for normalize_minmax handling of None values."""
+
+    def test_none_values_preserved(self):
+        """Test that None values are preserved in output."""
+        from autorag_research.util import normalize_minmax
+
+        scores: list[float | None] = [1.0, None, 3.0]
+        result = normalize_minmax(scores)
+        assert result == [0.0, None, 1.0]
+
+    def test_none_excluded_from_stats(self):
+        """Test that None values don't affect min/max calculation."""
+        from autorag_research.util import normalize_minmax
+
+        # Without None: [1.0, 2.0, 3.0] -> [0.0, 0.5, 1.0]
+        # With None: min/max should still be 1.0 and 3.0
+        scores: list[float | None] = [1.0, None, 2.0, 3.0]
+        result = normalize_minmax(scores)
+        assert result[0] == 0.0  # min
+        assert result[1] is None  # preserved
+        assert result[2] == 0.5  # middle
+        assert result[3] == 1.0  # max
+
+    def test_all_none(self):
+        """Test with all None values."""
+        from autorag_research.util import normalize_minmax
+
+        scores: list[float | None] = [None, None, None]
+        result = normalize_minmax(scores)
+        assert result == [None, None, None]
+
+    def test_single_value_with_none(self):
+        """Test with single valid value and None values."""
+        from autorag_research.util import normalize_minmax
+
+        scores: list[float | None] = [None, 5.0, None]
+        result = normalize_minmax(scores)
+        # Single value -> 0.5 (same as all equal)
+        assert result == [None, 0.5, None]
+
+    def test_backward_compatible_no_none(self):
+        """Test that function still works without None values."""
+        from autorag_research.util import normalize_minmax
+
+        scores: list[float | None] = [1.0, 2.0, 3.0]
+        result = normalize_minmax(scores)
+        assert result == [0.0, 0.5, 1.0]
+
+
+class TestNormalizeTmmWithNone:
+    """Tests for normalize_tmm handling of None values."""
+
+    def test_none_values_preserved(self):
+        """Test that None values are preserved in output."""
+        from autorag_research.util import normalize_tmm
+
+        scores: list[float | None] = [0.0, None, 100.0]
+        result = normalize_tmm(scores, theoretical_min=0.0)
+        assert result == [0.0, None, 1.0]
+
+    def test_none_excluded_from_stats(self):
+        """Test that None values don't affect max calculation."""
+        from autorag_research.util import normalize_tmm
+
+        # actual_max should be 100.0, not affected by None
+        scores: list[float | None] = [0.0, None, 50.0, 100.0]
+        result = normalize_tmm(scores, theoretical_min=0.0)
+        assert result[0] == 0.0
+        assert result[1] is None
+        assert result[2] == 0.5
+        assert result[3] == 1.0
+
+    def test_all_none(self):
+        """Test with all None values."""
+        from autorag_research.util import normalize_tmm
+
+        scores: list[float | None] = [None, None]
+        result = normalize_tmm(scores, theoretical_min=0.0)
+        assert result == [None, None]
+
+    def test_backward_compatible_no_none(self):
+        """Test that function still works without None values."""
+        from autorag_research.util import normalize_tmm
+
+        scores: list[float | None] = [0.0, 50.0, 100.0]
+        result = normalize_tmm(scores, theoretical_min=0.0)
+        assert result == [0.0, 0.5, 1.0]
+
+
+class TestNormalizeZscoreWithNone:
+    """Tests for normalize_zscore handling of None values."""
+
+    def test_none_values_preserved(self):
+        """Test that None values are preserved in output."""
+        from autorag_research.util import normalize_zscore
+
+        scores: list[float | None] = [1.0, None, 3.0]
+        result = normalize_zscore(scores)
+        # mean = 2.0, std = 1.0 (computed from [1.0, 3.0])
+        # (1.0 - 2.0) / 1.0 = -1.0
+        # (3.0 - 2.0) / 1.0 = 1.0
+        assert result[0] == -1.0
+        assert result[1] is None
+        assert result[2] == 1.0
+
+    def test_none_excluded_from_stats(self):
+        """Test that None values don't affect mean/std calculation."""
+        from autorag_research.util import normalize_zscore
+
+        # Without None: mean of [0, 10] = 5, std = 5
+        scores: list[float | None] = [0.0, None, 10.0]
+        result = normalize_zscore(scores)
+        # (0 - 5) / 5 = -1.0, (10 - 5) / 5 = 1.0
+        assert result[0] == -1.0
+        assert result[1] is None
+        assert result[2] == 1.0
+
+    def test_all_none(self):
+        """Test with all None values."""
+        from autorag_research.util import normalize_zscore
+
+        scores: list[float | None] = [None, None]
+        result = normalize_zscore(scores)
+        assert result == [None, None]
+
+    def test_all_equal_with_none(self):
+        """Test all equal values with None (std=0)."""
+        from autorag_research.util import normalize_zscore
+
+        scores: list[float | None] = [5.0, None, 5.0]
+        result = normalize_zscore(scores)
+        assert result == [0.0, None, 0.0]
+
+    def test_backward_compatible_no_none(self):
+        """Test that function still works without None values."""
+        from autorag_research.util import normalize_zscore
+
+        scores: list[float | None] = [0.0, 10.0]
+        result = normalize_zscore(scores)
+        assert result[0] == -1.0
+        assert result[1] == 1.0
+
+
+class TestNormalizeDbsfWithNone:
+    """Tests for normalize_dbsf handling of None values."""
+
+    def test_none_values_preserved(self):
+        """Test that None values are preserved in output."""
+        from autorag_research.util import normalize_dbsf
+
+        scores: list[float | None] = [1.0, None, 3.0, 5.0]
+        result = normalize_dbsf(scores)
+        assert result[1] is None
+        # Other values should be in [0, 1]
+        assert all(0.0 <= v <= 1.0 for v in result if v is not None)
+
+    def test_none_excluded_from_stats(self):
+        """Test that None values don't affect mean/std calculation."""
+        from autorag_research.util import normalize_dbsf
+
+        # Mean and std computed only from valid scores
+        scores: list[float | None] = [1.0, 2.0, None, 3.0, 4.0, 5.0]
+        result = normalize_dbsf(scores)
+        assert result[2] is None
+        # Middle value (3.0) should be at 0.5 (it's the mean of [1,2,3,4,5])
+        assert result[3] == 0.5
+
+    def test_all_none(self):
+        """Test with all None values."""
+        from autorag_research.util import normalize_dbsf
+
+        scores: list[float | None] = [None, None]
+        result = normalize_dbsf(scores)
+        assert result == [None, None]
+
+    def test_all_equal_with_none(self):
+        """Test all equal values with None."""
+        from autorag_research.util import normalize_dbsf
+
+        scores: list[float | None] = [5.0, None, 5.0]
+        result = normalize_dbsf(scores)
+        assert result == [0.5, None, 0.5]
+
+    def test_backward_compatible_no_none(self):
+        """Test that function still works without None values."""
+        from autorag_research.util import normalize_dbsf
+
+        scores: list[float | None] = [1.0, 2.0, 3.0, 4.0, 5.0]
+        result = normalize_dbsf(scores)
+        assert all(0.0 <= v <= 1.0 for v in result if v is not None)
+        assert result[2] == 0.5

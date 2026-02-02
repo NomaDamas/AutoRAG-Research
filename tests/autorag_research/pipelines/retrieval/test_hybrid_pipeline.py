@@ -31,7 +31,7 @@ class TestRRFFusion:
             {"doc_id": 4, "score": 0.75},
         ]
 
-        fused = _rrf_fuse(results_1, results_2, k=60, top_k=3)
+        fused = _rrf_fuse(results_1, results_2, k=60, top_k=3, fetch_k=6)
 
         assert len(fused) == 3
         # Doc 1 and 2 should have higher scores (appear in both lists)
@@ -46,8 +46,8 @@ class TestRRFFusion:
         results_1b = [{"doc_id": 1, "score": 0.51}, {"doc_id": 2, "score": 0.49}]
         results_2 = [{"doc_id": 1, "score": 0.5}, {"doc_id": 2, "score": 0.4}]
 
-        fused_a = _rrf_fuse(results_1a, results_2, k=60, top_k=2)
-        fused_b = _rrf_fuse(results_1b, results_2, k=60, top_k=2)
+        fused_a = _rrf_fuse(results_1a, results_2, k=60, top_k=2, fetch_k=4)
+        fused_b = _rrf_fuse(results_1b, results_2, k=60, top_k=2, fetch_k=4)
 
         # RRF scores should be identical (depends only on ranks)
         assert fused_a[0]["score"] == fused_b[0]["score"]
@@ -58,8 +58,8 @@ class TestRRFFusion:
         results_1 = [{"doc_id": 1, "score": 0.9}, {"doc_id": 2, "score": 0.8}]
         results_2 = [{"doc_id": 2, "score": 0.95}, {"doc_id": 1, "score": 0.85}]
 
-        fused_k60 = _rrf_fuse(results_1, results_2, k=60, top_k=2)
-        fused_k1 = _rrf_fuse(results_1, results_2, k=1, top_k=2)
+        fused_k60 = _rrf_fuse(results_1, results_2, k=60, top_k=2, fetch_k=4)
+        fused_k1 = _rrf_fuse(results_1, results_2, k=1, top_k=2, fetch_k=4)
 
         # With k=1, rank differences matter more
         # Doc 1: rank 1 in list 1, rank 2 in list 2
@@ -73,7 +73,7 @@ class TestRRFFusion:
         results_1: list[dict] = []
         results_2 = [{"doc_id": 1, "score": 0.9}]
 
-        fused = _rrf_fuse(results_1, results_2, k=60, top_k=2)
+        fused = _rrf_fuse(results_1, results_2, k=60, top_k=2, fetch_k=4)
 
         assert len(fused) == 1
         assert fused[0]["doc_id"] == 1
@@ -83,11 +83,33 @@ class TestRRFFusion:
         results_1 = [{"doc_id": 1, "score": 0.9}, {"doc_id": 2, "score": 0.8}]
         results_2 = [{"doc_id": 3, "score": 0.95}, {"doc_id": 4, "score": 0.85}]
 
-        fused = _rrf_fuse(results_1, results_2, k=60, top_k=4)
+        fused = _rrf_fuse(results_1, results_2, k=60, top_k=4, fetch_k=4)
 
         assert len(fused) == 4
         doc_ids = {r["doc_id"] for r in fused}
         assert doc_ids == {1, 2, 3, 4}
+
+    def test_missing_doc_gets_floor_rank(self):
+        """Test that missing docs get rank fetch_k + 1 contribution."""
+        # Doc 1 only in results_1, Doc 2 in both
+        results_1 = [{"doc_id": 1, "score": 0.9}, {"doc_id": 2, "score": 0.8}]
+        results_2 = [{"doc_id": 2, "score": 0.95}]
+
+        k = 60
+        fetch_k = 10
+        fused = _rrf_fuse(results_1, results_2, k=k, top_k=2, fetch_k=fetch_k)
+
+        scores_by_doc = {r["doc_id"]: r["score"] for r in fused}
+
+        # Doc 1: rank 1 in results_1 + floor rank (fetch_k + 1 = 11) in results_2
+        # expected = 1/(60+1) + 1/(60+11) = 1/61 + 1/71
+        expected_doc1 = 1 / (k + 1) + 1 / (k + fetch_k + 1)
+        assert abs(scores_by_doc[1] - expected_doc1) < 1e-10
+
+        # Doc 2: rank 2 in results_1 + rank 1 in results_2
+        # expected = 1/(60+2) + 1/(60+1) = 1/62 + 1/61
+        expected_doc2 = 1 / (k + 2) + 1 / (k + 1)
+        assert abs(scores_by_doc[2] - expected_doc2) < 1e-10
 
 
 class TestCCFusion:
@@ -192,9 +214,194 @@ class TestCCFusion:
         fused = _cc_fuse(results_1, results_2, weight=0.5, top_k=2, normalize_method="mm")
 
         assert len(fused) == 2
-        # Doc 1 gets 0.5 * 0.5 (from mm norm of single value) + 0 = 0.25
-        # Doc 2 gets 0 + 0.5 * 0.5 = 0.25
+        # Doc 1 gets 0.5 * 0.5 (from mm norm of single value) + 0.5 * 0 (floor) = 0.25
+        # Doc 2 gets 0.5 * 0 (floor) + 0.5 * 0.5 = 0.25
         assert fused[0]["score"] == fused[1]["score"]
+
+
+class TestCCFusionMissingScores:
+    """Tests for CC fusion handling of missing scores (documents in only one pipeline)."""
+
+    def test_missing_score_gets_floor_value_minmax(self):
+        """Test that missing scores get floor value 0.0 for minmax."""
+        from autorag_research.pipelines.retrieval.hybrid import MISSING_SCORE_FLOORS
+
+        # Doc 1 only in results_1, Doc 2 only in results_2, Doc 3 in both
+        results_1 = [
+            {"doc_id": 1, "score": 1.0},
+            {"doc_id": 3, "score": 0.5},
+        ]
+        results_2 = [
+            {"doc_id": 2, "score": 1.0},
+            {"doc_id": 3, "score": 0.5},
+        ]
+
+        fused = _cc_fuse(results_1, results_2, weight=0.5, top_k=3, normalize_method="mm")
+
+        # Find doc scores
+        scores_by_doc = {r["doc_id"]: r["score"] for r in fused}
+
+        # Doc 1: norm_1=1.0, missing in results_2 -> floor=0.0
+        # combined = 0.5 * 1.0 + 0.5 * 0.0 = 0.5
+        assert scores_by_doc[1] == 0.5
+
+        # Doc 2: missing in results_1 -> floor=0.0, norm_2=1.0
+        # combined = 0.5 * 0.0 + 0.5 * 1.0 = 0.5
+        assert scores_by_doc[2] == 0.5
+
+        # Doc 3: norm_1=0.0 (min), norm_2=0.0 (min after excluding missing)
+        # combined = 0.5 * 0.0 + 0.5 * 0.0 = 0.0
+        assert scores_by_doc[3] == 0.0
+
+        # Verify the floor constant
+        assert MISSING_SCORE_FLOORS["mm"] == 0.0
+
+    def test_missing_score_gets_floor_value_zscore(self):
+        """Test that missing scores get floor value -3.0 for z-score."""
+        from autorag_research.pipelines.retrieval.hybrid import MISSING_SCORE_FLOORS
+
+        # Doc 1 only in results_1 (will get floor=-3.0 for pipeline_2)
+        results_1 = [
+            {"doc_id": 1, "score": 10.0},
+            {"doc_id": 2, "score": 20.0},
+        ]
+        results_2 = [
+            {"doc_id": 2, "score": 0.5},
+        ]
+
+        fused = _cc_fuse(results_1, results_2, weight=0.5, top_k=2, normalize_method="z")
+
+        scores_by_doc = {r["doc_id"]: r["score"] for r in fused}
+
+        # Doc 1: z_score=-1.0 (from pipeline_1 [10,20] mean=15, std=5)
+        # missing in pipeline_2 -> floor=-3.0
+        # combined = 0.5 * (-1.0) + 0.5 * (-3.0) = -0.5 - 1.5 = -2.0
+        assert abs(scores_by_doc[1] - (-2.0)) < 1e-10
+
+        # Verify the floor constant
+        assert MISSING_SCORE_FLOORS["z"] == -3.0
+
+    def test_missing_score_gets_floor_value_dbsf(self):
+        """Test that missing scores get floor value 0.0 for DBSF."""
+        from autorag_research.pipelines.retrieval.hybrid import MISSING_SCORE_FLOORS
+
+        results_1 = [
+            {"doc_id": 1, "score": 0.9},
+            {"doc_id": 2, "score": 0.8},
+        ]
+        results_2 = [
+            {"doc_id": 2, "score": 0.9},
+        ]
+
+        fused = _cc_fuse(results_1, results_2, weight=0.5, top_k=2, normalize_method="dbsf")
+
+        scores_by_doc = {r["doc_id"]: r["score"] for r in fused}
+
+        # Doc 1 is missing from results_2, gets floor=0.0
+        # Doc 2 appears in both
+        # Doc 2 should have higher score than Doc 1
+        assert scores_by_doc[2] > scores_by_doc[1]
+
+        # Verify the floor constant
+        assert MISSING_SCORE_FLOORS["dbsf"] == 0.0
+
+    def test_missing_score_gets_floor_value_tmm(self):
+        """Test that missing scores get floor value 0.0 for TMM."""
+        from autorag_research.pipelines.retrieval.hybrid import MISSING_SCORE_FLOORS
+
+        results_1 = [
+            {"doc_id": 1, "score": 100.0},
+            {"doc_id": 2, "score": 50.0},
+        ]
+        results_2 = [
+            {"doc_id": 2, "score": 0.8},
+        ]
+
+        fused = _cc_fuse(
+            results_1,
+            results_2,
+            weight=0.5,
+            top_k=2,
+            normalize_method="tmm",
+            pipeline_1_min=0.0,
+            pipeline_2_min=-1.0,
+        )
+
+        scores_by_doc = {r["doc_id"]: r["score"] for r in fused}
+
+        # Doc 1 missing from results_2 gets floor=0.0
+        # Doc 1: tmm_1 = 100/100 = 1.0, floor_2 = 0.0
+        # combined = 0.5 * 1.0 + 0.5 * 0.0 = 0.5
+        assert abs(scores_by_doc[1] - 0.5) < 1e-10
+
+        # Verify the floor constant
+        assert MISSING_SCORE_FLOORS["tmm"] == 0.0
+
+    def test_missing_does_not_affect_normalization_stats(self):
+        """Test that missing documents don't affect normalization statistics."""
+        # If doc 3 is missing from pipeline_2, the z-score normalization for
+        # pipeline_2 should only use [10, 20], not include doc 3 as 0.
+
+        # Pipeline 1: doc 1=10, doc 2=20, doc 3=30
+        # Pipeline 2: doc 1=10, doc 2=20 (doc 3 missing)
+        results_1 = [
+            {"doc_id": 1, "score": 10.0},
+            {"doc_id": 2, "score": 20.0},
+            {"doc_id": 3, "score": 30.0},
+        ]
+        results_2 = [
+            {"doc_id": 1, "score": 10.0},
+            {"doc_id": 2, "score": 20.0},
+        ]
+
+        fused = _cc_fuse(results_1, results_2, weight=0.5, top_k=3, normalize_method="z")
+
+        scores_by_doc = {r["doc_id"]: r["score"] for r in fused}
+
+        # Pipeline_1 z-scores: mean=20, std=8.165
+        # doc1: (10-20)/8.165 = -1.2247
+        # doc2: (20-20)/8.165 = 0
+        # doc3: (30-20)/8.165 = 1.2247
+
+        # Pipeline_2 z-scores (computed from only [10, 20]):
+        # mean=15, std=5
+        # doc1: (10-15)/5 = -1.0
+        # doc2: (20-15)/5 = 1.0
+        # doc3: missing -> floor = -3.0
+
+        # Doc 3 combined: 0.5 * 1.2247 + 0.5 * (-3.0) = 0.6124 - 1.5 = -0.8876
+        # Doc 2 combined: 0.5 * 0 + 0.5 * 1.0 = 0.5
+        # Doc 1 combined: 0.5 * (-1.2247) + 0.5 * (-1.0) = -0.6124 - 0.5 = -1.1124
+
+        # Order should be: doc2 > doc3 > doc1
+        assert scores_by_doc[2] > scores_by_doc[3] > scores_by_doc[1]
+
+    def test_completely_non_overlapping_results(self):
+        """Test CC fusion when results have no overlap at all."""
+        results_1 = [
+            {"doc_id": 1, "score": 0.9},
+            {"doc_id": 2, "score": 0.8},
+        ]
+        results_2 = [
+            {"doc_id": 3, "score": 0.95},
+            {"doc_id": 4, "score": 0.85},
+        ]
+
+        fused = _cc_fuse(results_1, results_2, weight=0.5, top_k=4, normalize_method="mm")
+
+        assert len(fused) == 4
+        scores_by_doc = {r["doc_id"]: r["score"] for r in fused}
+
+        # All docs get normalized scores from their own pipeline
+        # and floor=0.0 from the other pipeline
+        # Doc 1: 0.5 * 1.0 + 0.5 * 0.0 = 0.5
+        # Doc 2: 0.5 * 0.0 + 0.5 * 0.0 = 0.0
+        # Doc 3: 0.5 * 0.0 + 0.5 * 1.0 = 0.5
+        # Doc 4: 0.5 * 0.0 + 0.5 * 0.0 = 0.0
+        assert scores_by_doc[1] == 0.5
+        assert scores_by_doc[2] == 0.0
+        assert scores_by_doc[3] == 0.5
+        assert scores_by_doc[4] == 0.0
 
 
 class TestHybridRRFRetrievalPipelineConfig:

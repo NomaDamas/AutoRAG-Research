@@ -21,5 +21,6 @@ normalize_method: mm  # mm (min-max), tmm (theoretical min-max), z (z-score), db
 # For tmm normalization - uses theoretical min and actual max from results:
 # pipeline_1_min: -1.0  # e.g., cosine similarity min
 # pipeline_2_min: 0.0   # e.g., BM25 min
+fetch_k_multiplier: 2
 top_k: 10
 batch_size: 100
