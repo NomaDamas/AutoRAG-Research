@@ -45,6 +45,8 @@ def _sanitize_dict(item: dict) -> dict:
         New dictionary with all string values sanitized.
     """
     return {k: _sanitize_text_value(v) for k, v in item.items()}
+
+
 def _vec_to_pg_literal(vec: list[float]) -> str:
     """Convert a vector to PostgreSQL literal format.
 
