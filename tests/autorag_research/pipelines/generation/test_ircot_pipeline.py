@@ -7,7 +7,7 @@ Test Categories:
 4. Integration Tests - End-to-end with PipelineTestVerifier
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.language_models.fake import FakeListLLM
@@ -188,25 +188,36 @@ class TestIRCoTAlgorithm:
         """Test generation terminates when 'answer is:' is detected."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
-        fake_llm = FakeListLLM(
-            responses=[
-                "First reasoning.",
-                "The answer is: 42.",
-                "Final answer.",
-            ]
-        )
+        # Use create_mock_llm which sets up ainvoke as AsyncMock
+        mock_llm = create_mock_llm()
+        call_count = [0]
+        responses = [
+            "First reasoning.",
+            "The answer is: 42.",
+            "Final answer.",
+        ]
+
+        async def mock_ainvoke(prompt):
+            response = MagicMock()
+            response.content = responses[min(call_count[0], len(responses) - 1)]
+            response.usage_metadata = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+            call_count[0] += 1
+            return response
+
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
         mock_retrieval = create_mock_retrieval_pipeline()
 
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
             name="test_termination",
-            llm=fake_llm,
+            llm=mock_llm,
             retrieval_pipeline=mock_retrieval,
             max_steps=8,
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = await pipeline._generate("Question?", top_k=4)
+        # Use query_id=1 from seed data instead of string
+        result = await pipeline._generate(1, top_k=4)
 
         # Verify early termination via metadata
         assert result.metadata is not None
@@ -219,19 +230,31 @@ class TestIRCoTAlgorithm:
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
         max_steps = 3
-        fake_llm = FakeListLLM(responses=["Thought 1.", "Thought 2.", "Thought 3.", "Final answer."])
+        mock_llm = create_mock_llm()
+        call_count = [0]
+        responses = ["Thought 1.", "Thought 2.", "Thought 3.", "Final answer."]
+
+        async def mock_ainvoke(prompt):
+            response = MagicMock()
+            response.content = responses[min(call_count[0], len(responses) - 1)]
+            response.usage_metadata = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+            call_count[0] += 1
+            return response
+
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
         mock_retrieval = create_mock_retrieval_pipeline()
 
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
             name="test_max_steps",
-            llm=fake_llm,
+            llm=mock_llm,
             retrieval_pipeline=mock_retrieval,
             max_steps=max_steps,
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = await pipeline._generate("Question?", top_k=4)
+        # Use query_id=1 from seed data instead of string
+        result = await pipeline._generate(1, top_k=4)
 
         # Verify steps completed matches max_steps
         assert result.metadata is not None
@@ -241,17 +264,27 @@ class TestIRCoTAlgorithm:
     @pytest.mark.asyncio
     async def test_applies_paragraph_budget(self, session_factory, cleanup):
         """Test paragraph_budget caps total paragraphs collected."""
-        from unittest.mock import AsyncMock
 
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
-        fake_llm = FakeListLLM(responses=["Thought.", "Thought.", "Thought.", "Answer."])
+        mock_llm = create_mock_llm()
+        llm_call_count = [0]
+        responses = ["Thought.", "Thought.", "Thought.", "Answer."]
 
-        call_count = [0]
+        async def mock_ainvoke(prompt):
+            response = MagicMock()
+            response.content = responses[min(llm_call_count[0], len(responses) - 1)]
+            response.usage_metadata = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+            llm_call_count[0] += 1
+            return response
+
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
+
+        retrieve_call_count = [0]
 
         async def mock_retrieve(query, top_k):
-            call_count[0] += 1
-            return [{"doc_id": call_count[0] * 10 + i, "score": 0.9} for i in range(top_k)]
+            retrieve_call_count[0] += 1
+            return [{"doc_id": retrieve_call_count[0] * 10 + i, "score": 0.9} for i in range(top_k)]
 
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 1
@@ -260,7 +293,7 @@ class TestIRCoTAlgorithm:
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
             name="test_budget",
-            llm=fake_llm,
+            llm=mock_llm,
             retrieval_pipeline=mock_retrieval,
             k_per_step=4,
             max_steps=3,
@@ -268,7 +301,8 @@ class TestIRCoTAlgorithm:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = await pipeline._generate("Query", top_k=4)
+        # Use query_id=1 from seed data instead of string
+        result = await pipeline._generate(1, top_k=4)
 
         assert result.metadata is not None
         assert len(result.metadata.get("chunk_ids", [])) <= 5
@@ -281,7 +315,7 @@ class TestIRCoTAlgorithm:
         call_count = [0]
         tokens_per_call = 150
 
-        def mock_invoke(prompt):
+        async def mock_ainvoke(prompt):
             call_count[0] += 1
             response = MagicMock()
             response.content = "The answer is: done." if call_count[0] == 2 else "Thinking."
@@ -293,7 +327,7 @@ class TestIRCoTAlgorithm:
             return response
 
         mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = mock_invoke
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
 
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
@@ -304,7 +338,8 @@ class TestIRCoTAlgorithm:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = await pipeline._generate("Query", top_k=4)
+        # Use query_id=1 from seed data instead of string
+        result = await pipeline._generate(1, top_k=4)
 
         assert result.token_usage is not None
         assert result.token_usage["total_tokens"] == call_count[0] * tokens_per_call
@@ -314,19 +349,31 @@ class TestIRCoTAlgorithm:
         """Test termination detection is case-insensitive."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
-        fake_llm = FakeListLLM(responses=["The ANSWER IS: Test.", "Final."])
+        mock_llm = create_mock_llm()
+        call_count = [0]
+        responses = ["The ANSWER IS: Test.", "Final."]
+
+        async def mock_ainvoke(prompt):
+            response = MagicMock()
+            response.content = responses[min(call_count[0], len(responses) - 1)]
+            response.usage_metadata = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+            call_count[0] += 1
+            return response
+
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
         mock_retrieval = create_mock_retrieval_pipeline()
 
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
             name="test_case",
-            llm=fake_llm,
+            llm=mock_llm,
             retrieval_pipeline=mock_retrieval,
             max_steps=5,
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = await pipeline._generate("Test", top_k=2)
+        # Use query_id=2 from seed data instead of string
+        result = await pipeline._generate(2, top_k=2)
 
         # Verify early termination (step 1, not 5)
         assert result.metadata is not None
@@ -376,16 +423,30 @@ class TestIRCoTPipelineIntegration:
         """Test IRCoT handles empty retrieval results gracefully."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
+        mock_llm = create_mock_llm()
+        call_count = [0]
+        responses = ["Reasoning.", "The answer is: none.", "None."]
+
+        async def mock_ainvoke(prompt):
+            response = MagicMock()
+            response.content = responses[min(call_count[0], len(responses) - 1)]
+            response.usage_metadata = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+            call_count[0] += 1
+            return response
+
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
+
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
             name="test_empty",
-            llm=FakeListLLM(responses=["Reasoning.", "The answer is: none.", "None."]),
+            llm=mock_llm,
             retrieval_pipeline=create_mock_retrieval_pipeline(default_results=[]),
             max_steps=2,
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = await pipeline._generate("Query", top_k=5)
+        # Use query_id=1 from seed data instead of string
+        result = await pipeline._generate(1, top_k=5)
 
         # Verify generation completes without error
         assert result.text is not None
@@ -396,16 +457,30 @@ class TestIRCoTPipelineIntegration:
         """Test result metadata includes chain-of-thought history."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
+        mock_llm = create_mock_llm()
+        call_count = [0]
+        responses = ["Step 1.", "The answer is: found.", "Final."]
+
+        async def mock_ainvoke(prompt):
+            response = MagicMock()
+            response.content = responses[min(call_count[0], len(responses) - 1)]
+            response.usage_metadata = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+            call_count[0] += 1
+            return response
+
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
+
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
             name="test_cot_meta",
-            llm=FakeListLLM(responses=["Step 1.", "The answer is: found.", "Final."]),
+            llm=mock_llm,
             retrieval_pipeline=create_mock_retrieval_pipeline(),
             max_steps=4,
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = await pipeline._generate("Query", top_k=3)
+        # Use query_id=1 from seed data instead of string
+        result = await pipeline._generate(1, top_k=3)
 
         assert result.metadata is not None
         assert "cot_sentences" in result.metadata
@@ -415,16 +490,30 @@ class TestIRCoTPipelineIntegration:
         """Test result metadata includes retrieved chunk IDs."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
+        mock_llm = create_mock_llm()
+        call_count = [0]
+        responses = ["The answer is: quick.", "Final."]
+
+        async def mock_ainvoke(prompt):
+            response = MagicMock()
+            response.content = responses[min(call_count[0], len(responses) - 1)]
+            response.usage_metadata = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+            call_count[0] += 1
+            return response
+
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
+
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
             name="test_chunk_meta",
-            llm=FakeListLLM(responses=["The answer is: quick.", "Final."]),
+            llm=mock_llm,
             retrieval_pipeline=create_mock_retrieval_pipeline(),
             max_steps=2,
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = await pipeline._generate("Query", top_k=3)
+        # Use query_id=1 from seed data instead of string
+        result = await pipeline._generate(1, top_k=3)
 
         assert result.metadata is not None
         assert "chunk_ids" in result.metadata
@@ -436,7 +525,7 @@ class TestIRCoTPipelineIntegration:
 
         captured_prompts = []
 
-        def mock_invoke(prompt):
+        async def mock_ainvoke(prompt):
             captured_prompts.append(prompt)
             response = MagicMock()
             response.content = "The answer is: done." if len(captured_prompts) == 1 else "Final."
@@ -444,7 +533,7 @@ class TestIRCoTPipelineIntegration:
             return response
 
         mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = mock_invoke
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
 
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
@@ -456,7 +545,8 @@ class TestIRCoTPipelineIntegration:
         )
         cleanup.append(pipeline.pipeline_id)
 
-        await pipeline._generate("Test", top_k=2)
+        # Use query_id=2 from seed data instead of string
+        await pipeline._generate(2, top_k=2)
 
         assert "CUSTOM_REASONING:" in captured_prompts[0]
         assert "CUSTOM_QA:" in captured_prompts[1]
@@ -466,22 +556,34 @@ class TestIRCoTPipelineIntegration:
         """Test only first sentence is extracted for CoT history."""
         from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline
 
+        mock_llm = create_mock_llm()
+        call_count = [0]
+        responses = [
+            "First. Second. Third.",
+            "The answer is: found. More.",
+            "Final.",
+        ]
+
+        async def mock_ainvoke(prompt):
+            response = MagicMock()
+            response.content = responses[min(call_count[0], len(responses) - 1)]
+            response.usage_metadata = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+            call_count[0] += 1
+            return response
+
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
+
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
             name="test_first_sent",
-            llm=FakeListLLM(
-                responses=[
-                    "First. Second. Third.",
-                    "The answer is: found. More.",
-                    "Final.",
-                ]
-            ),
+            llm=mock_llm,
             retrieval_pipeline=create_mock_retrieval_pipeline(),
             max_steps=3,
         )
         cleanup.append(pipeline.pipeline_id)
 
-        result = await pipeline._generate("Query", top_k=2)
+        # Use query_id=1 from seed data instead of string
+        result = await pipeline._generate(1, top_k=2)
 
         cot = result.metadata.get("cot_sentences", [])
         assert len(cot) > 0
@@ -497,7 +599,7 @@ class TestIRCoTPipelineIntegration:
 
         call_count = [0]
 
-        def mock_invoke(prompt):
+        async def mock_ainvoke(prompt):
             call_count[0] += 1
             response = MagicMock()
             response.content = "The answer is: done." if call_count[0] % 2 == 1 else "Final."
@@ -509,7 +611,7 @@ class TestIRCoTPipelineIntegration:
             return response
 
         mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = mock_invoke
+        mock_llm.ainvoke = AsyncMock(side_effect=mock_ainvoke)
 
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
