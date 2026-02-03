@@ -82,6 +82,7 @@ def upload_dump(
     file_path: str | Path,
     ingestor: str,
     filename: str,
+    repo_id: str | None = None,
     commit_message: str | None = None,
 ) -> str:
     """Upload a PostgreSQL dump file to HuggingFace Hub.
@@ -92,13 +93,15 @@ def upload_dump(
         file_path: Path to the local dump file
         ingestor: Ingestor family name (e.g., "beir", "mrtydi")
         filename: Dump filename without .dump extension (e.g., "scifact_openai-small").
+        repo_id: Optional HuggingFace repo ID (e.g., "myorg/my-repo").
+            If provided, overrides the ingestor-based repo lookup.
         commit_message: Optional commit message. Auto-generated if not provided.
 
     Returns:
         URL of the uploaded file
 
     Raises:
-        KeyError: If ingestor is not recognized
+        KeyError: If ingestor is not recognized and repo_id is not provided
         FileNotFoundError: If file_path doesn't exist
         huggingface_hub.utils.HfHubHTTPError: If upload fails
     """
@@ -106,7 +109,8 @@ def upload_dump(
     if not file_path.exists():
         raise FileNotFoundError(f"Dump file not found: {file_path}")  # noqa: TRY003
 
-    repo_id = get_repo_id(ingestor)
+    if repo_id is None:
+        repo_id = get_repo_id(ingestor)
     full_filename = f"{filename}.dump"
 
     if commit_message is None:
