@@ -90,6 +90,8 @@ class IngestorTestConfig:
     check_generation_gt: bool = False
     # When True, ALL queries must have generation_gt (not just some)
     generation_gt_required_for_all: bool = False
+    # When True, verify that all retrieval relations have score != 0 (graded relevance)
+    check_relevance_scores: bool = False
 
     # Content verification
     content_hashes: list[ExpectedContentHash] = field(default_factory=list)
@@ -244,6 +246,8 @@ class IngestorTestVerifier:
             report.add_check("retrieval_relations", self._verify_retrieval_relations())
         if self.config.check_generation_gt:
             report.add_check("generation_gt", self._verify_generation_gt())
+        if self.config.check_relevance_scores:
+            report.add_check("relevance_scores", self._verify_relevance_scores())
 
     # ==================== Count Verification ====================
 
@@ -511,6 +515,43 @@ class IngestorTestVerifier:
             passed=passed,
             message=f"{len(queries_with_gt)}/{len(all_queries)} queries have generation_gt",
             failures=failures,
+        )
+
+    def _verify_relevance_scores(self) -> CheckResult:
+        """Verify all retrieval relations have non-zero relevance scores.
+
+        When check_relevance_scores is enabled, this verifies that:
+        - All retrieval relations have a score field set (not None)
+        - All scores are > 0 (score=0 means not relevant and should be filtered out)
+        """
+        failures: list[str] = []
+
+        with self.service._create_uow() as uow:
+            all_queries = uow.queries.get_all(limit=1000)
+            total_relations = 0
+            relations_with_score = 0
+            relations_with_zero_score = 0
+
+            for query in all_queries:
+                relations = uow.retrieval_relations.get_by_query_id(query.id)
+                for rel in relations:
+                    total_relations += 1
+                    if rel.score is None:
+                        failures.append(f"Relation for query {query.id} has score=None")
+                    elif rel.score <= 0:
+                        relations_with_zero_score += 1
+                        failures.append(f"Relation for query {query.id} has score below zero (not relevant)")
+                    else:
+                        relations_with_score += 1
+
+        if relations_with_zero_score > 0:
+            failures.insert(0, f"{relations_with_zero_score} relations have score=0 (should be filtered out)")
+
+        passed = len(failures) == 0
+        return CheckResult(
+            passed=passed,
+            message=f"{relations_with_score}/{total_relations} relations have valid relevance scores",
+            failures=failures[:10],  # Limit to first 10 failures to avoid huge output
         )
 
     # ==================== Content Hash Verification ====================
