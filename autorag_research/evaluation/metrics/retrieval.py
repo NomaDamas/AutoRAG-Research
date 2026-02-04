@@ -72,8 +72,15 @@ def retrieval_precision(metric_input: MetricInput) -> float:
 def retrieval_ndcg(metric_input: MetricInput) -> float:
     """Compute NDCG (Normalized Discounted Cumulative Gain) score for retrieval.
 
+    Supports graded relevance when `metric_input.relevance_scores` is provided.
+    Falls back to binary relevance (0 or 1) when relevance_scores is None.
+
     Args:
         metric_input: The MetricInput schema for AutoRAG metric.
+            - retrieval_gt: 2D list of ground truth IDs (AND/OR structure)
+            - retrieved_ids: list of retrieved IDs
+            - relevance_scores: optional dict mapping doc_id -> graded relevance score
+              (e.g., 0=not relevant, 1=somewhat relevant, 2=highly relevant)
 
     Returns:
         The NDCG score.
@@ -82,19 +89,21 @@ def retrieval_ndcg(metric_input: MetricInput) -> float:
     if pred is None or gt is None:
         return 0.0
 
-    gt_sets = [frozenset(g) for g in gt]
-    pred_set = set(pred)
-    relevance_scores = {pred_id: 1 if any(pred_id in gt_set for gt_set in gt_sets) else 0 for pred_id in pred_set}
+    gt_flat = set(itertools.chain.from_iterable(gt))
 
-    dcg = sum((2 ** relevance_scores[doc_id] - 1) / math.log2(i + 2) for i, doc_id in enumerate(pred))
+    # Use graded relevance scores if available, otherwise binary relevance (backward compatible)
+    relevance_map = metric_input.relevance_scores or dict.fromkeys(gt_flat, 1)
 
-    len_flatten_gt = len(list(itertools.chain.from_iterable(gt)))
-    len_pred = len(pred)
-    ideal_pred = [1] * min(len_flatten_gt, len_pred) + [0] * max(0, len_pred - len_flatten_gt)
-    idcg = sum(relevance / math.log2(i + 2) for i, relevance in enumerate(ideal_pred))
+    # DCG calculation: sum of (2^rel - 1) / log2(rank + 1)
+    dcg = sum((2 ** relevance_map.get(doc_id, 0) - 1) / math.log2(i + 2) for i, doc_id in enumerate(pred))
 
-    ndcg = dcg / idcg if idcg > 0 else 0
-    return ndcg
+    # IDCG calculation: ideal ranking with highest relevance scores first
+    all_scores = sorted([relevance_map.get(doc_id, 0) for doc_id in gt_flat], reverse=True)
+    # Pad with zeros if pred is longer than gt
+    ideal_scores = all_scores[: len(pred)] + [0] * max(0, len(pred) - len(all_scores))
+    idcg = sum((2**score - 1) / math.log2(i + 2) for i, score in enumerate(ideal_scores))
+
+    return dcg / idcg if idcg > 0 else 0.0
 
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])

@@ -104,3 +104,111 @@ def test_retrieval_map():
     result = retrieval_map(metric_inputs=metric_inputs)
     for gt, res in zip(solution, result, strict=True):
         assert gt == pytest.approx(res, rel=1e-4)
+
+
+class TestRetrievalNdcgGradedRelevance:
+    """Test NDCG with graded relevance scores."""
+
+    def test_graded_ndcg_highly_relevant_first(self):
+        """Highly relevant document ranked first should score higher."""
+        # Ground truth: doc_a (score=2), doc_b (score=1)
+        # Retrieved: [doc_a, doc_b] - perfect ranking
+        metric_input = MetricInput(
+            retrieval_gt=[["doc_a", "doc_b"]],
+            retrieved_ids=["doc_a", "doc_b"],
+            relevance_scores={"doc_a": 2, "doc_b": 1},
+        )
+        result = retrieval_ndcg.__wrapped__(metric_input)
+        assert result == pytest.approx(1.0, rel=1e-4)
+
+    def test_graded_ndcg_highly_relevant_last(self):
+        """Highly relevant document ranked last should score lower."""
+        # Ground truth: doc_a (score=2), doc_b (score=1)
+        # Retrieved: [doc_b, doc_a] - suboptimal ranking
+        metric_input = MetricInput(
+            retrieval_gt=[["doc_a", "doc_b"]],
+            retrieved_ids=["doc_b", "doc_a"],
+            relevance_scores={"doc_a": 2, "doc_b": 1},
+        )
+        result = retrieval_ndcg.__wrapped__(metric_input)
+        # DCG: (2^1 - 1)/log2(2) + (2^2 - 1)/log2(3) = 1/1 + 3/1.585 = 1 + 1.893 = 2.893
+        # IDCG: (2^2 - 1)/log2(2) + (2^1 - 1)/log2(3) = 3/1 + 1/1.585 = 3 + 0.631 = 3.631
+        # NDCG: 2.893 / 3.631 ≈ 0.797
+        assert result < 1.0
+        assert result == pytest.approx(0.7969, rel=1e-3)
+
+    def test_graded_ndcg_with_irrelevant_retrieved(self):
+        """Retrieved documents not in ground truth should have score 0."""
+        # Ground truth: doc_a (score=2)
+        # Retrieved: [irrelevant, doc_a]
+        metric_input = MetricInput(
+            retrieval_gt=[["doc_a"]],
+            retrieved_ids=["irrelevant", "doc_a"],
+            relevance_scores={"doc_a": 2},
+        )
+        result = retrieval_ndcg.__wrapped__(metric_input)
+        # DCG: (2^0 - 1)/log2(2) + (2^2 - 1)/log2(3) = 0 + 3/1.585 = 1.893
+        # IDCG: (2^2 - 1)/log2(2) + (2^0 - 1)/log2(3) = 3/1 + 0 = 3
+        # NDCG: 1.893 / 3 ≈ 0.631
+        assert result == pytest.approx(0.631, rel=1e-2)
+
+    def test_graded_ndcg_no_relevance_scores_backward_compat(self):
+        """Without relevance_scores, should use binary relevance (backward compatible)."""
+        metric_input = MetricInput(
+            retrieval_gt=[["doc_a", "doc_b"]],
+            retrieved_ids=["doc_a", "doc_b"],
+            relevance_scores=None,  # No graded relevance
+        )
+        result = retrieval_ndcg.__wrapped__(metric_input)
+        # With binary relevance, all relevant docs have score=1, so perfect ranking = 1.0
+        assert result == pytest.approx(1.0, rel=1e-4)
+
+    def test_graded_ndcg_three_levels(self):
+        """Test with three relevance levels: 0, 1, 2."""
+        # Ground truth: highly=2, somewhat=1, not_relevant=0 (but not_relevant not in GT)
+        # Retrieved: [highly, somewhat, irrelevant]
+        metric_input = MetricInput(
+            retrieval_gt=[["highly", "somewhat"]],
+            retrieved_ids=["highly", "somewhat", "irrelevant"],
+            relevance_scores={"highly": 2, "somewhat": 1},
+        )
+        result = retrieval_ndcg.__wrapped__(metric_input)
+        # DCG: (2^2-1)/log2(2) + (2^1-1)/log2(3) + (2^0-1)/log2(4) = 3 + 0.631 + 0 = 3.631
+        # IDCG: (2^2-1)/log2(2) + (2^1-1)/log2(3) + (2^0-1)/log2(4) = 3 + 0.631 + 0 = 3.631
+        # NDCG: 1.0 (perfect ranking)
+        assert result == pytest.approx(1.0, rel=1e-4)
+
+    def test_graded_ndcg_score_zero_items(self):
+        """Test with score=0 items (marked as not relevant but in GT)."""
+        metric_input = MetricInput(
+            retrieval_gt=[["doc_a", "doc_b"]],
+            retrieved_ids=["doc_a", "doc_b"],
+            relevance_scores={"doc_a": 2, "doc_b": 0},
+        )
+        result = retrieval_ndcg.__wrapped__(metric_input)
+        # DCG: (2^2-1)/log2(2) + (2^0-1)/log2(3) = 3 + 0 = 3
+        # IDCG: (2^2-1)/log2(2) + (2^0-1)/log2(3) = 3 + 0 = 3
+        # NDCG: 1.0 (doc_b has score 0, so order doesn't matter for it)
+        assert result == pytest.approx(1.0, rel=1e-4)
+
+    def test_graded_ndcg_empty_retrieval(self):
+        """Empty retrieval should return 0."""
+        metric_input = MetricInput(
+            retrieval_gt=[["doc_a"]],
+            retrieved_ids=[],
+            relevance_scores={"doc_a": 2},
+        )
+        result = retrieval_ndcg.__wrapped__(metric_input)
+        assert result == 0.0
+
+    def test_graded_ndcg_multiple_groups(self):
+        """Test with multiple ground truth groups (AND/OR structure)."""
+        metric_input = MetricInput(
+            retrieval_gt=[["doc_a", "doc_b"], ["doc_c"]],  # (a OR b) AND c
+            retrieved_ids=["doc_a", "doc_c", "doc_b"],
+            relevance_scores={"doc_a": 2, "doc_b": 1, "doc_c": 2},
+        )
+        result = retrieval_ndcg.__wrapped__(metric_input)
+        # All docs retrieved, but order matters for NDCG
+        assert result > 0.0
+        assert result <= 1.0
