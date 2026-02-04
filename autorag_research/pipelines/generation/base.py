@@ -32,15 +32,16 @@ class BaseGenerationPipeline(BasePipeline, ABC):
         ```python
         class BasicRAGPipeline(BaseGenerationPipeline):
             async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
-                # Get query text
+                # Retrieve relevant chunks by query_id (async)
+                results = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
+                chunk_ids = [r["doc_id"] for r in results]
+                chunk_contents = self._service.get_chunk_contents(chunk_ids)
+
+                # Get query text (uses query_to_llm if available, else contents)
                 query_text = self._get_query_text(query_id)
 
-                # Retrieve relevant chunks (async)
-                results = await self._retrieval_pipeline.retrieve(query_text, top_k)
-                chunks = [self._get_chunk_content(r["doc_id"]) for r in results]
-
                 # Build prompt and generate (async)
-                context = "\\n\\n".join(chunks)
+                context = "\\n\\n".join(chunk_contents)
                 prompt = f"Context:\\n{context}\\n\\nQuestion: {query_text}\\n\\nAnswer:"
                 response = await self._llm.ainvoke(prompt)
 
@@ -78,26 +79,6 @@ class BaseGenerationPipeline(BasePipeline, ABC):
             name=name,
             config=self._get_pipeline_config(),
         )
-
-    def _get_query_text(self, query_id: int) -> str:
-        """Get query text by ID from database.
-
-        Args:
-            query_id: The query ID.
-
-        Returns:
-            The query text content.
-
-        Raises:
-            ValueError: If query not found.
-        """
-        from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
-
-        with GenerationUnitOfWork(self.session_factory, self._schema) as uow:
-            query = uow.queries.get_by_id(query_id)
-            if query is None:
-                raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
-            return query.contents
 
     @abstractmethod
     async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
