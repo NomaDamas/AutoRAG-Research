@@ -69,11 +69,19 @@ def retrieval_precision(metric_input: MetricInput) -> float:
 
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
-def retrieval_ndcg(metric_input: MetricInput) -> float:
-    """Compute NDCG (Normalized Discounted Cumulative Gain) score for retrieval.
+def retrieval_ndcg(metric_input: MetricInput) -> float:  # noqa: C901
+    """Compute NDCG for multi-hop retrieval with AND-OR group semantics.
+
+    Ground truth structure: [[A, B], [C]] means (A OR B) AND C
+    - Each inner list is an OR group (any item satisfies the group)
+    - Outer list is AND (all groups must be satisfied for complete retrieval)
+
+    A retrieved item contributes to DCG only when it's the FIRST to satisfy
+    a previously unsatisfied group. Subsequent items from the same group
+    don't add value (they're redundant for answering the query).
 
     Supports graded relevance when `metric_input.relevance_scores` is provided.
-    Falls back to binary relevance (0 or 1) when relevance_scores is None.
+    Falls back to binary relevance (score=1) when relevance_scores is None.
 
     Args:
         metric_input: The MetricInput schema for AutoRAG metric.
@@ -84,23 +92,53 @@ def retrieval_ndcg(metric_input: MetricInput) -> float:
 
     Returns:
         The NDCG score.
+
+    Examples:
+        GT: [[A, B], [C]] (need A-or-B AND C)
+        Retrieved: [A, C] -> Perfect (both groups satisfied at top positions)
+        Retrieved: [A, B] -> Partial (group 1 not satisfied, B is redundant)
+        Retrieved: [C, A] -> Good but suboptimal ordering
     """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
     if pred is None or gt is None:
         return 0.0
 
-    gt_flat = set(itertools.chain.from_iterable(gt))
+    # Filter out empty groups
+    valid_groups = [group for group in gt if group and group != [""]]
+    if not valid_groups:
+        return 0.0
 
-    # Use graded relevance scores if available, otherwise binary relevance (backward compatible)
+    # Build item -> group indices mapping (item can belong to multiple groups)
+    item_to_groups: dict[str, list[int]] = {}
+    for group_idx, group in enumerate(valid_groups):
+        for item in group:
+            if item:  # Skip empty strings
+                if item not in item_to_groups:
+                    item_to_groups[item] = []
+                item_to_groups[item].append(group_idx)
+
+    # Get relevance scores (default to 1 for backward compatibility)
+    gt_flat = set(itertools.chain.from_iterable(valid_groups))
     relevance_map = metric_input.relevance_scores or dict.fromkeys(gt_flat, 1)
 
-    # DCG calculation: sum of (2^rel - 1) / log2(rank + 1)
-    dcg = sum((2 ** relevance_map.get(doc_id, 0) - 1) / math.log2(i + 2) for i, doc_id in enumerate(pred))
+    # DCG: Track satisfied groups, item contributes only for first group satisfaction
+    satisfied_groups: set[int] = set()
+    dcg = 0.0
+    for i, doc_id in enumerate(pred):
+        if doc_id in item_to_groups:
+            new_groups = [g for g in item_to_groups[doc_id] if g not in satisfied_groups]
+            if new_groups:
+                # Item contributes for satisfying new group(s)
+                satisfied_groups.update(new_groups)
+                dcg += (2 ** relevance_map.get(doc_id, 0) - 1) / math.log2(i + 2)
 
-    # IDCG calculation: ideal ranking with highest relevance scores first
-    all_scores = sorted([relevance_map.get(doc_id, 0) for doc_id in gt_flat], reverse=True)
-    # Pad with zeros if pred is longer than gt
-    ideal_scores = all_scores[: len(pred)] + [0] * max(0, len(pred) - len(all_scores))
+    # IDCG: Best item from each group, sorted by score descending
+    best_per_group = []
+    for group in valid_groups:
+        best_score = max((relevance_map.get(item, 0) for item in group if item), default=0)
+        best_per_group.append(best_score)
+
+    ideal_scores = sorted(best_per_group, reverse=True)
     idcg = sum((2**score - 1) / math.log2(i + 2) for i, score in enumerate(ideal_scores))
 
     return dcg / idcg if idcg > 0 else 0.0
