@@ -541,29 +541,6 @@ Please answer: {query}"""
         assert selected_idx == 0
         assert confidence == 1.0
 
-    def test_aggregate_token_usage(self, pipeline):
-        """Test token usage aggregation across partial + full generations."""
-        token_usages = [
-            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},  # partial 1
-            {"prompt_tokens": 100, "completion_tokens": 60, "total_tokens": 160},  # partial 2
-            {"prompt_tokens": 100, "completion_tokens": 55, "total_tokens": 155},  # partial 3
-            {"prompt_tokens": 200, "completion_tokens": 100, "total_tokens": 300},  # full
-        ]
-
-        aggregated = pipeline._aggregate_token_usage(token_usages)
-
-        assert aggregated["prompt_tokens"] == 500
-        assert aggregated["completion_tokens"] == 265
-        assert aggregated["total_tokens"] == 765
-
-    def test_aggregate_token_usage_empty(self, pipeline):
-        """Test token usage aggregation with empty list."""
-        aggregated = pipeline._aggregate_token_usage([])
-
-        assert aggregated["prompt_tokens"] == 0
-        assert aggregated["completion_tokens"] == 0
-        assert aggregated["total_tokens"] == 0
-
 
 class TestDifferentPromptsForSubsets:
     """Tests verifying that each subset gets a DIFFERENT prompt."""

@@ -30,6 +30,7 @@ from autorag_research.evaluation.metrics import calculate_cosine_similarity
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.util import aggregate_token_usage
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -322,7 +323,14 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         full_response, full_token_usage = await self._generate_full_response(query_text, selected_subset)
 
         # Step 8: Aggregate token usage (all partial + full)
-        total_token_usage = self._aggregate_token_usage([*partial_token_usages, full_token_usage])
+        all_token_usages = [*partial_token_usages, full_token_usage]
+        wrapped_results = [{"token_usage": tu, "execution_time": 0} for tu in all_token_usages]
+        prompt, completion, _, _ = aggregate_token_usage(wrapped_results)
+        total_token_usage = {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": prompt + completion,
+        }
 
         # Build metadata
         metadata = {
@@ -613,25 +621,6 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         confidence = max_score / avg_score if avg_score > 0 else 1.0
 
         return selected_index, confidence
-
-    def _aggregate_token_usage(self, token_usages: list[dict]) -> dict:
-        """Aggregate multiple token usages into one.
-
-        Args:
-            token_usages: List of token usage dicts.
-
-        Returns:
-            Aggregated token usage dict.
-        """
-        total_prompt = sum(tu.get("prompt_tokens", 0) for tu in token_usages)
-        total_completion = sum(tu.get("completion_tokens", 0) for tu in token_usages)
-        total = sum(tu.get("total_tokens", 0) for tu in token_usages)
-
-        return {
-            "prompt_tokens": total_prompt,
-            "completion_tokens": total_completion,
-            "total_tokens": total,
-        }
 
     def _extract_token_usage(self, response: Any) -> dict:
         """Extract token usage from LangChain response.
