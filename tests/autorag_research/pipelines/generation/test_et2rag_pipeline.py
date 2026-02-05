@@ -490,7 +490,8 @@ Please answer: {query}"""
 
         assert pipeline._prompt_template == DEFAULT_PROMPT_TEMPLATE
 
-    def test_compute_similarity_matrix(self, pipeline):
+    @pytest.mark.asyncio
+    async def test_compute_similarity_matrix(self, pipeline):
         """Test similarity matrix computation between responses."""
         responses = [
             "Machine learning is a field of AI.",
@@ -498,7 +499,7 @@ Please answer: {query}"""
             "AI is artificial intelligence.",
         ]
 
-        similarity_matrix = pipeline._compute_similarity_matrix(responses)
+        similarity_matrix = await pipeline._compute_similarity_matrix(responses)
 
         # Verify matrix dimensions (NxN)
         n = len(responses)
@@ -622,7 +623,7 @@ class TestDifferentPromptsForSubsets:
         subsets = pipeline._create_qa_subsets(documents)
 
         # Generate partial responses
-        await pipeline._generate_partial_responses_async("Test query", subsets)
+        await pipeline._generate_partial_responses("Test query", subsets)
 
         # Verify we got 3 different prompts (one per subset)
         assert len(captured_prompts) == 3
@@ -713,7 +714,8 @@ class TestVotingSelectsSubset:
         # Selected index should be usable to index into subsets
         assert 0 <= selected_idx < 3
 
-    def test_metadata_contains_selected_subset_info(
+    @pytest.mark.asyncio
+    async def test_metadata_contains_selected_subset_info(
         self,
         session_factory: sessionmaker[Session],
         mock_embeddings,
@@ -727,6 +729,15 @@ class TestVotingSelectsSubset:
         )
         mock_llm.ainvoke = AsyncMock(return_value=mock_llm.invoke.return_value)
 
+        # Setup async _retrieve_by_id
+        mock_retrieval_pipeline._retrieve_by_id = AsyncMock(
+            return_value=[
+                {"doc_id": 1, "score": 0.9},
+                {"doc_id": 2, "score": 0.8},
+                {"doc_id": 3, "score": 0.7},
+            ]
+        )
+
         pipeline = ET2RAGPipeline(
             session_factory=session_factory,
             name="test_subset_metadata",
@@ -738,7 +749,11 @@ class TestVotingSelectsSubset:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Test query", top_k=3)
+        # Mock chunk contents
+        pipeline._service.get_chunk_contents = MagicMock(return_value=["Content A", "Content B", "Content C"])
+        pipeline._get_query_text = MagicMock(return_value="Test query")
+
+        result = await pipeline._generate(1, top_k=3)
 
         # Verify metadata has subset-related fields
         assert "selected_subset_index" in result.metadata
@@ -788,15 +803,16 @@ class TestFullGenerationWithSelectedSubset:
         finally:
             session.close()
 
-    def test_full_generation_called_after_voting(
+    @pytest.mark.asyncio
+    async def test_full_generation_called_after_voting(
         self,
         session_factory: sessionmaker[Session],
         mock_embeddings,
         mock_retrieval_pipeline,
         cleanup_pipeline_results: list[int],
     ):
-        """Test that sync invoke (full generation) is called after async ainvoke (partial)."""
-        invoke_calls: list[str] = []
+        """Test that ainvoke is called for both partial and full generation."""
+        invoke_calls: list[tuple[str, str]] = []
 
         mock_llm = create_mock_llm(
             response_text="Full answer",
@@ -805,16 +821,22 @@ class TestFullGenerationWithSelectedSubset:
 
         original_invoke = mock_llm.invoke
 
-        def tracking_invoke(prompt, **kwargs):
-            invoke_calls.append(("invoke", prompt[:50]))
-            return original_invoke(prompt, **kwargs)
-
         async def tracking_ainvoke(prompt, **kwargs):
-            invoke_calls.append(("ainvoke", prompt[:50]))
+            max_tokens = kwargs.get("max_tokens")
+            call_type = "partial" if max_tokens else "full"
+            invoke_calls.append((call_type, prompt[:50]))
             return original_invoke(prompt, **kwargs)
 
-        mock_llm.invoke = tracking_invoke
         mock_llm.ainvoke = tracking_ainvoke
+
+        # Setup async _retrieve_by_id
+        mock_retrieval_pipeline._retrieve_by_id = AsyncMock(
+            return_value=[
+                {"doc_id": 1, "score": 0.9},
+                {"doc_id": 2, "score": 0.8},
+                {"doc_id": 3, "score": 0.7},
+            ]
+        )
 
         pipeline = ET2RAGPipeline(
             session_factory=session_factory,
@@ -827,19 +849,24 @@ class TestFullGenerationWithSelectedSubset:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        pipeline._generate("Test query", top_k=3)
+        # Mock chunk contents
+        pipeline._service.get_chunk_contents = MagicMock(return_value=["Content A", "Content B", "Content C"])
+        pipeline._get_query_text = MagicMock(return_value="Test query")
 
-        # Should have 3 ainvoke calls (partial) + 1 invoke call (full)
-        ainvoke_calls = [c for c in invoke_calls if c[0] == "ainvoke"]
-        sync_invoke_calls = [c for c in invoke_calls if c[0] == "invoke"]
+        await pipeline._generate(1, top_k=3)
 
-        assert len(ainvoke_calls) == 3, "Should have 3 partial generation calls"
-        assert len(sync_invoke_calls) == 1, "Should have 1 full generation call"
+        # Should have 3 partial calls + 1 full call = 4 total ainvoke calls
+        partial_calls = [c for c in invoke_calls if c[0] == "partial"]
+        full_calls = [c for c in invoke_calls if c[0] == "full"]
+
+        assert len(partial_calls) == 3, "Should have 3 partial generation calls"
+        assert len(full_calls) == 1, "Should have 1 full generation call"
 
         # Full generation should be LAST
-        assert invoke_calls[-1][0] == "invoke", "Full generation should be last call"
+        assert invoke_calls[-1][0] == "full", "Full generation should be last call"
 
-    def test_token_usage_includes_partial_and_full(
+    @pytest.mark.asyncio
+    async def test_token_usage_includes_partial_and_full(
         self,
         session_factory: sessionmaker[Session],
         mock_embeddings,
@@ -853,6 +880,15 @@ class TestFullGenerationWithSelectedSubset:
         )
         mock_llm.ainvoke = AsyncMock(return_value=mock_llm.invoke.return_value)
 
+        # Setup async _retrieve_by_id
+        mock_retrieval_pipeline._retrieve_by_id = AsyncMock(
+            return_value=[
+                {"doc_id": 1, "score": 0.9},
+                {"doc_id": 2, "score": 0.8},
+                {"doc_id": 3, "score": 0.7},
+            ]
+        )
+
         pipeline = ET2RAGPipeline(
             session_factory=session_factory,
             name="test_token_aggregation",
@@ -864,14 +900,19 @@ class TestFullGenerationWithSelectedSubset:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Test query", top_k=3)
+        # Mock chunk contents
+        pipeline._service.get_chunk_contents = MagicMock(return_value=["Content A", "Content B", "Content C"])
+        pipeline._get_query_text = MagicMock(return_value="Test query")
+
+        result = await pipeline._generate(1, top_k=3)
 
         # 3 partial + 1 full = 4 calls * 150 tokens each = 600 total
         assert result.token_usage["total_tokens"] == 600
         assert result.token_usage["prompt_tokens"] == 400
         assert result.token_usage["completion_tokens"] == 200
 
-    def test_metadata_contains_partial_and_full_token_usage(
+    @pytest.mark.asyncio
+    async def test_metadata_contains_partial_and_full_token_usage(
         self,
         session_factory: sessionmaker[Session],
         mock_embeddings,
@@ -885,6 +926,15 @@ class TestFullGenerationWithSelectedSubset:
         )
         mock_llm.ainvoke = AsyncMock(return_value=mock_llm.invoke.return_value)
 
+        # Setup async _retrieve_by_id
+        mock_retrieval_pipeline._retrieve_by_id = AsyncMock(
+            return_value=[
+                {"doc_id": 1, "score": 0.9},
+                {"doc_id": 2, "score": 0.8},
+                {"doc_id": 3, "score": 0.7},
+            ]
+        )
+
         pipeline = ET2RAGPipeline(
             session_factory=session_factory,
             name="test_separated_token_usage",
@@ -896,7 +946,11 @@ class TestFullGenerationWithSelectedSubset:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Test query", top_k=3)
+        # Mock chunk contents
+        pipeline._service.get_chunk_contents = MagicMock(return_value=["Content A", "Content B", "Content C"])
+        pipeline._get_query_text = MagicMock(return_value="Test query")
+
+        result = await pipeline._generate(1, top_k=3)
 
         # Metadata should have separate fields
         assert "partial_token_usages" in result.metadata
@@ -960,7 +1014,8 @@ class TestET2RAGPipelineEdgeCases:
         finally:
             session.close()
 
-    def test_single_subset(
+    @pytest.mark.asyncio
+    async def test_single_subset(
         self,
         session_factory: sessionmaker[Session],
         mock_llm,
@@ -969,6 +1024,9 @@ class TestET2RAGPipelineEdgeCases:
         cleanup_pipeline_results: list[int],
     ):
         """Test pipeline with single subset (no voting needed)."""
+        # Setup async _retrieve_by_id
+        mock_retrieval_pipeline._retrieve_by_id = AsyncMock(return_value=[{"doc_id": 1, "score": 0.9}])
+
         pipeline = ET2RAGPipeline(
             session_factory=session_factory,
             name="test_et2rag_single_subset",
@@ -980,7 +1038,11 @@ class TestET2RAGPipelineEdgeCases:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Test query", top_k=1)
+        # Mock chunk contents
+        pipeline._service.get_chunk_contents = MagicMock(return_value=["Content A"])
+        pipeline._get_query_text = MagicMock(return_value="Test query")
+
+        result = await pipeline._generate(1, top_k=1)
 
         # Single subset should be selected directly
         assert result.text is not None
@@ -988,7 +1050,8 @@ class TestET2RAGPipelineEdgeCases:
         assert result.metadata["selected_subset_index"] == 0
         assert result.metadata["confidence_score"] == 1.0
 
-    def test_empty_retrieval_results(
+    @pytest.mark.asyncio
+    async def test_empty_retrieval_results(
         self,
         session_factory: sessionmaker[Session],
         mock_llm,
@@ -999,7 +1062,7 @@ class TestET2RAGPipelineEdgeCases:
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 999
         mock_retrieval.name = "empty_retrieval"
-        mock_retrieval.retrieve.return_value = []
+        mock_retrieval._retrieve_by_id = AsyncMock(return_value=[])
 
         pipeline = ET2RAGPipeline(
             session_factory=session_factory,
@@ -1010,7 +1073,7 @@ class TestET2RAGPipelineEdgeCases:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        result = pipeline._generate("Query with no results", top_k=5)
+        result = await pipeline._generate(1, top_k=5)
 
         # Should produce a fallback result
         assert result.text is not None
@@ -1018,7 +1081,8 @@ class TestET2RAGPipelineEdgeCases:
         assert result.metadata["num_subsets"] == 0
         assert result.metadata["selected_subset_index"] == -1
 
-    def test_identical_partial_responses(
+    @pytest.mark.asyncio
+    async def test_identical_partial_responses(
         self,
         session_factory: sessionmaker[Session],
         mock_retrieval_pipeline,
@@ -1036,6 +1100,15 @@ class TestET2RAGPipelineEdgeCases:
         )
         mock_llm.ainvoke = AsyncMock(return_value=mock_llm.invoke.return_value)
 
+        # Setup async _retrieve_by_id
+        mock_retrieval_pipeline._retrieve_by_id = AsyncMock(
+            return_value=[
+                {"doc_id": 1, "score": 0.9},
+                {"doc_id": 2, "score": 0.8},
+                {"doc_id": 3, "score": 0.7},
+            ]
+        )
+
         pipeline = ET2RAGPipeline(
             session_factory=session_factory,
             name="test_et2rag_identical",
@@ -1047,16 +1120,11 @@ class TestET2RAGPipelineEdgeCases:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        # Extend mock to return more documents
-        mock_retrieval_pipeline.retrieve = MagicMock(
-            return_value=[
-                {"doc_id": 1, "score": 0.9},
-                {"doc_id": 2, "score": 0.8},
-                {"doc_id": 3, "score": 0.7},
-            ]
-        )
+        # Mock chunk contents
+        pipeline._service.get_chunk_contents = MagicMock(return_value=["Content A", "Content B", "Content C"])
+        pipeline._get_query_text = MagicMock(return_value="Test query")
 
-        result = pipeline._generate("Test query", top_k=3)
+        result = await pipeline._generate(1, top_k=3)
 
         # All partial responses should be identical
         partial_responses = result.metadata["partial_responses"]
@@ -1096,14 +1164,14 @@ class TestET2RAGPipelineIntegration:
         mock.pipeline_id = 1
         mock.name = "mock_retrieval_integration"
 
-        def mock_retrieve(query_text: str, top_k: int):
+        async def mock_retrieve_by_id(query_id: int, top_k: int):
             return [
                 {"doc_id": 1, "score": 0.9},
                 {"doc_id": 2, "score": 0.8},
                 {"doc_id": 3, "score": 0.7},
             ][:top_k]
 
-        mock.retrieve = mock_retrieve
+        mock._retrieve_by_id = mock_retrieve_by_id
         return mock
 
     @pytest.fixture

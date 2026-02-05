@@ -14,7 +14,6 @@ responses. The algorithm:
 This differs from naive ensemble approaches that generate N responses from the same prompt.
 """
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -302,9 +301,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         query_text = self._get_query_text(query_id)
 
         # Step 4: Generate partial responses for each subset
-        partial_responses, partial_token_usages = asyncio.run(
-            self._generate_partial_responses_async(query_text, subsets)
-        )
+        partial_responses, partial_token_usages = await self._generate_partial_responses(query_text, subsets)
 
         # Handle single subset case - skip voting
         if len(subsets) == 1:
@@ -464,13 +461,16 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         return subsets
 
-    async def _generate_partial_responses_async(
+    async def _generate_partial_responses(
         self, query: str, subsets: list[list[tuple[int, str]]]
     ) -> tuple[list[str], list[dict]]:
-        """Generate partial responses for each subset asynchronously.
+        """Generate partial responses for each subset sequentially.
 
         Each subset gets a DIFFERENT prompt because the context is different.
         This is the key difference from naive ensemble methods.
+
+        Note: Parallelism across queries is handled by the base class via
+        run_with_concurrency_limit, so we process subsets sequentially here.
 
         Args:
             query: The query to answer.
@@ -479,19 +479,17 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         Returns:
             Tuple of (list of responses, list of token usages).
         """
-        tasks = []
+        responses = []
+        token_usages = []
         for subset in subsets:
             prompt = self._build_prompt(query, subset)
-            tasks.append(self._generate_single_async(prompt, max_tokens=self._partial_generation_max_tokens))
-
-        results = await asyncio.gather(*tasks)
-
-        responses = [r[0] for r in results]
-        token_usages = [r[1] for r in results]
+            response, token_usage = await self._generate_single(prompt, max_tokens=self._partial_generation_max_tokens)
+            responses.append(response)
+            token_usages.append(token_usage)
 
         return responses, token_usages
 
-    async def _generate_single_async(self, prompt: str, max_tokens: int | None = None) -> tuple[str, dict]:
+    async def _generate_single(self, prompt: str, max_tokens: int | None = None) -> tuple[str, dict]:
         """Generate a single response asynchronously.
 
         Args:
