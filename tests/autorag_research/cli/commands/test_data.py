@@ -85,4 +85,70 @@ class TestDataUploadCommand:
 
         assert result.exit_code == 0
         assert "Uploaded:" in result.stdout
-        mock_upload.assert_called_once_with(dump_file, "beir", "test_dump", commit_message=None)
+        mock_upload.assert_called_once_with(dump_file, "beir", "test_dump", repo_id=None, commit_message=None)
+
+    @patch("autorag_research.data.hf_storage.upload_dump")
+    def test_upload_with_custom_repo(self, mock_upload: MagicMock, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """'data upload --repo' uses custom repo ID."""
+        dump_file = tmp_path / "test.dump"
+        dump_file.write_text("test content")
+        mock_upload.return_value = "https://huggingface.co/datasets/myorg/custom-repo/blob/main/test.dump"
+
+        result = cli_runner.invoke(
+            app, ["data", "upload", str(dump_file), "beir", "test_dump", "--repo", "myorg/custom-repo"]
+        )
+
+        assert result.exit_code == 0
+        assert "Uploaded:" in result.stdout
+        mock_upload.assert_called_once_with(
+            dump_file, "beir", "test_dump", repo_id="myorg/custom-repo", commit_message=None
+        )
+
+    @patch("autorag_research.data.hf_storage.upload_dump")
+    def test_upload_with_custom_repo_short_option(
+        self, mock_upload: MagicMock, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """'data upload -r' uses custom repo ID (short option)."""
+        dump_file = tmp_path / "test.dump"
+        dump_file.write_text("test content")
+        mock_upload.return_value = "https://huggingface.co/datasets/myorg/custom-repo/blob/main/test.dump"
+
+        result = cli_runner.invoke(
+            app, ["data", "upload", str(dump_file), "beir", "test_dump", "-r", "myorg/custom-repo"]
+        )
+
+        assert result.exit_code == 0
+        assert "Uploaded:" in result.stdout
+        mock_upload.assert_called_once_with(
+            dump_file, "beir", "test_dump", repo_id="myorg/custom-repo", commit_message=None
+        )
+
+    @patch("autorag_research.data.hf_storage.upload_dump")
+    def test_upload_with_custom_repo_and_message(
+        self, mock_upload: MagicMock, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """'data upload --repo --message' uses both options."""
+        dump_file = tmp_path / "test.dump"
+        dump_file.write_text("test content")
+        mock_upload.return_value = "https://huggingface.co/datasets/myorg/custom-repo/blob/main/test.dump"
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "data",
+                "upload",
+                str(dump_file),
+                "beir",
+                "test_dump",
+                "--repo",
+                "myorg/custom-repo",
+                "-m",
+                "Custom upload",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Uploaded:" in result.stdout
+        mock_upload.assert_called_once_with(
+            dump_file, "beir", "test_dump", repo_id="myorg/custom-repo", commit_message="Custom upload"
+        )
