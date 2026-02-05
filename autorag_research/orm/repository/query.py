@@ -40,6 +40,20 @@ class QueryRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.contents == query_text)
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
+    def find_by_contents(self, contents: str) -> Any | None:
+        """Find query by exact text content match.
+
+        If multiple queries have the same content, returns the first one found.
+
+        Args:
+            contents: The exact query text content to find.
+
+        Returns:
+            The first matching query if found, None otherwise.
+        """
+        stmt = select(self.model_cls).where(self.model_cls.contents == contents).limit(1)
+        return self.session.execute(stmt).scalar_one_or_none()
+
     def get_with_retrieval_relations(self, query_id: int) -> Any | None:
         """Retrieve a query with its retrieval relations eagerly loaded.
 

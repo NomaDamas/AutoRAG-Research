@@ -125,7 +125,11 @@ class TestVectorSearchRetrievalPipeline:
         session_factory: sessionmaker[Session],
         cleanup_pipeline_results: list[int],
     ):
-        """Test running the full pipeline with mocked vector search."""
+        """Test running the full pipeline with mocked vector search.
+
+        The run() method uses _retrieve_by_id which calls vector_search with
+        a list containing a single query_id.
+        """
         from autorag_research.orm.repository.query import QueryRepository
 
         # Count actual queries in database
@@ -136,14 +140,14 @@ class TestVectorSearchRetrievalPipeline:
         finally:
             session.close()
 
-        # Mock service results - return results for each query
+        # Mock service results - return results for a single query ID
         mock_result = [
             {"doc_id": 1, "score": 0.9, "content": "Content 1"},
             {"doc_id": 2, "score": 0.8, "content": "Content 2"},
         ]
 
         def mock_vector_search(query_ids, top_k, search_mode="single"):
-            """Return mock results for each query ID."""
+            """Return mock results for each query ID (single-element list per call)."""
             return [mock_result for _ in query_ids]
 
         with patch(
@@ -193,6 +197,7 @@ class TestVectorSearchPipelineConfig:
         kwargs = config.get_pipeline_kwargs()
 
         assert kwargs["search_mode"] == "single"
+        assert kwargs["embedding_model"] is None
 
     def test_config_get_pipeline_kwargs_multi(self):
         """Test that config returns correct pipeline kwargs for multi mode."""
@@ -204,6 +209,7 @@ class TestVectorSearchPipelineConfig:
         kwargs = config.get_pipeline_kwargs()
 
         assert kwargs["search_mode"] == "multi"
+        assert kwargs["embedding_model"] is None
 
     def test_config_default_search_mode(self):
         """Test that config uses single search mode by default."""

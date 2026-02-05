@@ -322,5 +322,103 @@ results = service.vector_search(
 - Vector single: `1 - cosine_distance` (higher = more similar)
 - Vector multi (MaxSim): `-maxsim_distance` (higher = more similar)
 
+
+## Async Parallel Execution for Pipelines
+
+Both retrieval and generation pipelines support async parallel execution with the following parameters:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `batch_size` | 128 | Number of queries to fetch from DB at once |
+| `max_concurrency` | 16 | Maximum concurrent async operations (semaphore limit) |
+| `max_retries` | 3 | Maximum retry attempts for failed queries |
+| `retry_delay` | 1.0 | Base delay (seconds) for exponential backoff |
+
+### Pipeline Execution
+
+```python
+# Retrieval pipeline
+results = retrieval_pipeline.run(
+    top_k=10,
+    batch_size=128,        # Queries per DB fetch
+    max_concurrency=16,    # Concurrent async operations
+    max_retries=3,         # Retry attempts on failure
+    retry_delay=1.0,       # Exponential backoff base delay
+)
+
+# Generation pipeline
+results = generation_pipeline.run(
+    top_k=10,
+    batch_size=128,
+    max_concurrency=16,
+    max_retries=3,
+    retry_delay=1.0,
+)
+```
+
+### Return Format
+
+Both services return a dict with execution statistics:
+
+**RetrievalPipelineService.run_pipeline():**
+```python
+{
+    "pipeline_id": int,
+    "total_queries": int,      # Successfully processed
+    "total_results": int,      # Results stored
+    "failed_queries": list[int],  # Query IDs that failed after all retries
+}
+```
+
+**GenerationPipelineService.run_pipeline():**
+```python
+{
+    "pipeline_id": int,
+    "total_queries": int,      # Successfully processed
+    "token_usage": {           # Aggregated (or None if no tokens)
+        "prompt_tokens": int,
+        "completion_tokens": int,
+        "total_tokens": int,
+        "embedding_tokens": int,
+    },
+    "avg_execution_time_ms": float,
+    "failed_queries": list[int],  # Query IDs that failed after all retries
+}
+```
+
+### Retry Logic (using tenacity)
+
+Failed queries are retried with exponential backoff:
+- Retry 1: Wait ~1s (base delay)
+- Retry 2: Wait ~2s
+- Retry 3: Wait ~4s
+- Maximum wait capped at 60s
+
+```python
+from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
+
+async for attempt in AsyncRetrying(
+    stop=stop_after_attempt(max_retries),
+    wait=wait_exponential(multiplier=retry_delay, min=retry_delay, max=60),
+    reraise=True,
+):
+    with attempt:
+        result = await func(query_id, top_k)
+```
+
+### Function Signatures
+
+Both pipeline types use single-query async functions:
+
+```python
+# Retrieval: (query_id: int, top_k: int) -> list[dict]
+RetrievalFunc = Callable[[int | str, int], Coroutine[Any, Any, list[dict[str, Any]]]]
+
+# Generation: (query_id: int, top_k: int) -> GenerationResult
+GenerateFunc = Callable[[int, int], Awaitable[GenerationResult]]
+```
+
+The service layer handles batching and concurrency internally using `run_with_concurrency_limit()` from `autorag_research.util`.
+
 # READ THIS
 We use pyscopg (a.k.a pyscopg3) as the latest PostgreSQL driver. Rememeber it!
