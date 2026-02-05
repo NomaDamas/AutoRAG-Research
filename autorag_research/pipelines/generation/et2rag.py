@@ -28,7 +28,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.evaluation.metrics import calculate_cosine_similarity
 from autorag_research.orm.service.generation_pipeline import GenerationResult
-from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
@@ -215,7 +214,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
             "prompt_template": self._prompt_template,
         }
 
-    def _generate(self, query: str, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Execute ET2RAG generation for a single query.
 
         Algorithm:
@@ -229,14 +228,14 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         8. Return result with comprehensive metadata
 
         Args:
-            query: The query to answer.
+            query_id: The query id to answer.
             top_k: Number of documents to retrieve.
 
         Returns:
             GenerationResult with generated text and metadata.
         """
         # Step 1: Retrieve documents
-        retrieval_results = self._retrieval_pipeline.retrieve(query, top_k)
+        retrieval_results = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
         chunk_ids = [r["doc_id"] for r in retrieval_results]
 
         if not chunk_ids:
@@ -256,14 +255,13 @@ class ET2RAGPipeline(BaseGenerationPipeline):
             )
 
         # Step 2: Fetch chunk contents
-        chunk_contents = self._get_chunk_contents(chunk_ids)
+        chunk_contents: list[str] = self._service.get_chunk_contents(chunk_ids)
 
         # Build ordered list of (chunk_id, content) tuples
         documents: list[tuple[int, str]] = []
-        for chunk_id in chunk_ids:
-            content = chunk_contents.get(chunk_id, "")
-            if content:
-                documents.append((chunk_id, content))
+        for chunk_content, chunk_id in zip(chunk_contents, chunk_ids, strict=True):
+            if chunk_content:
+                documents.append((chunk_id, chunk_content))
 
         if not documents:
             return GenerationResult(
@@ -300,8 +298,12 @@ class ET2RAGPipeline(BaseGenerationPipeline):
                 },
             )
 
+        query_text = self._get_query_text(query_id)
+
         # Step 4: Generate partial responses for each subset
-        partial_responses, partial_token_usages = asyncio.run(self._generate_partial_responses_async(query, subsets))
+        partial_responses, partial_token_usages = asyncio.run(
+            self._generate_partial_responses_async(query_text, subsets)
+        )
 
         # Handle single subset case - skip voting
         if len(subsets) == 1:
@@ -310,14 +312,14 @@ class ET2RAGPipeline(BaseGenerationPipeline):
             confidence_score = 1.0
         else:
             # Step 5: Compute similarity matrix
-            similarity_matrix = self._compute_similarity_matrix(partial_responses)
+            similarity_matrix = await self._compute_similarity_matrix(partial_responses)
 
             # Step 6: Majority voting to select best subset
             selected_index, confidence_score = self._majority_voting(similarity_matrix)
 
         # Step 7: Generate full response with selected subset
         selected_subset = subsets[selected_index]
-        full_response, full_token_usage = self._generate_full_response(query, selected_subset)
+        full_response, full_token_usage = await self._generate_full_response(query_text, selected_subset)
 
         # Step 8: Aggregate token usage (all partial + full)
         total_token_usage = self._aggregate_token_usage([*partial_token_usages, full_token_usage])
@@ -502,7 +504,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         return text, token_usage
 
-    def _generate_full_response(self, query: str, subset: list[tuple[int, str]]) -> tuple[str, dict]:
+    async def _generate_full_response(self, query: str, subset: list[tuple[int, str]]) -> tuple[str, dict]:
         """Generate the final full response with the selected subset.
 
         This is the SECOND stage of generation, after voting has selected
@@ -521,7 +523,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         if self._full_generation_max_tokens is not None:
             kwargs["max_tokens"] = self._full_generation_max_tokens
 
-        response = self._llm.invoke(prompt, **kwargs)
+        response = await self._llm.ainvoke(prompt, **kwargs)
         text = response.content if hasattr(response, "content") else str(response)
         token_usage = self._extract_token_usage(response)
 
@@ -547,7 +549,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         return self._prompt_template.format(context=context, query=query)
 
-    def _compute_similarity_matrix(self, responses: list[str]) -> list[list[float]]:
+    async def _compute_similarity_matrix(self, responses: list[str]) -> list[list[float]]:
         """Compute pairwise cosine similarity matrix between responses.
 
         Args:
@@ -560,7 +562,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
             return [[]]
 
         # Embed all responses
-        embeddings = self._embedding_model.embed_documents(responses)
+        embeddings = await self._embedding_model.aembed_documents(responses)
         embeddings_array = np.array(embeddings)
 
         n = len(responses)
@@ -611,19 +613,6 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         confidence = max_score / avg_score if avg_score > 0 else 1.0
 
         return selected_index, confidence
-
-    def _get_chunk_contents(self, chunk_ids: list[int]) -> dict[int, str]:
-        """Fetch chunk contents from database.
-
-        Args:
-            chunk_ids: List of chunk IDs to fetch.
-
-        Returns:
-            Dict mapping chunk_id to content.
-        """
-        with GenerationUnitOfWork(self.session_factory, self._schema) as uow:
-            chunks = uow.chunks.get_by_ids(chunk_ids)
-            return {chunk.id: chunk.contents for chunk in chunks}
 
     def _aggregate_token_usage(self, token_usages: list[dict]) -> dict:
         """Aggregate multiple token usages into one.
