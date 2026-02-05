@@ -320,7 +320,6 @@ class RetrievalPipelineService(BaseService):
             )
             return [self._make_retrieval_result(chunk, score) for chunk, score in results]
 
-
     def bm25_search(
         self,
         query_ids: list[int | str],
