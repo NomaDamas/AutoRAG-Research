@@ -271,6 +271,7 @@ class TestRetrievalEvaluationService:
         # Seed: query 1 has RetrievalRelation with chunk_id=1, score=2
         results = service._get_execution_results(pipeline_id=1, query_ids=[1])
 
+        assert isinstance(results, dict)
         assert 1 in results
         assert "retrieved_ids" in results[1]
         assert "retrieval_gt" in results[1]
