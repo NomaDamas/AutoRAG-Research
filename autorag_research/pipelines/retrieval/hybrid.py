@@ -383,20 +383,41 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
         """
         pass
 
-    def _get_retrieval_func(self) -> Any:
-        """Return hybrid retrieval function."""
-        func_1 = self._retrieval_pipeline_1._get_retrieval_func()
-        func_2 = self._retrieval_pipeline_2._get_retrieval_func()
+    async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:
+        """Retrieve using query ID by fetching from both pipelines and fusing.
 
-        def hybrid_retrieval(query_ids: list[int], top_k: int) -> list[list[dict]]:
-            # Fetch more results from each pipeline for better fusion
-            fetch_k = top_k * self.fetch_k_multiplier
-            results_1 = func_1(query_ids, fetch_k)
-            results_2 = func_2(query_ids, fetch_k)
+        Args:
+            query_id: The query ID to retrieve for.
+            top_k: Number of top documents to retrieve.
 
-            return [self._fuse_results(r1, r2, top_k, fetch_k) for r1, r2 in zip(results_1, results_2, strict=True)]
+        Returns:
+            Fused results from both pipelines.
+        """
+        fetch_k = top_k * self.fetch_k_multiplier
 
-        return hybrid_retrieval
+        # Get results from both pipelines
+        results_1 = await self._retrieval_pipeline_1._retrieve_by_id(query_id, fetch_k)
+        results_2 = await self._retrieval_pipeline_2._retrieve_by_id(query_id, fetch_k)
+
+        return self._fuse_results(results_1, results_2, top_k, fetch_k)
+
+    async def _retrieve_by_text(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
+        """Retrieve using query text by fetching from both pipelines and fusing.
+
+        Args:
+            query_text: The query text to retrieve for.
+            top_k: Number of top documents to retrieve.
+
+        Returns:
+            Fused results from both pipelines.
+        """
+        fetch_k = top_k * self.fetch_k_multiplier
+
+        # Get results from both pipelines
+        results_1 = await self._retrieval_pipeline_1._retrieve_by_text(query_text, fetch_k)
+        results_2 = await self._retrieval_pipeline_2._retrieve_by_text(query_text, fetch_k)
+
+        return self._fuse_results(results_1, results_2, top_k, fetch_k)
 
 
 class HybridRRFRetrievalPipeline(HybridRetrievalPipeline):

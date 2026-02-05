@@ -23,4 +23,7 @@ normalize_method: mm  # mm (min-max), tmm (theoretical min-max), z (z-score), db
 # pipeline_2_min: 0.0   # e.g., BM25 min
 fetch_k_multiplier: 2
 top_k: 10
-batch_size: 100
+batch_size: 128
+max_concurrency: 16
+max_retries: 3
+retry_delay: 1.0
