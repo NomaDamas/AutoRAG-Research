@@ -360,7 +360,7 @@ def create_mock_llm(
     bm25_index_path fixture from conftest.py.
 
     Args:
-        response_text: The text to return from invoke().
+        response_text: The text to return from invoke()/ainvoke().
         token_usage: Token usage dict. Defaults to standard values.
         include_logprobs: If True, include logprobs for Yes/No in response_metadata.
             Required for MAIN-RAG pipeline tests.
@@ -369,6 +369,8 @@ def create_mock_llm(
         MagicMock configured as a LangChain BaseLanguageModel with both
         sync invoke() and async ainvoke() methods.
     """
+    from unittest.mock import AsyncMock
+
     if token_usage is None:
         token_usage = {
             "prompt_tokens": 100,
@@ -410,8 +412,6 @@ def create_mock_llm(
 
     # Sync invoke method
     mock.invoke.return_value = mock_response
-
-    # Async ainvoke method - use AsyncMock for proper assertion support
+    # Add async ainvoke for async pipeline support
     mock.ainvoke = AsyncMock(return_value=mock_response)
-
     return mock

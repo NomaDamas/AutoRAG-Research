@@ -155,6 +155,10 @@ def upload_dump_cmd(
     file: Annotated[Path, typer.Argument(help="Path to the dump file to upload")],
     ingestor: Annotated[str, typer.Argument(help="Ingestor name (e.g., beir, mteb)")],
     filename: Annotated[str, typer.Argument(help="Target filename without .dump extension")],
+    repo: Annotated[
+        str | None,
+        typer.Option("--repo", "-r", help="Override HuggingFace repo ID (e.g., myorg/my-repo)"),
+    ] = None,
     message: Annotated[
         str | None,
         typer.Option("--message", "-m", help="Commit message for the upload"),
@@ -167,6 +171,7 @@ def upload_dump_cmd(
     Examples:
         autorag-research data upload ./scifact.dump beir scifact_openai-small
         autorag-research data upload ./scifact.dump beir scifact_openai-small -m "Add new dump"
+        autorag-research data upload ./scifact.dump beir scifact_openai-small --repo myorg/custom-repo
     """
     from huggingface_hub.utils import HfHubHTTPError
 
@@ -176,9 +181,12 @@ def upload_dump_cmd(
         typer.echo(f"File not found: {file}", err=True)
         raise typer.Exit(1)
 
+    # Determine target display for status message
+    target_display = f"{repo}/{filename}.dump" if repo else f"{ingestor}/{filename}.dump"
+
     try:
-        with console.status(f"[bold blue]Uploading '{file}' to '{ingestor}/{filename}.dump'..."):
-            url = upload_dump(file, ingestor, filename, commit_message=message)
+        with console.status(f"[bold blue]Uploading '{file}' to '{target_display}'..."):
+            url = upload_dump(file, ingestor, filename, repo_id=repo, commit_message=message)
     except KeyError as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from None

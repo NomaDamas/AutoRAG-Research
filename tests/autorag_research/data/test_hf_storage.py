@@ -123,6 +123,45 @@ class TestUploadDump:
         with pytest.raises(KeyError, match="Unknown ingestor"):
             upload_dump(dump_file, "unknown", "some_filename")
 
+    @patch("autorag_research.data.hf_storage.upload_file")
+    def test_upload_dump_with_custom_repo_id(self, mock_upload, tmp_path):
+        """Test upload with custom repo_id overrides ingestor lookup."""
+        dump_file = tmp_path / "test.dump"
+        dump_file.write_text("test content")
+
+        mock_upload.return_value = "https://huggingface.co/datasets/myorg/custom-repo/blob/main/test.dump"
+
+        result = upload_dump(dump_file, "beir", "test_file", repo_id="myorg/custom-repo")
+
+        assert "huggingface.co" in result
+        mock_upload.assert_called_once_with(
+            path_or_fileobj=str(dump_file),
+            path_in_repo="test_file.dump",
+            repo_id="myorg/custom-repo",
+            repo_type="dataset",
+            commit_message="Add test_file dump",
+        )
+
+    @patch("autorag_research.data.hf_storage.upload_file")
+    def test_upload_dump_with_custom_repo_id_and_unknown_ingestor(self, mock_upload, tmp_path):
+        """Test that custom repo_id bypasses ingestor validation."""
+        dump_file = tmp_path / "test.dump"
+        dump_file.write_text("test content")
+
+        mock_upload.return_value = "https://huggingface.co/datasets/myorg/custom-repo/blob/main/test.dump"
+
+        # Should not raise KeyError because repo_id is provided
+        result = upload_dump(dump_file, "unknown_ingestor", "test_file", repo_id="myorg/custom-repo")
+
+        assert "huggingface.co" in result
+        mock_upload.assert_called_once_with(
+            path_or_fileobj=str(dump_file),
+            path_in_repo="test_file.dump",
+            repo_id="myorg/custom-repo",
+            repo_type="dataset",
+            commit_message="Add test_file dump",
+        )
+
 
 class TestListAvailableDumps:
     """Tests for list_available_dumps function."""
