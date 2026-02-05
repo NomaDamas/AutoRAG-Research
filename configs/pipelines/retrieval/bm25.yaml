@@ -16,4 +16,7 @@ k1: 0.9
 b: 0.4
 language: en
 top_k: 10
-batch_size: 100
+batch_size: 128
+max_concurrency: 16
+max_retries: 3
+retry_delay: 1.0

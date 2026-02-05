@@ -359,12 +359,14 @@ def create_mock_llm(
     bm25_index_path fixture from conftest.py.
 
     Args:
-        response_text: The text to return from invoke().
+        response_text: The text to return from invoke()/ainvoke().
         token_usage: Token usage dict. Defaults to standard values.
 
     Returns:
         MagicMock configured as a LangChain BaseLanguageModel.
     """
+    from unittest.mock import AsyncMock
+
     if token_usage is None:
         token_usage = {
             "prompt_tokens": 100,
@@ -384,4 +386,6 @@ def create_mock_llm(
         "total_tokens": token_usage["total_tokens"],
     }
     mock.invoke.return_value = mock_response
+    # Add async ainvoke for async pipeline support
+    mock.ainvoke = AsyncMock(return_value=mock_response)
     return mock

@@ -18,10 +18,11 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
     This class provides common functionality for retrieval pipelines:
     - Service initialization
     - Pipeline creation in database
-    - Abstract run method for subclasses to implement
+    - Abstract retrieve methods for subclasses to implement
 
     Subclasses must implement:
-    - `_get_retrieval_func()`: Return the retrieval function to use
+    - `_retrieve_by_id()`: Async method for retrieval using query ID (query exists in DB)
+    - `_retrieve_by_text()`: Async method for retrieval using raw query text
     - `_get_pipeline_config()`: Return the pipeline configuration dict
     """
 
@@ -50,31 +51,52 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
         )
 
     @abstractmethod
-    def _get_retrieval_func(self) -> Any:
-        """Return the retrieval function to use.
+    async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:
+        """Retrieve documents using query ID (query must exist in DB).
+
+        This method is used for batch processing where queries already exist
+        in the database with pre-computed embeddings.
+
+        Args:
+            query_id: The query ID to retrieve for.
+            top_k: Number of top documents to retrieve.
 
         Returns:
-            A callable with signature: (query_ids: list[int | str], top_k: int) -> list[list[dict]]
+            List of result dicts containing:
+            - doc_id: Chunk ID
+            - score: Relevance score
+            - content: Chunk text content (optional)
         """
         pass
 
-    def _get_query_model(self) -> type:
-        """Get the Query model class from schema or default."""
-        if self._schema is not None:
-            return self._schema.Query
-        from autorag_research.orm.schema import Query
+    @abstractmethod
+    async def _retrieve_by_text(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
+        """Retrieve documents using raw query text (may trigger embedding).
 
-        return Query
+        This method is used for ad-hoc retrieval where the query doesn't exist
+        in the database. Implementations may need to compute embeddings on-the-fly.
 
-    def retrieve(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
-        """Retrieve chunks for a single query (used by GenerationPipeline).
+        Args:
+            query_text: The query text to retrieve for.
+            top_k: Number of top documents to retrieve.
 
-        This method provides single-query retrieval, complementing the batch
-        `run()` method. It's designed for use within GenerationPipeline where
-        queries are processed one at a time.
+        Returns:
+            List of result dicts containing:
+            - doc_id: Chunk ID
+            - score: Relevance score
+            - content: Chunk text content (optional)
+        """
+        pass
 
-        Creates a Query entity for the retrieval. The query is persisted to the
-        database for audit trail and potential future analysis.
+    async def retrieve(self, query_text: str, top_k: int = 10) -> list[dict[str, Any]]:
+        """Retrieve chunks for a single query (async).
+
+        This method provides single-query retrieval, designed for use within
+        GenerationPipeline where queries are processed one at a time.
+
+        Checks if query exists in DB:
+        - If exists: uses _retrieve_by_id() (faster, uses stored embedding)
+        - If not: uses _retrieve_by_text() (may trigger embedding computation)
 
         Args:
             query_text: The query text to retrieve for.
@@ -83,41 +105,46 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
         Returns:
             List of dicts with 'doc_id' (chunk ID) and 'score' keys.
         """
-        Query = self._get_query_model()
+        # Check if query exists using service
+        query = self._service.find_query_by_text(query_text)
 
-        # Create and persist query for retrieval
-        with self.session_factory() as session:
-            query = Query(contents=query_text)
-            session.add(query)
-            session.commit()
-            query_id = query.id
-
-        # Run retrieval with the query ID
-        retrieval_func = self._get_retrieval_func()
-        results = retrieval_func([query_id], top_k)
-
-        return results[0]  # Single query → single result list
+        if query is not None:
+            # Query exists - use ID-based retrieval (faster, uses stored embedding)
+            return await self._retrieve_by_id(query.id, top_k)
+        else:
+            # Query doesn't exist - use text-based retrieval (may trigger embedding)
+            return await self._retrieve_by_text(query_text, top_k)
 
     def run(
         self,
         top_k: int = 10,
-        batch_size: int = 100,
+        batch_size: int = 128,
+        max_concurrency: int = 16,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ) -> dict[str, Any]:
         """Run the retrieval pipeline.
 
         Args:
             top_k: Number of top documents to retrieve per query.
-            batch_size: Number of queries to process in each batch.
+            batch_size: Number of queries to fetch from DB at once.
+            max_concurrency: Maximum number of concurrent async operations.
+            max_retries: Maximum number of retry attempts for failed queries.
+            retry_delay: Base delay in seconds for exponential backoff between retries.
 
         Returns:
             Dictionary with pipeline execution statistics:
             - pipeline_id: The pipeline ID
-            - total_queries: Number of queries processed
+            - total_queries: Number of queries processed successfully
             - total_results: Number of results stored
+            - failed_queries: List of query IDs that failed after all retries
         """
         return self._service.run_pipeline(
-            retrieval_func=self._get_retrieval_func(),
+            retrieval_func=self._retrieve_by_id,  # Use ID-based for batch processing
             pipeline_id=self.pipeline_id,
             top_k=top_k,
             batch_size=batch_size,
+            max_concurrency=max_concurrency,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
         )

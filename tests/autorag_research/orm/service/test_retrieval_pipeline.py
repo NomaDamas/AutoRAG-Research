@@ -11,17 +11,12 @@ class TestRetrievalPipelineService:
 
     @pytest.fixture
     def mock_retrieval_func(self):
-        def retrieval_func(query_ids: list[int | str], top_k: int) -> list[list[dict]]:
-            """Mock retrieval function that returns 2 results per query ID."""
-            results = []
-            for _ in query_ids:
-                results.append(
-                    [
-                        {"doc_id": 1, "score": 0.9},
-                        {"doc_id": 2, "score": 0.8},
-                    ][:top_k]
-                )
-            return results
+        async def retrieval_func(query_id: int | str, top_k: int) -> list[dict]:
+            """Mock async retrieval function that returns 2 results per query ID."""
+            return [
+                {"doc_id": 1, "score": 0.9},
+                {"doc_id": 2, "score": 0.8},
+            ][:top_k]
 
         return retrieval_func
 

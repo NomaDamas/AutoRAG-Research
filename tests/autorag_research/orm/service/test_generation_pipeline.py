@@ -13,9 +13,9 @@ class TestGenerationPipelineService:
 
     @pytest.fixture
     def mock_generate_func(self):
-        def generate_func(query: str, top_k: int) -> GenerationResult:
+        async def generate_func(query_id: int, top_k: int) -> GenerationResult:
             return GenerationResult(
-                text=f"Answer for: {query}",
+                text=f"Answer for query: {query_id}",
                 token_usage={
                     "prompt_tokens": 50,
                     "completion_tokens": 50,
@@ -52,7 +52,14 @@ class TestGenerationPipelineService:
         assert config["type"] == "naive_rag"
         assert config["model"] == "test-model"
 
-    def test_run_pipeline(self, service, mock_generate_func, cleanup_pipeline_results):
+    def test_run_pipeline(self, service, mock_generate_func, cleanup_pipeline_results, session_factory):
+        from autorag_research.orm.repository.query import QueryRepository
+
+        # Count actual queries in database
+        with session_factory() as session:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+
         pipeline_id = service.save_pipeline(
             name="test_run_gen_pipeline",
             config={"type": "test"},
@@ -70,15 +77,22 @@ class TestGenerationPipelineService:
         assert "token_usage" in result
         assert "avg_execution_time_ms" in result
         assert result["pipeline_id"] == pipeline_id
-        assert result["total_queries"] == 5  # Seed data has 5 queries
+        assert result["total_queries"] == query_count
 
         # Verify aggregated token usage
         assert result["token_usage"] is not None
-        assert result["token_usage"]["total_tokens"] == 500  # 5 queries * 100 tokens each
-        assert result["token_usage"]["prompt_tokens"] == 250  # 5 queries * 50 tokens each
-        assert result["token_usage"]["completion_tokens"] == 250  # 5 queries * 50 tokens each
+        assert result["token_usage"]["total_tokens"] == query_count * 100  # N queries * 100 tokens each
+        assert result["token_usage"]["prompt_tokens"] == query_count * 50  # N queries * 50 tokens each
+        assert result["token_usage"]["completion_tokens"] == query_count * 50  # N queries * 50 tokens each
 
-    def test_delete_pipeline_results(self, service, mock_generate_func, cleanup_pipeline_results):
+    def test_delete_pipeline_results(self, service, mock_generate_func, cleanup_pipeline_results, session_factory):
+        from autorag_research.orm.repository.query import QueryRepository
+
+        # Count actual queries in database
+        with session_factory() as session:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+
         pipeline_id = service.save_pipeline(
             name="test_delete_gen_pipeline",
             config={"type": "test"},
@@ -94,10 +108,10 @@ class TestGenerationPipelineService:
         # Verify results exist before deletion
         with service._create_uow() as uow:
             results_before = uow.executor_results.get_by_pipeline_id(pipeline_id)
-            assert len(results_before) == 5
+            assert len(results_before) == query_count
 
         deleted_count = service.delete_pipeline_results(pipeline_id)
-        assert deleted_count == 5
+        assert deleted_count == query_count
 
         # Verify results are deleted
         with service._create_uow() as uow:
@@ -105,8 +119,8 @@ class TestGenerationPipelineService:
             assert len(results_after) == 0
 
     def test_generation_result_without_token_usage(self, service, cleanup_pipeline_results):
-        def generate_func_no_tokens(query: str, top_k: int) -> GenerationResult:
-            return GenerationResult(text=f"Answer: {query}", token_usage=None)
+        async def generate_func_no_tokens(query_id: int, top_k: int) -> GenerationResult:
+            return GenerationResult(text=f"Answer for query: {query_id}", token_usage=None)
 
         pipeline_id = service.save_pipeline(
             name="test_no_tokens_pipeline",
@@ -126,8 +140,15 @@ class TestGenerationPipelineService:
         config = service.get_pipeline_config(999999)
         assert config is None
 
-    def test_run_pipeline_with_token_usage_jsonb(self, service, cleanup_pipeline_results):
+    def test_run_pipeline_with_token_usage_jsonb(self, service, cleanup_pipeline_results, session_factory):
         """Test that token_usage JSONB is stored correctly in ExecutorResult."""
+        from autorag_research.orm.repository.query import QueryRepository
+
+        # Count actual queries in database
+        with session_factory() as session:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+
         token_usage = {
             "prompt_tokens": 50,
             "completion_tokens": 50,
@@ -135,9 +156,9 @@ class TestGenerationPipelineService:
             "embedding_tokens": 0,
         }
 
-        def generate_func_with_detail(query: str, top_k: int) -> GenerationResult:
+        async def generate_func_with_detail(query_id: int, top_k: int) -> GenerationResult:
             return GenerationResult(
-                text=f"Answer for: {query}",
+                text=f"Answer for query: {query_id}",
                 token_usage=token_usage,
                 metadata={"retrieved_chunk_ids": [1, 2]},
             )
@@ -156,12 +177,12 @@ class TestGenerationPipelineService:
 
         # Verify aggregated token usage
         assert result["token_usage"] is not None
-        assert result["token_usage"]["total_tokens"] == 500  # 5 queries * 100 tokens each
+        assert result["token_usage"]["total_tokens"] == query_count * 100  # N queries * 100 tokens each
 
         # Verify token_usage is stored in ExecutorResult as JSONB
         with service._create_uow() as uow:
             executor_results = uow.executor_results.get_by_pipeline_id(pipeline_id)
-            assert len(executor_results) == 5
+            assert len(executor_results) == query_count
 
             for exec_result in executor_results:
                 assert exec_result.token_usage is not None

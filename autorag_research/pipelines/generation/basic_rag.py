@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
-from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
@@ -35,8 +34,11 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
         llm: LangChain BaseLanguageModel instance for text generation.
         prompt_template: Template for building the generation prompt.
             Must contain {context} and {query} placeholders.
-        top_k: Number of chunks to retrieve per query.
-        batch_size: Number of queries to process in each batch.
+        top_k: Number of chunks to retrieve per query. Default: 10.
+        batch_size: Number of queries to fetch from DB at once. Default: 128.
+        max_concurrency: Maximum concurrent async operations. Default: 16.
+        max_retries: Maximum retry attempts for failed queries. Default: 3.
+        retry_delay: Base delay (seconds) for exponential backoff. Default: 1.0.
 
     Example:
         ```python
@@ -48,6 +50,7 @@ class BasicRAGPipelineConfig(BaseGenerationPipelineConfig):
             llm=ChatOpenAI(model="gpt-4"),
             prompt_template="Context:\\n{context}\\n\\nQ: {query}\\nA:",
             top_k=5,
+            max_concurrency=8,  # Limit parallelism to avoid rate limits
         )
         ```
     """
@@ -147,44 +150,29 @@ class BasicRAGPipeline(BaseGenerationPipeline):
             "retrieval_pipeline_id": self._retrieval_pipeline.pipeline_id,
         }
 
-    def _get_chunk_contents(self, chunk_ids: list[int]) -> list[str]:
-        """Get chunk contents by IDs.
+    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+        """Generate answer using simple RAG: retrieve once, generate once (async).
 
         Args:
-            chunk_ids: List of chunk IDs to fetch.
-
-        Returns:
-            List of chunk content strings in the same order as input IDs.
-        """
-        with GenerationUnitOfWork(self.session_factory, self._schema) as uow:
-            chunks = uow.chunks.get_by_ids(chunk_ids)
-            # Create a map for preserving order
-            chunk_map = {chunk.id: chunk.contents for chunk in chunks}
-            return [chunk_map.get(cid, "") for cid in chunk_ids]
-
-    def _generate(self, query: str, top_k: int) -> GenerationResult:
-        """Generate answer using simple RAG: retrieve once, generate once.
-
-        Args:
-            query: The query text to answer.
+            query_id: The query ID to answer.
             top_k: Number of chunks to retrieve.
 
         Returns:
             GenerationResult containing the generated text and metadata.
         """
-        # 1. Retrieve relevant chunks using composed retrieval pipeline
-        retrieved = self._retrieval_pipeline.retrieve(query, top_k)
+        retrieved = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
 
-        # 2. Get chunk contents
         chunk_ids = [r["doc_id"] for r in retrieved]
-        chunk_contents = self._get_chunk_contents(chunk_ids)
+        chunk_contents = self._service.get_chunk_contents(chunk_ids)
+
+        query_text = self._get_query_text(query_id)
 
         # 3. Build prompt with context
         context = "\n\n".join(chunk_contents)
-        prompt = self._prompt_template.format(context=context, query=query)
+        prompt = self._prompt_template.format(context=context, query=query_text)
 
-        # 4. Generate using LLM
-        response = self._llm.invoke(prompt)
+        # 4. Async LLM call (main I/O benefit)
+        response = await self._llm.ainvoke(prompt)
 
         # 5. Extract token usage from response metadata
         token_usage = None
