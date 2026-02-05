@@ -365,6 +365,7 @@ def create_mock_llm(
     Returns:
         MagicMock configured as a LangChain BaseLanguageModel.
     """
+    from unittest.mock import AsyncMock
 
     if token_usage is None:
         token_usage = {
