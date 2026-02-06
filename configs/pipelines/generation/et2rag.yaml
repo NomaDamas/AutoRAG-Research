@@ -41,4 +41,7 @@ partial_generation_max_tokens: 100
 full_generation_max_tokens: null
 prompt_template: null  # null = use default template
 top_k: 10
-batch_size: 100
+batch_size: 128
+max_concurrency: 8
+max_retries: 3
+retry_delay: 1.0
