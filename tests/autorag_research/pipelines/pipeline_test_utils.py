@@ -369,7 +369,6 @@ def create_mock_llm(
         MagicMock configured as a LangChain BaseLanguageModel with both
         sync invoke() and async ainvoke() methods.
     """
-    from unittest.mock import AsyncMock
 
     if token_usage is None:
         token_usage = {

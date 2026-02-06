@@ -17,6 +17,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.util import aggregate_token_usage
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -427,7 +428,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         # threshold = mean - n * std
         return score_mean - std_multiplier * score_std
 
-    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate an answer using the MAIN-RAG algorithm with parallel agent execution.
 
         Implements the 6-phase MAIN-RAG algorithm with parallel execution:
@@ -447,7 +448,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         """
         # Get query text from database
         query = self._get_query_text(query_id)
-        all_token_usages: list[dict] = []
+        all_token_usages: list[dict] = []  # Each: {"token_usage": {...}, "execution_time": 0}
 
         # ==================== Phase 1: Retrieval ====================
         retrieved = await self._retrieval_pipeline.retrieve(query, top_k)
@@ -475,11 +476,11 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         if len(chunk_contents) == 1:
             logger.debug("Single document retrieved, skipping filtering phase")
             final_answer, final_usage = await self._aagent_final_predict(query, chunk_contents)
-            all_token_usages.append(final_usage)
+            all_token_usages.append({"token_usage": final_usage, "execution_time": 0})
 
             return GenerationResult(
                 text=final_answer,
-                token_usage=self._aggregate_token_usage(all_token_usages),
+                token_usage=self._build_token_usage_dict(all_token_usages),
                 metadata={
                     "pipeline_type": "main_rag",
                     "std_multiplier": self._std_multiplier,
@@ -498,14 +499,14 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         for doc in chunk_contents:
             answer, usage = await self._aagent_predict(query, doc)
             candidate_answers.append(answer)
-            all_token_usages.append(usage)
+            all_token_usages.append({"token_usage": usage, "execution_time": 0})
 
         # ==================== Phase 3: Agent-2 (Judge) ====================
         relevance_scores: list[float] = []
         for doc, answer in zip(chunk_contents, candidate_answers, strict=True):
             score, usage = await self._aagent_judge(query, doc, answer)
             relevance_scores.append(score)
-            all_token_usages.append(usage)
+            all_token_usages.append({"token_usage": usage, "execution_time": 0})
 
         # ==================== Phase 4: Adaptive Filtering ====================
         threshold = self._calculate_adaptive_threshold(relevance_scores, self._std_multiplier)
@@ -533,14 +534,14 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         # ==================== Phase 6: Agent-3 (Final Predictor) ====================
         filtered_contents = [doc["content"] for doc in filtered_docs]
         final_answer, final_usage = await self._aagent_final_predict(query, filtered_contents)
-        all_token_usages.append(final_usage)
+        all_token_usages.append({"token_usage": final_usage, "execution_time": 0})
 
         # Build metadata with filtering statistics
         relevance_scores_metadata = [{"doc_id": doc["doc_id"], "score": doc["score"]} for doc in filtered_docs]
 
         return GenerationResult(
             text=final_answer,
-            token_usage=self._aggregate_token_usage(all_token_usages),
+            token_usage=self._build_token_usage_dict(all_token_usages),
             metadata={
                 "pipeline_type": "main_rag",
                 "std_multiplier": self._std_multiplier,
@@ -587,23 +588,20 @@ class MAINRAGPipeline(BaseGenerationPipeline):
 
         return token_usage
 
-    def _aggregate_token_usage(self, usages: list[dict]) -> dict[str, int]:
-        """Aggregate token usage from multiple LLM calls.
+    @staticmethod
+    def _build_token_usage_dict(results: list[dict]) -> dict[str, int]:
+        """Aggregate token usage from multiple LLM calls using shared utility.
 
         Args:
-            usages: List of token usage dicts.
+            results: List of dicts with 'token_usage' and 'execution_time' keys.
 
         Returns:
             Aggregated token usage dict.
         """
-        total = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
+        prompt, completion, embedding, _ = aggregate_token_usage(results)
+        return {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": prompt + completion,
+            "embedding_tokens": embedding,
         }
-        for usage in usages:
-            if usage:
-                total["prompt_tokens"] += usage.get("prompt_tokens", 0)
-                total["completion_tokens"] += usage.get("completion_tokens", 0)
-                total["total_tokens"] += usage.get("total_tokens", 0)
-        return total
