@@ -37,7 +37,7 @@ class BaseGenerationPipeline(BasePipeline, ABC):
 
                 # Retrieve relevant chunks (async)
                 results = await self._retrieval_pipeline.retrieve(query_text, top_k)
-                chunks = [self._get_chunk_content(r["doc_id"]) for r in results]
+                chunks = [self.get_chunk_content(r["doc_id"]) for r in results]
 
                 # Build prompt and generate (async)
                 context = "\\n\\n".join(chunks)
@@ -79,7 +79,7 @@ class BaseGenerationPipeline(BasePipeline, ABC):
             config=self._get_pipeline_config(),
         )
 
-    def _get_query_text(self, query_id: int) -> str:
+    def _get_query_text(self, query_id: int | str) -> str:
         """Get query text by ID from database.
 
         Args:
@@ -100,7 +100,7 @@ class BaseGenerationPipeline(BasePipeline, ABC):
             return query.contents
 
     @abstractmethod
-    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate an answer for a query (async).
 
         This method has full access to retrieval pipelines.
