@@ -147,6 +147,17 @@ class MaxRetriesExceededError(ExecutorError):
         self.max_retries = max_retries
 
 
+class LogprobsNotSupportedError(ExecutorError):
+    """Raised when a pipeline requires logprobs but the LLM doesn't support them."""
+
+    def __init__(self, pipeline_name: str):
+        super().__init__(
+            f"Pipeline '{pipeline_name}' requires logprobs, but the LLM does not support them. "
+            f"Use ChatOpenAI with .bind(logprobs=True, top_logprobs=5) or another logprobs-supporting LLM (vLLM, Together AI, and so on)."
+        )
+        self.pipeline_name = pipeline_name
+
+
 class EvaluationError(ExecutorError):
     """Raised when evaluation fails."""
 
