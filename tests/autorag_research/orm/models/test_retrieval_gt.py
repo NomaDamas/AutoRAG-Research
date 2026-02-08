@@ -268,6 +268,7 @@ class TestGTToRelations:
             "image_chunk_id": None,
             "group_index": 0,
             "group_order": 0,
+            "score": None,
         }
 
     def test_single_image_chunk(self):
@@ -281,6 +282,7 @@ class TestGTToRelations:
             "image_chunk_id": 20,
             "group_index": 0,
             "group_order": 0,
+            "score": None,
         }
 
     def test_or_group(self):
@@ -329,6 +331,7 @@ class TestGTToRelations:
             "image_chunk_id": None,
             "group_index": 0,
             "group_order": 0,
+            "score": None,
         }
         assert relations[1] == {
             "query_id": 1,
@@ -336,6 +339,7 @@ class TestGTToRelations:
             "image_chunk_id": None,
             "group_index": 0,
             "group_order": 1,
+            "score": None,
         }
         # Group 1: chunks 3, 4
         assert relations[2] == {
@@ -344,6 +348,7 @@ class TestGTToRelations:
             "image_chunk_id": None,
             "group_index": 1,
             "group_order": 0,
+            "score": None,
         }
         assert relations[3] == {
             "query_id": 1,
@@ -351,6 +356,7 @@ class TestGTToRelations:
             "image_chunk_id": None,
             "group_index": 1,
             "group_order": 1,
+            "score": None,
         }
 
     def test_mixed_modality(self):
@@ -362,6 +368,36 @@ class TestGTToRelations:
         assert relations[0]["image_chunk_id"] is None
         assert relations[1]["chunk_id"] is None
         assert relations[1]["image_chunk_id"] == 2
+
+    def test_with_scores(self):
+        """Test that scores are correctly passed through to relations."""
+        gt = AndChain(
+            groups=(
+                OrGroup(items=(TextId(1, score=2), TextId(2, score=1))),
+                OrGroup(items=(ImageId(3, score=2),)),
+            )
+        )
+        relations = gt_to_relations(query_id=1, gt=gt)
+
+        assert len(relations) == 3
+        assert relations[0]["chunk_id"] == 1
+        assert relations[0]["score"] == 2
+        assert relations[1]["chunk_id"] == 2
+        assert relations[1]["score"] == 1
+        assert relations[2]["image_chunk_id"] == 3
+        assert relations[2]["score"] == 2
+
+    def test_with_scores_from_wrapper(self):
+        """Test that scores work with text() and image() wrappers."""
+        expr = text(1, score=2) | text(2, score=1)
+        gt = normalize_gt(expr, chunk_type="text")
+        relations = gt_to_relations(1, gt)
+
+        assert len(relations) == 2
+        assert relations[0]["chunk_id"] == 1
+        assert relations[0]["score"] == 2
+        assert relations[1]["chunk_id"] == 2
+        assert relations[1]["score"] == 1
 
 
 class TestEndToEndExpressions:

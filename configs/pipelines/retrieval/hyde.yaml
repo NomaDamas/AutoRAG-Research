@@ -1,0 +1,26 @@
+# HyDE (Hypothetical Document Embeddings) Retrieval Pipeline Configuration
+#
+# Generates hypothetical documents using an LLM, then embeds them for vector search.
+# Reference: "Precise Zero-Shot Dense Retrieval without Relevance Labels" (Gao et al., 2022)
+#
+# Parameters:
+#   llm: LLM config name from configs/llm/ (e.g., "mock", "openai-gpt4")
+#   embedding: Embedding config name from configs/embedding/ (e.g., "openai-small")
+#   prompt_template: Template with {question} placeholder
+#   top_k: Number of results to retrieve (default: 10)
+#   batch_size: Number of queries to process per batch (default: 100)
+#
+_target_: autorag_research.pipelines.retrieval.hyde.HyDEPipelineConfig
+description: "HyDE retrieval with hypothetical document generation"
+name: hyde
+llm: mock  # Replace with actual LLM config (e.g., "openai-gpt4")
+embedding: mock  # Replace with actual embedding config (e.g., "openai-small")
+prompt_template: |
+  Please write a passage to answer the question.
+  Question: {question}
+  Passage:
+top_k: 10
+batch_size: 128
+max_concurrency: 16
+max_retries: 3
+retry_delay: 1.0

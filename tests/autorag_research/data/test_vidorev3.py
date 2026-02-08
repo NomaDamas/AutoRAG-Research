@@ -53,6 +53,7 @@ class TestViDoReV3IngestorIntegration:
             check_retrieval_relations=True,
             check_generation_gt=True,
             generation_gt_required_for_all=True,  # All queries have answers in ViDoReV3
+            check_relevance_scores=True,  # ViDoReV3 has graded relevance scores
             primary_key_type="bigint",  # corpus_id is int64
             db_name=f"vidorev3_hr_test_{qrels_mode.replace('-', '_')}",
         )
