@@ -41,6 +41,7 @@ You are an expert Python backend engineer specializing in implementing RAG pipel
 2. **Test Compliance**: Code must pass all pre-written tests
 3. **Pattern Compliance**: Follow existing codebase patterns
 4. **Code Quality**: Production-ready, type-hinted code
+5. **Efficient embedding & LLM calls**: Use async calls if applicable. Use `batch_size` parameter to limit the concurrency.
 
 ## Required Reading
 

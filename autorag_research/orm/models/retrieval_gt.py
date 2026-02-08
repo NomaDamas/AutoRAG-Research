@@ -49,6 +49,7 @@ class TextId:
     """Text chunk ID wrapper for mixed modality operations."""
 
     id: int | str
+    score: int | None = None  # Graded relevance: 0=not relevant, 1=somewhat, 2=highly
 
     def __or__(self, other: TextId | ImageId | OrGroup) -> OrGroup:
         """Create OR group: TextId(1) | TextId(2)."""
@@ -64,6 +65,7 @@ class ImageId:
     """Image chunk ID wrapper for mixed modality operations."""
 
     id: int | str
+    score: int | None = None  # Graded relevance: 0=not relevant, 1=somewhat, 2=highly
 
     def __or__(self, other: TextId | ImageId | OrGroup) -> OrGroup:
         """Create OR group: ImageId(1) | ImageId(2)."""
@@ -154,15 +156,16 @@ class _IntWrapper:
     system and do not affect any other code.
     """
 
-    def __init__(self, value: int | str, chunk_type: str):
+    def __init__(self, value: int | str, chunk_type: str, score: int | None = None):
         self.value = value
         self.chunk_type = chunk_type
+        self.score = score
 
     def _to_chunk_id(self) -> ChunkId:
         """Convert to appropriate ChunkId type."""
         if self.chunk_type == "text":
-            return TextId(self.value)
-        return ImageId(self.value)
+            return TextId(self.value, score=self.score)
+        return ImageId(self.value, score=self.score)
 
     def __or__(self, other: _IntWrapper | OrGroup) -> OrGroup:
         """Create OR group: text(1) | text(2)."""
@@ -194,11 +197,12 @@ RetrievalGT = int | ChunkId | OrGroup | AndChain | _IntWrapper
 # =============================================================================
 
 
-def text(_id: int | str) -> _IntWrapper:
+def text(_id: int | str, score: int | None = None) -> _IntWrapper:
     """Wrap int for text-only mode with | and & support.
 
     Args:
         _id: Text chunk ID
+        score: Optional graded relevance score (0=not relevant, 1=somewhat, 2=highly)
 
     Returns:
         Wrapper that supports | (OR) and & (AND) operators
@@ -207,15 +211,17 @@ def text(_id: int | str) -> _IntWrapper:
         text(1) | text(2) | text(3)  # OR: any of 1, 2, 3
         text(1) & text(2) & text(3)  # AND: multi-hop chain
         (text(1) | text(2)) & text(3)  # (1 OR 2) AND 3
+        text(1, score=2) | text(2, score=1)  # with graded relevance
     """
-    return _IntWrapper(_id, "text")
+    return _IntWrapper(_id, "text", score=score)
 
 
-def image(_id: int | str) -> _IntWrapper:
+def image(_id: int | str, score: int | None = None) -> _IntWrapper:
     """Wrap int for image-only mode with | and & support.
 
     Args:
         _id: Image chunk ID
+        score: Optional graded relevance score (0=not relevant, 1=somewhat, 2=highly)
 
     Returns:
         Wrapper that supports | (OR) and & (AND) operators
@@ -223,8 +229,9 @@ def image(_id: int | str) -> _IntWrapper:
     Examples:
         image(1) | image(2)  # OR: either image 1 or 2
         image(1) & image(2)  # AND: multi-hop with images
+        image(1, score=2) | image(2, score=1)  # with graded relevance
     """
-    return _IntWrapper(_id, "image")
+    return _IntWrapper(_id, "image", score=score)
 
 
 # =============================================================================
@@ -389,7 +396,7 @@ def gt_to_relations(query_id: int | str, gt: AndChain) -> list[dict]:
 
     Returns:
         List of dicts with keys: query_id, chunk_id, image_chunk_id,
-        group_index, group_order
+        group_index, group_order, score
     """
     relations = []
     for group_index, or_group in enumerate(gt.groups):
@@ -400,5 +407,6 @@ def gt_to_relations(query_id: int | str, gt: AndChain) -> list[dict]:
                 "image_chunk_id": chunk_id.id if isinstance(chunk_id, ImageId) else None,
                 "group_index": group_index,
                 "group_order": group_order,
+                "score": chunk_id.score,
             })
     return relations
