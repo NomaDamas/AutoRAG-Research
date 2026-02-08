@@ -327,3 +327,21 @@ class GenerationPipelineService(BaseService):
             # Create a map for preserving order
             chunk_map = {chunk.id: chunk.contents for chunk in chunks}
             return [chunk_map.get(cid, "") for cid in chunk_ids]
+
+    def get_query_text(self, query_id: int) -> str:
+        """Get the text of a query by its ID.
+
+        Args:
+            query_id: The ID of the query.
+
+        Returns:
+            The text of the query.
+
+        Raises:
+            ValueError: If the query with the given ID is not found.
+        """
+        with self._create_uow() as uow:
+            query = uow.queries.get_by_id(query_id)
+            if query is None:
+                raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
+            return query.query_to_llm or query.contents
