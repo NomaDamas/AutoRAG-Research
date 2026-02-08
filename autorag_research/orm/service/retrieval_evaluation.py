@@ -20,8 +20,8 @@ __all__ = ["RetrievalEvaluationService", "build_retrieval_gt_from_relations"]
 logger = logging.getLogger("AutoRAG-Research")
 
 
-def build_retrieval_gt_from_relations(relations: list[Any]) -> list[list[str]]:
-    """Build 2D retrieval ground truth list from RetrievalRelation entities.
+def build_retrieval_gt_from_relations(relations: list[Any]) -> tuple[list[list[str]], dict[str, int]]:
+    """Build 2D retrieval ground truth list and relevance scores from RetrievalRelation entities.
 
     Converts RetrievalRelation entities into a 2D list structure for metric computation.
     - Same group_index = OR condition (items in same inner list)
@@ -31,42 +31,51 @@ def build_retrieval_gt_from_relations(relations: list[Any]) -> list[list[str]]:
 
     Args:
         relations: List of RetrievalRelation entities with group_index, group_order,
-                   chunk_id (optional), and image_chunk_id (optional).
+                   chunk_id (optional), image_chunk_id (optional), and score (optional).
 
     Returns:
-        2D list of prefixed IDs: list[list[str]]
-        - Outer list: AND conditions (all groups must be satisfied)
-        - Inner list: OR conditions (any item in group satisfies)
-        - IDs are prefixed: 'chunk_{id}' or 'image_chunk_{id}'
+        Tuple of (retrieval_gt, relevance_scores):
+        - retrieval_gt: 2D list of prefixed IDs
+          - Outer list: AND conditions (all groups must be satisfied)
+          - Inner list: OR conditions (any item in group satisfies)
+          - IDs are prefixed: 'chunk_{id}' or 'image_chunk_{id}'
+        - relevance_scores: dict mapping prefixed_id -> score (default 1 if None)
 
     Example:
         Relations with:
-            (group_index=0, group_order=0, chunk_id=1)
-            (group_index=0, group_order=1, image_chunk_id=2)
-            (group_index=1, group_order=0, chunk_id=3)
-        Returns: [["chunk_1", "image_chunk_2"], ["chunk_3"]]
+            (group_index=0, group_order=0, chunk_id=1, score=2)
+            (group_index=0, group_order=1, image_chunk_id=2, score=1)
+            (group_index=1, group_order=0, chunk_id=3, score=None)
+        Returns:
+            ([["chunk_1", "image_chunk_2"], ["chunk_3"]], {"chunk_1": 2, "image_chunk_2": 1, "chunk_3": 1})
         Meaning: (chunk_1 OR image_chunk_2) AND chunk_3
     """
-    # Group by group_index, storing (group_order, prefixed_id) tuples
-    grouped: dict[int, list[tuple[int, str]]] = defaultdict(list)
+    # Group by group_index, storing (group_order, prefixed_id, score) tuples
+    grouped: dict[int, list[tuple[int, str, int]]] = defaultdict(list)
+    relevance_scores: dict[str, int] = {}
 
     for rel in relations:
+        prefixed_id: str | None = None
         if rel.chunk_id is not None:
             prefixed_id = f"chunk_{rel.chunk_id}"
-            grouped[rel.group_index].append((rel.group_order, prefixed_id))
         elif rel.image_chunk_id is not None:
             prefixed_id = f"image_chunk_{rel.image_chunk_id}"
-            grouped[rel.group_index].append((rel.group_order, prefixed_id))
+
+        if prefixed_id is not None:
+            # Default score to 1 if None (backward compatibility)
+            score = rel.score if rel.score is not None else 1
+            grouped[rel.group_index].append((rel.group_order, prefixed_id, score))
+            relevance_scores[prefixed_id] = score
 
     # Sort each group by group_order, then extract prefixed_ids
     result: list[list[str]] = []
     for group_index in sorted(grouped.keys()):
         items = grouped[group_index]
         # Sort by group_order and extract prefixed_ids
-        sorted_ids = [prefixed_id for _, prefixed_id in sorted(items, key=lambda x: x[0])]
+        sorted_ids = [prefixed_id for _, prefixed_id, _ in sorted(items, key=lambda x: x[0])]
         result.append(sorted_ids)
 
-    return result
+    return result, relevance_scores
 
 
 class RetrievalEvaluationService(BaseEvaluationService):
@@ -164,6 +173,7 @@ class RetrievalEvaluationService(BaseEvaluationService):
                 - 'retrieved_ids': list of prefixed retrieved IDs (ordered by rel_score desc)
                   Format: 'chunk_{id}' or 'image_chunk_{id}'
                 - 'retrieval_gt': 2D list of prefixed ground truth IDs (grouped by AND/OR conditions)
+                - 'relevance_scores': dict mapping prefixed_id -> graded relevance score
         """
         with self._create_uow() as uow:
             result: dict[int, dict[str, Any]] = {}
@@ -192,13 +202,14 @@ class RetrievalEvaluationService(BaseEvaluationService):
                 all_results.sort(key=lambda x: x[0], reverse=True)
                 retrieved_ids = [prefixed_id for _, prefixed_id in all_results]
 
-                # Get ground truth as 2D list (AND/OR structure) with prefixes
+                # Get ground truth as 2D list (AND/OR structure) with prefixes and relevance scores
                 gt_relations = uow.retrieval_relations.get_by_query_id(query_id)
-                retrieval_gt = build_retrieval_gt_from_relations(gt_relations)
+                retrieval_gt, relevance_scores = build_retrieval_gt_from_relations(gt_relations)
 
                 result[query_id] = {
                     "retrieved_ids": retrieved_ids,
                     "retrieval_gt": retrieval_gt,
+                    "relevance_scores": relevance_scores,
                 }
 
             return result
@@ -230,7 +241,7 @@ class RetrievalEvaluationService(BaseEvaluationService):
         Args:
             pipeline_id: The pipeline ID.
             query_id: The query ID.
-            execution_result: Dict with 'retrieved_ids' and 'retrieval_gt'.
+            execution_result: Dict with 'retrieved_ids', 'retrieval_gt', and 'relevance_scores'.
 
         Returns:
             MetricInput instance ready for metric function.
@@ -238,6 +249,7 @@ class RetrievalEvaluationService(BaseEvaluationService):
         return MetricInput(
             retrieved_ids=execution_result.get("retrieved_ids"),
             retrieval_gt=execution_result.get("retrieval_gt"),
+            relevance_scores=execution_result.get("relevance_scores"),
         )
 
     def _has_results_for_queries(self, pipeline_id: int, query_ids: list[int]) -> bool:

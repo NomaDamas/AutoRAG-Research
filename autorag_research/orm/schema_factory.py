@@ -241,6 +241,7 @@ def create_schema(embedding_dim: int = 768, primary_key_type: Literal["bigint", 
         group_order: Mapped[int] = mapped_column(Integer, nullable=False, primary_key=True)
         chunk_id: Mapped[int | str | None] = make_fk_column("chunk", nullable=True)
         image_chunk_id: Mapped[int | str | None] = make_fk_column("image_chunk", nullable=True)
+        score: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
 
         __table_args__ = (
             CheckConstraint(

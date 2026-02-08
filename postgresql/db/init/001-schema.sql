@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS retrieval_relation (
 	group_order INT NOT NULL,
 	chunk_id BIGINT REFERENCES chunk(id),
 	image_chunk_id BIGINT REFERENCES image_chunk(id),
+	score INT DEFAULT 1,  -- graded relevance (0=not relevant, 1=somewhat relevant, 2=highly relevant)
 	PRIMARY KEY (query_id, group_index, group_order),
 	CONSTRAINT ck_rr_one_only CHECK ((chunk_id IS NULL) <> (image_chunk_id IS NULL))
 );
