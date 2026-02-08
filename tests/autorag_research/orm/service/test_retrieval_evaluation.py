@@ -17,25 +17,29 @@ class MockRetrievalRelation:
     group_order: int
     chunk_id: int | None = None
     image_chunk_id: int | None = None
+    score: int | None = None
 
 
 class TestBuildRetrievalGtFromRelations:
     def test_empty_relations(self):
-        """Empty input returns empty list."""
-        result = build_retrieval_gt_from_relations([])
+        """Empty input returns empty list and empty scores."""
+        result, scores = build_retrieval_gt_from_relations([])
         assert result == []
+        assert scores == {}
 
     def test_single_group_single_chunk(self):
         """Single group with single chunk item."""
         relations = [MockRetrievalRelation(group_index=0, group_order=0, chunk_id=1)]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         assert result == [["chunk_1"]]
+        assert scores == {"chunk_1": 1}
 
     def test_single_group_single_image_chunk(self):
         """Single group with single image chunk item."""
         relations = [MockRetrievalRelation(group_index=0, group_order=0, image_chunk_id=1)]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         assert result == [["image_chunk_1"]]
+        assert scores == {"image_chunk_1": 1}
 
     def test_single_group_multiple_items_or_condition(self):
         """Multiple items in same group = OR condition."""
@@ -44,9 +48,10 @@ class TestBuildRetrievalGtFromRelations:
             MockRetrievalRelation(group_index=0, group_order=1, chunk_id=2),
             MockRetrievalRelation(group_index=0, group_order=2, chunk_id=3),
         ]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         # All in same inner list = OR condition
         assert result == [["chunk_1", "chunk_2", "chunk_3"]]
+        assert scores == {"chunk_1": 1, "chunk_2": 1, "chunk_3": 1}
 
     def test_multiple_groups_single_items_and_condition(self):
         """Multiple groups with single items = AND condition."""
@@ -55,9 +60,10 @@ class TestBuildRetrievalGtFromRelations:
             MockRetrievalRelation(group_index=1, group_order=0, chunk_id=2),
             MockRetrievalRelation(group_index=2, group_order=0, chunk_id=3),
         ]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         # Each in different inner list = AND condition
         assert result == [["chunk_1"], ["chunk_2"], ["chunk_3"]]
+        assert scores == {"chunk_1": 1, "chunk_2": 1, "chunk_3": 1}
 
     def test_mixed_and_or_conditions(self):
         """Mixed AND/OR: (chunk_1 OR chunk_2) AND chunk_3."""
@@ -66,8 +72,9 @@ class TestBuildRetrievalGtFromRelations:
             MockRetrievalRelation(group_index=0, group_order=1, chunk_id=2),
             MockRetrievalRelation(group_index=1, group_order=0, chunk_id=3),
         ]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         assert result == [["chunk_1", "chunk_2"], ["chunk_3"]]
+        assert scores == {"chunk_1": 1, "chunk_2": 1, "chunk_3": 1}
 
     def test_mixed_chunk_and_image_chunk(self):
         """Mixed chunk and image_chunk in same group = OR condition."""
@@ -76,8 +83,9 @@ class TestBuildRetrievalGtFromRelations:
             MockRetrievalRelation(group_index=0, group_order=1, image_chunk_id=2),
             MockRetrievalRelation(group_index=1, group_order=0, chunk_id=3),
         ]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         assert result == [["chunk_1", "image_chunk_2"], ["chunk_3"]]
+        assert scores == {"chunk_1": 1, "image_chunk_2": 1, "chunk_3": 1}
 
     def test_group_order_sorting(self):
         """Items within group are sorted by group_order."""
@@ -86,9 +94,10 @@ class TestBuildRetrievalGtFromRelations:
             MockRetrievalRelation(group_index=0, group_order=0, chunk_id=1),
             MockRetrievalRelation(group_index=0, group_order=1, chunk_id=2),
         ]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         # Should be sorted by group_order: 0, 1, 2 -> chunk_ids: 1, 2, 3
         assert result == [["chunk_1", "chunk_2", "chunk_3"]]
+        assert scores == {"chunk_1": 1, "chunk_2": 1, "chunk_3": 1}
 
     def test_group_index_sorting(self):
         """Groups are sorted by group_index."""
@@ -97,8 +106,9 @@ class TestBuildRetrievalGtFromRelations:
             MockRetrievalRelation(group_index=0, group_order=0, chunk_id=10),
             MockRetrievalRelation(group_index=1, group_order=0, chunk_id=20),
         ]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         assert result == [["chunk_10"], ["chunk_20"], ["chunk_30"]]
+        assert scores == {"chunk_10": 1, "chunk_20": 1, "chunk_30": 1}
 
     def test_none_chunk_ids_ignored(self):
         """Relations with both None chunk_id and image_chunk_id are ignored."""
@@ -107,17 +117,19 @@ class TestBuildRetrievalGtFromRelations:
             MockRetrievalRelation(group_index=0, group_order=1, chunk_id=None, image_chunk_id=None),
             MockRetrievalRelation(group_index=0, group_order=2, chunk_id=2),
         ]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         assert result == [["chunk_1", "chunk_2"]]
+        assert scores == {"chunk_1": 1, "chunk_2": 1}
 
     def test_all_none_ids(self):
-        """All None IDs returns empty list."""
+        """All None IDs returns empty list and empty scores."""
         relations = [
             MockRetrievalRelation(group_index=0, group_order=0, chunk_id=None, image_chunk_id=None),
             MockRetrievalRelation(group_index=1, group_order=0, chunk_id=None, image_chunk_id=None),
         ]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         assert result == []
+        assert scores == {}
 
     def test_complex_scenario_with_mixed_types(self):
         """Complex: (chunk_1 OR image_chunk_2 OR chunk_3) AND (image_chunk_4 OR chunk_5) AND chunk_6."""
@@ -132,8 +144,16 @@ class TestBuildRetrievalGtFromRelations:
             # Group 2: single item
             MockRetrievalRelation(group_index=2, group_order=0, chunk_id=6),
         ]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         assert result == [["chunk_1", "image_chunk_2", "chunk_3"], ["image_chunk_4", "chunk_5"], ["chunk_6"]]
+        assert scores == {
+            "chunk_1": 1,
+            "image_chunk_2": 1,
+            "chunk_3": 1,
+            "image_chunk_4": 1,
+            "chunk_5": 1,
+            "chunk_6": 1,
+        }
 
     def test_only_image_chunks(self):
         """All image chunks."""
@@ -142,8 +162,41 @@ class TestBuildRetrievalGtFromRelations:
             MockRetrievalRelation(group_index=0, group_order=1, image_chunk_id=2),
             MockRetrievalRelation(group_index=1, group_order=0, image_chunk_id=3),
         ]
-        result = build_retrieval_gt_from_relations(relations)
+        result, scores = build_retrieval_gt_from_relations(relations)
         assert result == [["image_chunk_1", "image_chunk_2"], ["image_chunk_3"]]
+        assert scores == {"image_chunk_1": 1, "image_chunk_2": 1, "image_chunk_3": 1}
+
+    def test_with_graded_relevance_scores(self):
+        """Test that graded relevance scores are correctly extracted."""
+        relations = [
+            MockRetrievalRelation(group_index=0, group_order=0, chunk_id=1, score=2),
+            MockRetrievalRelation(group_index=0, group_order=1, chunk_id=2, score=1),
+            MockRetrievalRelation(group_index=1, group_order=0, chunk_id=3, score=0),
+        ]
+        result, scores = build_retrieval_gt_from_relations(relations)
+        assert result == [["chunk_1", "chunk_2"], ["chunk_3"]]
+        assert scores == {"chunk_1": 2, "chunk_2": 1, "chunk_3": 0}
+
+    def test_with_none_score_defaults_to_one(self):
+        """Test that None score defaults to 1."""
+        relations = [
+            MockRetrievalRelation(group_index=0, group_order=0, chunk_id=1, score=None),
+            MockRetrievalRelation(group_index=0, group_order=1, chunk_id=2, score=2),
+        ]
+        result, scores = build_retrieval_gt_from_relations(relations)
+        assert result == [["chunk_1", "chunk_2"]]
+        assert scores == {"chunk_1": 1, "chunk_2": 2}
+
+    def test_mixed_scores_with_image_chunks(self):
+        """Test graded scores with mixed chunk types."""
+        relations = [
+            MockRetrievalRelation(group_index=0, group_order=0, chunk_id=1, score=2),
+            MockRetrievalRelation(group_index=0, group_order=1, image_chunk_id=2, score=1),
+            MockRetrievalRelation(group_index=1, group_order=0, image_chunk_id=3, score=2),
+        ]
+        result, scores = build_retrieval_gt_from_relations(relations)
+        assert result == [["chunk_1", "image_chunk_2"], ["image_chunk_3"]]
+        assert scores == {"chunk_1": 2, "image_chunk_2": 1, "image_chunk_3": 2}
 
 
 class TestRetrievalEvaluationService:
@@ -215,15 +268,18 @@ class TestRetrievalEvaluationService:
 
     def test_get_execution_results(self, service):
         # Seed: query 1, pipeline 1 has ChunkRetrievedResult with chunk_id=1
-        # Seed: query 1 has RetrievalRelation with chunk_id=1
+        # Seed: query 1 has RetrievalRelation with chunk_id=1, score=2
         results = service._get_execution_results(pipeline_id=1, query_ids=[1])
 
+        assert isinstance(results, dict)
         assert 1 in results
         assert "retrieved_ids" in results[1]
         assert "retrieval_gt" in results[1]
+        assert "relevance_scores" in results[1]
         # IDs are now prefixed with 'chunk_' or 'image_chunk_'
         assert results[1]["retrieved_ids"] == ["chunk_1"]
         assert results[1]["retrieval_gt"] == [["chunk_1"]]
+        assert results[1]["relevance_scores"] == {"chunk_1": 2}
 
     def test_get_execution_results_no_chunk_results(self, service):
         # Query 3 has no ChunkRetrievedResult for pipeline 1
@@ -245,6 +301,7 @@ class TestRetrievalEvaluationService:
         execution_result = {
             "retrieved_ids": ["chunk_1", "image_chunk_2"],
             "retrieval_gt": [["chunk_1"], ["image_chunk_3"]],
+            "relevance_scores": {"chunk_1": 2, "image_chunk_3": 1},
         }
 
         metric_input = service._prepare_metric_input(pipeline_id=1, query_id=1, execution_result=execution_result)
@@ -252,6 +309,7 @@ class TestRetrievalEvaluationService:
         assert isinstance(metric_input, MetricInput)
         assert metric_input.retrieved_ids == ["chunk_1", "image_chunk_2"]
         assert metric_input.retrieval_gt == [["chunk_1"], ["image_chunk_3"]]
+        assert metric_input.relevance_scores == {"chunk_1": 2, "image_chunk_3": 1}
 
     def test_save_evaluation_results(self, service):
         results = [(3, 0.75), (4, 0.80)]

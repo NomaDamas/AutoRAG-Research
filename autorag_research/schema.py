@@ -14,6 +14,7 @@ class MetricInput:
     retrieved_contents: list[str] | None = None
     retrieval_gt: list[list[str]] | None = None
     retrieved_ids: list[str] | None = None
+    relevance_scores: dict[str, int] | None = None  # Maps prefixed_id -> graded relevance score
     prompt: str | None = None
     generated_texts: str | None = None
     generation_gt: list[str] | None = None

@@ -1,5 +1,7 @@
 import logging
+import operator
 import random
+from functools import reduce
 from typing import Any, Literal
 
 import pandas as pd
@@ -15,10 +17,8 @@ from autorag_research.orm.models import (
     OrGroup,
     RetrievalGT,
     TextId,
-    and_all,
     and_all_mixed,
     image,
-    or_all,
     or_all_mixed,
     text,
 )
@@ -352,9 +352,10 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         """Ingest query relevance relations based on qrels_mode.
 
         Note: corpus_id is used as both ImageChunk ID and text Chunk ID.
+        Relations with score=0 are skipped (not relevant).
 
         Args:
-            qrels_df: DataFrame with query_id and corpus_id columns
+            qrels_df: DataFrame with query_id, corpus_id, and score columns
             selected_query_ids: List of query IDs to process
             query_types_map: Mapping from query_id to list of query types
             ingested_corpus_ids: Set of successfully ingested corpus IDs
@@ -366,19 +367,25 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         if self.service is None:
             raise ServiceNotSetError
 
-        filtered_qrels = qrels_df[qrels_df["query_id"].isin(selected_query_ids)]
-        grouped = filtered_qrels.groupby("query_id")["corpus_id"].apply(list)
+        # Filter to selected queries and exclude score=0 (not relevant)
+        filtered_qrels = qrels_df[(qrels_df["query_id"].isin(selected_query_ids)) & (qrels_df["score"] > 0)]
 
-        for query_id, corpus_ids in grouped.items():
-            valid_corpus_ids = [cid for cid in corpus_ids if cid in ingested_corpus_ids]
+        # Group by query_id and collect (corpus_id, score) pairs
+        grouped = filtered_qrels.groupby("query_id").apply(
+            lambda x: list(zip(x["corpus_id"], x["score"], strict=True)), include_groups=False
+        )
 
-            if not valid_corpus_ids:
+        for query_id, corpus_score_pairs in grouped.items():
+            # Filter to only ingested corpus IDs, keeping scores
+            valid_pairs = [(cid, score) for cid, score in corpus_score_pairs if cid in ingested_corpus_ids]
+
+            if not valid_pairs:
                 continue
 
             query_types = query_types_map.get(query_id, [])
             is_multi_hop = "multi-hop" in query_types
 
-            gt_expr = self._build_gt_expression(valid_corpus_ids, qrels_mode, is_multi_hop)
+            gt_expr = self._build_gt_expression_with_scores(valid_pairs, qrels_mode, is_multi_hop)
 
             if gt_expr is None:
                 continue
@@ -389,18 +396,18 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
                 chunk_type=qrels_mode,
             )
 
-    def _build_gt_expression(
+    def _build_gt_expression_with_scores(
         self,
-        corpus_ids: list[int],
+        corpus_score_pairs: list[tuple[int, int]],
         qrels_mode: QrelsMode,
         is_multi_hop: bool,
     ) -> RetrievalGT | None:
-        """Build ground truth expression based on qrels_mode and multi-hop status.
+        """Build ground truth expression with graded relevance scores.
 
         Note: corpus_id is used as both ImageChunk ID and text Chunk ID.
 
         Args:
-            corpus_ids: List of valid corpus IDs for the query
+            corpus_score_pairs: List of (corpus_id, score) tuples
             qrels_mode: How to map qrels to chunks
             is_multi_hop: Whether this is a multi-hop query (AND semantics)
 
@@ -408,52 +415,57 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
             Ground truth expression, or None if no valid chunks found
         """
         if qrels_mode == "image":
-            return self._build_image_only_gt(corpus_ids, is_multi_hop)
+            return self._build_image_only_gt_with_scores(corpus_score_pairs, is_multi_hop)
         elif qrels_mode == "text":
-            return self._build_text_only_gt(corpus_ids, is_multi_hop)
+            return self._build_text_only_gt_with_scores(corpus_score_pairs, is_multi_hop)
         else:  # mixed
-            return self._build_both_gt(corpus_ids, is_multi_hop)
+            return self._build_both_gt_with_scores(corpus_score_pairs, is_multi_hop)
 
-    def _build_image_only_gt(
+    def _build_image_only_gt_with_scores(
         self,
-        corpus_ids: list[int],
+        corpus_score_pairs: list[tuple[int, int]],
         is_multi_hop: bool,
     ) -> RetrievalGT:
-        """Build GT expression for image-only mode."""
-        ids: list[int | str] = list(corpus_ids)
-        return and_all(ids, image) if is_multi_hop else or_all(ids, image)
+        """Build GT expression for image-only mode with graded relevance scores."""
+        items = [image(corpus_id, score=score) for corpus_id, score in corpus_score_pairs]
+        if is_multi_hop:
+            return reduce(operator.and_, items)
+        return reduce(operator.or_, items)
 
-    def _build_text_only_gt(
+    def _build_text_only_gt_with_scores(
         self,
-        corpus_ids: list[int],
+        corpus_score_pairs: list[tuple[int, int]],
         is_multi_hop: bool,
     ) -> RetrievalGT:
-        """Build GT expression for text-only mode.
+        """Build GT expression for text-only mode with graded relevance scores.
 
         Note: corpus_id is used as text Chunk ID.
         """
-        ids: list[int | str] = list(corpus_ids)
-        return and_all(ids, text) if is_multi_hop else or_all(ids, text)
+        items = [text(corpus_id, score=score) for corpus_id, score in corpus_score_pairs]
+        if is_multi_hop:
+            return reduce(operator.and_, items)
+        return reduce(operator.or_, items)
 
-    def _build_both_gt(
+    def _build_both_gt_with_scores(
         self,
-        corpus_ids: list[int],
+        corpus_score_pairs: list[tuple[int, int]],
         is_multi_hop: bool,
     ) -> RetrievalGT:
-        """Build GT expression for both mode (text and image chunks).
+        """Build GT expression for both mode (text and image chunks) with graded relevance scores.
 
         Note: corpus_id is used as both ImageChunk ID and text Chunk ID.
         """
         if is_multi_hop:
             # Multi-hop: (TextChunk OR ImageChunk) AND (TextChunk OR ImageChunk) ...
             and_groups: list[OrGroup | TextId | ImageId] = [
-                or_all_mixed([ImageId(corpus_id), TextId(corpus_id)]) for corpus_id in corpus_ids
+                or_all_mixed([ImageId(corpus_id, score=score), TextId(corpus_id, score=score)])
+                for corpus_id, score in corpus_score_pairs
             ]
             return and_all_mixed(and_groups)  # type: ignore[return-value, arg-type]
         else:
             # Non-multi-hop: all text chunks and all image chunks are OR alternatives
-            items: list[TextId | ImageId] = [ImageId(c_id) for c_id in corpus_ids] + [
-                TextId(c_id) for c_id in corpus_ids
+            items: list[TextId | ImageId] = [ImageId(c_id, score=score) for c_id, score in corpus_score_pairs] + [
+                TextId(c_id, score=score) for c_id, score in corpus_score_pairs
             ]
             return or_all_mixed(items)
 
