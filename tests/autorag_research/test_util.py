@@ -656,3 +656,115 @@ class TestNormalizeDbsfWithNone:
         result = normalize_dbsf(scores)
         assert all(0.0 <= v <= 1.0 for v in result if v is not None)
         assert result[2] == 0.5
+
+
+class TestBytesToPilImage:
+    """Tests for bytes_to_pil_image utility function."""
+
+    def test_bytes_to_pil_image_png(self):
+        """Test converting PNG bytes to PIL Image."""
+        from autorag_research.util import bytes_to_pil_image
+
+        # Create a test image and convert to bytes
+        original = Image.new("RGB", (20, 30), color=(255, 0, 0))
+        buffer = io.BytesIO()
+        original.save(buffer, format="PNG")
+        img_bytes = buffer.getvalue()
+
+        # Convert back to PIL Image
+        result = bytes_to_pil_image(img_bytes)
+
+        assert isinstance(result, Image.Image)
+        assert result.size == (20, 30)
+
+    def test_bytes_to_pil_image_jpeg(self):
+        """Test converting JPEG bytes to PIL Image."""
+        from autorag_research.util import bytes_to_pil_image
+
+        # Create a test image and convert to bytes
+        original = Image.new("RGB", (15, 25), color=(0, 255, 0))
+        buffer = io.BytesIO()
+        original.save(buffer, format="JPEG")
+        img_bytes = buffer.getvalue()
+
+        # Convert back to PIL Image
+        result = bytes_to_pil_image(img_bytes)
+
+        assert isinstance(result, Image.Image)
+        assert result.size == (15, 25)
+
+    def test_bytes_to_pil_image_rgba(self):
+        """Test converting RGBA PNG bytes to PIL Image."""
+        from autorag_research.util import bytes_to_pil_image
+
+        # Create RGBA image
+        original = Image.new("RGBA", (10, 10), color=(255, 0, 0, 128))
+        buffer = io.BytesIO()
+        original.save(buffer, format="PNG")
+        img_bytes = buffer.getvalue()
+
+        # Convert back to PIL Image
+        result = bytes_to_pil_image(img_bytes)
+
+        assert isinstance(result, Image.Image)
+        assert result.mode in ["RGB", "RGBA"]
+
+
+class TestPilImageToDataUri:
+    """Tests for pil_image_to_data_uri utility function."""
+
+    def test_pil_image_to_data_uri_rgb(self):
+        """Test converting RGB PIL Image to data URI."""
+        from autorag_research.util import pil_image_to_data_uri
+
+        img = Image.new("RGB", (10, 10), color=(255, 0, 0))
+        data_uri = pil_image_to_data_uri(img)
+
+        assert data_uri.startswith("data:image/")
+        assert ";base64," in data_uri
+        # Should be JPEG for RGB images
+        assert "image/jpeg" in data_uri
+
+    def test_pil_image_to_data_uri_rgba(self):
+        """Test converting RGBA PIL Image to data URI (PNG format)."""
+        from autorag_research.util import pil_image_to_data_uri
+
+        img = Image.new("RGBA", (10, 10), color=(255, 0, 0, 128))
+        data_uri = pil_image_to_data_uri(img)
+
+        assert data_uri.startswith("data:image/png")
+        assert ";base64," in data_uri
+
+    def test_pil_image_to_data_uri_roundtrip(self):
+        """Test that data URI can be decoded back to original image."""
+        from autorag_research.util import bytes_to_pil_image, pil_image_to_data_uri
+
+        original = Image.new("RGB", (15, 20), color=(0, 128, 255))
+        data_uri = pil_image_to_data_uri(original)
+
+        # Decode the data URI
+        _, base64_part = data_uri.split(";base64,")
+        decoded_bytes = base64.b64decode(base64_part)
+        result = bytes_to_pil_image(decoded_bytes)
+
+        assert result.size == (15, 20)
+
+    def test_pil_image_to_data_uri_format(self):
+        """Test data URI format is correct."""
+        from autorag_research.util import pil_image_to_data_uri
+
+        img = Image.new("RGB", (5, 5), color=(0, 0, 255))
+        data_uri = pil_image_to_data_uri(img)
+
+        # Verify format: data:image/<format>;base64,<data>
+        assert data_uri.startswith("data:")
+        assert ";base64," in data_uri
+
+        # Extract and verify parts
+        prefix, base64_data = data_uri.split(";base64,")
+        assert prefix.startswith("data:image/")
+        assert len(base64_data) > 0
+
+        # Verify base64 is valid
+        decoded = base64.b64decode(base64_data)
+        assert len(decoded) > 0

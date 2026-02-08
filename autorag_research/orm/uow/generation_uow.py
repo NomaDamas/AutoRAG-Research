@@ -3,6 +3,7 @@
 Provides atomic transaction management for generation operations including:
 - Query fetching
 - Chunk content retrieval (for building context)
+- Image chunk content retrieval (for vision-based RAG)
 - Chunk retrieved results storage (for traceability)
 - Executor results (generation outputs)
 - Pipeline configuration
@@ -15,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.orm.repository.executor_result import ExecutorResultRepository
+from autorag_research.orm.repository.image_chunk import ImageChunkRepository
 from autorag_research.orm.repository.pipeline import PipelineRepository
 from autorag_research.orm.repository.query import QueryRepository
 from autorag_research.orm.uow.base import BaseUnitOfWork
@@ -66,6 +68,7 @@ class GenerationUnitOfWork(BaseUnitOfWork):
         # Lazy-initialized repositories
         self._query_repo: QueryRepository | None = None
         self._chunk_repo: ChunkRepository | None = None
+        self._image_chunk_repo: ImageChunkRepository | None = None
         self._chunk_result_repo: ChunkRetrievedResultRepository | None = None
         self._executor_result_repo: ExecutorResultRepository | None = None
         self._pipeline_repo: PipelineRepository | None = None
@@ -80,6 +83,7 @@ class GenerationUnitOfWork(BaseUnitOfWork):
             return {
                 "Query": self._schema.Query,
                 "Chunk": self._schema.Chunk,
+                "ImageChunk": self._schema.ImageChunk,
                 "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
                 "ExecutorResult": self._schema.ExecutorResult,
                 "Pipeline": self._schema.Pipeline,
@@ -89,6 +93,7 @@ class GenerationUnitOfWork(BaseUnitOfWork):
             Chunk,
             ChunkRetrievedResult,
             ExecutorResult,
+            ImageChunk,
             Pipeline,
             Query,
         )
@@ -96,6 +101,7 @@ class GenerationUnitOfWork(BaseUnitOfWork):
         return {
             "Query": Query,
             "Chunk": Chunk,
+            "ImageChunk": ImageChunk,
             "ChunkRetrievedResult": ChunkRetrievedResult,
             "ExecutorResult": ExecutorResult,
             "Pipeline": Pipeline,
@@ -105,6 +111,7 @@ class GenerationUnitOfWork(BaseUnitOfWork):
         """Reset all repository references to None."""
         self._query_repo = None
         self._chunk_repo = None
+        self._image_chunk_repo = None
         self._chunk_result_repo = None
         self._executor_result_repo = None
         self._pipeline_repo = None
@@ -139,6 +146,22 @@ class GenerationUnitOfWork(BaseUnitOfWork):
             "_chunk_repo",
             ChunkRepository,
             lambda: self._get_schema_classes()["Chunk"],
+        )
+
+    @property
+    def image_chunks(self) -> ImageChunkRepository:
+        """Get the ImageChunk repository.
+
+        Returns:
+            ImageChunkRepository instance.
+
+        Raises:
+            SessionNotSetError: If session is not initialized.
+        """
+        return self._get_repository(
+            "_image_chunk_repo",
+            ImageChunkRepository,
+            lambda: self._get_schema_classes()["ImageChunk"],
         )
 
     @property
