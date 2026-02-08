@@ -69,32 +69,79 @@ def retrieval_precision(metric_input: MetricInput) -> float:
 
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
-def retrieval_ndcg(metric_input: MetricInput) -> float:
-    """Compute NDCG (Normalized Discounted Cumulative Gain) score for retrieval.
+def retrieval_ndcg(metric_input: MetricInput) -> float:  # noqa: C901
+    """Compute NDCG for multi-hop retrieval with AND-OR group semantics.
+
+    Ground truth structure: [[A, B], [C]] means (A OR B) AND C
+    - Each inner list is an OR group (any item satisfies the group)
+    - Outer list is AND (all groups must be satisfied for complete retrieval)
+
+    A retrieved item contributes to DCG only when it's the FIRST to satisfy
+    a previously unsatisfied group. Subsequent items from the same group
+    don't add value (they're redundant for answering the query).
+
+    Supports graded relevance when `metric_input.relevance_scores` is provided.
+    Falls back to binary relevance (score=1) when relevance_scores is None.
 
     Args:
         metric_input: The MetricInput schema for AutoRAG metric.
+            - retrieval_gt: 2D list of ground truth IDs (AND/OR structure)
+            - retrieved_ids: list of retrieved IDs
+            - relevance_scores: optional dict mapping doc_id -> graded relevance score
+              (e.g., 0=not relevant, 1=somewhat relevant, 2=highly relevant)
 
     Returns:
         The NDCG score.
+
+    Examples:
+        GT: [[A, B], [C]] (need A-or-B AND C)
+        Retrieved: [A, C] -> Perfect (both groups satisfied at top positions)
+        Retrieved: [A, B] -> Partial (group 1 not satisfied, B is redundant)
+        Retrieved: [C, A] -> Good but suboptimal ordering
     """
     gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
     if pred is None or gt is None:
         return 0.0
 
-    gt_sets = [frozenset(g) for g in gt]
-    pred_set = set(pred)
-    relevance_scores = {pred_id: 1 if any(pred_id in gt_set for gt_set in gt_sets) else 0 for pred_id in pred_set}
+    # Filter out empty groups
+    valid_groups = [group for group in gt if group and group != [""]]
+    if not valid_groups:
+        return 0.0
 
-    dcg = sum((2 ** relevance_scores[doc_id] - 1) / math.log2(i + 2) for i, doc_id in enumerate(pred))
+    # Build item -> group indices mapping (item can belong to multiple groups)
+    item_to_groups: dict[str, list[int]] = {}
+    for group_idx, group in enumerate(valid_groups):
+        for item in group:
+            if item:  # Skip empty strings
+                if item not in item_to_groups:
+                    item_to_groups[item] = []
+                item_to_groups[item].append(group_idx)
 
-    len_flatten_gt = len(list(itertools.chain.from_iterable(gt)))
-    len_pred = len(pred)
-    ideal_pred = [1] * min(len_flatten_gt, len_pred) + [0] * max(0, len_pred - len_flatten_gt)
-    idcg = sum(relevance / math.log2(i + 2) for i, relevance in enumerate(ideal_pred))
+    # Get relevance scores (default to 1 for backward compatibility)
+    gt_flat = set(itertools.chain.from_iterable(valid_groups))
+    relevance_map = metric_input.relevance_scores or dict.fromkeys(gt_flat, 1)
 
-    ndcg = dcg / idcg if idcg > 0 else 0
-    return ndcg
+    # DCG: Track satisfied groups, item contributes only for first group satisfaction
+    satisfied_groups: set[int] = set()
+    dcg = 0.0
+    for i, doc_id in enumerate(pred):
+        if doc_id in item_to_groups:
+            new_groups = [g for g in item_to_groups[doc_id] if g not in satisfied_groups]
+            if new_groups:
+                # Item contributes for satisfying new group(s)
+                satisfied_groups.update(new_groups)
+                dcg += (2 ** relevance_map.get(doc_id, 0) - 1) / math.log2(i + 2)
+
+    # IDCG: Best item from each group, sorted by score descending
+    best_per_group = []
+    for group in valid_groups:
+        best_score = max((relevance_map.get(item, 0) for item in group if item), default=0)
+        best_per_group.append(best_score)
+
+    ideal_scores = sorted(best_per_group, reverse=True)
+    idcg = sum((2**score - 1) / math.log2(i + 2) for i, score in enumerate(ideal_scores))
+
+    return dcg / idcg if idcg > 0 else 0.0
 
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])

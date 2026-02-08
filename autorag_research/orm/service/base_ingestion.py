@@ -531,6 +531,7 @@ class BaseIngestionService(BaseService, ABC):
                       - image_chunk_id (int | None) - FK to ImageChunk (mutually exclusive with chunk_id)
                       - group_index (int) - required
                       - group_order (int) - required
+                      - score (int | None) - optional graded relevance score
 
         Returns:
             List of created RetrievalRelation PKs as (query_id, group_index, group_order) tuples.
@@ -558,6 +559,7 @@ class BaseIngestionService(BaseService, ABC):
                     image_chunk_id=rel.get("image_chunk_id"),
                     group_index=rel["group_index"],
                     group_order=rel["group_order"],
+                    score=rel.get("score"),
                 )
                 for rel in relations
             ]

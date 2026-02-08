@@ -80,12 +80,13 @@ INSERT INTO query (id, contents, query_to_llm, generation_gt, embedding, embeddi
 ON CONFLICT DO NOTHING;
 
 -- Retrieval relations (exactly one of chunk_id, image_chunk_id)
-INSERT INTO retrieval_relation (query_id, group_index, group_order, chunk_id, image_chunk_id) VALUES
-	(1, 0, 0, 1, NULL),
-	(2, 0, 0, 3, NULL),
-	(3, 0, 0, NULL, 1),
-	(4, 0, 0, NULL, 2),
-	(5, 0, 0, 6, NULL)
+-- score: 0=not relevant, 1=somewhat relevant, 2=highly relevant
+INSERT INTO retrieval_relation (query_id, group_index, group_order, chunk_id, image_chunk_id, score) VALUES
+	(1, 0, 0, 1, NULL, 2),
+	(2, 0, 0, 3, NULL, 1),
+	(3, 0, 0, NULL, 1, 2),
+	(4, 0, 0, NULL, 2, 1),
+	(5, 0, 0, 6, NULL, 2)
 ON CONFLICT DO NOTHING;
 
 -- Pipelines

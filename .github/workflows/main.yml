@@ -84,7 +84,7 @@ jobs:
           POSTGRES_PORT: 5432
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          TEST_DB_NAME: testdb
+          POSTGRES_DB: testdb
 
       - name: Check typing
         run: uv run ty check
