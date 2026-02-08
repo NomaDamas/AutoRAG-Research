@@ -7,6 +7,7 @@ Algorithms that take a query and retrieved documents to generate an answer.
 | Pipeline | Algorithm |
 |----------|-----------|
 | [BasicRAG](basic-rag.md) | Single retrieve + generate |
+| [IRCoT](ircot.md) | Iterative retrieve + chain-of-thought reasoning |
 
 ## Base Class
 

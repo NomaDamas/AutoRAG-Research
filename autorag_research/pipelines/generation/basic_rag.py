@@ -175,24 +175,9 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         response = await self._llm.ainvoke(prompt)
 
         # 5. Extract token usage from response metadata
-        token_usage = None
+        from autorag_research.util import extract_langchain_token_usage
 
-        # Try to get usage from response metadata (LangChain style)
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = response.usage_metadata
-            token_usage = {
-                "prompt_tokens": usage.get("input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0),
-            }
-        elif hasattr(response, "response_metadata"):
-            usage = response.response_metadata.get("token_usage", {})
-            if usage:
-                token_usage = {
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                }
+        token_usage = extract_langchain_token_usage(response)
 
         # Extract text content from response
         text = response.content if hasattr(response, "content") else str(response)

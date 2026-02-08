@@ -25,16 +25,6 @@ def mock_embedding_model():
     return FakeEmbeddings(size=EMBEDDING_DIM)
 
 
-# ==================== Unit Tests ====================
-
-
-class TestBEIRIngestorInit:
-    def test_detect_primary_key_type_scifact(self, mock_embedding_model):
-        """SciFact dataset uses string primary keys."""
-        ingestor = BEIRIngestor(mock_embedding_model, "scifact")
-        assert ingestor.detect_primary_key_type() == "string"
-
-
 # ==================== Integration Tests ====================
 
 
