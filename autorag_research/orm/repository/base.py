@@ -145,6 +145,35 @@ class GenericRepository(Generic[T]):
         result = self.session.execute(stmt)
         return [row[0] for row in result]
 
+    def add_bulk_skip_duplicates(self, items: list[dict]) -> list[Any]:
+        """Memory-efficient bulk insert that skips rows with duplicate primary keys.
+
+        Uses PostgreSQL's INSERT ... ON CONFLICT DO NOTHING to silently skip
+        conflicting rows in a single SQL statement. This is useful when ingesting
+        datasets that may contain duplicate primary keys (e.g., RAGBench).
+
+        Args:
+            items: List of dictionaries representing records to insert.
+
+        Returns:
+            List of inserted IDs (excludes skipped duplicates).
+
+        Note:
+            String values are automatically sanitized to remove NUL bytes for
+            PostgreSQL compatibility.
+        """
+        from sqlalchemy.dialects.postgresql import insert
+
+        if not items:
+            return []
+
+        sanitized_items = [_sanitize_dict(item) for item in items]
+        stmt = (
+            insert(self.model_cls).values(sanitized_items).on_conflict_do_nothing().returning(self.model_cls.id)  # ty: ignore[possibly-missing-attribute]
+        )
+        result = self.session.execute(stmt)
+        return [row[0] for row in result]
+
     def get_by_id(self, _id: Any) -> T | None:
         """Retrieve an entity by its primary key.
 
