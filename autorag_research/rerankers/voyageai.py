@@ -18,7 +18,9 @@ class VoyageAIReranker(BaseReranker):
     """
 
     model_name: str = Field(default="rerank-2", description="Voyage AI rerank model name.")
-    api_key: str | None = Field(default=None, description="Voyage API key. If None, uses VOYAGE_API_KEY env var.")
+    api_key: str | None = Field(
+        default=None, exclude=True, description="Voyage API key. If None, uses VOYAGE_API_KEY env var."
+    )
 
     _client: Any = None
     _async_client: Any = None

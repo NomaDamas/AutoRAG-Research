@@ -18,7 +18,9 @@ class CohereReranker(BaseReranker):
     """
 
     model_name: str = Field(default="rerank-v3.5", description="Cohere rerank model name.")
-    api_key: str | None = Field(default=None, description="Cohere API key. If None, uses COHERE_API_KEY env var.")
+    api_key: str | None = Field(
+        default=None, exclude=True, description="Cohere API key. If None, uses COHERE_API_KEY env var."
+    )
 
     _client: Any = None
     _async_client: Any = None

@@ -21,7 +21,7 @@ class MixedbreadAIReranker(BaseReranker):
 
     model_name: str = Field(default="mixedbread-ai/mxbai-rerank-large-v1", description="Mixedbread AI rerank model.")
     api_key: str | None = Field(
-        default=None, description="Mixedbread API key. If None, uses MIXEDBREAD_API_KEY env var."
+        default=None, exclude=True, description="Mixedbread API key. If None, uses MIXEDBREAD_API_KEY env var."
     )
 
     _api_key: str | None = None

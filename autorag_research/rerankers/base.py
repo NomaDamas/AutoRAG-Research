@@ -33,6 +33,7 @@ class BaseReranker(BaseModel):
 
     model_name: str = Field(default="unknown", description="The reranker model name.")
     batch_size: int = Field(default=64, description="Batch size for reranking.")
+    max_concurrency: int = Field(default=10, description="Maximum concurrent async requests.")
 
     @abstractmethod
     def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
@@ -94,10 +95,14 @@ class BaseReranker(BaseModel):
         Returns:
             List of RerankResult lists, one per query.
         """
+        semaphore = asyncio.Semaphore(self.max_concurrency)
+
+        async def _limited_arerank(q: str, docs: list[str]) -> list[RerankResult]:
+            async with semaphore:
+                return await self.arerank(q, docs, top_k)
+
         return list(
-            await asyncio.gather(*[
-                self.arerank(q, docs, top_k) for q, docs in zip(queries, documents_list, strict=True)
-            ])
+            await asyncio.gather(*[_limited_arerank(q, docs) for q, docs in zip(queries, documents_list, strict=True)])
         )
 
     def rerank_documents_batch(

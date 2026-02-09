@@ -20,7 +20,9 @@ class JinaReranker(BaseReranker):
     """
 
     model_name: str = Field(default="jina-reranker-v2-base-multilingual", description="Jina rerank model name.")
-    api_key: str | None = Field(default=None, description="Jina API key. If None, uses JINA_API_KEY env var.")
+    api_key: str | None = Field(
+        default=None, exclude=True, description="Jina API key. If None, uses JINA_API_KEY env var."
+    )
 
     _api_key: str | None = None
 
