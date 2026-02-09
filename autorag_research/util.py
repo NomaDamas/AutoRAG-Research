@@ -229,6 +229,32 @@ def extract_image_from_data_uri(data_uri: str) -> tuple[bytes, str]:
     return image_bytes, mimetype
 
 
+def bytes_to_pil_image(image_bytes: bytes) -> Image.Image:
+    """Convert image bytes to PIL Image.
+
+    Args:
+        image_bytes: Raw image bytes (PNG, JPEG, etc.)
+
+    Returns:
+        PIL Image object.
+    """
+    return Image.open(io.BytesIO(image_bytes))
+
+
+def pil_image_to_data_uri(image: Image.Image) -> str:
+    """Convert PIL Image to data URI for multi-modal LLMs.
+
+    Args:
+        image: PIL Image object.
+
+    Returns:
+        Data URI string (e.g., "data:image/png;base64,iVBORw0...").
+    """
+    img_bytes, mimetype = pil_image_to_bytes(image)
+    b64_data = base64.b64encode(img_bytes).decode("utf-8")
+    return f"data:{mimetype};base64,{b64_data}"
+
+
 def normalize_minmax(scores: list[float | None]) -> list[float | None]:
     """Min-max normalization to [0, 1] range.
 
@@ -461,14 +487,39 @@ def aggregate_token_usage(
         print(f"Total tokens across all calls: {total['total_tokens']}")
         ```
     """
-    if new is None:
-        return current
+    prompt_tokens = 0
+    completion_tokens = 0
+    embedding_tokens = 0
+    execution_time_ms = 0
 
-    if current is None:
-        return new.copy()
+    for result in results:
+        if result["token_usage"]:
+            prompt_tokens += result["token_usage"].get("prompt_tokens", 0)
+            completion_tokens += result["token_usage"].get("completion_tokens", 0)
+            embedding_tokens += result["token_usage"].get("embedding_tokens", 0)
+        execution_time_ms += result["execution_time"]
 
-    return {
-        "prompt_tokens": current.get("prompt_tokens", 0) + new.get("prompt_tokens", 0),
-        "completion_tokens": current.get("completion_tokens", 0) + new.get("completion_tokens", 0),
-        "total_tokens": current.get("total_tokens", 0) + new.get("total_tokens", 0),
-    }
+    return prompt_tokens, completion_tokens, embedding_tokens, execution_time_ms
+
+
+def image_chunk_to_pil_images(image_chunks: list[tuple[bytes, str]]) -> list[Image.Image]:
+    """Convert raw image bytes to PIL Images, skipping invalid ones.
+
+    Args:
+        image_chunks: List of (bytes, mimetype) tuples.
+            It can be a result of the GET operation from the ImageChunk repository.
+
+    Returns:
+        List of valid PIL Images.
+    """
+    images: list[Image.Image] = []
+    for img_bytes, _mimetype in image_chunks:
+        if img_bytes:
+            try:
+                img = bytes_to_pil_image(img_bytes)
+                if img.mode not in ("RGB", "RGBA"):
+                    img = img.convert("RGB")
+                images.append(img)
+            except Exception:
+                logger.debug("Skipping invalid image during VisRAG-Gen processing")
+    return images
