@@ -172,3 +172,81 @@ class TestAddBulkSanitization:
         """Test add_bulk with empty list returns empty list."""
         result = chunk_repository.add_bulk([])
         assert result == []
+
+
+class TestAddBulkSkipDuplicates:
+    """Tests for add_bulk_skip_duplicates method."""
+
+    def test_skip_duplicates_inserts_new_items(self, db_session: Session, chunk_repository: ChunkRepository):
+        """Test that new items are inserted normally."""
+        items = [
+            {"contents": "skip dup chunk A"},
+            {"contents": "skip dup chunk B"},
+        ]
+        ids = chunk_repository.add_bulk_skip_duplicates(items)
+        db_session.flush()
+
+        assert len(ids) == 2
+        for id_ in ids:
+            chunk = db_session.get(Chunk, id_)
+            assert chunk is not None
+
+        # Cleanup
+        for id_ in ids:
+            db_session.delete(db_session.get(Chunk, id_))
+        db_session.commit()
+
+    def test_skip_duplicates_skips_existing_ids(self, db_session: Session, chunk_repository: ChunkRepository):
+        """Test that duplicate primary keys are silently skipped."""
+        # First insert with explicit IDs
+        first_items = [{"contents": "original chunk A"}, {"contents": "original chunk B"}]
+        first_ids = chunk_repository.add_bulk(first_items)
+        db_session.commit()
+        assert len(first_ids) == 2
+
+        # Second insert: one duplicate id, one new id (all with explicit IDs)
+        new_explicit_id = first_ids[1] + 1000
+        overlapping_items = [
+            {"id": first_ids[0], "contents": "duplicate chunk"},
+            {"id": new_explicit_id, "contents": "new chunk"},
+        ]
+        new_ids = chunk_repository.add_bulk_skip_duplicates(overlapping_items)
+        db_session.commit()
+
+        # Only the new item should be returned
+        assert len(new_ids) == 1
+        assert new_ids[0] == new_explicit_id
+
+        # Original chunk content should be unchanged
+        original = db_session.get(Chunk, first_ids[0])
+        assert original.contents == "original chunk A"
+
+        # Cleanup
+        for id_ in [*first_ids, new_explicit_id]:
+            chunk = db_session.get(Chunk, id_)
+            if chunk:
+                db_session.delete(chunk)
+        db_session.commit()
+
+    def test_skip_duplicates_empty_list(self, db_session: Session, chunk_repository: ChunkRepository):
+        """Test that empty list returns empty list."""
+        result = chunk_repository.add_bulk_skip_duplicates([])
+        assert result == []
+
+    def test_skip_duplicates_all_duplicates(self, db_session: Session, chunk_repository: ChunkRepository):
+        """Test that all-duplicate batch returns empty list."""
+        # Insert items first
+        items = [{"contents": "chunk for all-dup test"}]
+        first_ids = chunk_repository.add_bulk(items)
+        db_session.commit()
+
+        # Try inserting same id again
+        duplicate_items = [{"id": first_ids[0], "contents": "dup content"}]
+        new_ids = chunk_repository.add_bulk_skip_duplicates(duplicate_items)
+        db_session.commit()
+
+        assert new_ids == []
+
+        # Cleanup
+        db_session.delete(db_session.get(Chunk, first_ids[0]))
+        db_session.commit()
