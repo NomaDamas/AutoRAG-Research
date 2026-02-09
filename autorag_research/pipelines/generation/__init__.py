@@ -6,12 +6,13 @@ from autorag_research.pipelines.generation.visrag_gen import (
     VisRAGGenerationPipeline,
     VisRAGGenerationPipelineConfig,
 )
+
 __all__ = [
     "DEFAULT_VISRAG_PROMPT",
     "BaseGenerationPipeline",
     "BasicRAGPipeline",
     "BasicRAGPipelineConfig",
-  "IRCoTGenerationPipeline",
+    "IRCoTGenerationPipeline",
     "IRCoTGenerationPipelineConfig",
     "VisRAGGenerationPipeline",
     "VisRAGGenerationPipelineConfig",

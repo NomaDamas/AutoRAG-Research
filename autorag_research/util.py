@@ -487,19 +487,14 @@ def aggregate_token_usage(
         print(f"Total tokens across all calls: {total['total_tokens']}")
         ```
     """
-    prompt_tokens = 0
-    completion_tokens = 0
-    embedding_tokens = 0
-    execution_time_ms = 0
+    if current is None and new is None:
+        return None
+    if current is None:
+        return new
+    if new is None:
+        return current
 
-    for result in results:
-        if result["token_usage"]:
-            prompt_tokens += result["token_usage"].get("prompt_tokens", 0)
-            completion_tokens += result["token_usage"].get("completion_tokens", 0)
-            embedding_tokens += result["token_usage"].get("embedding_tokens", 0)
-        execution_time_ms += result["execution_time"]
-
-    return prompt_tokens, completion_tokens, embedding_tokens, execution_time_ms
+    return {key: current.get(key, 0) + new.get(key, 0) for key in {*current, *new}}
 
 
 def image_chunk_to_pil_images(image_chunks: list[tuple[bytes, str]]) -> list[Image.Image]:

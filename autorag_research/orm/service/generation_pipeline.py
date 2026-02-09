@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.service.base import BaseService
 from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
-from autorag_research.util import run_with_concurrency_limit
+from autorag_research.util import aggregate_token_usage, run_with_concurrency_limit
 
 __all__ = ["GenerateFunc", "GenerationPipelineService", "GenerationResult"]
 
@@ -47,30 +47,6 @@ class GenerationResult:
 # Signature: (query_id: int, top_k: int) -> Awaitable[GenerationResult]
 # The function has internal access to retrieval pipeline via closure/method binding
 GenerateFunc = Callable[[int, int], Awaitable[GenerationResult]]
-
-
-def aggregate_batch_token_usage(results: list[dict]) -> tuple[int, int, int, int]:
-    """Aggregate token usage from generation results.
-
-    Args:
-        results: List of generation result dicts with token_usage and execution_time.
-
-    Returns:
-        Tuple of (prompt_tokens, completion_tokens, embedding_tokens, execution_time_ms).
-    """
-    prompt_tokens = 0
-    completion_tokens = 0
-    embedding_tokens = 0
-    execution_time_ms = 0
-
-    for result in results:
-        if result["token_usage"]:
-            prompt_tokens += result["token_usage"].get("prompt_tokens", 0)
-            completion_tokens += result["token_usage"].get("completion_tokens", 0)
-            embedding_tokens += result["token_usage"].get("embedding_tokens", 0)
-        execution_time_ms += result["execution_time"]
-
-    return prompt_tokens, completion_tokens, embedding_tokens, execution_time_ms
 
 
 class GenerationPipelineService(BaseService):
@@ -221,9 +197,7 @@ class GenerationPipelineService(BaseService):
         )
 
         total_queries = 0
-        total_prompt_tokens = 0
-        total_completion_tokens = 0
-        total_embedding_tokens = 0
+        total_token_usage: dict[str, int] | None = None
         total_execution_time_ms = 0
         failed_queries: list[int] = []
         offset = 0
@@ -273,11 +247,9 @@ class GenerationPipelineService(BaseService):
                 batch_results = asyncio.run(process_batch(query_ids))
                 valid_results = self._filter_valid_results(query_ids, batch_results, failed_queries)
 
-                prompt, completion, embedding, exec_time = aggregate_batch_token_usage(valid_results)
-                total_prompt_tokens += prompt
-                total_completion_tokens += completion
-                total_embedding_tokens += embedding
-                total_execution_time_ms += exec_time
+                for r in valid_results:
+                    total_token_usage = aggregate_token_usage(total_token_usage, r["token_usage"])
+                    total_execution_time_ms += r["execution_time"]
 
                 self._save_executor_results(uow, valid_results)
                 total_queries += len(valid_results)
@@ -291,21 +263,10 @@ class GenerationPipelineService(BaseService):
 
         avg_execution_time_ms = total_execution_time_ms / total_queries if total_queries > 0 else 0
 
-        # Build aggregated token usage
-        total_tokens = total_prompt_tokens + total_completion_tokens
-        token_usage = None
-        if total_tokens > 0:
-            token_usage = {
-                "prompt_tokens": total_prompt_tokens,
-                "completion_tokens": total_completion_tokens,
-                "total_tokens": total_tokens,
-                "embedding_tokens": total_embedding_tokens,
-            }
-
         return {
             "pipeline_id": pipeline_id,
             "total_queries": total_queries,
-            "token_usage": token_usage,
+            "token_usage": total_token_usage,
             "avg_execution_time_ms": avg_execution_time_ms,
             "failed_queries": failed_queries,
         }
