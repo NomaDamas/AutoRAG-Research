@@ -47,6 +47,14 @@ nav:
       - Generation:
           - pipelines/generation/index.md
           - pipelines/generation/basic-rag.md
+  - Rerankers:
+      - rerankers/index.md
+      - rerankers/cohere.md
+      - rerankers/jina.md
+      - rerankers/voyageai.md
+      - rerankers/mixedbreadai.md
+      - rerankers/rankgpt.md
+      - rerankers/upr.md
   - Metrics:
       - metrics/index.md
       - Retrieval:
