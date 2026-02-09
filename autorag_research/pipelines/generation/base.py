@@ -32,15 +32,19 @@ class BaseGenerationPipeline(BasePipeline, ABC):
         ```python
         class BasicRAGPipeline(BaseGenerationPipeline):
             async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
-                # Get query text
-                query_text = self._get_query_text(query_id)
+                # Retrieve relevant chunks by query_id (async)
+                results = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
+                chunk_ids = [r["doc_id"] for r in results]
+                chunk_contents = self._service.get_chunk_contents(chunk_ids)
 
                 # Retrieve relevant chunks (async)
                 results = await self._retrieval_pipeline.retrieve(query_text, top_k)
                 chunks = [self.get_chunk_content(r["doc_id"]) for r in results]
+                # Get query text (uses query_to_llm if available, else contents)
+                query_text = self._get_query_text(query_id)
 
                 # Build prompt and generate (async)
-                context = "\\n\\n".join(chunks)
+                context = "\\n\\n".join(chunk_contents)
                 prompt = f"Context:\\n{context}\\n\\nQuestion: {query_text}\\n\\nAnswer:"
                 response = await self._llm.ainvoke(prompt)
 
