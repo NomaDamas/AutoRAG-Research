@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(gh pr:*), Bash(git log:*), Bash(git remote:*), Bash(gh api:*), Read, Grep, Glob
-description: PR 요약 코멘트 -- 이 PR이 어떤 문제를 어떻게 해결했는지, 핵심 결정사항을 정리하여 PR에 코멘트로 게시
+description: PR summary comment -- what problem this PR solves, how it solves it, and key human-in-the-loop decisions
 ---
 
 # /wrap-up -- PR Decision Summary
@@ -62,18 +62,18 @@ Focus on decisions that shaped the outcome. Ignore trivial approvals.
 
 ## Step 4: Write the Comment
 
-Compose in Korean:
+Compose in English:
 
 ```markdown
 ## PR Wrap-up
 
-### 이 PR은 어떤 문제를 어떻게 해결하는가?
+### What problem does this PR solve and how?
 
-**문제**: {1-3 sentences describing the problem/motivation}
+**Problem**: {1-3 sentences describing the problem/motivation}
 
-**해결 방법**: {2-5 sentences describing the approach and key changes. Be specific about WHAT changed and WHY.}
+**Solution**: {2-5 sentences describing the approach and key changes. Be specific about WHAT changed and WHY.}
 
-### 핵심 결정사항 (Human-in-the-Loop)
+### Key Decisions (Human-in-the-Loop)
 
 {List only important decisions. Each explains WHAT was decided and WHY.}
 
@@ -85,11 +85,11 @@ Compose in Korean:
 ```
 
 Guidelines:
-- Write in Korean
+- Write in English
 - Be concise -- summary, not documentation
 - Problem/solution: focus on "why" and "how", not file lists
 - Decisions: only meaningful ones that shaped the outcome. 3-7 entries typical.
-- If no meaningful decisions found: "이 PR은 초기 계획대로 별도의 방향 변경 없이 구현되었습니다."
+- If no meaningful decisions found: "This PR was implemented as originally planned with no significant course corrections."
 
 ## Step 5: Post the Comment
 
