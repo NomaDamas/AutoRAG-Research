@@ -317,9 +317,7 @@ class TestInferSubcategory:
         """Flat-layout YAML with RetrievalPipelineConfig gets subcategory='retrieval'."""
         yaml_file = tmp_path / "es_search.yaml"
         yaml_file.write_text(
-            '_target_: my_plugin.pipeline.EsRetrievalPipelineConfig\n'
-            'description: "ES search"\n'
-            'name: es_search\n'
+            '_target_: my_plugin.pipeline.EsRetrievalPipelineConfig\ndescription: "ES search"\nname: es_search\n'
         )
 
         mock_module = types.ModuleType("fake_plugin")

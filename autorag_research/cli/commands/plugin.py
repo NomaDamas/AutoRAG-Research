@@ -56,7 +56,9 @@ def sync() -> None:
     if skipped:
         console.print(f"\n[yellow]Skipped {len(skipped)} config(s) (already exist):[/yellow]")
         for r in skipped:
-            console.print(f"  [yellow]=[/yellow] {r.destination.relative_to(config_dir)}  (from plugin: {r.plugin_name})")
+            console.print(
+                f"  [yellow]=[/yellow] {r.destination.relative_to(config_dir)}  (from plugin: {r.plugin_name})"
+            )
 
     console.print(f"\nTotal: {len(copied)} copied, {len(skipped)} skipped")
 
@@ -109,7 +111,7 @@ def create(
     console.print(f"  2. Edit src/{package_name}/pipeline.py  (implement your logic)")
     console.print("  3. pip install -e .")
     console.print(f"     (uv users: uv add --editable ./{plugin_dir_name})")
-    console.print(f"  4. Go back to root directory and run:")
+    console.print("  4. Go back to root directory and run:")
     console.print("  autorag-research plugin sync")
 
 
