@@ -15,7 +15,7 @@ logger = logging.getLogger("AutoRAG-Research")
 
 
 def _create_retry_decorator():
-    """Create a retry decorator for Cohere API calls."""
+    """Create a retry decorator for API calls with exponential backoff."""
     return retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -29,7 +29,6 @@ class CohereReranker(BaseReranker):
 
     Requires the `cohere` package: `pip install cohere`
     Requires `COHERE_API_KEY` environment variable.
-
     Includes automatic retry with exponential backoff for transient errors.
     """
 
@@ -58,7 +57,7 @@ class CohereReranker(BaseReranker):
         self._async_client = cohere.AsyncClient(api_key=api_key)
 
     def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
-        """Rerank documents using Cohere's rerank API.
+        """Rerank documents using Cohere's rerank API with automatic retry.
 
         Args:
             query: The search query.
@@ -94,7 +93,7 @@ class CohereReranker(BaseReranker):
         ]
 
     async def arerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
-        """Rerank documents asynchronously using Cohere's rerank API.
+        """Rerank documents asynchronously using Cohere's rerank API with automatic retry.
 
         Args:
             query: The search query.
