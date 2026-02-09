@@ -403,20 +403,26 @@ def create_mock_retrieval_pipeline(
 
     Returns:
         MagicMock configured as a BaseRetrievalPipeline.
-        The mock.retrieve is an AsyncMock with side_effect, so call_count is available.
+        The mock.retrieve and mock._retrieve_by_id are AsyncMocks with side_effect,
+        so call_count is available.
     """
     mock = MagicMock()
     mock.pipeline_id = pipeline_id
 
     if default_results is not None:
         mock.retrieve = AsyncMock(return_value=default_results)
+        mock._retrieve_by_id = AsyncMock(return_value=default_results)
     else:
         # Default: return chunk IDs that exist in seed data (1-6)
         # Use side_effect to preserve call_count tracking on the AsyncMock
         async def mock_retrieve(query_text: str, top_k: int):
             return [{"doc_id": i, "score": 0.9 - i * 0.1} for i in range(1, min(top_k + 1, 7))]
 
+        async def mock_retrieve_by_id(query_id: int | str, top_k: int):
+            return [{"doc_id": i, "score": 0.9 - i * 0.1} for i in range(1, min(top_k + 1, 7))]
+
         mock.retrieve = AsyncMock(side_effect=mock_retrieve)
+        mock._retrieve_by_id = AsyncMock(side_effect=mock_retrieve_by_id)
 
     return mock
 

@@ -289,6 +289,7 @@ class TestIRCoTAlgorithm:
         mock_retrieval = MagicMock()
         mock_retrieval.pipeline_id = 1
         mock_retrieval.retrieve = AsyncMock(side_effect=mock_retrieve)
+        mock_retrieval._retrieve_by_id = AsyncMock(side_effect=mock_retrieve)
 
         pipeline = IRCoTGenerationPipeline(
             session_factory=session_factory,
