@@ -25,13 +25,36 @@ class JinaReranker(BaseReranker):
     )
 
     _api_key: str | None = None
+    _client: httpx.Client | None = None
+    _async_client: httpx.AsyncClient | None = None
 
     def model_post_init(self, __context) -> None:
-        """Initialize API key after model creation."""
+        """Initialize API key and HTTP clients after model creation."""
         self._api_key = self.api_key or os.environ.get("JINA_API_KEY")
         if not self._api_key:
             msg = "JINA_API_KEY environment variable is not set"
             raise ValueError(msg)
+
+        # Initialize reusable HTTP clients
+        self._client = httpx.Client(timeout=60.0)
+        self._async_client = httpx.AsyncClient(timeout=60.0)
+
+    def __del__(self) -> None:
+        """Cleanup HTTP clients on deletion."""
+        if self._client is not None:
+            self._client.close()
+        if self._async_client is not None:
+            # AsyncClient cleanup is best-effort in __del__
+            try:
+                import asyncio
+
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self._async_client.aclose())  # noqa: RUF006
+                else:
+                    loop.run_until_complete(self._async_client.aclose())
+            except Exception:  # noqa: S110
+                pass  # Best effort cleanup
 
     def _get_headers(self) -> dict[str, str]:
         """Get headers for Jina API requests."""
@@ -75,15 +98,13 @@ class JinaReranker(BaseReranker):
             "top_n": top_k,
         }
 
-        with httpx.Client() as client:
-            response = client.post(
-                JINA_RERANK_URL,
-                headers=self._get_headers(),
-                json=payload,
-                timeout=60.0,
-            )
-            response.raise_for_status()
-            return self._parse_response(response.json(), documents)
+        response = self._client.post(
+            JINA_RERANK_URL,
+            headers=self._get_headers(),
+            json=payload,
+        )
+        response.raise_for_status()
+        return self._parse_response(response.json(), documents)
 
     async def arerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
         """Rerank documents asynchronously using Jina's rerank API.
@@ -108,12 +129,10 @@ class JinaReranker(BaseReranker):
             "top_n": top_k,
         }
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                JINA_RERANK_URL,
-                headers=self._get_headers(),
-                json=payload,
-                timeout=60.0,
-            )
-            response.raise_for_status()
-            return self._parse_response(response.json(), documents)
+        response = await self._async_client.post(
+            JINA_RERANK_URL,
+            headers=self._get_headers(),
+            json=payload,
+        )
+        response.raise_for_status()
+        return self._parse_response(response.json(), documents)
