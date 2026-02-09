@@ -225,6 +225,7 @@ Before completing:
 3. **Store params first**: Critical pattern for base class
 4. **Match existing style**: Follow reference implementations
 5. **Don't over-engineer**: Implement only what's needed
+6. **Reuse utilities**: Consult `ai_instructions/utility_reference.md` before implementing utility logic. Do NOT duplicate existing functions from `util.py` or service methods.
 
 ## What This Agent Does NOT Do
 
