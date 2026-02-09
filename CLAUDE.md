@@ -110,11 +110,8 @@ Prefer mocks over real API calls (use LangChain FakeListLLM/FakeEmbeddings from 
 
 ## Utility Functions (DRY!)
 
-Before implementing common functionality, CHECK existing utils first:
-
-- `autorag_research/util.py` - Core utilities (list conversion, async helpers, image processing)
-
-DO NOT duplicate - reuse existing helpers!
+**MANDATORY**: Before implementing any utility logic, consult `ai_instructions/utility_reference.md`.
+DO NOT duplicate — reuse existing helpers. Run `/check-duplication` to verify.
 
 ## Key Database Tables
 
@@ -132,6 +129,7 @@ Detailed patterns and examples are in `/ai_instructions/`:
 - `db_pattern.md` - Repository, UoW, Service patterns with code examples
 - `db_schema.md` - Complete DBML schema
 - `test_code_generation_instructions.md` - Testing conventions
+- `utility_reference.md` - **MANDATORY** utility & service method catalog (read before implementing)
 
 ## Strict Rules to follow
 
@@ -142,3 +140,4 @@ Detailed patterns and examples are in `/ai_instructions/`:
 - Do not add `__init__.py` in `tests/` directory.
 - DO NOT CHANGE ty, ruff, deptry configurations in the `pyproject.toml`. Use ignore annotation if necessary.
 - DO NOT USE `global` variable anywhere in the codebase.
+- When adding new utility functions to `util.py`, you MUST also update `ai_instructions/utility_reference.md`.

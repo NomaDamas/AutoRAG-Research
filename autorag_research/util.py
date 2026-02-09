@@ -229,6 +229,32 @@ def extract_image_from_data_uri(data_uri: str) -> tuple[bytes, str]:
     return image_bytes, mimetype
 
 
+def bytes_to_pil_image(image_bytes: bytes) -> Image.Image:
+    """Convert image bytes to PIL Image.
+
+    Args:
+        image_bytes: Raw image bytes (PNG, JPEG, etc.)
+
+    Returns:
+        PIL Image object.
+    """
+    return Image.open(io.BytesIO(image_bytes))
+
+
+def pil_image_to_data_uri(image: Image.Image) -> str:
+    """Convert PIL Image to data URI for multi-modal LLMs.
+
+    Args:
+        image: PIL Image object.
+
+    Returns:
+        Data URI string (e.g., "data:image/png;base64,iVBORw0...").
+    """
+    img_bytes, mimetype = pil_image_to_bytes(image)
+    b64_data = base64.b64encode(img_bytes).decode("utf-8")
+    return f"data:{mimetype};base64,{b64_data}"
+
+
 def normalize_minmax(scores: list[float | None]) -> list[float | None]:
     """Min-max normalization to [0, 1] range.
 
@@ -516,3 +542,24 @@ def _extract_target_logprobs(
         # Only add if target token, has valid logprob, and not already present
         if alt_token.lower() in target_tokens_lower and alt_logprob is not None and alt_token not in result:
             result[alt_token] = alt_logprob
+def image_chunk_to_pil_images(image_chunks: list[tuple[bytes, str]]) -> list[Image.Image]:
+    """Convert raw image bytes to PIL Images, skipping invalid ones.
+
+    Args:
+        image_chunks: List of (bytes, mimetype) tuples.
+            It can be a result of the GET operation from the ImageChunk repository.
+
+    Returns:
+        List of valid PIL Images.
+    """
+    images: list[Image.Image] = []
+    for img_bytes, _mimetype in image_chunks:
+        if img_bytes:
+            try:
+                img = bytes_to_pil_image(img_bytes)
+                if img.mode not in ("RGB", "RGBA"):
+                    img = img.convert("RGB")
+                images.append(img)
+            except Exception:
+                logger.debug("Skipping invalid image during VisRAG-Gen processing")
+    return images
