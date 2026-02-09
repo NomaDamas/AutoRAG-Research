@@ -118,6 +118,13 @@ class TestGenerationPipelineService:
             results_after = uow.executor_results.get_by_pipeline_id(pipeline_id)
             assert len(results_after) == 0
 
+    def test_get_query_text(self, service):
+        query_text = service.get_query_text(3)
+        assert query_text == "Three Three"
+
+        query_text = service.get_query_text(1)
+        assert query_text == "What is Doc One about?"
+
     def test_generation_result_without_token_usage(self, service, cleanup_pipeline_results):
         async def generate_func_no_tokens(query_id: int, top_k: int) -> GenerationResult:
             return GenerationResult(text=f"Answer for query: {query_id}", token_usage=None)

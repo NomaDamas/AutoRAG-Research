@@ -122,7 +122,9 @@ class TestBaseIngestionService:
 
         with service._create_uow() as uow:
             uow.retrieval_relations.delete_by_query_id(1)
-            original_rel = RetrievalRelation(query_id=1, group_index=0, group_order=0, chunk_id=1, image_chunk_id=None)
+            original_rel = RetrievalRelation(
+                query_id=1, group_index=0, group_order=0, chunk_id=1, image_chunk_id=None, score=2
+            )
             uow.retrieval_relations.add(original_rel)
             uow.commit()
 
@@ -138,7 +140,9 @@ class TestBaseIngestionService:
 
         with service._create_uow() as uow:
             uow.retrieval_relations.delete_by_query_id(2)
-            original_rel = RetrievalRelation(query_id=2, group_index=0, group_order=0, chunk_id=3, image_chunk_id=None)
+            original_rel = RetrievalRelation(
+                query_id=2, group_index=0, group_order=0, chunk_id=3, image_chunk_id=None, score=1
+            )
             uow.retrieval_relations.add(original_rel)
             uow.commit()
 

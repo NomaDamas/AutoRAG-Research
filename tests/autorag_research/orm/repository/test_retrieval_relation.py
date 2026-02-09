@@ -184,6 +184,55 @@ class TestCountImageChunksByQuery:
         assert result == 0
 
 
+class TestScore:
+    def test_retrieval_relation_with_score(
+        self, retrieval_relation_repo: RetrievalRelationRepository, db_session: Session
+    ):
+        """Test creating and retrieving relations with score values."""
+        query = Query(contents="Test query for score")
+        db_session.add(query)
+        db_session.flush()
+
+        relations_data = [
+            RetrievalRelation(query_id=query.id, chunk_id=1, group_index=0, group_order=0, score=2),
+            RetrievalRelation(query_id=query.id, chunk_id=2, group_index=0, group_order=1, score=1),
+            RetrievalRelation(query_id=query.id, chunk_id=3, group_index=1, group_order=0, score=0),
+        ]
+        db_session.add_all(relations_data)
+        db_session.flush()
+
+        relations = retrieval_relation_repo.get_by_query_id(query.id)
+
+        assert len(relations) == 3
+        assert relations[0].score == 2
+        assert relations[1].score == 1
+        assert relations[2].score == 0
+
+    def test_retrieval_relation_score_default(
+        self, retrieval_relation_repo: RetrievalRelationRepository, db_session: Session
+    ):
+        """Test that score defaults to 1 when not specified."""
+        query = Query(contents="Test query for default score")
+        db_session.add(query)
+        db_session.flush()
+
+        relation = RetrievalRelation(query_id=query.id, chunk_id=1, group_index=0, group_order=0)
+        db_session.add(relation)
+        db_session.flush()
+
+        relations = retrieval_relation_repo.get_by_query_id(query.id)
+
+        assert len(relations) == 1
+        assert relations[0].score == 1
+
+    def test_seed_data_has_scores(self, retrieval_relation_repo: RetrievalRelationRepository):
+        """Test that seed data has score values."""
+        relations = retrieval_relation_repo.get_by_query_id(1)
+
+        assert len(relations) >= 1
+        assert relations[0].score == 2
+
+
 class TestCustomSchema:
     def test_with_custom_schema(self, db_session: Session):
         from autorag_research.orm.schema_factory import create_schema
