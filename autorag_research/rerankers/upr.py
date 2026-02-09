@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import ConfigDict, Field
 
-from autorag_research.rerankers.base import BaseReranker, RerankResult
+from autorag_research.rerankers.api_base import APIReranker
+from autorag_research.rerankers.base import RerankResult
 
 if TYPE_CHECKING:
     pass
@@ -17,7 +18,7 @@ UPR_PROMPT_TEMPLATE = """Passage: {passage}
 Please write a question based on this passage."""
 
 
-class UPRReranker(BaseReranker):
+class UPRReranker(APIReranker):
     """Reranker using UPR (Unsupervised Passage Reranker) method.
 
     UPR generates a question from each passage using an LLM, then computes

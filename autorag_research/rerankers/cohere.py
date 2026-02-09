@@ -2,29 +2,16 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 
 from pydantic import Field
-from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
 
-from autorag_research.rerankers.base import BaseReranker, RerankResult
-
-logger = logging.getLogger("AutoRAG-Research")
+from autorag_research.rerankers.api_base import APIReranker, _create_retry_decorator
+from autorag_research.rerankers.base import RerankResult
 
 
-def _create_retry_decorator():
-    """Create a retry decorator for API calls with exponential backoff."""
-    return retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        reraise=True,
-    )
-
-
-class CohereReranker(BaseReranker):
+class CohereReranker(APIReranker):
     """Reranker using Cohere's rerank API.
 
     Requires the `cohere` package: `pip install cohere`

@@ -6,13 +6,13 @@ import os
 
 from pydantic import Field
 
-from autorag_research.rerankers.api_base import HTTPAPIReranker
+from autorag_research.rerankers.api_base import APIReranker
 from autorag_research.rerankers.base import RerankResult
 
 MIXEDBREAD_RERANK_URL = "https://api.mixedbread.ai/v1/reranking"
 
 
-class MixedbreadAIReranker(HTTPAPIReranker):
+class MixedbreadAIReranker(APIReranker):
     """Reranker using Mixedbread AI's rerank API.
 
     Requires `MIXEDBREAD_API_KEY` environment variable.

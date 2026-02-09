@@ -6,13 +6,13 @@ import os
 
 from pydantic import Field
 
-from autorag_research.rerankers.api_base import HTTPAPIReranker
+from autorag_research.rerankers.api_base import APIReranker
 from autorag_research.rerankers.base import RerankResult
 
 JINA_RERANK_URL = "https://api.jina.ai/v1/rerank"
 
 
-class JinaReranker(HTTPAPIReranker):
+class JinaReranker(APIReranker):
     """Reranker using Jina AI's rerank API.
 
     Requires `JINA_API_KEY` environment variable.
