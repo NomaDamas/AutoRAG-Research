@@ -1,12 +1,32 @@
 ---
-allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Task, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
-description: 3-agent PR code review debate -- spawns Devil's Advocate, Neutral Judge, and Approval Advocate to review current PR
+name: refactor
+description: |
+  Orchestrate a 3-agent PR code review debate using Claude Code Teams.
+  Spawns Devil's Advocate, Neutral Judge, and Approval Advocate reviewers
+  who analyze the current PR diff in parallel. Synthesizes findings,
+  auto-fixes unanimous issues, and posts inline PR comments for disagreements.
+  All output is in English.
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - Task
+  - TeamCreate
+  - TeamDelete
+  - TaskCreate
+  - TaskUpdate
+  - TaskList
+  - TaskGet
+  - SendMessage
 ---
 
 # /refactor -- 3-Agent PR Code Review Debate
 
 You orchestrate a PR code review debate with 3 reviewer agents (Red/White/Green).
-Follow these 10 steps exactly. All output is in English.
+Follow these 10 steps exactly.
 
 ## Step 1: Verify PR Exists
 
@@ -19,7 +39,11 @@ If the command fails, exit immediately:
 > No PR found on the current branch. Create a PR first.
 
 Extract and remember these values:
-- `PR_NUMBER`, `PR_URL`, `PR_TITLE`, `HEAD_REF`, `BASE_REF`
+- `PR_NUMBER` -- the PR number
+- `PR_URL` -- the PR URL
+- `PR_TITLE` -- the PR title
+- `HEAD_REF` -- head branch name
+- `BASE_REF` -- base branch name
 
 ## Step 2: Gather PR Diff and Context
 
@@ -47,7 +71,8 @@ If `FULL_DIFF` is empty, exit immediately:
 TeamCreate(team_name="pr-review-{PR_NUMBER}")
 ```
 
-### 3b. Create 3 tracking tasks via TaskCreate
+### 3b. Create 3 tracking tasks
+Create one task per reviewer:
 - "Red Reviewer: Devil's Advocate analysis"
 - "White Reviewer: Neutral Judge analysis"
 - "Green Reviewer: Approval Advocate analysis"
@@ -60,6 +85,8 @@ Use the `Task` tool three times in the same message. Each agent:
 - `mode`: `"bypassPermissions"`
 
 Build each agent's prompt by filling in the appropriate role template below with `FULL_DIFF`, `DIFF_STAT`, `PR_TITLE`, and file list from diff stat.
+
+Agent names and roles:
 
 | Name | Role |
 |------|------|
@@ -226,9 +253,9 @@ GREEN_REVIEW_COMPLETE
 
 ## Step 4: Collect Results
 
-- Messages arrive automatically from teammates
-- Each agent returns structured findings (see prompt templates above)
-- Mark each tracking task completed as agents finish
+- Messages arrive automatically from teammates as they finish
+- Each agent returns findings in the structured format from the prompt templates above
+- As each agent completes, mark their tracking task as completed
 - If an agent has not responded within 5 minutes, proceed with available results
 
 ## Step 5: Parse and Cluster Findings
@@ -308,26 +335,28 @@ These are used in the summary comment (Step 8) and are NOT clustered with findin
 
 ## Step 6: Auto-Fix Unanimous Findings
 
-For each unanimous finding:
-1. Read the target file
-2. Apply the White Reviewer's (Neutral Judge) suggested fix using `Edit`
-3. Run `make check` to validate
-4. If `make check` fails: revert with `git checkout -- {file_path}`, downgrade to PR comment
-5. If fix > 20 lines: skip auto-fix, downgrade to PR comment
+For each unanimous finding, in order:
 
-After all fixes:
+1. Read the target file
+2. Apply the Neutral Judge's (white-reviewer) suggested fix using the `Edit` tool
+3. Run `make check` to validate the fix
+4. If `make check` fails: revert the file with `git checkout -- {file_path}` and downgrade this finding to a PR comment instead
+5. If the fix spans more than 20 lines: skip auto-fix, downgrade to PR comment
+
+After all fixes are applied:
 ```bash
-git add <fixed files>
+git add <list of fixed files>
 git commit -m "fix: address unanimous review findings from /refactor"
 git push
 ```
 
-If `git push` fails, inform user to push manually.
+If `git push` fails, inform the user to push manually.
 
 ## Step 7: Post Inline PR Comments (Disagreements)
 
-For each majority/significant single finding, post an inline comment using the appropriate template below.
+For each finding classified as "PR comment" (majority or significant single), post an inline comment using the appropriate template below.
 
+Run:
 ```bash
 gh api repos/{OWNER_REPO}/pulls/{PR_NUMBER}/comments \
   -f body='{FORMATTED_COMMENT}' \
@@ -337,7 +366,7 @@ gh api repos/{OWNER_REPO}/pulls/{PR_NUMBER}/comments \
   -f side='RIGHT'
 ```
 
-If `gh api` fails for a comment, log the error and continue.
+If the `gh api` call fails for a specific comment, log the error and continue with remaining comments. Note failures in the summary.
 
 ### Inline Comment Template: Majority (2/3 reviewers)
 
@@ -379,7 +408,8 @@ Notes:
 
 ## Step 8: Post Summary Comment
 
-Post a top-level PR comment:
+Post a top-level PR comment using the template below:
+
 ```bash
 gh api repos/{OWNER_REPO}/issues/{PR_NUMBER}/comments \
   -f body='{SUMMARY_BODY}'
@@ -429,7 +459,7 @@ No inline comments were posted.
 ```
 
 Notes:
-- Verdicts are one-line summaries from each reviewer. Derive from the overall tone and key concern of each review.
+- Verdicts are one-line summaries from each reviewer. Derive these from the overall tone and key concern of each review.
 - If a reviewer's response was unparseable, note: "{Role}: Response could not be parsed (raw text included below)"
 - If `gh api` failed for any inline comment, add a section:
   ```
@@ -444,18 +474,38 @@ Notes:
 
 ## Step 9: Cleanup Team
 
+Send shutdown requests to all 3 agents:
 ```
-SendMessage(type="shutdown_request") to each agent
-TeamDelete() after all agents shut down
+SendMessage(type="shutdown_request", recipient="red-reviewer")
+SendMessage(type="shutdown_request", recipient="white-reviewer")
+SendMessage(type="shutdown_request", recipient="green-reviewer")
+```
+
+After all agents have shut down:
+```
+TeamDelete()
 ```
 
 ## Step 10: Report to User
 
-Print a final summary. No emojis. Include:
-- Number of findings auto-fixed
-- Number of inline comments posted
-- Number of findings skipped
-- PR URL
+Print a final summary to the console. No emojis. Include:
+- Number of findings auto-fixed and committed
+- Number of inline comments posted on the PR
+- Number of findings skipped (low severity single reviewer)
+- The PR URL for reference
+
+Example output:
+```
+/refactor complete.
+
+Auto-fixed: 3 findings (committed and pushed)
+PR comments: 5 inline comments posted
+Skipped: 2 low-severity findings
+
+PR: https://github.com/owner/repo/pull/123
+```
+
+---
 
 ## Error Handling
 
