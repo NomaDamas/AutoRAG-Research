@@ -110,6 +110,69 @@ class TestBaseIngestionService:
                 chunk.embeddings = None
             uow.commit()
 
+    def test_add_queries_skip_duplicates(self, service):
+        """Test add_queries with skip_duplicates=True skips existing queries."""
+        # First insert
+        queries = [
+            {"contents": "skip dup query 1"},
+            {"contents": "skip dup query 2"},
+        ]
+        first_ids = service.add_queries(queries)
+        assert len(first_ids) == 2
+
+        # Second insert: all with explicit IDs (duplicates + new)
+        new_explicit_id = first_ids[1] + 1000
+        overlapping_queries = [
+            {"id": first_ids[0], "contents": "duplicate query 1"},
+            {"id": first_ids[1], "contents": "duplicate query 2"},
+            {"id": new_explicit_id, "contents": "brand new query"},
+        ]
+        new_ids = service.add_queries(overlapping_queries, skip_duplicates=True)
+
+        # Only the new query should be returned
+        assert len(new_ids) == 1
+        assert new_ids[0] == new_explicit_id
+
+        # Verify original content is unchanged
+        with service._create_uow() as uow:
+            q1 = uow.queries.get_by_id(first_ids[0])
+            assert q1.contents == "skip dup query 1"
+
+        # Cleanup
+        with service._create_uow() as uow:
+            for id_ in [*first_ids, new_explicit_id]:
+                entity = uow.queries.get_by_id(id_)
+                if entity:
+                    uow.queries.delete(entity)
+            uow.commit()
+
+    def test_add_chunks_skip_duplicates(self, service):
+        """Test add_chunks with skip_duplicates=True skips existing chunks."""
+        # First insert
+        chunks = [{"contents": "skip dup chunk 1"}]
+        first_ids = service.add_chunks(chunks)
+        assert len(first_ids) == 1
+
+        # Second insert: all with explicit IDs (duplicate + new)
+        new_explicit_id = first_ids[0] + 1000
+        overlapping_chunks = [
+            {"id": first_ids[0], "contents": "duplicate chunk"},
+            {"id": new_explicit_id, "contents": "brand new chunk"},
+        ]
+        new_ids = service.add_chunks(overlapping_chunks, skip_duplicates=True)
+
+        # Only the new chunk should be returned
+        assert len(new_ids) == 1
+        assert new_ids[0] == new_explicit_id
+
+        # Cleanup
+        with service._create_uow() as uow:
+            for id_ in [first_ids[0], new_explicit_id]:
+                entity = uow.chunks.get_by_id(id_)
+                if entity:
+                    uow.chunks.delete(entity)
+            uow.commit()
+
     def test_add_retrieval_gt_text_mode(self, service):
         # Test upsert=True overwrites existing relations
         pks = service.add_retrieval_gt(query_id=1, gt=text(1) | text(2), chunk_type="text", upsert=True)

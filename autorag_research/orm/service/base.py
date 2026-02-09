@@ -77,7 +77,7 @@ class BaseService(ABC):
             uow.commit()
             return ids
 
-    def _add_bulk(self, items: list[dict], repository_property: str) -> list[int | str]:
+    def _add_bulk(self, items: list[dict], repository_property: str, skip_duplicates: bool = False) -> list[int | str]:
         """Memory-efficient bulk insert using repository's add_bulk method.
 
         Unlike _add(), this method does not create ORM objects in Python memory.
@@ -88,9 +88,11 @@ class BaseService(ABC):
         Args:
             items: List of dictionaries representing records to insert.
             repository_property: The repository property name in the UoW (e.g., "chunks", "queries").
+            skip_duplicates: If True, uses ON CONFLICT DO NOTHING to skip rows with
+                duplicate primary keys instead of raising an IntegrityError.
 
         Returns:
-            List of inserted IDs.
+            List of inserted IDs (excludes skipped duplicates when skip_duplicates=True).
 
         Note:
             For 1000 records, this method uses ~3-5x less memory than _add()
@@ -103,6 +105,6 @@ class BaseService(ABC):
             if uow.session is None:
                 raise SessionNotSetError
             repository = getattr(uow, repository_property)
-            ids = repository.add_bulk(items)
+            ids = repository.add_bulk_skip_duplicates(items) if skip_duplicates else repository.add_bulk(items)
             uow.commit()
             return ids
