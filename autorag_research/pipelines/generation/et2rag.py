@@ -298,7 +298,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
                 },
             )
 
-        query_text = self._get_query_text(query_id)
+        query_text = self._service.get_query_text(query_id)
 
         # Step 4: Generate partial responses for each subset
         partial_responses, partial_token_usages = await self._generate_partial_responses(query_text, subsets)
