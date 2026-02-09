@@ -1,7 +1,11 @@
 """Tests for autorag_research.cli.commands.ingest module."""
 
+from typing import Literal
+from unittest.mock import MagicMock, patch
+
 import pytest
 import typer
+from langchain_core.embeddings import Embeddings
 from typer.testing import CliRunner
 
 from autorag_research.cli.app import app
@@ -11,6 +15,7 @@ from autorag_research.cli.commands.ingest import (
     _validate_required_params,
     generate_db_name,
 )
+from autorag_research.data.base import TextEmbeddingDataIngestor
 from autorag_research.data.registry import IngestorMeta, ParamMeta, discover_ingestors
 
 
@@ -53,6 +58,13 @@ class TestIngestCommand:
 
         assert result.exit_code == 0
         assert "--name" in result.stdout or "-n" in result.stdout
+
+    def test_ingest_help_shows_overwrite_option(self, cli_runner: CliRunner) -> None:
+        """'ingest --help' shows --overwrite option."""
+        result = cli_runner.invoke(app, ["ingest", "--help"])
+
+        assert result.exit_code == 0
+        assert "--overwrite" in result.stdout
 
     def test_ingest_without_name_shows_ingestors(self, cli_runner: CliRunner) -> None:
         """'ingest' without --name shows available ingestors."""
@@ -263,3 +275,115 @@ class TestGenerateDbName:
         # Should have underscores separating parts
         parts = result.split("_")
         assert len(parts) >= 3
+
+
+class _StubTextIngestor(TextEmbeddingDataIngestor):
+    """Stub ingestor for testing CLI flow without real data."""
+
+    def ingest(
+        self,
+        subset: Literal["train", "dev", "test"] = "test",
+        query_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
+    ) -> None:
+        pass
+
+    def detect_primary_key_type(self) -> Literal["bigint", "string"]:
+        return "bigint"
+
+
+def _make_stub_meta() -> IngestorMeta:
+    """Create an IngestorMeta pointing to _StubTextIngestor with no required params."""
+    return IngestorMeta(
+        name="stub",
+        ingestor_class=_StubTextIngestor,
+        description="stub ingestor for testing",
+        params=[],
+        hf_repo=None,
+    )
+
+
+def _make_mock_db_conn(create_returns: bool | list[bool]) -> MagicMock:
+    """Create a mock DBConnection with controlled create_database behavior."""
+    mock_conn = MagicMock()
+    if isinstance(create_returns, list):
+        mock_conn.create_database.side_effect = create_returns
+    else:
+        mock_conn.create_database.return_value = create_returns
+    mock_conn.host = "localhost"
+    mock_conn.port = 5432
+    mock_conn.database = "test_db"
+    mock_conn.create_schema.return_value = MagicMock()
+    mock_conn.get_session_factory.return_value = MagicMock()
+    return mock_conn
+
+
+class TestIngestOverwriteBehavior:
+    """Tests for --overwrite flag behavior during database creation."""
+
+    @patch("autorag_research.data.registry.get_ingestor", return_value=_make_stub_meta())
+    @patch("autorag_research.cli.commands.ingest.DBConnection")
+    @patch("autorag_research.cli.commands.ingest.load_embedding_model", return_value=MagicMock(spec=Embeddings))
+    @patch("autorag_research.cli.commands.ingest.health_check_embedding", return_value=768)
+    def test_existing_db_without_overwrite_exits_with_error(
+        self,
+        _mock_health: MagicMock,
+        _mock_embed: MagicMock,
+        mock_db_cls: MagicMock,
+        _mock_get_ingestor: MagicMock,
+        cli_runner: CliRunner,
+    ) -> None:
+        """Exits with error when database already exists and --overwrite is not set."""
+        mock_conn = _make_mock_db_conn(create_returns=False)
+        mock_db_cls.from_config.return_value = mock_conn
+
+        result = cli_runner.invoke(app, ["ingest", "-n", "stub"])
+
+        assert result.exit_code == 1
+        assert "already exists" in result.output
+        assert "--overwrite" in result.output
+        mock_conn.drop_database.assert_not_called()
+
+    @patch("autorag_research.data.registry.get_ingestor", return_value=_make_stub_meta())
+    @patch("autorag_research.cli.commands.ingest.DBConnection")
+    @patch("autorag_research.cli.commands.ingest.load_embedding_model", return_value=MagicMock(spec=Embeddings))
+    @patch("autorag_research.cli.commands.ingest.health_check_embedding", return_value=768)
+    def test_existing_db_with_overwrite_drops_and_recreates(
+        self,
+        _mock_health: MagicMock,
+        _mock_embed: MagicMock,
+        mock_db_cls: MagicMock,
+        _mock_get_ingestor: MagicMock,
+        cli_runner: CliRunner,
+    ) -> None:
+        """Drops and recreates database when --overwrite is set and database exists."""
+        mock_conn = _make_mock_db_conn(create_returns=[False, True])
+        mock_db_cls.from_config.return_value = mock_conn
+
+        cli_runner.invoke(app, ["ingest", "-n", "stub", "--overwrite"])
+
+        mock_conn.terminate_connections.assert_called_once()
+        mock_conn.drop_database.assert_called_once()
+        assert mock_conn.create_database.call_count == 2
+
+    @patch("autorag_research.data.registry.get_ingestor", return_value=_make_stub_meta())
+    @patch("autorag_research.cli.commands.ingest.DBConnection")
+    @patch("autorag_research.cli.commands.ingest.load_embedding_model", return_value=MagicMock(spec=Embeddings))
+    @patch("autorag_research.cli.commands.ingest.health_check_embedding", return_value=768)
+    def test_new_db_proceeds_without_overwrite(
+        self,
+        _mock_health: MagicMock,
+        _mock_embed: MagicMock,
+        mock_db_cls: MagicMock,
+        _mock_get_ingestor: MagicMock,
+        cli_runner: CliRunner,
+    ) -> None:
+        """Proceeds normally when database is newly created."""
+        mock_conn = _make_mock_db_conn(create_returns=True)
+        mock_db_cls.from_config.return_value = mock_conn
+
+        cli_runner.invoke(app, ["ingest", "-n", "stub"])
+
+        mock_conn.drop_database.assert_not_called()
+        mock_conn.terminate_connections.assert_not_called()
+        mock_conn.create_database.assert_called_once()

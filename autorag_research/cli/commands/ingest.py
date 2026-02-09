@@ -169,6 +169,10 @@ def ingest(  # noqa: C901
     skip_embedding: Annotated[
         bool, typer.Option("--skip-embedding", help="Skip embedding step (ingest data only)")
     ] = False,
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite", help="Drop and recreate the database if it already exists"),
+    ] = False,
 ) -> None:
     """Ingest a dataset into PostgreSQL.
 
@@ -280,8 +284,23 @@ def ingest(  # noqa: C901
     console.print(f"[green]✓[/green] Detected primary key type: {detected_pkey_type}")
 
     # 9. Create database and schema
-    db_conn.create_database()
-    console.print(f"[green]✓[/green] Created database schema: {final_db_name}")
+    db_created = db_conn.create_database()
+    if not db_created:
+        # Database already exists
+        if overwrite:
+            console.print(f"[yellow]![/yellow] Database '{final_db_name}' already exists. Dropping and recreating...")
+            db_conn.terminate_connections()
+            db_conn.drop_database()
+            db_conn.create_database()
+        else:
+            typer.echo(
+                f"Error: Database '{final_db_name}' already exists.\n"
+                f"  Use --overwrite to drop and recreate it.\n"
+                f"  Use 'autorag-research show databases' to list existing databases.",
+                err=True,
+            )
+            raise typer.Exit(1)
+    console.print(f"[green]✓[/green] Created database: {final_db_name}")
 
     # 10. Create session factory and service
     session_factory = db_conn.get_session_factory()

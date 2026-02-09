@@ -385,7 +385,7 @@ class BaseIngestionService(BaseService, ABC):
         if entity_type in ("chunk", "query") and bm25_tokenizer is not None:
             self._populate_bm25_tokens(bm25_tokenizer, entity_type=entity_type, batch_size=batch_size)
 
-        logger.info(f"Total {display_name} embedded{embedding_suffix}: {total_embedded}")
+        logger.info(f"Total {display_name} embedded{embedding_suffix}: {total_embedded}/{total_to_embed}")
         return total_embedded
 
     def _populate_bm25_tokens(
