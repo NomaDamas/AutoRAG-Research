@@ -1,0 +1,2 @@
+_target_: autorag_research.rerankers.tart.TARTReranker
+model_name: facebook/tart-full-flan-t5-xl

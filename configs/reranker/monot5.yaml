@@ -1,0 +1,2 @@
+_target_: autorag_research.rerankers.monot5.MonoT5Reranker
+model_name: castorini/monot5-3b-msmarco-10k

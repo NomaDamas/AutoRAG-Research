@@ -1,0 +1,2 @@
+_target_: autorag_research.rerankers.openvino.OpenVINOReranker
+model_name: BAAI/bge-reranker-large

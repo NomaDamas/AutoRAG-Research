@@ -1,0 +1,2 @@
+_target_: autorag_research.rerankers.colbert.ColBERTReranker
+model_name: colbert-ir/colbertv2.0

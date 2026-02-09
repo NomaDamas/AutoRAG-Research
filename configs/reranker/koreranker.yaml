@@ -1,0 +1,2 @@
+_target_: autorag_research.rerankers.koreranker.KoRerankerReranker
+model_name: Dongjin-kr/ko-reranker

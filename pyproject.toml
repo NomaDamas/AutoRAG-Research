@@ -72,6 +72,12 @@ reporting = [
 reranker = [
     "cohere>=5.0.0",
     "voyageai>=0.3.0",
+    "sentence-transformers>=3.0.0",
+    "FlagEmbedding>=1.2.0",
+    "flashrank>=0.2.0",
+]
+openvino = [
+    "optimum-intel[openvino]>=1.18.0",
 ]
 all = [
     "colpali-engine>=0.3.13",
@@ -81,6 +87,9 @@ all = [
     "gradio>=6.0.0",
     "cohere>=5.0.0",
     "voyageai>=0.3.0",
+    "sentence-transformers>=3.0.0",
+    "FlagEmbedding>=1.2.0",
+    "flashrank>=0.2.0",
 ]
 
 [dependency-groups]
@@ -176,8 +185,12 @@ ignore = [
 [tool.ruff.format]
 preview = true
 
-[tool.deptry.per_rule_ignores]
-DEP002 = ["bert-score", "langchain-openai"]  # langchain-openai used via Hydra config instantiation
-
 [tool.deptry]
 exclude = ["tests/*", "scripts/*", ".venv/*", "venv/*"]
+
+[tool.deptry.package_module_name_map]
+FlagEmbedding = ["FlagEmbedding"]
+"optimum-intel" = ["optimum"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["bert-score", "langchain-openai"]  # langchain-openai used via Hydra config instantiation
