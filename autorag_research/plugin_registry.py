@@ -60,7 +60,7 @@ class SyncResult:
     reason: str
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=4)
 def discover_plugin_configs(group: str, category: str) -> list[PluginConfigInfo]:
     """Discover YAML configs from installed plugin packages.
 
