@@ -328,7 +328,7 @@ class GenerationPipelineService(BaseService):
             chunk_map = {chunk.id: chunk.contents for chunk in chunks}
             return [chunk_map.get(cid, "") for cid in chunk_ids]
 
-    def get_query_text(self, query_id: int) -> str:
+    def get_query_text(self, query_id: int | str) -> str:
         """Get the text of a query by its ID.
 
         Args:
