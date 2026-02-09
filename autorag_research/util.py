@@ -542,6 +542,8 @@ def _extract_target_logprobs(
         # Only add if target token, has valid logprob, and not already present
         if alt_token.lower() in target_tokens_lower and alt_logprob is not None and alt_token not in result:
             result[alt_token] = alt_logprob
+
+
 def image_chunk_to_pil_images(image_chunks: list[tuple[bytes, str]]) -> list[Image.Image]:
     """Convert raw image bytes to PIL Images, skipping invalid ones.
 

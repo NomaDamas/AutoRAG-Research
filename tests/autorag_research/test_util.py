@@ -819,6 +819,8 @@ class TestExtractTokenLogprobs:
         assert "The" in result
         assert " answer" in result
         assert " is" in result
+
+
 class TestBytesToPilImage:
     """Tests for bytes_to_pil_image utility function."""
 

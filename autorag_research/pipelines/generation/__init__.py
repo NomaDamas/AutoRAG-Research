@@ -12,7 +12,7 @@ __all__ = [
     "BaseGenerationPipeline",
     "BasicRAGPipeline",
     "BasicRAGPipelineConfig",
+    "MAINRAGPipeline",
     "VisRAGGenerationPipeline",
     "VisRAGGenerationPipelineConfig",
-  "MAINRAGPipeline",
 ]
