@@ -39,7 +39,7 @@ class OpenVINOReranker(BaseReranker):
     def model_post_init(self, __context) -> None:
         """Initialize OpenVINO model and tokenizer after creation."""
         try:
-            from optimum.intel.openvino import OVModelForSequenceClassification  # ty: ignore[unresolved-import]
+            from optimum.intel.openvino import OVModelForSequenceClassification
             from transformers import AutoTokenizer
         except ImportError as e:
             msg = (

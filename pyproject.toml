@@ -109,6 +109,11 @@ dev = [
     "mkdocs-typer2>=0.2.0",
 ]
 
+[tool.uv]
+constraint-dependencies = [
+    "onnxruntime<1.24; python_version < '3.11'",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
