@@ -389,7 +389,7 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
             GenerationResult containing generated text, token usage, and metadata.
         """
         # 1. Get query text from database
-        query = self._get_query_text(query_id)
+        query = self._service.get_query_text(query_id)
 
         # 2. Retrieve relevant image chunks using composed retrieval pipeline (async)
         retrieved = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
