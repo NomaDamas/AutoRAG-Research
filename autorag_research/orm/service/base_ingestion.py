@@ -55,7 +55,9 @@ class BaseIngestionService(BaseService, ABC):
     - _create_uow() to return their specific UoW type
     """
 
-    def add_chunks(self, chunks: list[dict[str, str | int | bool | None]]) -> list[int | str]:
+    def add_chunks(
+        self, chunks: list[dict[str, str | int | bool | None]], skip_duplicates: bool = True
+    ) -> list[int | str]:
         """Batch add text chunks to the database.
 
         Uses memory-efficient bulk insert (SQLAlchemy Core) instead of ORM objects.
@@ -67,11 +69,14 @@ class BaseIngestionService(BaseService, ABC):
                 - contents (required): Text content
                 - is_table (optional, default=False): Whether this chunk is a table
                 - table_type (optional): Table format type (markdown, xml, html)
+            skip_duplicates: If True, silently skip chunks with duplicate primary keys
+                instead of raising an IntegrityError.
+                Default is True.
 
         Returns:
-            List of created Chunk IDs.
+            List of created Chunk IDs (excludes skipped duplicates when skip_duplicates=True).
         """
-        return self._add_bulk(chunks, repository_property="chunks")
+        return self._add_bulk(chunks, repository_property="chunks", skip_duplicates=skip_duplicates)
 
     def link_pages_to_chunks(
         self,
@@ -135,7 +140,9 @@ class BaseIngestionService(BaseService, ABC):
         """
         return self.link_pages_to_chunks([{"page_id": page_id, "chunk_id": cid} for cid in chunk_ids])
 
-    def add_queries(self, queries: list[dict[str, str | list[str] | None]]) -> list[int | str]:
+    def add_queries(
+        self, queries: list[dict[str, str | list[str] | None]], skip_duplicates: bool = True
+    ) -> list[int | str]:
         """Batch add queries to the database.
 
         Uses memory-efficient bulk insert (SQLAlchemy Core) instead of ORM objects.
@@ -143,11 +150,14 @@ class BaseIngestionService(BaseService, ABC):
 
         Args:
             queries: List of dict with keys: id (optional), contents, generation_gt (optional).
+            skip_duplicates: If True, silently skip queries with duplicate primary keys
+                instead of raising an IntegrityError.
+                Default is True.
 
         Returns:
-            List of created Query IDs.
+            List of created Query IDs (excludes skipped duplicates when skip_duplicates=True).
         """
-        return self._add_bulk(queries, repository_property="queries")
+        return self._add_bulk(queries, repository_property="queries", skip_duplicates=skip_duplicates)
 
     # ==================== Embedding Operations ====================
 
