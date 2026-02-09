@@ -56,7 +56,7 @@ class BaseIngestionService(BaseService, ABC):
     """
 
     def add_chunks(
-        self, chunks: list[dict[str, str | int | bool | None]], skip_duplicates: bool = False
+        self, chunks: list[dict[str, str | int | bool | None]], skip_duplicates: bool = True
     ) -> list[int | str]:
         """Batch add text chunks to the database.
 
@@ -71,6 +71,7 @@ class BaseIngestionService(BaseService, ABC):
                 - table_type (optional): Table format type (markdown, xml, html)
             skip_duplicates: If True, silently skip chunks with duplicate primary keys
                 instead of raising an IntegrityError.
+                Default is True.
 
         Returns:
             List of created Chunk IDs (excludes skipped duplicates when skip_duplicates=True).
@@ -140,7 +141,7 @@ class BaseIngestionService(BaseService, ABC):
         return self.link_pages_to_chunks([{"page_id": page_id, "chunk_id": cid} for cid in chunk_ids])
 
     def add_queries(
-        self, queries: list[dict[str, str | list[str] | None]], skip_duplicates: bool = False
+        self, queries: list[dict[str, str | list[str] | None]], skip_duplicates: bool = True
     ) -> list[int | str]:
         """Batch add queries to the database.
 
@@ -151,6 +152,7 @@ class BaseIngestionService(BaseService, ABC):
             queries: List of dict with keys: id (optional), contents, generation_gt (optional).
             skip_duplicates: If True, silently skip queries with duplicate primary keys
                 instead of raising an IntegrityError.
+                Default is True.
 
         Returns:
             List of created Query IDs (excludes skipped duplicates when skip_duplicates=True).
