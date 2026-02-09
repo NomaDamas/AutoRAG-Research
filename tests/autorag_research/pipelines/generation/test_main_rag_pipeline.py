@@ -52,7 +52,7 @@ class TestMAINRAGPipelineUnit:
                 {"doc_id": 5, "score": 0.55},
             ][:top_k]
 
-        mock.retrieve = mock_retrieve
+        mock._retrieve_by_id = mock_retrieve
         return mock
 
     @pytest.fixture
@@ -294,7 +294,7 @@ class TestMAINRAGPipelineIntegration:
                 {"doc_id": 3, "score": 0.75},
             ][:top_k]
 
-        mock.retrieve = mock_retrieve
+        mock._retrieve_by_id = mock_retrieve
         return mock
 
     @pytest.fixture
@@ -491,7 +491,7 @@ class TestMAINRAGEdgeCases:
         async def mock_retrieve(query_text: str, top_k: int):
             return []
 
-        mock_retrieval.retrieve = mock_retrieve
+        mock_retrieval._retrieve_by_id = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -570,7 +570,7 @@ class TestMAINRAGEdgeCases:
                 {"doc_id": 2, "score": 0.7},
             ]
 
-        mock_retrieval.retrieve = mock_retrieve
+        mock_retrieval._retrieve_by_id = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -625,7 +625,7 @@ class TestMAINRAGEdgeCases:
         async def mock_retrieve(query, top_k):
             return [{"doc_id": 1, "score": 0.95}]
 
-        mock_retrieval.retrieve = mock_retrieve
+        mock_retrieval._retrieve_by_id = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -702,7 +702,7 @@ class TestMAINRAGEdgeCases:
                 {"doc_id": 3, "score": 0.75},
             ]
 
-        mock_retrieval.retrieve = mock_retrieve
+        mock_retrieval._retrieve_by_id = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -776,7 +776,7 @@ class TestMAINRAGEdgeCases:
                 {"doc_id": 3, "score": 0.75},
             ]
 
-        mock_retrieval.retrieve = mock_retrieve
+        mock_retrieval._retrieve_by_id = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
@@ -822,7 +822,7 @@ class TestMAINRAGParallelExecution:
                 {"doc_id": 3, "score": 0.75},
             ][:top_k]
 
-        mock.retrieve = mock_retrieve
+        mock._retrieve_by_id = mock_retrieve
         return mock
 
     @pytest.fixture
@@ -1102,7 +1102,7 @@ class TestMAINRAGParallelExecution:
         async def mock_retrieve(query, top_k):
             return [{"doc_id": 1, "score": 0.95}]
 
-        mock_retrieval.retrieve = mock_retrieve
+        mock_retrieval._retrieve_by_id = mock_retrieve
 
         pipeline = MAINRAGPipeline(
             session_factory=session_factory,
