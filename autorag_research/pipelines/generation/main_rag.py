@@ -447,11 +447,11 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             GenerationResult containing the generated text and metadata.
         """
         # Get query text from database
-        query = self._get_query_text(query_id)
+        query = self._service.get_query_text(query_id)
         all_token_usages: list[dict] = []  # Each: {"token_usage": {...}, "execution_time": 0}
 
         # ==================== Phase 1: Retrieval ====================
-        retrieved = await self._retrieval_pipeline.retrieve(query, top_k)
+        retrieved = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
 
         # Edge case: Empty retrieval results
         if not retrieved:
