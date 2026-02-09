@@ -110,11 +110,22 @@ Prefer mocks over real API calls (use LangChain FakeListLLM/FakeEmbeddings from 
 
 ## Utility Functions (DRY!)
 
-Before implementing common functionality, CHECK existing utils first:
+**MANDATORY**: Before implementing any utility logic, consult `ai_instructions/utility_reference.md` for the full catalog.
 
-- `autorag_research/util.py` - Core utilities (list conversion, async helpers, image processing)
+Reusable code lives in two places:
+- `autorag_research/util.py` - Core utilities (async helpers, score normalization, text/image processing)
+- `autorag_research/orm/service/` - Service layer methods (search, query/chunk access, embedding, evaluation)
 
-DO NOT duplicate - reuse existing helpers!
+Commonly duplicated categories (**DO NOT reimplement**):
+1. **Async concurrency** - Use `run_with_concurrency_limit()`, not manual `Semaphore` + `gather`
+2. **Score normalization** - Use `normalize_minmax/tmm/zscore/dbsf()`, not manual min/max math
+3. **Sync-to-async** - Use `to_async_func()`, not manual `asyncio.to_thread` wrappers
+4. **Token aggregation** - Use `aggregate_token_usage()`, not manual summation loops
+5. **Image conversion** - Use `pil_image_to_bytes()` / `extract_image_from_data_uri()`
+6. **DB search** - Use service search methods (`bm25_search`, `vector_search`), not direct UoW calls
+7. **Query/chunk text** - Use `get_query_text()` / `fetch_query_texts()` / `get_chunk_contents()`
+
+Run `/check-duplication` to scan for accidental duplications in your changes.
 
 ## Key Database Tables
 
@@ -132,6 +143,7 @@ Detailed patterns and examples are in `/ai_instructions/`:
 - `db_pattern.md` - Repository, UoW, Service patterns with code examples
 - `db_schema.md` - Complete DBML schema
 - `test_code_generation_instructions.md` - Testing conventions
+- `utility_reference.md` - **MANDATORY** utility & service method catalog (read before implementing)
 
 ## Strict Rules to follow
 
@@ -142,3 +154,4 @@ Detailed patterns and examples are in `/ai_instructions/`:
 - Do not add `__init__.py` in `tests/` directory.
 - DO NOT CHANGE ty, ruff, deptry configurations in the `pyproject.toml`. Use ignore annotation if necessary.
 - DO NOT USE `global` variable anywhere in the codebase.
+- When adding new utility functions to `util.py`, you MUST also update `ai_instructions/utility_reference.md`.
