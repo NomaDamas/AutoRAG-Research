@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 from pydantic import Field
+from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
 
 from autorag_research.rerankers.base import BaseReranker, RerankResult
+
+logger = logging.getLogger("AutoRAG-Research")
+
+
+def _create_retry_decorator():
+    """Create a retry decorator for Cohere API calls."""
+    return retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
 
 
 class CohereReranker(BaseReranker):
@@ -15,6 +29,8 @@ class CohereReranker(BaseReranker):
 
     Requires the `cohere` package: `pip install cohere`
     Requires `COHERE_API_KEY` environment variable.
+
+    Includes automatic retry with exponential backoff for transient errors.
     """
 
     model_name: str = Field(default="rerank-v3.5", description="Cohere rerank model name.")
@@ -57,12 +73,16 @@ class CohereReranker(BaseReranker):
 
         top_k = top_k or len(documents)
 
-        response = self._client.rerank(
-            model=self.model_name,
-            query=query,
-            documents=documents,
-            top_n=top_k,
-        )
+        @_create_retry_decorator()
+        def _call_api():
+            return self._client.rerank(
+                model=self.model_name,
+                query=query,
+                documents=documents,
+                top_n=top_k,
+            )
+
+        response = _call_api()
 
         return [
             RerankResult(
@@ -89,12 +109,16 @@ class CohereReranker(BaseReranker):
 
         top_k = top_k or len(documents)
 
-        response = await self._async_client.rerank(
-            model=self.model_name,
-            query=query,
-            documents=documents,
-            top_n=top_k,
-        )
+        @_create_retry_decorator()
+        async def _call_api():
+            return await self._async_client.rerank(
+                model=self.model_name,
+                query=query,
+                documents=documents,
+                top_n=top_k,
+            )
+
+        response = await _call_api()
 
         return [
             RerankResult(
