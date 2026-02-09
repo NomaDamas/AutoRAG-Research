@@ -738,8 +738,8 @@ class TestVisRAGGenerationPipelineIntegration:
             )
             cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-            # Mock _get_query_text to return test query text
-            with patch.object(pipeline, "_get_query_text", return_value="What is shown in the document?"):
+            # Mock service's get_query_text to return test query text
+            with patch.object(pipeline._service, "get_query_text", return_value="What is shown in the document?"):
                 result = await pipeline._generate(query_id=1, top_k=3)
 
             assert result.text == "This is the answer based on document images."
@@ -822,8 +822,8 @@ class TestVisRAGGenerationPipelineIntegration:
             )
             cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-            # Mock _get_query_text to return test query text
-            with patch.object(pipeline, "_get_query_text", return_value="Test query"):
+            # Mock service's get_query_text to return test query text
+            with patch.object(pipeline._service, "get_query_text", return_value="Test query"):
                 _ = await pipeline._generate(query_id=1, top_k=2)
 
             # Verify the VLM was called with correct message structure
