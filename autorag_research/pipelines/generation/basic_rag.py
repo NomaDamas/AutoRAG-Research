@@ -165,7 +165,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         chunk_ids = [r["doc_id"] for r in retrieved]
         chunk_contents = self._service.get_chunk_contents(chunk_ids)
 
-        query_text = self._get_query_text(query_id)
+        query_text = self._service.get_query_text(query_id)
 
         # 3. Build prompt with context
         context = "\n\n".join(chunk_contents)
