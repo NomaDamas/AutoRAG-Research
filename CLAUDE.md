@@ -110,22 +110,8 @@ Prefer mocks over real API calls (use LangChain FakeListLLM/FakeEmbeddings from 
 
 ## Utility Functions (DRY!)
 
-**MANDATORY**: Before implementing any utility logic, consult `ai_instructions/utility_reference.md` for the full catalog.
-
-Reusable code lives in two places:
-- `autorag_research/util.py` - Core utilities (async helpers, score normalization, text/image processing)
-- `autorag_research/orm/service/` - Service layer methods (search, query/chunk access, embedding, evaluation)
-
-Commonly duplicated categories (**DO NOT reimplement**):
-1. **Async concurrency** - Use `run_with_concurrency_limit()`, not manual `Semaphore` + `gather`
-2. **Score normalization** - Use `normalize_minmax/tmm/zscore/dbsf()`, not manual min/max math
-3. **Sync-to-async** - Use `to_async_func()`, not manual `asyncio.to_thread` wrappers
-4. **Token aggregation** - Use `aggregate_token_usage()`, not manual summation loops
-5. **Image conversion** - Use `pil_image_to_bytes()` / `extract_image_from_data_uri()`
-6. **DB search** - Use service search methods (`bm25_search`, `vector_search`), not direct UoW calls
-7. **Query/chunk text** - Use `get_query_text()` / `fetch_query_texts()` / `get_chunk_contents()`
-
-Run `/check-duplication` to scan for accidental duplications in your changes.
+**MANDATORY**: Before implementing any utility logic, consult `ai_instructions/utility_reference.md`.
+DO NOT duplicate — reuse existing helpers. Run `/check-duplication` to verify.
 
 ## Key Database Tables
 
