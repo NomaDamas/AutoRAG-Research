@@ -128,14 +128,8 @@ class UPRReranker(APIReranker):
         top_k = top_k or len(documents)
         top_k = min(top_k, len(documents))
 
-        # Generate questions concurrently with bounded concurrency
-        semaphore = asyncio.Semaphore(self.max_concurrency)
-
-        async def _limited_generate(doc: str) -> str:
-            async with semaphore:
-                return await self._agenerate_question(doc)
-
-        questions = await asyncio.gather(*[_limited_generate(doc) for doc in documents])
+        # Generate questions for all documents
+        questions = await asyncio.gather(*[self._agenerate_question(doc) for doc in documents])
 
         # Compute scores
         scores: list[tuple[int, float, str]] = []
