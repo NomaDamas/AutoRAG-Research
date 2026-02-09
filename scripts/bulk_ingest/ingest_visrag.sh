@@ -17,9 +17,9 @@ for ds in "${DATASETS[@]}"; do
   d=$(echo "${ds}" | tr '[:upper:]' '[:lower:]' | tr '-' '_')
   DB="visrag_${d}_train_${M}"
   pueue add -l "visrag-${ds}" \
-    "autorag-research ingest --name=visrag --extra dataset-name=${ds} --subset=train --embedding-model=${MODEL} \
+    "autorag-research ingest --name=visrag --extra dataset-name=${ds} --subset=train --embedding-model=${MODEL} --db-name=${DB} \
      && autorag-research data dump --db-name=${DB} \
-     && autorag-research data upload ${DB}.dump visrag ${d}_${MODEL}"
+     && autorag-research data upload ${DB}.dump visrag ${d}_${MODEL}; ret=\$?; rm -f ${DB}.dump; exit \$ret"
 done
 
 echo "Queued ${#DATASETS[@]} VisRAG tasks."

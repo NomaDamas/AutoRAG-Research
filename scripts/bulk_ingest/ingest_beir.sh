@@ -25,9 +25,9 @@ for ds in "${DATASETS[@]}"; do
   d="${ds//-/_}"
   DB="beir_${d}_test_${M}"
   pueue add -l "beir-${ds}" \
-    "autorag-research ingest --name=beir --extra dataset-name=${ds} --embedding-model=${MODEL} \
+    "autorag-research ingest --name=beir --extra dataset-name=${ds} --embedding-model=${MODEL} --db-name=${DB} \
      && autorag-research data dump --db-name=${DB} \
-     && autorag-research data upload ${DB}.dump beir ${ds}_${MODEL}"
+     && autorag-research data upload ${DB}.dump beir ${ds}_${MODEL}; ret=\$?; rm -f ${DB}.dump; exit \$ret"
 done
 
 echo "Queued ${#DATASETS[@]} BEIR tasks."

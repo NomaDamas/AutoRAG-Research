@@ -18,12 +18,12 @@ DATASETS=(
 )
 
 for ds in "${DATASETS[@]}"; do
-  d=$(echo "${ds}" | tr '[:upper:]' '[:lower:]')
+  d=$(echo "${ds}" | tr '[:upper:]' '[:lower:]' | tr '-' '_')
   DB="vidore_${d}_test_${M}"
   pueue add -l "vidore-${ds}" \
-    "autorag-research ingest --name=vidore --extra dataset-name=${ds} --embedding-model=${MODEL} \
+    "autorag-research ingest --name=vidore --extra dataset-name=${ds} --embedding-model=${MODEL} --db-name=${DB} \
      && autorag-research data dump --db-name=${DB} \
-     && autorag-research data upload ${DB}.dump vidore ${d}_${MODEL}"
+     && autorag-research data upload ${DB}.dump vidore ${d}_${MODEL}; ret=\$?; rm -f ${DB}.dump; exit \$ret"
 done
 
 echo "Queued ${#DATASETS[@]} ViDoRe tasks."

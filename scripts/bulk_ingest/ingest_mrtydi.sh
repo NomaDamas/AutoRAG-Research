@@ -21,9 +21,9 @@ LANGUAGES=(
 for lang in "${LANGUAGES[@]}"; do
   DB="mrtydi_${lang}_test_${M}"
   pueue add -l "mrtydi-${lang}" \
-    "autorag-research ingest --name=mrtydi --extra language=${lang} --embedding-model=${MODEL} \
+    "autorag-research ingest --name=mrtydi --extra language=${lang} --embedding-model=${MODEL} --db-name=${DB} \
      && autorag-research data dump --db-name=${DB} \
-     && autorag-research data upload ${DB}.dump mrtydi ${lang}_${MODEL}"
+     && autorag-research data upload ${DB}.dump mrtydi ${lang}_${MODEL}; ret=\$?; rm -f ${DB}.dump; exit \$ret"
 done
 
 echo "Queued ${#LANGUAGES[@]} MrTyDi tasks."

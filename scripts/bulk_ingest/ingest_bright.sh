@@ -33,14 +33,11 @@ TASKS=(
 for entry in "${TASKS[@]}"; do
   IFS=: read -r domain mode <<< "${entry}"
   DB="bright_${domain}_${mode}_test_${M}"
-  EXTRA="--extra domain=${domain}"
-  if [[ "${mode}" != "short" ]]; then
-    EXTRA="${EXTRA} --extra document-mode=${mode}"
-  fi
+  EXTRA="--extra domain=${domain} --extra document-mode=${mode}"
   pueue add -l "bright-${domain}-${mode}" \
-    "autorag-research ingest --name=bright ${EXTRA} --embedding-model=${MODEL} \
+    "autorag-research ingest --name=bright ${EXTRA} --embedding-model=${MODEL} --db-name=${DB} \
      && autorag-research data dump --db-name=${DB} \
-     && autorag-research data upload ${DB}.dump bright ${domain}_${mode}_${MODEL}"
+     && autorag-research data upload ${DB}.dump bright ${domain}_${mode}_${MODEL}; ret=\$?; rm -f ${DB}.dump; exit \$ret"
 done
 
 echo "Queued ${#TASKS[@]} BRIGHT tasks."

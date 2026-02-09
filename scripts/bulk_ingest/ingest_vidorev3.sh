@@ -18,9 +18,9 @@ CONFIGS=(
 for c in "${CONFIGS[@]}"; do
   DB="vidorev3_${c}_image_test_${M}"
   pueue add -l "vidorev3-${c}" \
-    "autorag-research ingest --name=vidorev3 --extra config-name=${c} --embedding-model=${MODEL} \
+    "autorag-research ingest --name=vidorev3 --extra config-name=${c} --embedding-model=${MODEL} --db-name=${DB} \
      && autorag-research data dump --db-name=${DB} \
-     && autorag-research data upload ${DB}.dump vidorev3 ${c}_image_${MODEL}"
+     && autorag-research data upload ${DB}.dump vidorev3 ${c}_image_${MODEL}; ret=\$?; rm -f ${DB}.dump; exit \$ret"
 done
 
 echo "Queued ${#CONFIGS[@]} ViDoReV3 tasks."

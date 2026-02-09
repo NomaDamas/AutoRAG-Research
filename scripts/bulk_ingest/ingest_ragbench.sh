@@ -22,9 +22,9 @@ CONFIGS=(
 for c in "${CONFIGS[@]}"; do
   DB="ragbench_${c}_test_${M}"
   pueue add -l "ragbench-${c}" \
-    "autorag-research ingest --name=ragbench --extra config=${c} --embedding-model=${MODEL} \
+    "autorag-research ingest --name=ragbench --extra config=${c} --embedding-model=${MODEL} --db-name=${DB} \
      && autorag-research data dump --db-name=${DB} \
-     && autorag-research data upload ${DB}.dump ragbench ${c}_${MODEL}"
+     && autorag-research data upload ${DB}.dump ragbench ${c}_${MODEL}; ret=\$?; rm -f ${DB}.dump; exit \$ret"
 done
 
 echo "Queued ${#CONFIGS[@]} RAGBench tasks."

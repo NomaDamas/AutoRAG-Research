@@ -27,9 +27,9 @@ for task in "${TASKS[@]}"; do
   t=$(echo "${task}" | tr '[:upper:]' '[:lower:]')
   DB="mteb_${t}_test_${M}"
   pueue add -l "mteb-${task}" \
-    "autorag-research ingest --name=mteb --extra task-name=${task} --embedding-model=${MODEL} \
+    "autorag-research ingest --name=mteb --extra task-name=${task} --embedding-model=${MODEL} --db-name=${DB} \
      && autorag-research data dump --db-name=${DB} \
-     && autorag-research data upload ${DB}.dump mteb ${t}_${MODEL}"
+     && autorag-research data upload ${DB}.dump mteb ${t}_${MODEL}; ret=\$?; rm -f ${DB}.dump; exit \$ret"
 done
 
 echo "Queued ${#TASKS[@]} MTEB tasks."

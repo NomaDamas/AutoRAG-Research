@@ -13,9 +13,9 @@ DATASETS=(
 for ds in "${DATASETS[@]}"; do
   DB="vidorev2_${ds}_test_${M}"
   pueue add -l "vidorev2-${ds}" \
-    "autorag-research ingest --name=vidorev2 --extra dataset-name=${ds} --embedding-model=${MODEL} \
+    "autorag-research ingest --name=vidorev2 --extra dataset-name=${ds} --embedding-model=${MODEL} --db-name=${DB} \
      && autorag-research data dump --db-name=${DB} \
-     && autorag-research data upload ${DB}.dump vidorev2 ${ds}_${MODEL}"
+     && autorag-research data upload ${DB}.dump vidorev2 ${ds}_${MODEL}; ret=\$?; rm -f ${DB}.dump; exit \$ret"
 done
 
 echo "Queued ${#DATASETS[@]} ViDoReV2 tasks."
