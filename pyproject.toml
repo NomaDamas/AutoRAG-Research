@@ -69,12 +69,18 @@ reporting = [
     "duckdb>=1.0.0",
     "gradio>=6.0.0",
 ]
+reranker = [
+    "cohere>=5.0.0",
+    "voyageai>=0.3.0",
+]
 all = [
     "colpali-engine>=0.3.13",
     "torch>=2.8.0",
     "transformers>=4.57.1",
     "duckdb>=1.0.0",
     "gradio>=6.0.0",
+    "cohere>=5.0.0",
+    "voyageai>=0.3.0",
 ]
 
 [dependency-groups]

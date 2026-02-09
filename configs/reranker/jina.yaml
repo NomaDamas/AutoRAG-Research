@@ -1,0 +1,2 @@
+_target_: autorag_research.rerankers.jina.JinaReranker
+model_name: jina-reranker-v2-base-multilingual

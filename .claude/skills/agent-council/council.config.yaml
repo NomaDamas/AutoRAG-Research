@@ -1,0 +1,29 @@
+# Agent Council Configuration
+# Add or remove council members as needed.
+# Note: the installer filters members to detected CLIs only on initial generation.
+# After that, missing CLIs are not auto-removed and will report `missing_cli` at runtime.
+
+council:
+  # Council members configuration
+  # Each member needs:
+  #   - name: identifier for the agent
+  #   - command: CLI command to execute (prompt will be appended)
+  #   - emoji: display emoji (optional)
+  #   - color: ANSI color (RED, GREEN, BLUE, YELLOW, CYAN)
+
+  members: []
+
+  # Chairman configuration (Claude will act as chairman)
+  chairman:
+    # role: auto|claude|codex|gemini|...
+    # - auto: infer from host tool (Claude Code => claude, Codex CLI => codex)
+    role: "auto"
+    description: "Synthesizes all opinions and provides final recommendation"
+    # Optional: run synthesis inside council.sh via CLI (otherwise the host agent synthesizes)
+    # command: "codex exec"
+
+    # Execution settings
+  settings:
+    timeout: 120 # Timeout seconds per agent (0 to disable)
+    exclude_chairman_from_members: true # Avoid calling the chairman as a member by default
+    # synthesize: true       # Force Stage 3 synthesis inside council.sh (requires chairman.command or --chairman codex/gemini)
