@@ -265,9 +265,6 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
         Returns:
             GenerationResult containing the generated text and metadata.
         """
-        # Get query text from database
-        query = self._get_query_text(query_id)
-
         # Use k_per_step for retrieval count
         k = self.k_per_step
 
@@ -279,8 +276,8 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
         steps_completed = 0
 
         # 1. Initial retrieval with original query
-        logger.debug(f"IRCoT: Initial retrieval for query: {query[:50]}...")
-        initial_results = await self._retrieval_pipeline.retrieve(query, k)
+        logger.debug(f"IRCoT: Initial retrieval for query ID : {query_id}...")
+        initial_results = await self._retrieval_pipeline._retrieve_by_id(query_id, k)
 
         # Extract chunk IDs and get contents
         for result in initial_results:
@@ -291,6 +288,8 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
         # Get paragraph contents
         if chunk_ids:
             paragraphs = self._service.get_chunk_contents(chunk_ids)
+
+        query = self._service.get_query_text(query_id)
 
         # 2. Iterative reasoning-retrieval loop
         for step in range(self.max_steps):
