@@ -210,7 +210,11 @@ class TestSubsetCreation:
         cleanup_pipeline_results: list[int],
         sample_documents,
     ):
-        """Test Image strategy: 4 captions per subset."""
+        """Test Image strategy: pair-combination subsets (Table 2 pattern).
+
+        Pairs: P0={top1,top2}, P1={top3,top4}, P2={top5,top6}, ...
+        Subsets: P0+P1, P0+P2, P1+P2, P0+P3, ...
+        """
         pipeline = ET2RAGPipeline(
             session_factory=session_factory,
             name="test_image_subsets",
@@ -224,17 +228,24 @@ class TestSubsetCreation:
 
         subsets = pipeline._create_image_subsets(sample_documents)
 
-        # Should create multiple subsets
-        assert len(subsets) >= 1
+        # 10 docs -> 5 pairs -> C(5,2)=10 combinations, limited to num_subsets=5
+        assert len(subsets) == 5
 
-        # Each subset should have up to 4 documents
+        # Each subset should have exactly 4 documents (2 pairs * 2 docs each)
         for subset in subsets:
-            assert len(subset) <= 4
-            assert len(subset) >= 1
+            assert len(subset) == 4
 
-        # First subset should use pattern [0,1,2,3]
+        # First subset: P0+P1 = {top1, top2, top3, top4}
         first_subset_ids = [doc[0] for doc in subsets[0]]
         assert first_subset_ids == [1, 2, 3, 4]
+
+        # Second subset: P0+P2 = {top1, top2, top5, top6}
+        second_subset_ids = [doc[0] for doc in subsets[1]]
+        assert second_subset_ids == [1, 2, 5, 6]
+
+        # Third subset: P0+P3 = {top1, top2, top7, top8}
+        third_subset_ids = [doc[0] for doc in subsets[2]]
+        assert third_subset_ids == [1, 2, 7, 8]
 
     def test_create_subsets_empty_documents(
         self,
@@ -522,9 +533,9 @@ Please answer: {query}"""
         """Test majority voting selects subset with highest consensus."""
         # Create a similarity matrix where subset 1 has highest consensus
         similarity_matrix = [
-            [1.0, 0.8, 0.2],  # Subset 0: sum = 1.0 (exclude self)
-            [0.8, 1.0, 0.9],  # Subset 1: sum = 1.7 (highest)
-            [0.2, 0.9, 1.0],  # Subset 2: sum = 1.1
+            [1.0, 0.8, 0.2],  # Subset 0: sum = 2.0
+            [0.8, 1.0, 0.9],  # Subset 1: sum = 2.7 (highest)
+            [0.2, 0.9, 1.0],  # Subset 2: sum = 2.1
         ]
 
         selected_idx, confidence = pipeline._majority_voting(similarity_matrix)

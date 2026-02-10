@@ -17,6 +17,7 @@ This differs from naive ensemble approaches that generate N responses from the s
 import logging
 from dataclasses import dataclass
 from enum import Enum
+from itertools import combinations
 from typing import Any
 
 import numpy as np
@@ -415,8 +416,9 @@ class ET2RAGPipeline(BaseGenerationPipeline):
     def _create_image_subsets(self, documents: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
         """Create Image-style subsets: 4 captions per subset from top-20.
 
-        For image captioning (COCO), multiple captions provide context.
-        Subsets use different combinations of 4 captions.
+        Follows Table 2 pattern from the paper:
+        - Create pairs: P0={top1, top2}, P1={top3, top4}, P2={top5, top6}, ...
+        - Generate subsets by combining pairs: P0+P1, P0+P2, P1+P2, P0+P3, ...
 
         Args:
             documents: Ranked documents (captions).
@@ -430,34 +432,25 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         # Limit to top 20 captions
         docs = documents[:20]
         num_subsets = self._num_subsets or 5
+
+        # Create pairs from consecutive documents: P0={top1,top2}, P1={top3,top4}, ...
+        pairs: list[list[tuple[int, str]]] = []
+        for i in range(0, len(docs) - 1, 2):
+            pairs.append([docs[i], docs[i + 1]])
+
+        if not pairs:
+            return []
+
+        # Generate subsets by combining two pairs each
         subsets: list[list[tuple[int, str]]] = []
+        for p_i, p_j in combinations(range(len(pairs)), 2):
+            subsets.append(pairs[p_i] + pairs[p_j])
+            if len(subsets) >= num_subsets:
+                break
 
-        # Create subsets with 4 captions each using different patterns
-        patterns = [
-            [0, 1, 2, 3],  # First 4
-            [0, 1, 4, 5],  # Mix early
-            [0, 2, 4, 6],  # Every other
-            [0, 3, 6, 9],  # Spread out
-            [1, 3, 5, 7],  # Odd positions
-        ]
-
-        for pattern in patterns[:num_subsets]:
-            subset: list[tuple[int, str]] = []
-            for idx in pattern:
-                if idx < len(docs):
-                    subset.append(docs[idx])
-            if subset:  # Only add non-empty subsets
-                subsets.append(subset)
-
-        # If we couldn't create enough subsets, fall back to simple chunking
+        # If only 1 pair exists (not enough for combinations), use it directly
         if not subsets:
-            chunk_size = 4
-            for i in range(0, len(docs), chunk_size):
-                chunk = docs[i : i + chunk_size]
-                if chunk:
-                    subsets.append(chunk)
-                if len(subsets) >= num_subsets:
-                    break
+            subsets = [pairs[0]]
 
         return subsets
 
@@ -605,10 +598,10 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         if n == 1:
             return 0, 1.0
 
-        # Sum similarities (excluding self-similarity on diagonal)
+        # Sum similarities (including self-similarity per the paper)
         scores = []
         for i in range(n):
-            score = sum(similarity_matrix[i][j] for j in range(n) if i != j)
+            score = sum(similarity_matrix[i][j] for j in range(n))
             scores.append(score)
 
         selected_index = int(np.argmax(scores))
