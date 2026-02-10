@@ -321,14 +321,11 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         full_response, full_token_usage = await self._generate_full_response(query_text, selected_subset)
 
         # Step 8: Aggregate token usage (all partial + full)
-        all_token_usages = [*partial_token_usages, full_token_usage]
-        wrapped_results = [{"token_usage": tu, "execution_time": 0} for tu in all_token_usages]
-        prompt, completion, _, _ = aggregate_token_usage(wrapped_results)
-        total_token_usage = {
-            "prompt_tokens": prompt,
-            "completion_tokens": completion,
-            "total_tokens": prompt + completion,
-        }
+        total_token_usage: dict[str, int] | None = None
+        for tu in [*partial_token_usages, full_token_usage]:
+            total_token_usage = aggregate_token_usage(total_token_usage, tu)
+        if total_token_usage is None:
+            total_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         # Build metadata
         metadata = {
