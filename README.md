@@ -10,6 +10,20 @@ Automate your RAG research.
 - **Github repository**: <https://github.com/vkehfdl1/AutoRAG-Research/>
 - **Documentation** <https://vkehfdl1.github.io/AutoRAG-Research/>
 
+## Recommended Setup
+
+The easiest way to get started is with the installation script:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/NomaDamas/AutoRAG-Research/main/scripts/install.sh -o install.sh
+bash install.sh
+```
+
+The script will guide you through:
+1. Setting up a Python environment (supports uv, venv, conda, pyenv, etc.)
+2. Installing AutoRAG-Research
+3. Configuring PostgreSQL (Docker or existing server)
+
 ## CLI Usage
 
 AutoRAG-Research provides a CLI tool for managing RAG research workflows.
