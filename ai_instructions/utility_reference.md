@@ -21,8 +21,16 @@
 | `unpack_and_run(target_list, func)` | Flatten sublists, run func, regroup by original lengths |
 | `pil_image_to_bytes(image)` | PIL Image → `(bytes, mimetype)` |
 | `extract_image_from_data_uri(data_uri)` | Data URI → `(bytes, mimetype)` |
-| `aggregate_token_usage(results)` | Sum `(prompt, completion, embedding, exec_time)` from result dicts |
-| `validate_plugin_name(name)` | Check plugin name is valid (`^[a-z][a-z0-9_]*$`) |
+| `TokenUsageTracker` | Collect token usage from LangChain responses (see class details below) |
+| `aggregate_token_usage(current, new)` | Aggregate two token usage dicts (accumulator pattern) → `dict \| None` |
+
+#### `TokenUsageTracker` Class
+
+| Method / Property | Purpose |
+|---|---|
+| `tracker.record(response)` | Extract + record from LangChain response → `dict \| None` |
+| `tracker.total` | Aggregated total across all recorded calls (property) |
+| `tracker.history` | Per-call breakdown list (defensive copy, property) |
 
 ### `autorag_research/data/util.py` — Data Ingestion
 
@@ -112,7 +120,8 @@ DO NOT write these — use the replacement instead.
 | `asyncio.Semaphore` + `gather` | `run_with_concurrency_limit()` |
 | `min(scores)` / `max(scores)` manual normalization | `normalize_minmax()` / `normalize_tmm()` / etc. |
 | `asyncio.to_thread` wrapper | `to_async_func()` |
-| Manual `token_usage` summation loop | `aggregate_token_usage()` |
+| Manual `token_usage` summation loop | `TokenUsageTracker` (instance `record()`) or `aggregate_token_usage()` |
+| Manual `usage_metadata` / `response_metadata` extraction | `TokenUsageTracker.record()` |
 | `BytesIO()` + `image.save()` | `pil_image_to_bytes()` |
 | `base64.b64decode` + data URI regex | `extract_image_from_data_uri()` |
 | `np.dot` / `np.linalg.norm` for similarity | `calculate_cosine_similarity()` |
