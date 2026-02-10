@@ -242,7 +242,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         if not chunk_ids:
             return GenerationResult(
                 text="I don't have enough information to answer this question.",
-                token_usage=None,
+                token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
                     "retrieval_chunk_ids": [],
                     "organization_strategy": self._organization_strategy.value,
@@ -263,7 +263,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         if not documents:
             return GenerationResult(
                 text="Retrieved documents had no content.",
-                token_usage=None,
+                token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
                     "retrieval_chunk_ids": chunk_ids,
                     "organization_strategy": self._organization_strategy.value,
@@ -278,7 +278,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         if len(subsets) == 0:
             return GenerationResult(
                 text="Could not create context subsets from retrieved documents.",
-                token_usage=None,
+                token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
                     "retrieval_chunk_ids": chunk_ids,
                     "organization_strategy": self._organization_strategy.value,
@@ -290,7 +290,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         query_text = self._service.get_query_text(query_id)
 
         # Step 4: Generate partial responses for each subset
-        partial_responses, partial_token_usages = await self._generate_partial_responses(query_text, subsets)
+        partial_responses, partial_llm_responses = await self._generate_partial_responses(query_text, subsets)
 
         # Handle single subset case - skip voting
         if len(subsets) == 1:
@@ -306,12 +306,12 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         # Step 7: Generate full response with selected subset
         selected_subset = subsets[selected_index]
-        full_response, full_token_usage = await self._generate_full_response(query_text, selected_subset)
+        full_response, full_llm_response = await self._generate_full_response(query_text, selected_subset)
 
         # Step 8: Aggregate token usage (all partial + full)
         tracker = TokenUsageTracker()
-        for tu in [*partial_token_usages, full_token_usage]:
-            tracker.record_usage(tu)
+        partial_token_usages = [tracker.record(r) for r in partial_llm_responses]
+        full_token_usage = tracker.record(full_llm_response)
 
         # Build metadata
         metadata = {
@@ -439,7 +439,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
     async def _generate_partial_responses(
         self, query: str, subsets: list[list[tuple[int, str]]]
-    ) -> tuple[list[str], list[dict[str, int] | None]]:
+    ) -> tuple[list[str], list[Any]]:
         """Generate partial responses for each subset sequentially.
 
         Each subset gets a DIFFERENT prompt because the context is different.
@@ -453,19 +453,19 @@ class ET2RAGPipeline(BaseGenerationPipeline):
             subsets: List of context subsets.
 
         Returns:
-            Tuple of (list of responses, list of token usages).
+            Tuple of (list of response texts, list of raw LLM responses).
         """
+        texts = []
         responses = []
-        token_usages = []
         for subset in subsets:
             prompt = self._build_prompt(query, subset)
-            response, token_usage = await self._generate_single(prompt, max_tokens=self._partial_generation_max_tokens)
+            text, response = await self._generate_single(prompt, max_tokens=self._partial_generation_max_tokens)
+            texts.append(text)
             responses.append(response)
-            token_usages.append(token_usage)
 
-        return responses, token_usages
+        return texts, responses
 
-    async def _generate_single(self, prompt: str, max_tokens: int | None = None) -> tuple[str, dict[str, int] | None]:
+    async def _generate_single(self, prompt: str, max_tokens: int | None = None) -> tuple[str, Any]:
         """Generate a single response asynchronously.
 
         Args:
@@ -473,7 +473,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
             max_tokens: Optional token limit.
 
         Returns:
-            Tuple of (response text, token usage dict).
+            Tuple of (response text, raw LLM response).
         """
         # Configure generation parameters
         kwargs: dict[str, Any] = {}
@@ -482,13 +482,10 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         response = await self._llm.ainvoke(prompt, **kwargs)
         text = response.content if hasattr(response, "content") else str(response)
-        token_usage = TokenUsageTracker.extract(response)
 
-        return text, token_usage
+        return text, response
 
-    async def _generate_full_response(
-        self, query: str, subset: list[tuple[int, str]]
-    ) -> tuple[str, dict[str, int] | None]:
+    async def _generate_full_response(self, query: str, subset: list[tuple[int, str]]) -> tuple[str, Any]:
         """Generate the final full response with the selected subset.
 
         This is the SECOND stage of generation, after voting has selected
@@ -499,7 +496,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
             subset: The selected context subset.
 
         Returns:
-            Tuple of (response text, token usage dict).
+            Tuple of (response text, raw LLM response).
         """
         prompt = self._build_prompt(query, subset)
 
@@ -509,9 +506,8 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         response = await self._llm.ainvoke(prompt, **kwargs)
         text = response.content if hasattr(response, "content") else str(response)
-        token_usage = TokenUsageTracker.extract(response)
 
-        return text, token_usage
+        return text, response
 
     def _build_prompt(self, query: str, subset: list[tuple[int, str]]) -> str:
         """Build a prompt from query and context subset.

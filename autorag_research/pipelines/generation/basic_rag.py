@@ -176,8 +176,8 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         response = await self._llm.ainvoke(prompt)
 
         # 5. Extract token usage from response metadata
-
-        token_usage = TokenUsageTracker.extract(response)
+        tracker = TokenUsageTracker()
+        token_usage = tracker.record(response)
 
         # Extract text content from response
         text = response.content if hasattr(response, "content") else str(response)

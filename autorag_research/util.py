@@ -439,43 +439,56 @@ def normalize_dbsf(scores: list[float | None]) -> list[float | None]:
 
 
 class TokenUsageTracker:
-    """Centralized token usage tracking for generation pipelines.
+    """Collects token usage from LangChain LLM responses.
 
-    Provides static utility methods (extract, aggregate) for one-off use,
-    and stateful instance methods (record, record_usage) for multi-call pipelines.
-
-    Static usage (single-call pipelines)::
-
-        usage = TokenUsageTracker.extract(response)
-        combined = TokenUsageTracker.aggregate(current, new)
-
-    Instance usage (multi-call pipelines)::
+    Usage::
 
         tracker = TokenUsageTracker()
-        tracker.record(response)          # from raw LangChain response
-        tracker.record_usage(usage_dict)  # from pre-extracted dict
-        result = tracker.total            # aggregated total
-        per_call = tracker.history        # per-call breakdown
+        tracker.record(response)      # extract + store from LangChain response
+        result = tracker.total        # aggregated total across all calls
+        per_call = tracker.history    # per-call breakdown
     """
 
     def __init__(self) -> None:
-        self._total: dict[str, int] | None = None
         self._history: list[dict[str, int]] = []
 
-    @staticmethod
-    def extract(response: Any) -> dict[str, int] | None:
-        """Extract token usage from a LangChain LLM response.
-
-        Supports multiple LangChain response formats:
-        - usage_metadata (newer LangChain style with input_tokens/output_tokens)
-        - response_metadata.token_usage (older style with prompt_tokens/completion_tokens)
+    def record(self, response: Any) -> dict[str, int] | None:
+        """Extract and record token usage from a LangChain LLM response.
 
         Args:
             response: LangChain LLM response object (AIMessage, etc.)
 
         Returns:
-            Dictionary with prompt_tokens, completion_tokens, total_tokens keys,
-            or None if token usage is not available.
+            Extracted usage dict, or None if not available.
+        """
+        usage = self._extract(response)
+        if usage is not None:
+            self._history.append(dict(usage))
+        return usage
+
+    @property
+    def total(self) -> dict[str, int]:
+        """Aggregated total token usage across all recorded calls."""
+        if not self._history:
+            return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        result: dict[str, int] = {}
+        for usage in self._history:
+            for key, value in usage.items():
+                result[key] = result.get(key, 0) + value
+        return result
+
+    @property
+    def history(self) -> list[dict[str, int]]:
+        """Per-call token usage breakdown (defensive copy)."""
+        return [dict(usage) for usage in self._history]
+
+    @staticmethod
+    def _extract(response: Any) -> dict[str, int] | None:
+        """Extract token usage from LangChain response.
+
+        Supports multiple LangChain response formats:
+        - usage_metadata (newer style with input_tokens/output_tokens)
+        - response_metadata.token_usage (older style with prompt_tokens/completion_tokens)
         """
         # Newer LangChain style (usage_metadata)
         if hasattr(response, "usage_metadata") and response.usage_metadata:
@@ -496,59 +509,27 @@ class TokenUsageTracker:
                 }
         return None
 
-    @staticmethod
-    def aggregate(current: dict[str, int] | None, new: dict[str, int] | None) -> dict[str, int] | None:
-        """Aggregate token usage from two dicts (accumulator pattern).
 
-        Args:
-            current: Current aggregated token usage (or None).
-            new: New token usage to add (or None).
+def aggregate_token_usage(
+    current: dict[str, int] | None,
+    new: dict[str, int] | None,
+) -> dict[str, int] | None:
+    """Aggregate two token usage dicts (accumulator pattern).
 
-        Returns:
-            Aggregated token usage dict, or None if both inputs are None.
-        """
-        if current is None and new is None:
-            return None
-        if current is None:
-            return new
-        if new is None:
-            return current
-        return {key: current.get(key, 0) + new.get(key, 0) for key in {*current, *new}}
+    Args:
+        current: Current aggregated token usage (or None).
+        new: New token usage to add (or None).
 
-    def record(self, response: Any) -> dict[str, int] | None:
-        """Extract and accumulate token usage from a LangChain response."""
-        usage = self.extract(response)
-        self._accumulate(usage)
-        return usage
-
-    def record_usage(self, usage: dict[str, int] | None) -> None:
-        """Accumulate a pre-extracted token usage dict."""
-        self._accumulate(usage)
-
-    def _accumulate(self, usage: dict[str, int] | None) -> None:
-        if usage is not None:
-            self._history.append(dict(usage))
-        self._total = self.aggregate(self._total, usage)
-
-    @property
-    def total(self) -> dict[str, int] | None:
-        """Aggregated total token usage across all recorded calls."""
-        return self._total
-
-    @property
-    def history(self) -> list[dict[str, int]]:
-        """Per-call token usage breakdown (defensive copy)."""
-        return list(self._history)
-
-    @property
-    def call_count(self) -> int:
-        """Number of calls with non-None token usage recorded."""
-        return len(self._history)
-
-    def reset(self) -> None:
-        """Clear all accumulated state."""
-        self._total = None
-        self._history.clear()
+    Returns:
+        Aggregated token usage dict, or None if both inputs are None.
+    """
+    if current is None and new is None:
+        return None
+    if current is None:
+        return new
+    if new is None:
+        return current
+    return {key: current.get(key, 0) + new.get(key, 0) for key in {*current, *new}}
 
 
 def extract_token_logprobs(

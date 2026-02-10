@@ -304,9 +304,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
 
     # ==================== Async Methods for Parallel Execution ====================
 
-    async def _ainvoke_llm(
-        self, system_prompt: str, user_prompt: str, **format_kwargs: Any
-    ) -> tuple[Any, dict[str, int] | None]:
+    async def _ainvoke_llm(self, system_prompt: str, user_prompt: str, **format_kwargs: Any) -> Any:
         """Async version of _invoke_llm using LangChain's ainvoke.
 
         Args:
@@ -315,7 +313,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             **format_kwargs: Values to format into the user prompt.
 
         Returns:
-            Tuple of (response, token_usage_dict).
+            Raw LangChain LLM response.
         """
         from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -323,11 +321,9 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt.format(**format_kwargs)),
         ]
-        response = await self._llm.ainvoke(messages)
-        token_usage = TokenUsageTracker.extract(response)
-        return response, token_usage
+        return await self._llm.ainvoke(messages)
 
-    async def _aagent_predict(self, query: str, document: str) -> tuple[str, dict[str, int] | None]:
+    async def _aagent_predict(self, query: str, document: str) -> tuple[str, Any]:
         """Async version of Agent-1 (Predictor).
 
         Args:
@@ -335,17 +331,17 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             document: The document content.
 
         Returns:
-            Tuple of (answer_text, token_usage_dict).
+            Tuple of (answer_text, raw_response).
         """
-        response, token_usage = await self._ainvoke_llm(
+        response = await self._ainvoke_llm(
             self._predictor_system_prompt,
             self._predictor_user_prompt,
             query=query,
             document=document,
         )
-        return self._get_response_text(response), token_usage
+        return self._get_response_text(response), response
 
-    async def _aagent_judge(self, query: str, document: str, answer: str) -> tuple[float, dict[str, int] | None]:
+    async def _aagent_judge(self, query: str, document: str, answer: str) -> tuple[float, Any]:
         """Async version of Agent-2 (Judge).
 
         Args:
@@ -354,14 +350,14 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             answer: The candidate answer from Agent-1.
 
         Returns:
-            Tuple of (relevance_score, token_usage_dict).
+            Tuple of (relevance_score, raw_response).
 
         Raises:
             LogprobsNotSupportedError: If LLM does not support logprobs.
         """
         from autorag_research.exceptions import LogprobsNotSupportedError
 
-        response, token_usage = await self._ainvoke_llm(
+        response = await self._ainvoke_llm(
             self._judge_system_prompt,
             self._judge_user_prompt,
             query=query,
@@ -374,9 +370,9 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         if not used_logprobs:
             raise LogprobsNotSupportedError(self.name)
 
-        return score, token_usage
+        return score, response
 
-    async def _aagent_final_predict(self, query: str, documents: list[str]) -> tuple[str, dict[str, int] | None]:
+    async def _aagent_final_predict(self, query: str, documents: list[str]) -> tuple[str, Any]:
         """Async version of Agent-3 (Final Predictor).
 
         Args:
@@ -384,16 +380,16 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             documents: List of filtered document contents.
 
         Returns:
-            Tuple of (answer_text, token_usage_dict).
+            Tuple of (answer_text, raw_response).
         """
         formatted_docs = "\n\n".join(f"[Document {i + 1}]\n{doc}" for i, doc in enumerate(documents))
-        response, token_usage = await self._ainvoke_llm(
+        response = await self._ainvoke_llm(
             self._final_predictor_system_prompt,
             self._final_predictor_user_prompt,
             query=query,
             documents=formatted_docs,
         )
-        return self._get_response_text(response), token_usage
+        return self._get_response_text(response), response
 
     @staticmethod
     def _calculate_adaptive_threshold(scores: list[float], std_multiplier: float) -> float:
@@ -459,7 +455,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         if not retrieved:
             return GenerationResult(
                 text="",
-                token_usage=None,
+                token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
                     "pipeline_type": "main_rag",
                     "error": "No documents retrieved",
@@ -477,8 +473,8 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         # Edge case: Single document - skip filtering
         if len(chunk_contents) == 1:
             logger.debug("Single document retrieved, skipping filtering phase")
-            final_answer, final_usage = await self._aagent_final_predict(query, chunk_contents)
-            tracker.record_usage(final_usage)
+            final_answer, final_response = await self._aagent_final_predict(query, chunk_contents)
+            tracker.record(final_response)
 
             return GenerationResult(
                 text=final_answer,
@@ -499,16 +495,16 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         # ==================== Phase 2: Agent-1 (Predictor) ====================
         candidate_answers: list[str] = []
         for doc in chunk_contents:
-            answer, usage = await self._aagent_predict(query, doc)
+            answer, response = await self._aagent_predict(query, doc)
             candidate_answers.append(answer)
-            tracker.record_usage(usage)
+            tracker.record(response)
 
         # ==================== Phase 3: Agent-2 (Judge) ====================
         relevance_scores: list[float] = []
         for doc, answer in zip(chunk_contents, candidate_answers, strict=True):
-            score, usage = await self._aagent_judge(query, doc, answer)
+            score, response = await self._aagent_judge(query, doc, answer)
             relevance_scores.append(score)
-            tracker.record_usage(usage)
+            tracker.record(response)
 
         # ==================== Phase 4: Adaptive Filtering ====================
         threshold = self._calculate_adaptive_threshold(relevance_scores, self._std_multiplier)
@@ -535,8 +531,8 @@ class MAINRAGPipeline(BaseGenerationPipeline):
 
         # ==================== Phase 6: Agent-3 (Final Predictor) ====================
         filtered_contents = [doc["content"] for doc in filtered_docs]
-        final_answer, final_usage = await self._aagent_final_predict(query, filtered_contents)
-        tracker.record_usage(final_usage)
+        final_answer, final_response = await self._aagent_final_predict(query, filtered_contents)
+        tracker.record(final_response)
 
         # Build metadata with filtering statistics
         relevance_scores_metadata = [{"doc_id": doc["doc_id"], "score": doc["score"]} for doc in filtered_docs]

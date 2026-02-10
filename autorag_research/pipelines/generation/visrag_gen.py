@@ -220,7 +220,8 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
             GenerationResult containing text and token usage.
         """
         text = response.content if hasattr(response, "content") else str(response)
-        token_usage = TokenUsageTracker.extract(response)
+        tracker = TokenUsageTracker()
+        token_usage = tracker.record(response)
         return GenerationResult(text=text, token_usage=token_usage)
 
     def _concatenate_images(
