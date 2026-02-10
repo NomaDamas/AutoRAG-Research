@@ -242,7 +242,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
             paragraphs=numbered_paragraphs,
         )
 
-    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate answer using IRCoT: interleave retrieval with chain-of-thought.
 
         Algorithm:
