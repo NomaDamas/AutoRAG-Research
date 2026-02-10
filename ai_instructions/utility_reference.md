@@ -22,6 +22,7 @@
 | `pil_image_to_bytes(image)` | PIL Image → `(bytes, mimetype)` |
 | `extract_image_from_data_uri(data_uri)` | Data URI → `(bytes, mimetype)` |
 | `aggregate_token_usage(results)` | Sum `(prompt, completion, embedding, exec_time)` from result dicts |
+| `validate_plugin_name(name)` | Check plugin name is valid (`^[a-z][a-z0-9_]*$`) |
 
 ### `autorag_research/data/util.py` — Data Ingestion
 
