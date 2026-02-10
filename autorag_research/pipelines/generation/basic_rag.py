@@ -151,7 +151,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
             "retrieval_pipeline_id": self._retrieval_pipeline.pipeline_id,
         }
 
-    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate answer using simple RAG: retrieve once, generate once (async).
 
         Args:

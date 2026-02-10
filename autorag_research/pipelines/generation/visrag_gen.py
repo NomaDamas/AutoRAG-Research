@@ -350,7 +350,7 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
         result.metadata[metadata_key] = True
         return result
 
-    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate answer using VisRAG-Gen with retrieved document images.
 
         Algorithm Flow:
