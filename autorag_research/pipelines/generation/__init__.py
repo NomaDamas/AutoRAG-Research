@@ -6,6 +6,7 @@ from autorag_research.pipelines.generation.et2rag import (
     ET2RAGPipelineConfig,
     OrganizationStrategy,
 )
+from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
 from autorag_research.pipelines.generation.visrag_gen import (
     DEFAULT_VISRAG_PROMPT,
     VisRAGGenerationPipeline,
@@ -21,6 +22,7 @@ __all__ = [
     "ET2RAGPipeline",
     "ET2RAGPipelineConfig",
     "OrganizationStrategy",
+    "MAINRAGPipeline",
     "VisRAGGenerationPipeline",
     "VisRAGGenerationPipelineConfig",
 ]
