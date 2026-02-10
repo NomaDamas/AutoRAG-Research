@@ -227,12 +227,8 @@ setup_env_uv() {
         success "uv is already installed"
     fi
 
-    if [[ -d ".venv" ]]; then
-        info "Existing .venv directory found — reusing it"
-    else
-        info "Creating virtual environment with uv..."
-        uv venv .venv --python ">=${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}"
-    fi
+    info "Creating virtual environment with uv..."
+    uv venv .venv --python ">=${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}"
 
     # shellcheck disable=SC1091
     source .venv/bin/activate
@@ -270,12 +266,8 @@ setup_env_venv() {
 
     info "Using ${best_cmd} (Python ${best_ver})"
 
-    if [[ -d ".venv" ]]; then
-        info "Existing .venv directory found — reusing it"
-    else
-        info "Creating virtual environment..."
-        "$best_cmd" -m venv .venv
-    fi
+    info "Creating virtual environment..."
+    "$best_cmd" -m venv .venv
 
     # shellcheck disable=SC1091
     source .venv/bin/activate
