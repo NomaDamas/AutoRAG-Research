@@ -15,6 +15,8 @@ Multi-vector embeddings via an [Infinity Embedding API](https://github.com/micha
 
 Connects to a running Infinity server that serves ColPali/ColQwen2 models. The server handles GPU inference; this client only needs HTTP access. Produces multi-vector embeddings (one vector per token/patch) for MaxSim late interaction retrieval.
 
+Uses the official `infinity-client` package (`InfinityVisionAPI`) which handles HTTP session management, retry with exponential backoff, base64 decoding, numpy array reshaping, and semaphore-based concurrency control internally.
+
 ## Prerequisites
 
 You need a running Infinity server. Start one with Docker:
@@ -36,9 +38,6 @@ _target_: autorag_research.embeddings.infinity.InfinityEmbeddings
 model_name: michaelfeil/colqwen2-v0.1
 url: ${oc.env:INFINITY_API_URL,http://localhost:7997}
 encoding: base64
-hidden_dim: 128
-timeout: 60.0
-max_retries: 3
 embed_batch_size: 10
 ```
 
@@ -49,9 +48,6 @@ embed_batch_size: 10
 | `url` | str | `http://localhost:7997` | Infinity API server URL |
 | `model_name` | str | `michaelfeil/colqwen2-v0.1` | Model name served by Infinity |
 | `encoding` | str | `base64` | Response encoding: `base64` or `float` |
-| `hidden_dim` | int | `128` | Hidden dimension for reshaping flat arrays |
-| `timeout` | float | `60.0` | HTTP request timeout in seconds |
-| `max_retries` | int | `3` | Max retry attempts with exponential backoff |
 | `embed_batch_size` | int | `10` | Batch size for batch embedding methods |
 
 ## Supported Models

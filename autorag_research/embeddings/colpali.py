@@ -14,8 +14,8 @@ from autorag_research.embeddings.base import (
     MultiVectorEmbedding,
     MultiVectorMultiModalEmbedding,
 )
-from autorag_research.embeddings.bipali import _load_image
 from autorag_research.types import ImageType
+from autorag_research.util import load_image
 
 # Model type registry for Col* models: maps model_type to (model_class, processor_class)
 COL_MODEL_REGISTRY: dict[str, tuple[str, str]] = {
@@ -161,7 +161,7 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         Returns:
             Multi-vector embedding as list[list[float]].
         """
-        image = _load_image(img_file_path)
+        image = load_image(img_file_path)
         image_inputs = self._processor.process_images([image])
         image_inputs = {k: v.to(self.device) for k, v in image_inputs.items()}
 
@@ -215,7 +215,7 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         if not img_file_paths:
             return []
 
-        images = [_load_image(p) for p in img_file_paths]
+        images = [load_image(p) for p in img_file_paths]
         image_inputs = self._processor.process_images(images)
         image_inputs = {k: v.to(self.device) for k, v in image_inputs.items()}
 

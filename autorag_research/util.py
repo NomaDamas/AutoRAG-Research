@@ -16,6 +16,8 @@ from PIL import Image
 from pydantic import BaseModel as BM
 from pydantic.v1 import BaseModel
 
+from autorag_research.types import ImageType
+
 logger = logging.getLogger("AutoRAG-Research")
 
 T = TypeVar("T")
@@ -247,6 +249,33 @@ def extract_image_from_data_uri(data_uri: str) -> tuple[bytes, str]:
     base64_data = match.group(2)
     image_bytes = base64.b64decode(base64_data)
     return image_bytes, mimetype
+
+
+def load_image(img: ImageType) -> Image.Image:
+    """Convert any ImageType to a PIL Image in RGB mode.
+
+    Accepts file paths (str/Path), raw bytes, or BytesIO objects and returns
+    a PIL Image converted to RGB.
+
+    Args:
+        img: Image as file path (str/Path), raw bytes, or BytesIO.
+
+    Returns:
+        PIL Image in RGB mode.
+
+    Raises:
+        TypeError: If img is not a supported type.
+    """
+    from pathlib import Path
+
+    if isinstance(img, (str, Path)):
+        return Image.open(img).convert("RGB")
+    if isinstance(img, bytes):
+        return Image.open(io.BytesIO(img)).convert("RGB")
+    if isinstance(img, io.BytesIO):
+        return Image.open(img).convert("RGB")
+    msg = f"Unsupported image type: {type(img)}. Expected str, Path, bytes, or BytesIO."
+    raise TypeError(msg)
 
 
 def bytes_to_pil_image(image_bytes: bytes) -> Image.Image:

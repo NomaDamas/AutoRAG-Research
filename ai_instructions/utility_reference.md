@@ -19,6 +19,7 @@
 | `run_with_concurrency_limit(items, async_func, max_concurrency)` | Async semaphore-based concurrency control |
 | `to_async_func(func)` | Convert sync function to async via `asyncio.to_thread` |
 | `unpack_and_run(target_list, func)` | Flatten sublists, run func, regroup by original lengths |
+| `load_image(img)` | ImageType (str/Path/bytes/BytesIO) → PIL Image (RGB) |
 | `pil_image_to_bytes(image)` | PIL Image → `(bytes, mimetype)` |
 | `extract_image_from_data_uri(data_uri)` | Data URI → `(bytes, mimetype)` |
 | `aggregate_token_usage(results)` | Sum `(prompt, completion, embedding, exec_time)` from result dicts |
@@ -113,6 +114,7 @@ DO NOT write these — use the replacement instead.
 | `min(scores)` / `max(scores)` manual normalization | `normalize_minmax()` / `normalize_tmm()` / etc. |
 | `asyncio.to_thread` wrapper | `to_async_func()` |
 | Manual `token_usage` summation loop | `aggregate_token_usage()` |
+| `Image.open(path).convert("RGB")` with type checks | `load_image()` |
 | `BytesIO()` + `image.save()` | `pil_image_to_bytes()` |
 | `base64.b64decode` + data URI regex | `extract_image_from_data_uri()` |
 | `np.dot` / `np.linalg.norm` for similarity | `calculate_cosine_similarity()` |
