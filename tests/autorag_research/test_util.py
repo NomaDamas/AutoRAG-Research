@@ -179,6 +179,55 @@ async def test_to_async_func():
     assert result == 10
 
 
+class TestValidatePluginName:
+    """Tests for validate_plugin_name."""
+
+    def test_valid_simple(self):
+        from autorag_research.util import validate_plugin_name
+
+        assert validate_plugin_name("my_search") is True
+
+    def test_valid_single_letter(self):
+        from autorag_research.util import validate_plugin_name
+
+        assert validate_plugin_name("a") is True
+
+    def test_valid_with_digits(self):
+        from autorag_research.util import validate_plugin_name
+
+        assert validate_plugin_name("search2") is True
+
+    def test_invalid_starts_with_digit(self):
+        from autorag_research.util import validate_plugin_name
+
+        assert validate_plugin_name("2search") is False
+
+    def test_invalid_uppercase(self):
+        from autorag_research.util import validate_plugin_name
+
+        assert validate_plugin_name("MySearch") is False
+
+    def test_invalid_hyphen(self):
+        from autorag_research.util import validate_plugin_name
+
+        assert validate_plugin_name("my-search") is False
+
+    def test_invalid_path_traversal(self):
+        from autorag_research.util import validate_plugin_name
+
+        assert validate_plugin_name("../../../evil") is False
+
+    def test_invalid_empty(self):
+        from autorag_research.util import validate_plugin_name
+
+        assert validate_plugin_name("") is False
+
+    def test_invalid_starts_with_underscore(self):
+        from autorag_research.util import validate_plugin_name
+
+        assert validate_plugin_name("_private") is False
+
+
 class TestPilImagesToBytes:
     """Test static method pil_images_to_bytes."""
 

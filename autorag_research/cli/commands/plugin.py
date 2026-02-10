@@ -90,6 +90,15 @@ def create(
         pip install -e .
         autorag-research plugin sync
     """
+    from autorag_research.util import validate_plugin_name
+
+    if not validate_plugin_name(name):
+        console.print(
+            "[red]Error:[/red] Plugin name must start with a lowercase letter"
+            " and contain only lowercase letters, digits, and underscores."
+        )
+        raise typer.Exit(1)
+
     valid_types = {"retrieval", "generation", "metric_retrieval", "metric_generation"}
     if plugin_type not in valid_types:
         console.print(f"[red]Error:[/red] --type must be one of: {', '.join(sorted(valid_types))}")

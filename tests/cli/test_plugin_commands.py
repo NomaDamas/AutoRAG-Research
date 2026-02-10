@@ -162,6 +162,24 @@ class TestPluginCreate:
         # Check YAML is in generation subdirectory
         assert (plugin_dir / "src" / "custom_score_plugin" / "generation" / "custom_score.yaml").exists()
 
+    def test_create_invalid_name(self, tmp_path, monkeypatch):
+        """Exits with error for invalid plugin name."""
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["plugin", "create", "../../../evil", "--type", "retrieval"])
+
+        assert result.exit_code == 1
+        assert "Plugin name must start with a lowercase letter" in result.output
+
+    def test_create_invalid_name_uppercase(self, tmp_path, monkeypatch):
+        """Exits with error for uppercase plugin name."""
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["plugin", "create", "MyPlugin", "--type", "retrieval"])
+
+        assert result.exit_code == 1
+        assert "Error" in result.output
+
     def test_create_invalid_type(self, tmp_path, monkeypatch):
         """Exits with error for invalid --type."""
         monkeypatch.chdir(tmp_path)

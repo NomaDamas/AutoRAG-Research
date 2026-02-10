@@ -9,6 +9,10 @@ Plugins register via ``[project.entry-points]`` groups:
 After ``pip install <plugin>``, run ``autorag-research plugin sync`` to copy
 plugin YAML configs into the local ``configs/`` directory.
 
+**Security note**: Plugin discovery calls ``ep.load()`` which executes code from
+installed packages that register the above entry-point groups. Only install
+plugins from trusted sources.
+
 Example plugin ``pyproject.toml``::
 
     [project.entry-points."autorag_research.pipelines"]
@@ -80,24 +84,7 @@ def discover_plugin_configs(group: str, category: str) -> list[PluginConfigInfo]
     Returns:
         List of :class:`PluginConfigInfo` for every YAML found.
     """
-    results: list[PluginConfigInfo] = []
-    try:
-        eps = entry_points(group=group)
-    except Exception as e:
-        logger.warning(f"Failed to query entry_points for group {group}: {e}")
-        return results
-
-    for ep in eps:
-        try:
-            module = ep.load()
-            if isinstance(module, ModuleType):
-                results.extend(_scan_module_yamls(module, ep.name, category))
-            else:
-                logger.warning(f"Plugin {ep.name} entry point did not resolve to a module")
-        except Exception as e:
-            logger.warning(f"Failed to load plugin {ep.name} from group {group}: {e}")
-
-    return results
+    return _discover_plugin_configs_uncached(group, category)
 
 
 def _scan_module_yamls(module: ModuleType, plugin_name: str, category: str) -> list[PluginConfigInfo]:
@@ -181,9 +168,6 @@ def _parse_yaml_resource(
         description = cfg.get("description", "")
         source_path = Path(str(resource))
 
-        if subcategory is None:
-            subcategory = _infer_subcategory(cfg)
-
         return PluginConfigInfo(
             plugin_name=plugin_name,
             config_name=config_name,
@@ -195,27 +179,6 @@ def _parse_yaml_resource(
     except Exception as e:
         logger.warning(f"Failed to parse YAML from plugin {plugin_name}: {e}")
         return None
-
-
-def _infer_subcategory(cfg: dict) -> str | None:
-    """Infer subcategory from the ``_target_`` field in a YAML config.
-
-    When a plugin uses flat layout (no subdirectory), we inspect the ``_target_``
-    string to guess whether it's a retrieval or generation config.
-
-    Args:
-        cfg: Parsed YAML config dictionary.
-
-    Returns:
-        ``"retrieval"``, ``"generation"``, or ``None`` if inference fails.
-    """
-    target = cfg.get("_target_", "")
-    target_lower = target.lower()
-    if "retrieval" in target_lower:
-        return "retrieval"
-    if "generation" in target_lower:
-        return "generation"
-    return None
 
 
 def sync_plugin_configs(config_dir: Path) -> list[SyncResult]:
