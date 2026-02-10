@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import logging
 import operator
 import random
 from functools import reduce
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import pandas as pd
 from datasets import load_dataset
@@ -10,7 +12,9 @@ from datasets import load_dataset
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.embeddings.bipali import BiPaliEmbeddings
+
+if TYPE_CHECKING:
+    from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import (
     ImageId,

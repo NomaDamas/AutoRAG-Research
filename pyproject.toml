@@ -197,7 +197,7 @@ ignore = [
 preview = true
 
 [tool.deptry.per_rule_ignores]
-DEP002 = ["bert-score", "langchain-openai"]  # langchain-openai used via Hydra config instantiation
+DEP002 = ["bert-score", "langchain-openai", "transformers"]  # langchain-openai used via Hydra config instantiation, transformers used via lazy import in embeddings
 
 [tool.deptry]
 exclude = ["tests/*", "scripts/*", ".venv/*", "venv/*"]

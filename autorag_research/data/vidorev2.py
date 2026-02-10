@@ -17,7 +17,9 @@ Available Datasets:
 - esg_reports_human_labeled_v2: Human-labeled ESG reports (52 queries, 1538 pages)
 """
 
-from typing import Any, Literal
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Literal
 
 import pandas as pd
 from datasets import load_dataset
@@ -26,7 +28,9 @@ from PIL import Image
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.embeddings.bipali import BiPaliEmbeddings
+
+if TYPE_CHECKING:
+    from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import image, or_all
 from autorag_research.util import pil_image_to_bytes

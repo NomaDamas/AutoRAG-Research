@@ -23,7 +23,6 @@ from rich.console import Console
 
 from autorag_research.cli.utils import discover_embedding_configs
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.injection import health_check_embedding, load_embedding_model
 from autorag_research.orm.connection import DBConnection
 
@@ -254,6 +253,7 @@ def ingest(  # noqa: C901
 
     # 7. Create ingestor with embedding model
     from autorag_research.data.base import MultiModalEmbeddingDataIngestor, TextEmbeddingDataIngestor
+    from autorag_research.embeddings.bipali import BiPaliEmbeddings
 
     ingestor_class = meta.ingestor_class
     if issubclass(ingestor_class, TextEmbeddingDataIngestor):

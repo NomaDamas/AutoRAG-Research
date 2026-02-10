@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
-import torch
-from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
 from pydantic import Field, PrivateAttr
-from transformers import PreTrainedModel
+
+if TYPE_CHECKING:
+    from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
+    from transformers import PreTrainedModel
 
 from autorag_research.embeddings.base import (
     MultiVectorEmbedding,
@@ -76,7 +77,9 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
     model_name: str = Field(description="HuggingFace model ID")
     model_type: str = Field(description="Model type (e.g., 'pali', 'modernvbert')")
     device: str = Field(default="cpu", description="Device to run the model on")
-    torch_dtype: torch.dtype = Field(default=torch.bfloat16, description="Torch dtype for model weights")
+    torch_dtype: Any = Field(
+        default="bfloat16", description="Torch dtype for model weights. String name or torch.dtype."
+    )
 
     _model: Any = PrivateAttr(default=None)
     _processor: Any = PrivateAttr(default=None)
@@ -90,12 +93,16 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
 
     def _load_model(self) -> None:
         """Load the model and processor based on model_type."""
+        import torch
+
         model_class, processor_class = _load_col_model_classes(self.model_type)
+
+        resolved_dtype = getattr(torch, self.torch_dtype) if isinstance(self.torch_dtype, str) else self.torch_dtype
 
         self._processor = processor_class.from_pretrained(self.model_name)  # ty: ignore
         self._model = model_class.from_pretrained(
             self.model_name,
-            dtype=self.torch_dtype,
+            dtype=resolved_dtype,
             trust_remote_code=True,
         )
         self._model.to(self.device)
@@ -110,6 +117,8 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         Returns:
             Multi-vector embedding as list[list[float]].
         """
+        import torch
+
         text_inputs = self._processor.process_texts([text])
         text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
 
@@ -161,6 +170,8 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         Returns:
             Multi-vector embedding as list[list[float]].
         """
+        import torch
+
         image = _load_image(img_file_path)
         image_inputs = self._processor.process_images([image])
         image_inputs = {k: v.to(self.device) for k, v in image_inputs.items()}
@@ -191,6 +202,8 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         Returns:
             List of multi-vector embeddings.
         """
+        import torch
+
         if not texts:
             return []
 
@@ -212,6 +225,8 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         Returns:
             List of multi-vector embeddings.
         """
+        import torch
+
         if not img_file_paths:
             return []
 

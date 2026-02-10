@@ -11,8 +11,12 @@ from langchain_core.embeddings import Embeddings
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor, TextEmbeddingDataIngestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import EmbeddingError, ServiceNotSetError
+
+try:
+    from autorag_research.embeddings.bipali import BiPaliEmbeddings
+except ImportError:
+    BiPaliEmbeddings = None  # type: ignore[assignment,misc]
 
 EMBEDDING_DIM = 768
 
@@ -64,7 +68,7 @@ def mock_embedding_model():
 @pytest.fixture
 def mock_multi_modal_embedding():
     """Create a mock BiPaliEmbeddings model."""
-    mock = MagicMock(spec=BiPaliEmbeddings)
+    mock = MagicMock(spec=BiPaliEmbeddings) if BiPaliEmbeddings else MagicMock()
     mock.aembed_query = AsyncMock(return_value=[0.1] * EMBEDDING_DIM)
     mock.aembed_image = AsyncMock(return_value=[0.2] * EMBEDDING_DIM)
     return mock

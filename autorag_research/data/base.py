@@ -1,14 +1,18 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from langchain_core.embeddings import Embeddings
 
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import EmbeddingError, ServiceNotSetError
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
+
+if TYPE_CHECKING:
+    from autorag_research.embeddings.bipali import BiPaliEmbeddings
 
 
 @dataclass

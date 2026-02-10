@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import json
 import logging
 import random
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from huggingface_hub import hf_hub_download
 
@@ -9,7 +11,9 @@ from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
 from autorag_research.data.util import make_id
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.embeddings.bipali import BiPaliEmbeddings
+
+if TYPE_CHECKING:
+    from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import ImageId, TextId
 from autorag_research.util import extract_image_from_data_uri

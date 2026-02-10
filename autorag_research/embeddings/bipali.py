@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
-import torch
-from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
 from langchain_core.embeddings import Embeddings
 from PIL import Image
 from pydantic import ConfigDict, Field, PrivateAttr
-from transformers import PreTrainedModel
+
+if TYPE_CHECKING:
+    from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
+    from transformers import PreTrainedModel
 
 from autorag_research.types import ImageType
 
@@ -89,7 +90,9 @@ class BiPaliEmbeddings(Embeddings):
     model_name: str = Field(description="HuggingFace model ID")
     model_type: str = Field(description="Model type (e.g., 'modernvbert')")
     device: str = Field(default="cpu", description="Device to run the model on")
-    torch_dtype: torch.dtype = Field(default=torch.bfloat16, description="Torch dtype for model weights")
+    torch_dtype: Any = Field(
+        default="bfloat16", description="Torch dtype for model weights. String name or torch.dtype."
+    )
     embed_batch_size: int = Field(default=10, description="Batch size for embedding")
 
     _model: Any = PrivateAttr(default=None)
@@ -104,12 +107,16 @@ class BiPaliEmbeddings(Embeddings):
 
     def _load_model(self) -> None:
         """Load the model and processor based on model_type."""
+        import torch
+
         model_class, processor_class = _load_model_classes(self.model_type)
+
+        resolved_dtype = getattr(torch, self.torch_dtype) if isinstance(self.torch_dtype, str) else self.torch_dtype
 
         self._processor = processor_class.from_pretrained(self.model_name)  # ty: ignore
         self._model = model_class.from_pretrained(
             self.model_name,
-            dtype=self.torch_dtype,
+            dtype=resolved_dtype,
             trust_remote_code=True,
         )
         self._model.to(self.device)
@@ -168,6 +175,8 @@ class BiPaliEmbeddings(Embeddings):
         Returns:
             Embedding vector as list of floats.
         """
+        import torch
+
         image = _load_image(img_file_path)
         image_inputs = self._processor.process_images([image])
 
@@ -200,6 +209,8 @@ class BiPaliEmbeddings(Embeddings):
         Returns:
             List of embedding vectors.
         """
+        import torch
+
         all_embeddings: list[list[float]] = []
 
         for i in range(0, len(img_file_paths), self.embed_batch_size):
@@ -220,6 +231,8 @@ class BiPaliEmbeddings(Embeddings):
 
     def _embed_text(self, text: str) -> list[float]:
         """Internal method to embed a single text."""
+        import torch
+
         text_inputs = self._processor.process_texts([text])
 
         # Move inputs to device
@@ -233,6 +246,8 @@ class BiPaliEmbeddings(Embeddings):
 
     def _embed_texts_batch(self, texts: list[str]) -> list[list[float]]:
         """Internal method to embed multiple texts with batching."""
+        import torch
+
         all_embeddings: list[list[float]] = []
 
         for i in range(0, len(texts), self.embed_batch_size):

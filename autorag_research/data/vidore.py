@@ -18,18 +18,22 @@ HuggingFace path pattern: vidore/{dataset_name}
 Reference: https://huggingface.co/collections/vidore/vidore-benchmark-667173f98e70a1c0fa4db00d
 """
 
+from __future__ import annotations
+
 import ast
 import json
 import logging
 import random
-from typing import Any, Literal, get_args
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from datasets import load_dataset
 
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-from autorag_research.embeddings.bipali import BiPaliEmbeddings
+
+if TYPE_CHECKING:
+    from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import InvalidDatasetNameError, ServiceNotSetError
 from autorag_research.util import pil_image_to_bytes
 
