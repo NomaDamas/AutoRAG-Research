@@ -33,7 +33,7 @@ Usage:
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from sqlalchemy.orm import scoped_session
 
@@ -351,6 +351,7 @@ class PipelineTestVerifier:
 def create_mock_llm(
     response_text: str = "This is a generated answer.",
     token_usage: dict[str, int] | None = None,
+    include_logprobs: bool = False,
 ) -> MagicMock:
     """Create a mock LLM that returns predictable responses (LangChain style).
 
@@ -361,11 +362,13 @@ def create_mock_llm(
     Args:
         response_text: The text to return from invoke()/ainvoke().
         token_usage: Token usage dict. Defaults to standard values.
+        include_logprobs: If True, include logprobs for Yes/No in response_metadata.
+            Required for MAIN-RAG pipeline tests.
 
     Returns:
-        MagicMock configured as a LangChain BaseLanguageModel.
+        MagicMock configured as a LangChain BaseLanguageModel with both
+        sync invoke() and async ainvoke() methods.
     """
-    from unittest.mock import AsyncMock
 
     if token_usage is None:
         token_usage = {
@@ -385,6 +388,28 @@ def create_mock_llm(
         "output_tokens": token_usage["completion_tokens"],
         "total_tokens": token_usage["total_tokens"],
     }
+
+    if include_logprobs:
+        # Include logprobs for Yes/No tokens (required for MAIN-RAG)
+        mock_response.response_metadata = {
+            "logprobs": {
+                "content": [
+                    {
+                        "token": "Yes",
+                        "logprob": -0.1,
+                        "bytes": [89, 101, 115],
+                        "top_logprobs": [
+                            {"token": "Yes", "logprob": -0.1, "bytes": [89, 101, 115]},
+                            {"token": "No", "logprob": -2.5, "bytes": [78, 111]},
+                        ],
+                    }
+                ]
+            }
+        }
+    else:
+        mock_response.response_metadata = {}
+
+    # Sync invoke method
     mock.invoke.return_value = mock_response
     # Add async ainvoke for async pipeline support
     mock.ainvoke = AsyncMock(return_value=mock_response)
