@@ -1,0 +1,5 @@
+_target_: autorag_research.embeddings.infinity.InfinityEmbeddings
+model_name: michaelfeil/colqwen2-v0.1
+url: ${oc.env:INFINITY_API_URL,http://localhost:7997}
+encoding: base64
+embed_batch_size: 10

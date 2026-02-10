@@ -5,10 +5,8 @@ import pytest
 import torch
 from PIL import Image
 
-from autorag_research.embeddings.bipali import (
-    BiPaliEmbeddings,
-    _load_image,
-)
+from autorag_research.embeddings.bipali import BiPaliEmbeddings
+from autorag_research.util import load_image
 
 MODEL_NAME = "ModernVBERT/bimodernvbert"
 MODEL_TYPE = "modernvbert"
@@ -20,7 +18,7 @@ class TestLoadImage:
         img_path = tmp_path / "test_image.png"
         img.save(img_path)
 
-        result = _load_image(str(img_path))
+        result = load_image(str(img_path))
 
         assert isinstance(result, Image.Image)
         assert result.mode == "RGB"
@@ -32,7 +30,7 @@ class TestLoadImage:
         img.save(buffer, format="PNG")
         img_bytes = buffer.getvalue()
 
-        result = _load_image(img_bytes)
+        result = load_image(img_bytes)
 
         assert isinstance(result, Image.Image)
         assert result.mode == "RGB"
@@ -43,13 +41,13 @@ class TestLoadImage:
         img_path = tmp_path / "rgba_image.png"
         img.save(img_path)
 
-        result = _load_image(str(img_path))
+        result = load_image(str(img_path))
 
         assert result.mode == "RGB"
 
     def test_load_image_unsupported_type_raises_error(self):
         with pytest.raises(TypeError):
-            _load_image(12345)
+            load_image(12345)
 
 
 @pytest.fixture(scope="module")
@@ -79,33 +77,9 @@ def sample_image_bytes() -> bytes:
 
 
 @pytest.mark.gpu
-class TestGetTextEmbedding:
-    def test_get_text_embedding_returns_list(self, bipali_embeddings: BiPaliEmbeddings):
-        embedding = bipali_embeddings._get_text_embedding("Hello world")
-
-        assert isinstance(embedding, list)
-        assert len(embedding) > 0
-        assert all(isinstance(v, float) for v in embedding)
-
-    def test_get_query_embedding_same_as_text(self, bipali_embeddings: BiPaliEmbeddings):
-        text = "Test query"
-        text_emb = bipali_embeddings._get_text_embedding(text)
-        query_emb = bipali_embeddings._get_query_embedding(text)
-
-        assert text_emb == query_emb
-
-
-@pytest.mark.gpu
-class TestGetImageEmbedding:
-    def test_get_image_embedding_from_path(self, bipali_embeddings: BiPaliEmbeddings, sample_image: str):
-        embedding = bipali_embeddings._get_image_embedding(sample_image)
-
-        assert isinstance(embedding, list)
-        assert len(embedding) > 0
-        assert all(isinstance(v, float) for v in embedding)
-
-    def test_get_image_embedding_from_bytes(self, bipali_embeddings: BiPaliEmbeddings, sample_image_bytes: bytes):
-        embedding = bipali_embeddings._get_image_embedding(sample_image_bytes)
+class TestEmbedQuery:
+    def test_embed_query_returns_list(self, bipali_embeddings: BiPaliEmbeddings):
+        embedding = bipali_embeddings.embed_query("Hello world")
 
         assert isinstance(embedding, list)
         assert len(embedding) > 0
@@ -113,33 +87,50 @@ class TestGetImageEmbedding:
 
 
 @pytest.mark.gpu
-class TestGetTextEmbeddingBatch:
-    def test_get_text_embedding_batch(self, bipali_embeddings: BiPaliEmbeddings):
+class TestEmbedImage:
+    def test_embed_image_from_path(self, bipali_embeddings: BiPaliEmbeddings, sample_image: str):
+        embedding = bipali_embeddings.embed_image(sample_image)
+
+        assert isinstance(embedding, list)
+        assert len(embedding) > 0
+        assert all(isinstance(v, float) for v in embedding)
+
+    def test_embed_image_from_bytes(self, bipali_embeddings: BiPaliEmbeddings, sample_image_bytes: bytes):
+        embedding = bipali_embeddings.embed_image(sample_image_bytes)
+
+        assert isinstance(embedding, list)
+        assert len(embedding) > 0
+        assert all(isinstance(v, float) for v in embedding)
+
+
+@pytest.mark.gpu
+class TestEmbedDocuments:
+    def test_embed_documents(self, bipali_embeddings: BiPaliEmbeddings):
         texts = ["First text", "Second text", "Third text"]
 
-        embeddings = bipali_embeddings.get_text_embedding_batch(texts)
+        embeddings = bipali_embeddings.embed_documents(texts)
 
         assert len(embeddings) == 3
         assert all(isinstance(emb, list) for emb in embeddings)
         assert all(len(emb) > 0 for emb in embeddings)
 
-    def test_get_text_embedding_batch_respects_batch_size(self, bipali_embeddings: BiPaliEmbeddings):
+    def test_embed_documents_respects_batch_size(self, bipali_embeddings: BiPaliEmbeddings):
         bipali_embeddings.embed_batch_size = 2
         texts = ["Text 1", "Text 2", "Text 3", "Text 4", "Text 5"]
 
-        embeddings = bipali_embeddings.get_text_embedding_batch(texts)
+        embeddings = bipali_embeddings.embed_documents(texts)
 
         assert len(embeddings) == 5
 
-    def test_get_text_embedding_batch_empty_list(self, bipali_embeddings: BiPaliEmbeddings):
-        embeddings = bipali_embeddings.get_text_embedding_batch([])
+    def test_embed_documents_empty_list(self, bipali_embeddings: BiPaliEmbeddings):
+        embeddings = bipali_embeddings.embed_documents([])
 
         assert embeddings == []
 
 
 @pytest.mark.gpu
-class TestGetImageEmbeddingBatch:
-    def test_get_image_embedding_batch(self, bipali_embeddings: BiPaliEmbeddings, tmp_path: Path):
+class TestEmbedImages:
+    def test_embed_images(self, bipali_embeddings: BiPaliEmbeddings, tmp_path: Path):
         img_paths = []
         for i in range(3):
             img = Image.new("RGB", (224, 224), color=(i * 50, i * 50, i * 50))
@@ -147,13 +138,13 @@ class TestGetImageEmbeddingBatch:
             img.save(img_path)
             img_paths.append(str(img_path))
 
-        embeddings = bipali_embeddings.get_image_embedding_batch(img_paths)
+        embeddings = bipali_embeddings.embed_images(img_paths)
 
         assert len(embeddings) == 3
         assert all(isinstance(emb, list) for emb in embeddings)
         assert all(len(emb) > 0 for emb in embeddings)
 
-    def test_get_image_embedding_batch_with_bytes(self, bipali_embeddings: BiPaliEmbeddings):
+    def test_embed_images_with_bytes(self, bipali_embeddings: BiPaliEmbeddings):
         img_bytes_list = []
         for i in range(2):
             img = Image.new("RGB", (224, 224), color=(i * 100, 0, 0))
@@ -161,12 +152,12 @@ class TestGetImageEmbeddingBatch:
             img.save(buffer, format="PNG")
             img_bytes_list.append(buffer.getvalue())
 
-        embeddings = bipali_embeddings.get_image_embedding_batch(img_bytes_list)
+        embeddings = bipali_embeddings.embed_images(img_bytes_list)
 
         assert len(embeddings) == 2
 
-    def test_get_image_embedding_batch_empty_list(self, bipali_embeddings: BiPaliEmbeddings):
-        embeddings = bipali_embeddings.get_image_embedding_batch([])
+    def test_embed_images_empty_list(self, bipali_embeddings: BiPaliEmbeddings):
+        embeddings = bipali_embeddings.embed_images([])
 
         assert embeddings == []
 
@@ -174,20 +165,20 @@ class TestGetImageEmbeddingBatch:
 @pytest.mark.gpu
 @pytest.mark.asyncio
 class TestAsyncEmbeddings:
-    async def test_aget_text_embedding(self, bipali_embeddings: BiPaliEmbeddings):
-        embedding = await bipali_embeddings._aget_text_embedding("Async text")
+    async def test_aembed_query(self, bipali_embeddings: BiPaliEmbeddings):
+        embedding = await bipali_embeddings.aembed_query("Async text")
 
         assert isinstance(embedding, list)
         assert len(embedding) > 0
 
-    async def test_aget_query_embedding(self, bipali_embeddings: BiPaliEmbeddings):
-        embedding = await bipali_embeddings._aget_query_embedding("Async query")
+    async def test_aembed_documents(self, bipali_embeddings: BiPaliEmbeddings):
+        embeddings = await bipali_embeddings.aembed_documents(["Async query"])
 
-        assert isinstance(embedding, list)
-        assert len(embedding) > 0
+        assert isinstance(embeddings, list)
+        assert len(embeddings) == 1
 
-    async def test_aget_image_embedding(self, bipali_embeddings: BiPaliEmbeddings, sample_image: str):
-        embedding = await bipali_embeddings._aget_image_embedding(sample_image)
+    async def test_aembed_image(self, bipali_embeddings: BiPaliEmbeddings, sample_image: str):
+        embedding = await bipali_embeddings.aembed_image(sample_image)
 
         assert isinstance(embedding, list)
         assert len(embedding) > 0

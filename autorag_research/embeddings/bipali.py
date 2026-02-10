@@ -8,11 +8,11 @@ from typing import Any, ClassVar
 import torch
 from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
 from langchain_core.embeddings import Embeddings
-from PIL import Image
 from pydantic import ConfigDict, Field, PrivateAttr
 from transformers import PreTrainedModel
 
 from autorag_research.types import ImageType
+from autorag_research.util import load_image
 
 # Model type registry: maps model_type to (model_class, processor_class)
 MODEL_REGISTRY: dict[str, tuple[str, str]] = {
@@ -46,18 +46,6 @@ def _load_model_classes(model_type: str) -> tuple[PreTrainedModel, BaseVisualRet
         ) from e
 
     return model_class, processor_class
-
-
-def _load_image(img_file_path: ImageType) -> Image.Image:
-    """Load an image from file path or bytes."""
-    if isinstance(img_file_path, str):
-        return Image.open(img_file_path).convert("RGB")
-    elif isinstance(img_file_path, bytes):
-        import io
-
-        return Image.open(io.BytesIO(img_file_path)).convert("RGB")
-    else:
-        raise TypeError(img_file_path)
 
 
 class BiPaliEmbeddings(Embeddings):
@@ -168,7 +156,7 @@ class BiPaliEmbeddings(Embeddings):
         Returns:
             Embedding vector as list of floats.
         """
-        image = _load_image(img_file_path)
+        image = load_image(img_file_path)
         image_inputs = self._processor.process_images([image])
 
         # Move inputs to device
@@ -204,7 +192,7 @@ class BiPaliEmbeddings(Embeddings):
 
         for i in range(0, len(img_file_paths), self.embed_batch_size):
             batch_paths = img_file_paths[i : i + self.embed_batch_size]
-            images = [_load_image(p) for p in batch_paths]
+            images = [load_image(p) for p in batch_paths]
 
             image_inputs = self._processor.process_images(images)
             image_inputs = {k: v.to(self.device) for k, v in image_inputs.items()}
