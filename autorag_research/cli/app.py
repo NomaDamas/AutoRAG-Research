@@ -11,6 +11,7 @@ import autorag_research.cli as cli
 from autorag_research.cli.commands.data import data_app
 from autorag_research.cli.commands.ingest import ingest_app
 from autorag_research.cli.commands.init import init
+from autorag_research.cli.commands.plugin import plugin_app
 from autorag_research.cli.commands.run import run_command
 from autorag_research.cli.commands.show import show_resources
 
@@ -70,6 +71,7 @@ def main_callback(
 # Add sub-apps
 app.add_typer(data_app, name="data")
 app.add_typer(ingest_app, name="ingest")
+app.add_typer(plugin_app, name="plugin")
 
 # Add simple commands
 app.command(name="show")(show_resources)

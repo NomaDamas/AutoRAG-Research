@@ -22,6 +22,26 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 
+_PLUGIN_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def validate_plugin_name(name: str) -> bool:
+    """Check whether *name* is a valid plugin name.
+
+    A valid plugin name starts with a lowercase letter and contains only
+    lowercase letters, digits, and underscores.  This guards against path
+    traversal and code-injection when the name is interpolated into
+    filesystem paths and Python source templates.
+
+    Args:
+        name: The candidate plugin name.
+
+    Returns:
+        ``True`` if valid, ``False`` otherwise.
+    """
+    return _PLUGIN_NAME_RE.match(name) is not None
+
+
 def to_list(item: Any) -> Any:
     """Recursively convert collections to Python lists.
 
