@@ -74,7 +74,7 @@ class MonoT5Reranker(LocalReranker):
         logits = outputs.scores[0][0]  # [vocab_size]
 
         # Softmax over true/false tokens
-        true_false_logits = torch.tensor([logits[self._true_token_id], logits[self._false_token_id]])
+        true_false_logits = torch.stack([logits[self._true_token_id], logits[self._false_token_id]])
         probs = torch.nn.functional.softmax(true_false_logits, dim=0)
 
         return float(probs[0].item())  # Probability of "true"

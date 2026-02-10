@@ -60,5 +60,5 @@ class LocalReranker(BaseReranker):
         Returns:
             List of RerankResult objects sorted by relevance score (descending).
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.rerank, query, documents, top_k)
