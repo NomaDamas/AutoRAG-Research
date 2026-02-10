@@ -293,3 +293,70 @@ class TestWithLlmDecorator:
         result1, result2 = my_func(model=mock_model, other_arg=42)
         assert result1 is mock_model
         assert result2 == 42
+
+
+# ============================================================================
+# Reranker Tests
+# ============================================================================
+
+
+class MockReranker:
+    """Mock reranker for testing injection without real API calls."""
+
+    def __init__(self, model_name: str = "mock-reranker"):
+        self.model_name = model_name
+
+    def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> list:
+        """Mock rerank method."""
+        from autorag_research.rerankers.base import RerankResult
+
+        top_k = top_k or len(documents)
+        return [RerankResult(index=i, text=doc, score=1.0 - i * 0.1) for i, doc in enumerate(documents[:top_k])]
+
+
+class TestHealthCheckReranker:
+    """Tests for health_check_reranker function."""
+
+    def test_passes_on_success(self) -> None:
+        """Health check passes when reranker works correctly."""
+        from autorag_research.injection import health_check_reranker
+        from autorag_research.rerankers.base import BaseReranker, RerankResult
+
+        class WorkingReranker(BaseReranker):
+            def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
+                return [RerankResult(index=0, text=documents[0], score=1.0)] if documents else []
+
+            async def arerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
+                return self.rerank(query, documents, top_k)
+
+        reranker = WorkingReranker()
+        # Should not raise
+        health_check_reranker(reranker)
+
+    def test_raises_on_failure(self) -> None:
+        """Health check raises RerankerError when reranker fails."""
+        from autorag_research.exceptions import RerankerError
+        from autorag_research.injection import health_check_reranker
+        from autorag_research.rerankers.base import BaseReranker, RerankResult
+
+        class FailingReranker(BaseReranker):
+            def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
+                raise RuntimeError
+
+            async def arerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
+                raise RuntimeError
+
+        reranker = FailingReranker()
+        with pytest.raises(RerankerError):
+            health_check_reranker(reranker)
+
+
+class TestLoadReranker:
+    """Tests for load_reranker function."""
+
+    def test_raises_file_not_found_for_missing_config(self) -> None:
+        """Raises FileNotFoundError when config doesn't exist."""
+        from autorag_research.injection import load_reranker
+
+        with pytest.raises(FileNotFoundError):
+            load_reranker("nonexistent")

@@ -1,0 +1,56 @@
+# IRCoT Generation Pipeline Configuration
+#
+# Interleaving Retrieval with Chain-of-Thought (IRCoT) generation pipeline.
+# Alternates between generating chain-of-thought reasoning and retrieving
+# relevant context. Iteratively builds understanding for complex multi-step QA.
+#
+# Reference: ACL 2023 - "Interleaving Retrieval with Chain-of-Thought Reasoning
+#            for Knowledge-Intensive Multi-Step Questions"
+#
+# Parameters:
+#   retrieval_pipeline_name: Name of retrieval pipeline to use (BM25 recommended)
+#   llm: LLM model identifier (default: gpt-4o-mini)
+#   k_per_step: Paragraphs to retrieve per reasoning step (default: 4)
+#   max_steps: Maximum reasoning-retrieval iterations (default: 8)
+#   paragraph_budget: Maximum total paragraphs to collect (default: 15)
+#   stop_sequence: Termination string in CoT output (default: "answer is:")
+#   top_k: Used for k_per_step if not specified (default: 4)
+#
+_target_: autorag_research.pipelines.generation.ircot.IRCoTGenerationPipelineConfig
+description: "IRCoT: Interleaving Retrieval with Chain-of-Thought"
+name: ircot
+retrieval_pipeline_name: bm25
+llm: gpt-4o-mini
+k_per_step: 4
+max_steps: 8
+paragraph_budget: 15
+stop_sequence: "answer is:"
+top_k: 4
+batch_size: 10
+reasoning_prompt_template: |
+  You are answering a multi-step question using chain-of-thought reasoning.
+
+  Question: {query}
+
+  Available Paragraphs:
+  {paragraphs}
+
+  Previous Thoughts:
+  {cot_history}
+
+  Generate the next reasoning step. Think step-by-step about what information you need or what conclusion you can draw.
+
+  If you have enough information to answer the question, write: "The answer is: [your answer]"
+
+  Next Thought:
+qa_prompt_template: |
+  Answer the following question using the provided paragraphs.
+
+  Question: {query}
+
+  Paragraphs:
+  {paragraphs}
+
+  Provide a concise, direct answer to the question based on the information in the paragraphs.
+
+  Answer:

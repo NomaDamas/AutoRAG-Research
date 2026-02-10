@@ -13,6 +13,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.util import extract_langchain_token_usage
 
 DEFAULT_PROMPT_TEMPLATE = """Context:
 {context}
@@ -150,7 +151,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
             "retrieval_pipeline_id": self._retrieval_pipeline.pipeline_id,
         }
 
-    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate answer using simple RAG: retrieve once, generate once (async).
 
         Args:
@@ -175,24 +176,8 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         response = await self._llm.ainvoke(prompt)
 
         # 5. Extract token usage from response metadata
-        token_usage = None
 
-        # Try to get usage from response metadata (LangChain style)
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = response.usage_metadata
-            token_usage = {
-                "prompt_tokens": usage.get("input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0),
-            }
-        elif hasattr(response, "response_metadata"):
-            usage = response.response_metadata.get("token_usage", {})
-            if usage:
-                token_usage = {
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                }
+        token_usage = extract_langchain_token_usage(response)
 
         # Extract text content from response
         text = response.content if hasattr(response, "content") else str(response)

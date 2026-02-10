@@ -37,6 +37,9 @@ class BaseGenerationPipeline(BasePipeline, ABC):
                 chunk_ids = [r["doc_id"] for r in results]
                 chunk_contents = self._service.get_chunk_contents(chunk_ids)
 
+                # Retrieve relevant chunks (async)
+                results = await self._retrieval_pipeline.retrieve(query_text, top_k)
+                chunks = [self.get_chunk_content(r["doc_id"]) for r in results]
                 # Get query text (uses query_to_llm if available, else contents)
                 query_text = self._get_query_text(query_id)
 
@@ -80,28 +83,8 @@ class BaseGenerationPipeline(BasePipeline, ABC):
             config=self._get_pipeline_config(),
         )
 
-    def _get_query_text(self, query_id: int) -> str:
-        """Get query text by ID from database.
-
-        Args:
-            query_id: The query ID.
-
-        Returns:
-            The query text content.
-
-        Raises:
-            ValueError: If query not found.
-        """
-        from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
-
-        with GenerationUnitOfWork(self.session_factory, self._schema) as uow:
-            query = uow.queries.get_by_id(query_id)
-            if query is None:
-                raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
-            return query.contents
-
     @abstractmethod
-    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate an answer for a query (async).
 
         This method has full access to retrieval pipelines.

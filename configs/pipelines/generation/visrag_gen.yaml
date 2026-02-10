@@ -1,0 +1,32 @@
+# VisRAG-Gen Generation Pipeline Configuration
+#
+# Vision-based RAG generation pipeline that processes document images directly
+# with VLMs (Vision Language Models) instead of parsing text.
+# Preserves visual information like layout, tables, and embedded images.
+#
+# Parameters:
+#   retrieval_pipeline_name: Name of retrieval pipeline (must return image chunks)
+#   llm: VLM model identifier with vision support (e.g., gpt-4o, gpt-4-turbo)
+#   image_processing_mode: Strategy for handling multiple images
+#     - multi_image: Pass all images to VLM in single call (best performance)
+#     - concatenate: Merge images into single composite (single-image VLM fallback)
+#   concatenation_direction: horizontal or vertical (only for concatenate mode)
+#   top_k: Number of image chunks to retrieve (default: 5)
+#
+_target_: autorag_research.pipelines.generation.visrag_gen.VisRAGGenerationPipelineConfig
+description: "VisRAG-Gen: Vision-based RAG generation with multi-modal VLMs"
+name: visrag_gen
+retrieval_pipeline_name: colpali  # Replace with your image retrieval pipeline
+llm: gpt-4o
+image_processing_mode: multi_image
+concatenation_direction: horizontal
+temperature: 0.0
+max_tokens: 500
+top_k: 5
+batch_size: 10
+prompt_template: |
+  Based on the provided document images, answer the following question accurately and concisely.
+
+  Question: {query}
+
+  Answer:
