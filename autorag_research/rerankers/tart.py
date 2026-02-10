@@ -49,34 +49,8 @@ class TARTReranker(LocalReranker):
         self._model.eval()
         logger.info("Loaded TART reranker: %s on %s", self.model_name, self._device)
 
-    def _score_pair(self, query: str, document: str) -> float:
-        """Score a single query-document pair with instruction."""
-        import torch
-
-        # Format: "{instruction} [SEP] {query}" paired with document
-        instructed_query = f"{self.instruction} [SEP] {query}"
-
-        inputs = self._tokenizer(
-            instructed_query,
-            document,
-            padding=True,
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors="pt",
-        ).to(self._device)
-
-        with torch.no_grad():
-            outputs = self._model(**inputs)
-
-        logits = outputs.logits
-        # Apply softmax and take the positive class probability
-        probs = torch.nn.functional.softmax(logits, dim=-1)
-        # Use the last class as the positive relevance score
-        score = float(probs[0, -1].item())
-        return score
-
     def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
-        """Rerank documents using TART instruction-aware scoring.
+        """Rerank documents using TART instruction-aware batch scoring.
 
         Args:
             query: The search query.
@@ -92,10 +66,23 @@ class TARTReranker(LocalReranker):
         top_k = top_k or len(documents)
         top_k = min(top_k, len(documents))
 
-        results = []
-        for i, doc in enumerate(documents):
-            score = self._score_pair(query, doc)
-            results.append(RerankResult(index=i, text=doc, score=score))
+        import torch
 
+        instructed_query = f"{self.instruction} [SEP] {query}"
+        pairs = [(instructed_query, doc) for doc in documents]
+        inputs = self._tokenizer(
+            pairs, padding=True, truncation=True, max_length=self.max_length, return_tensors="pt"
+        ).to(self._device)
+
+        with torch.no_grad():
+            outputs = self._model(**inputs)
+
+        probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+        scores = probs[:, -1].tolist()
+
+        results = [
+            RerankResult(index=i, text=doc, score=score)
+            for i, (doc, score) in enumerate(zip(documents, scores, strict=True))
+        ]
         results.sort(key=lambda x: x.score, reverse=True)
         return results[:top_k]

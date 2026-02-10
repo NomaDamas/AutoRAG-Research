@@ -52,35 +52,8 @@ class MonoT5Reranker(LocalReranker):
         self._false_token_id = self._tokenizer.encode("false", add_special_tokens=False)[0]
         logger.info("Loaded MonoT5 reranker: %s on %s", self.model_name, self._device)
 
-    def _score_pair(self, query: str, document: str) -> float:
-        """Score a single query-document pair."""
-        import torch
-
-        prompt = f"Query: {query} Document: {document} Relevant:"
-        inputs = self._tokenizer(prompt, return_tensors="pt", max_length=self.max_length, truncation=True).to(
-            self._device
-        )
-
-        with torch.no_grad():
-            # Generate logits for the first output token
-            outputs = self._model.generate(
-                **inputs,
-                max_new_tokens=1,
-                output_scores=True,
-                return_dict_in_generate=True,
-            )
-
-        # Get logits for the first generated token
-        logits = outputs.scores[0][0]  # [vocab_size]
-
-        # Softmax over true/false tokens
-        true_false_logits = torch.stack([logits[self._true_token_id], logits[self._false_token_id]])
-        probs = torch.nn.functional.softmax(true_false_logits, dim=0)
-
-        return float(probs[0].item())  # Probability of "true"
-
     def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
-        """Rerank documents using MonoT5 true/false scoring.
+        """Rerank documents using MonoT5 batch true/false scoring.
 
         Args:
             query: The search query.
@@ -96,10 +69,30 @@ class MonoT5Reranker(LocalReranker):
         top_k = top_k or len(documents)
         top_k = min(top_k, len(documents))
 
-        results = []
-        for i, doc in enumerate(documents):
-            score = self._score_pair(query, doc)
-            results.append(RerankResult(index=i, text=doc, score=score))
+        import torch
 
+        prompts = [f"Query: {query} Document: {doc} Relevant:" for doc in documents]
+        inputs = self._tokenizer(
+            prompts, return_tensors="pt", max_length=self.max_length, truncation=True, padding=True
+        ).to(self._device)
+
+        with torch.no_grad():
+            outputs = self._model.generate(
+                **inputs,
+                max_new_tokens=1,
+                output_scores=True,
+                return_dict_in_generate=True,
+            )
+
+        # outputs.scores[0] shape: [batch_size, vocab_size]
+        logits = outputs.scores[0]
+        true_false = logits[:, [self._true_token_id, self._false_token_id]]
+        probs = torch.nn.functional.softmax(true_false, dim=-1)
+        scores = probs[:, 0].tolist()
+
+        results = [
+            RerankResult(index=i, text=doc, score=score)
+            for i, (doc, score) in enumerate(zip(documents, scores, strict=True))
+        ]
         results.sort(key=lambda x: x.score, reverse=True)
         return results[:top_k]

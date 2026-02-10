@@ -103,12 +103,14 @@ class ColBERTReranker(LocalReranker):
         # Encode query once
         query_emb, query_mask = self._encode([query])
 
-        # Score each document
+        # Encode all documents in a single batch
+        doc_embs, doc_masks = self._encode(documents)
+
+        # Score each document using MaxSim
         results = []
-        for i, doc in enumerate(documents):
-            doc_emb, doc_mask = self._encode([doc])
-            score = self._maxsim_score(query_emb, query_mask, doc_emb, doc_mask)
-            results.append(RerankResult(index=i, text=doc, score=score))
+        for i in range(len(documents)):
+            score = self._maxsim_score(query_emb, query_mask, doc_embs[i : i + 1], doc_masks[i : i + 1])
+            results.append(RerankResult(index=i, text=documents[i], score=score))
 
         results.sort(key=lambda x: x.score, reverse=True)
         return results[:top_k]

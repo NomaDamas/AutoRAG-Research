@@ -476,11 +476,89 @@ class TestColBERTRerankerRerank:
         object.__setattr__(reranker, "device", None)
         return reranker
 
+    def _create_reranker_with_mock_encode(self, scores: list[float]) -> tuple[object, list]:
+        """Create a ColBERTReranker with mocked _encode and _maxsim_score.
+
+        Args:
+            scores: Pre-defined MaxSim scores for each document.
+
+        Returns:
+            Tuple of (reranker, encode_call_args) where encode_call_args
+            accumulates the texts passed to each _encode call.
+        """
+        import torch
+
+        from autorag_research.rerankers.colbert import ColBERTReranker
+
+        reranker = ColBERTReranker.__new__(ColBERTReranker)
+
+        encode_call_args: list[list[str]] = []
+        dim = 32
+
+        def mock_encode(texts: list[str]):
+            encode_call_args.append(list(texts))
+            n = len(texts)
+            return torch.randn(n, 10, dim), torch.ones(n, 10, dtype=torch.long)
+
+        score_idx = [0]
+
+        def mock_maxsim(q_emb, q_mask, d_emb, d_mask):
+            s = scores[score_idx[0]]
+            score_idx[0] += 1
+            return s
+
+        object.__setattr__(reranker, "_encode", mock_encode)
+        object.__setattr__(reranker, "_maxsim_score", mock_maxsim)
+        object.__setattr__(reranker, "_model", MagicMock())
+        object.__setattr__(reranker, "_tokenizer", MagicMock())
+        object.__setattr__(reranker, "_device", "cpu")
+        object.__setattr__(reranker, "model_name", "test-model")
+        object.__setattr__(reranker, "batch_size", 64)
+        object.__setattr__(reranker, "max_concurrency", 10)
+        object.__setattr__(reranker, "max_length", 512)
+        object.__setattr__(reranker, "device", None)
+        return reranker, encode_call_args
+
     def test_empty_documents(self) -> None:
         """Returns empty list for empty documents."""
         reranker = self._create_reranker()
         results = reranker.rerank("query", [])
         assert results == []
+
+    def test_batch_encode_called_twice(self) -> None:
+        """Documents are batch-encoded with exactly two _encode calls."""
+        reranker, encode_call_args = self._create_reranker_with_mock_encode([0.8, 0.5, 0.3])
+        reranker.rerank("query", ["doc1", "doc2", "doc3"])
+
+        assert len(encode_call_args) == 2
+        assert encode_call_args[0] == ["query"]
+        assert encode_call_args[1] == ["doc1", "doc2", "doc3"]
+
+    def test_batch_returns_correct_format(self) -> None:
+        """Returns sorted RerankResult list from batch encoding."""
+        reranker, _ = self._create_reranker_with_mock_encode([0.3, 0.9, 0.6])
+        results = reranker.rerank("query", ["doc1", "doc2", "doc3"])
+
+        assert len(results) == 3
+        assert all(isinstance(r, RerankResult) for r in results)
+        assert results[0].score >= results[1].score >= results[2].score
+
+    def test_batch_preserves_original_indices(self) -> None:
+        """Results preserve original document indices after batch scoring and sorting."""
+        reranker, _ = self._create_reranker_with_mock_encode([0.2, 0.9, 0.5])
+        results = reranker.rerank("query", ["doc1", "doc2", "doc3"])
+
+        assert results[0].index == 1
+        assert results[0].text == "doc2"
+        assert results[-1].index == 0
+        assert results[-1].text == "doc1"
+
+    def test_batch_respects_top_k(self) -> None:
+        """Returns only top_k results from batch encoding."""
+        reranker, _ = self._create_reranker_with_mock_encode([0.2, 0.9, 0.5])
+        results = reranker.rerank("query", ["doc1", "doc2", "doc3"], top_k=2)
+        assert len(results) == 2
+        assert results[0].index == 1
 
 
 # ===== MonoT5Reranker Tests =====
@@ -506,34 +584,36 @@ class TestMonoT5RerankerInit:
 class TestMonoT5RerankerRerank:
     """Tests for MonoT5Reranker.rerank method."""
 
-    def _create_reranker(self) -> object:
-        """Create a MonoT5Reranker with mocked model."""
+    def _create_reranker(self, num_docs: int, true_logits: list[float] | None = None) -> object:
+        """Create a MonoT5Reranker with mocked model for batch inference.
+
+        Args:
+            num_docs: Number of documents (determines batch size for mock logits).
+            true_logits: Per-document logit values for the "true" token.
+                         Defaults to 5.0 for all documents.
+        """
         import torch
 
         from autorag_research.rerankers.monot5 import MonoT5Reranker
 
         reranker = MonoT5Reranker.__new__(MonoT5Reranker)
 
+        if true_logits is None:
+            true_logits = [5.0] * num_docs
+
         mock_model = MagicMock()
-        # Mock generate to return scores
         mock_scores = MagicMock()
-        mock_logits = torch.zeros(32128)  # T5 vocab size
-        mock_logits[1176] = 5.0  # "true" token
-        mock_logits[6136] = 1.0  # "false" token
-        mock_scores.scores = [mock_logits.unsqueeze(0)]
+        batch_logits = torch.zeros(num_docs, 32128)
+        for i, tl in enumerate(true_logits):
+            batch_logits[i, 1176] = tl
+            batch_logits[i, 6136] = 1.0
+        mock_scores.scores = [batch_logits]
         mock_model.generate.return_value = mock_scores
 
         mock_tokenizer = MagicMock()
-        mock_tokenizer.return_value = {
-            "input_ids": torch.tensor([[0, 1, 2]]),
-            "attention_mask": torch.tensor([[1, 1, 1]]),
-        }
         mock_tokenizer.encode.side_effect = lambda text, add_special_tokens: [1176] if text == "true" else [6136]
-
-        # Make tokenizer callable return an object with .to() method
         mock_inputs = MagicMock()
         mock_inputs.to.return_value = mock_inputs
-        mock_inputs.__getitem__ = lambda self, key: torch.tensor([[0, 1, 2]])
         mock_tokenizer.return_value = mock_inputs
 
         object.__setattr__(reranker, "_model", mock_model)
@@ -550,26 +630,53 @@ class TestMonoT5RerankerRerank:
 
     def test_empty_documents(self) -> None:
         """Returns empty list for empty documents."""
-        reranker = self._create_reranker()
+        reranker = self._create_reranker(1)
         results = reranker.rerank("query", [])
         assert results == []
 
     def test_rerank_returns_correct_format(self) -> None:
         """Returns list of RerankResult."""
-        reranker = self._create_reranker()
+        reranker = self._create_reranker(2)
         results = reranker.rerank("query", ["doc1", "doc2"])
 
         assert len(results) == 2
         assert all(isinstance(r, RerankResult) for r in results)
-        # Scores should be between 0 and 1 (probability)
         for r in results:
             assert 0.0 <= r.score <= 1.0
 
     def test_rerank_respects_top_k(self) -> None:
         """Returns only top_k results."""
-        reranker = self._create_reranker()
+        reranker = self._create_reranker(3)
         results = reranker.rerank("query", ["doc1", "doc2", "doc3"], top_k=1)
         assert len(results) == 1
+
+    def test_batch_generate_called_once(self) -> None:
+        """Model generate is called exactly once for batch inference."""
+        reranker = self._create_reranker(3)
+        reranker.rerank("query", ["doc1", "doc2", "doc3"])
+        assert reranker._model.generate.call_count == 1
+
+    def test_batch_tokenizer_receives_all_prompts(self) -> None:
+        """Tokenizer receives all prompts at once."""
+        reranker = self._create_reranker(2)
+        reranker.rerank("test query", ["doc1", "doc2"])
+
+        call_args = reranker._tokenizer.call_args
+        prompts = call_args[0][0]
+        assert len(prompts) == 2
+        assert prompts[0] == "Query: test query Document: doc1 Relevant:"
+        assert prompts[1] == "Query: test query Document: doc2 Relevant:"
+
+    def test_batch_preserves_original_indices(self) -> None:
+        """Results preserve original document indices after batch scoring and sorting."""
+        # doc1: low true logit, doc2: high true logit, doc3: medium
+        reranker = self._create_reranker(3, true_logits=[1.0, 10.0, 5.0])
+        results = reranker.rerank("query", ["doc1", "doc2", "doc3"])
+
+        assert results[0].index == 1
+        assert results[0].text == "doc2"
+        assert results[-1].index == 0
+        assert results[-1].text == "doc1"
 
 
 # ===== TARTReranker Tests =====
@@ -602,25 +709,17 @@ class TestTARTRerankerRerank:
     """Tests for TARTReranker.rerank method."""
 
     def _create_reranker(self, mock_logits_values: list[list[float]]) -> object:
-        """Create a TARTReranker with mocked model."""
+        """Create a TARTReranker with mocked model for batch inference."""
         import torch
 
         from autorag_research.rerankers.tart import TARTReranker
 
         reranker = TARTReranker.__new__(TARTReranker)
 
-        call_count = [0]
-
         mock_model = MagicMock()
-
-        def mock_forward(**kwargs):
-            result = MagicMock()
-            idx = min(call_count[0], len(mock_logits_values) - 1)
-            result.logits = torch.tensor([mock_logits_values[idx]])
-            call_count[0] += 1
-            return result
-
-        mock_model.side_effect = mock_forward
+        mock_result = MagicMock()
+        mock_result.logits = torch.tensor(mock_logits_values)
+        mock_model.return_value = mock_result
 
         mock_tokenizer = MagicMock()
         mock_inputs = MagicMock()
@@ -658,6 +757,35 @@ class TestTARTRerankerRerank:
         reranker = self._create_reranker([[0.1, 0.9], [0.5, 0.5], [0.8, 0.2]])
         results = reranker.rerank("query", ["doc1", "doc2", "doc3"], top_k=2)
         assert len(results) == 2
+
+    def test_batch_model_called_once(self) -> None:
+        """Model is called exactly once for batch inference."""
+        reranker = self._create_reranker([[0.1, 0.9], [0.5, 0.5], [0.8, 0.2]])
+        reranker.rerank("query", ["doc1", "doc2", "doc3"])
+        assert reranker._model.call_count == 1
+
+    def test_batch_tokenizer_receives_pairs(self) -> None:
+        """Tokenizer receives all query-document pairs at once."""
+        reranker = self._create_reranker([[0.1, 0.9], [0.8, 0.2]])
+        reranker.rerank("test query", ["doc1", "doc2"])
+
+        call_args = reranker._tokenizer.call_args
+        pairs = call_args[0][0]
+        assert len(pairs) == 2
+        assert all(p[0] == "Find passage to answer given question [SEP] test query" for p in pairs)
+        assert pairs[0][1] == "doc1"
+        assert pairs[1][1] == "doc2"
+
+    def test_batch_preserves_original_indices(self) -> None:
+        """Results preserve original document indices after batch scoring and sorting."""
+        # doc1: low positive class, doc2: high positive class, doc3: medium
+        reranker = self._create_reranker([[0.9, 0.1], [0.1, 0.9], [0.5, 0.5]])
+        results = reranker.rerank("query", ["doc1", "doc2", "doc3"])
+
+        assert results[0].index == 1  # doc2 (highest positive class)
+        assert results[0].text == "doc2"
+        assert results[-1].index == 0  # doc1 (lowest positive class)
+        assert results[-1].text == "doc1"
 
 
 # ===== KoRerankerReranker Tests =====
