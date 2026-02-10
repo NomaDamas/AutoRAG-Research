@@ -197,9 +197,7 @@ class GenerationPipelineService(BaseService):
         )
 
         total_queries = 0
-        total_prompt_tokens = 0
-        total_completion_tokens = 0
-        total_embedding_tokens = 0
+        total_token_usage: dict[str, int] | None = None
         total_execution_time_ms = 0
         failed_queries: list[int] = []
         offset = 0
@@ -249,11 +247,9 @@ class GenerationPipelineService(BaseService):
                 batch_results = asyncio.run(process_batch(query_ids))
                 valid_results = self._filter_valid_results(query_ids, batch_results, failed_queries)
 
-                prompt, completion, embedding, exec_time = aggregate_token_usage(valid_results)
-                total_prompt_tokens += prompt
-                total_completion_tokens += completion
-                total_embedding_tokens += embedding
-                total_execution_time_ms += exec_time
+                for r in valid_results:
+                    total_token_usage = aggregate_token_usage(total_token_usage, r["token_usage"])
+                    total_execution_time_ms += r["execution_time"]
 
                 self._save_executor_results(uow, valid_results)
                 total_queries += len(valid_results)
@@ -267,21 +263,10 @@ class GenerationPipelineService(BaseService):
 
         avg_execution_time_ms = total_execution_time_ms / total_queries if total_queries > 0 else 0
 
-        # Build aggregated token usage
-        total_tokens = total_prompt_tokens + total_completion_tokens
-        token_usage = None
-        if total_tokens > 0:
-            token_usage = {
-                "prompt_tokens": total_prompt_tokens,
-                "completion_tokens": total_completion_tokens,
-                "total_tokens": total_tokens,
-                "embedding_tokens": total_embedding_tokens,
-            }
-
         return {
             "pipeline_id": pipeline_id,
             "total_queries": total_queries,
-            "token_usage": token_usage,
+            "token_usage": total_token_usage,
             "avg_execution_time_ms": avg_execution_time_ms,
             "failed_queries": failed_queries,
         }
@@ -343,7 +328,7 @@ class GenerationPipelineService(BaseService):
             chunk_map = {chunk.id: chunk.contents for chunk in chunks}
             return [chunk_map.get(cid, "") for cid in chunk_ids]
 
-    def get_query_text(self, query_id: int) -> str:
+    def get_query_text(self, query_id: int | str) -> str:
         """Get the text of a query by its ID.
 
         Args:

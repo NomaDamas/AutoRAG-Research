@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import io
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from PIL import Image
@@ -705,6 +705,169 @@ class TestNormalizeDbsfWithNone:
         result = normalize_dbsf(scores)
         assert all(0.0 <= v <= 1.0 for v in result if v is not None)
         assert result[2] == 0.5
+
+
+class TestExtractTokenLogprobs:
+    """Tests for extract_token_logprobs utility function.
+
+    This function extracts log probabilities from LangChain LLM responses.
+    Used by MAIN-RAG pipeline for relevance scoring.
+    """
+
+    def _create_mock_response_with_logprobs(
+        self,
+        content: str,
+        logprobs_content: list[dict],
+    ) -> MagicMock:
+        """Helper to create mock LLM response with logprobs metadata."""
+        response = MagicMock()
+        response.content = content
+        response.response_metadata = {
+            "logprobs": {
+                "content": logprobs_content,
+            }
+        }
+        return response
+
+    def test_extract_logprobs_returns_dict_when_present(self):
+        """Test that logprobs are correctly extracted from response metadata."""
+        from autorag_research.util import extract_token_logprobs
+
+        logprobs_content = [
+            {"token": "Yes", "logprob": -0.001, "bytes": [89, 101, 115], "top_logprobs": []},
+        ]
+        response = self._create_mock_response_with_logprobs("Yes", logprobs_content)
+
+        result = extract_token_logprobs(response)
+
+        assert result is not None
+        assert "Yes" in result
+        assert result["Yes"] == -0.001
+
+    def test_extract_logprobs_returns_none_when_not_present(self):
+        """Test that None is returned when response has no logprobs."""
+        from autorag_research.util import extract_token_logprobs
+
+        response = MagicMock()
+        response.content = "Yes"
+        response.response_metadata = {}
+
+        result = extract_token_logprobs(response)
+
+        assert result is None
+
+    def test_extract_logprobs_returns_none_when_no_response_metadata(self):
+        """Test that None is returned when response has no response_metadata attribute."""
+        from autorag_research.util import extract_token_logprobs
+
+        response = MagicMock(spec=[])  # No attributes
+
+        result = extract_token_logprobs(response)
+
+        assert result is None
+
+    def test_extract_logprobs_filters_by_target_tokens(self):
+        """Test that only target tokens are returned when specified."""
+        from autorag_research.util import extract_token_logprobs
+
+        logprobs_content = [
+            {"token": "Yes", "logprob": -0.001, "bytes": [89, 101, 115], "top_logprobs": []},
+            {"token": ",", "logprob": -0.5, "bytes": [44], "top_logprobs": []},
+            {"token": " the", "logprob": -0.3, "bytes": [32, 116, 104, 101], "top_logprobs": []},
+        ]
+        response = self._create_mock_response_with_logprobs("Yes, the", logprobs_content)
+
+        result = extract_token_logprobs(response, target_tokens=["Yes", "No"])
+
+        assert result is not None
+        assert "Yes" in result
+        assert "," not in result
+        assert " the" not in result
+
+    def test_extract_logprobs_case_insensitive_matching(self):
+        """Test that target token matching is case-insensitive."""
+        from autorag_research.util import extract_token_logprobs
+
+        logprobs_content = [
+            {"token": "yes", "logprob": -0.001, "bytes": [121, 101, 115], "top_logprobs": []},
+        ]
+        response = self._create_mock_response_with_logprobs("yes", logprobs_content)
+
+        result = extract_token_logprobs(response, target_tokens=["Yes", "No"])
+
+        assert result is not None
+        assert "yes" in result
+
+    def test_extract_logprobs_finds_target_in_top_logprobs(self):
+        """Test that target tokens are found in top_logprobs alternatives."""
+        from autorag_research.util import extract_token_logprobs
+
+        logprobs_content = [
+            {
+                "token": "Yes",
+                "logprob": -0.001,
+                "bytes": [89, 101, 115],
+                "top_logprobs": [
+                    {"token": "Yes", "logprob": -0.001, "bytes": [89, 101, 115]},
+                    {"token": "No", "logprob": -6.5, "bytes": [78, 111]},
+                ],
+            },
+        ]
+        response = self._create_mock_response_with_logprobs("Yes", logprobs_content)
+
+        result = extract_token_logprobs(response, target_tokens=["Yes", "No"])
+
+        assert result is not None
+        assert "Yes" in result
+        assert "No" in result
+        assert result["No"] == -6.5
+
+    def test_extract_logprobs_returns_none_for_empty_content(self):
+        """Test that None is returned when logprobs content is empty."""
+        from autorag_research.util import extract_token_logprobs
+
+        response = MagicMock()
+        response.content = ""
+        response.response_metadata = {"logprobs": {"content": []}}
+
+        result = extract_token_logprobs(response)
+
+        assert result is None
+
+    def test_extract_logprobs_handles_missing_logprob_value(self):
+        """Test that tokens with None logprob values are skipped."""
+        from autorag_research.util import extract_token_logprobs
+
+        logprobs_content = [
+            {"token": "Yes", "logprob": None, "bytes": [89, 101, 115], "top_logprobs": []},
+            {"token": "!", "logprob": -0.1, "bytes": [33], "top_logprobs": []},
+        ]
+        response = self._create_mock_response_with_logprobs("Yes!", logprobs_content)
+
+        result = extract_token_logprobs(response)
+
+        assert result is not None
+        assert "Yes" not in result
+        assert "!" in result
+
+    def test_extract_logprobs_returns_all_tokens_when_no_target_specified(self):
+        """Test that all tokens are returned when target_tokens is None."""
+        from autorag_research.util import extract_token_logprobs
+
+        logprobs_content = [
+            {"token": "The", "logprob": -0.1, "bytes": [84, 104, 101], "top_logprobs": []},
+            {"token": " answer", "logprob": -0.2, "bytes": [32, 97, 110], "top_logprobs": []},
+            {"token": " is", "logprob": -0.3, "bytes": [32, 105, 115], "top_logprobs": []},
+        ]
+        response = self._create_mock_response_with_logprobs("The answer is", logprobs_content)
+
+        result = extract_token_logprobs(response, target_tokens=None)
+
+        assert result is not None
+        assert len(result) == 3
+        assert "The" in result
+        assert " answer" in result
+        assert " is" in result
 
 
 class TestBytesToPilImage:
