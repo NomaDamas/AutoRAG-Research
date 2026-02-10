@@ -467,58 +467,83 @@ def normalize_dbsf(scores: list[float | None]) -> list[float | None]:
     return [normalize_single(s) for s in scores]
 
 
-def extract_langchain_token_usage(response: Any) -> dict[str, int] | None:
-    """Extract token usage from a LangChain LLM response.
+class TokenUsageTracker:
+    """Collects token usage from LangChain LLM responses.
 
-    Supports multiple LangChain response formats:
-    - usage_metadata (newer LangChain style with input_tokens/output_tokens)
-    - response_metadata.token_usage (older style with prompt_tokens/completion_tokens)
+    Usage::
 
-    Args:
-        response: LangChain LLM response object (AIMessage, etc.)
-
-    Returns:
-        Dictionary with prompt_tokens, completion_tokens, total_tokens keys,
-        or None if token usage is not available.
-
-    Example:
-        ```python
-        response = llm.invoke("Hello")
-        token_usage = extract_langchain_token_usage(response)
-        if token_usage:
-            print(f"Total tokens: {token_usage['total_tokens']}")
-        ```
+        tracker = TokenUsageTracker()
+        tracker.record(response)      # extract + store from LangChain response
+        result = tracker.total        # aggregated total across all calls
+        per_call = tracker.history    # per-call breakdown
     """
-    # Try newer LangChain style (usage_metadata with input_tokens/output_tokens)
-    if hasattr(response, "usage_metadata") and response.usage_metadata:
-        usage = response.usage_metadata
-        return {
-            "prompt_tokens": usage.get("input_tokens", 0),
-            "completion_tokens": usage.get("output_tokens", 0),
-            "total_tokens": usage.get("total_tokens", 0),
-        }
 
-    # Try older LangChain style (response_metadata.token_usage)
-    if hasattr(response, "response_metadata"):
-        usage = response.response_metadata.get("token_usage", {})
-        if usage:
+    def __init__(self) -> None:
+        self._history: list[dict[str, int]] = []
+
+    def record(self, response: Any) -> dict[str, int] | None:
+        """Extract and record token usage from a LangChain LLM response.
+
+        Args:
+            response: LangChain LLM response object (AIMessage, etc.)
+
+        Returns:
+            Extracted usage dict, or None if not available.
+        """
+        usage = self._extract(response)
+        if usage is not None:
+            self._history.append(dict(usage))
+        return usage
+
+    @property
+    def total(self) -> dict[str, int]:
+        """Aggregated total token usage across all recorded calls."""
+        if not self._history:
+            return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        result: dict[str, int] = {}
+        for usage in self._history:
+            for key, value in usage.items():
+                result[key] = result.get(key, 0) + value
+        return result
+
+    @property
+    def history(self) -> list[dict[str, int]]:
+        """Per-call token usage breakdown (defensive copy)."""
+        return [dict(usage) for usage in self._history]
+
+    @staticmethod
+    def _extract(response: Any) -> dict[str, int] | None:
+        """Extract token usage from LangChain response.
+
+        Supports multiple LangChain response formats:
+        - usage_metadata (newer style with input_tokens/output_tokens)
+        - response_metadata.token_usage (older style with prompt_tokens/completion_tokens)
+        """
+        # Newer LangChain style (usage_metadata)
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            usage = response.usage_metadata
             return {
-                "prompt_tokens": usage.get("prompt_tokens", 0),
-                "completion_tokens": usage.get("completion_tokens", 0),
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
                 "total_tokens": usage.get("total_tokens", 0),
             }
-
-    return None
+        # Older LangChain style (response_metadata.token_usage)
+        if hasattr(response, "response_metadata"):
+            usage = response.response_metadata.get("token_usage", {})
+            if usage:
+                return {
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                }
+        return None
 
 
 def aggregate_token_usage(
     current: dict[str, int] | None,
     new: dict[str, int] | None,
 ) -> dict[str, int] | None:
-    """Aggregate token usage from multiple LLM calls.
-
-    Combines token counts from multiple responses, useful for pipelines
-    that make multiple LLM calls (e.g., IRCoT iterative reasoning).
+    """Aggregate two token usage dicts (accumulator pattern).
 
     Args:
         current: Current aggregated token usage (or None).
@@ -526,15 +551,6 @@ def aggregate_token_usage(
 
     Returns:
         Aggregated token usage dict, or None if both inputs are None.
-
-    Example:
-        ```python
-        total = None
-        for response in responses:
-            usage = extract_langchain_token_usage(response)
-            total = aggregate_token_usage(total, usage)
-        print(f"Total tokens across all calls: {total['total_tokens']}")
-        ```
     """
     if current is None and new is None:
         return None
@@ -542,7 +558,6 @@ def aggregate_token_usage(
         return new
     if new is None:
         return current
-
     return {key: current.get(key, 0) + new.get(key, 0) for key in {*current, *new}}
 
 
