@@ -21,8 +21,8 @@ __all__ = [
     "BasicRAGPipelineConfig",
     "ET2RAGPipeline",
     "ET2RAGPipelineConfig",
-    "OrganizationStrategy",
     "MAINRAGPipeline",
+    "OrganizationStrategy",
     "VisRAGGenerationPipeline",
     "VisRAGGenerationPipelineConfig",
 ]
