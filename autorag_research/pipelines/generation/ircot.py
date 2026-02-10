@@ -332,10 +332,10 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
                 new_contents = self._service.get_chunk_contents(new_chunk_ids)
                 paragraphs.extend(new_contents)
 
-            # f. Apply paragraph_budget cap (FIFO: keep first N)
+            # f. Apply paragraph_budget cap (FIFO)
             if len(paragraphs) > self.paragraph_budget:
-                paragraphs = paragraphs[: self.paragraph_budget]
-                chunk_ids = chunk_ids[: self.paragraph_budget]
+                paragraphs = paragraphs[-self.paragraph_budget :]
+                chunk_ids = chunk_ids[-self.paragraph_budget :]
 
         # 3. Generate final answer
         qa_prompt = self._build_qa_prompt(query, paragraphs)
