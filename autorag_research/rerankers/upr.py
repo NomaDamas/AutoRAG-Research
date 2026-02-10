@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import ConfigDict, Field
 
-from autorag_research.rerankers.base import BaseReranker, RerankResult
+from autorag_research.rerankers.api_base import APIReranker
+from autorag_research.rerankers.base import RerankResult
 
 if TYPE_CHECKING:
     pass
@@ -17,7 +18,7 @@ UPR_PROMPT_TEMPLATE = """Passage: {passage}
 Please write a question based on this passage."""
 
 
-class UPRReranker(BaseReranker):
+class UPRReranker(APIReranker):
     """Reranker using UPR (Unsupervised Passage Reranker) method.
 
     UPR generates a question from each passage using an LLM, then computes
@@ -127,14 +128,8 @@ class UPRReranker(BaseReranker):
         top_k = top_k or len(documents)
         top_k = min(top_k, len(documents))
 
-        # Generate questions concurrently with bounded concurrency
-        semaphore = asyncio.Semaphore(self.max_concurrency)
-
-        async def _limited_generate(doc: str) -> str:
-            async with semaphore:
-                return await self._agenerate_question(doc)
-
-        questions = await asyncio.gather(*[_limited_generate(doc) for doc in documents])
+        # Generate questions for all documents
+        questions = await asyncio.gather(*[self._agenerate_question(doc) for doc in documents])
 
         # Compute scores
         scores: list[tuple[int, float, str]] = []

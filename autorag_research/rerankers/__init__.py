@@ -30,6 +30,7 @@ _RERANKER_MODULES: dict[str, str] = {
     "FlagEmbeddingReranker": "autorag_research.rerankers.flag_embedding",
     "FlashRankReranker": "autorag_research.rerankers.flashrank",
     "JinaReranker": "autorag_research.rerankers.jina",
+    "VoyageAIReranker": "autorag_research.rerankers.voyageai",
     "KoRerankerReranker": "autorag_research.rerankers.koreranker",
     "MixedbreadAIReranker": "autorag_research.rerankers.mixedbreadai",
     "MonoT5Reranker": "autorag_research.rerankers.monot5",
@@ -38,7 +39,6 @@ _RERANKER_MODULES: dict[str, str] = {
     "SentenceTransformerReranker": "autorag_research.rerankers.sentence_transformer",
     "TARTReranker": "autorag_research.rerankers.tart",
     "UPRReranker": "autorag_research.rerankers.upr",
-    "VoyageAIReranker": "autorag_research.rerankers.voyageai",
 }
 
 

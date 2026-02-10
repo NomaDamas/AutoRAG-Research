@@ -7,24 +7,14 @@ import os
 from typing import Any
 
 from pydantic import Field
-from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
 
-from autorag_research.rerankers.base import BaseReranker, RerankResult
+from autorag_research.rerankers.api_base import APIReranker, _create_retry_decorator
+from autorag_research.rerankers.base import RerankResult
 
 logger = logging.getLogger("AutoRAG-Research")
 
 
-def _create_retry_decorator():
-    """Create a retry decorator for Cohere API calls."""
-    return retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        reraise=True,
-    )
-
-
-class CohereReranker(BaseReranker):
+class CohereReranker(APIReranker):
     """Reranker using Cohere's rerank API.
 
     Requires the `cohere` package: `pip install cohere`
@@ -44,7 +34,7 @@ class CohereReranker(BaseReranker):
     def model_post_init(self, __context) -> None:
         """Initialize Cohere clients after model creation."""
         try:
-            import cohere
+            import cohere  # ty: ignore[unresolved-import]
         except ImportError as e:
             msg = "cohere package is required. Install with: pip install cohere"
             raise ImportError(msg) from e
@@ -58,7 +48,7 @@ class CohereReranker(BaseReranker):
         self._async_client = cohere.AsyncClient(api_key=api_key)
 
     def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
-        """Rerank documents using Cohere's rerank API.
+        """Rerank documents using Cohere's rerank API with automatic retry.
 
         Args:
             query: The search query.
@@ -94,7 +84,7 @@ class CohereReranker(BaseReranker):
         ]
 
     async def arerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
-        """Rerank documents asynchronously using Cohere's rerank API.
+        """Rerank documents asynchronously using Cohere's rerank API with automatic retry.
 
         Args:
             query: The search query.

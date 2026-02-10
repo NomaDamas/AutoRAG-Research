@@ -12,11 +12,6 @@ Re-score retrieved documents to improve ranking quality.
 | [Jina](jina.md) | API | Jina AI |
 | [VoyageAI](voyageai.md) | API | Voyage AI |
 | [MixedbreadAI](mixedbreadai.md) | API | Mixedbread AI |
-
-### LLM-based
-
-| Reranker | Type | Provider |
-|----------|------|----------|
 | [RankGPT](rankgpt.md) | LLM | Any LLM |
 | [UPR](upr.md) | LLM | Any LLM |
 | [FlagEmbedding LLM](flag_embedding_llm.md) | LLM-based | BAAI |

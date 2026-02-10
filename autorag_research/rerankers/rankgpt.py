@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import ConfigDict, Field
 
-from autorag_research.rerankers.base import BaseReranker, RerankResult
+from autorag_research.rerankers.api_base import APIReranker
+from autorag_research.rerankers.base import RerankResult
 
 if TYPE_CHECKING:
     pass
@@ -23,7 +24,7 @@ Query: {query}
 Rank the {num_passages} passages above based on their relevance to the search query. The passages should be listed in descending order using identifiers. The most relevant passages should be listed first. The output format should be [] > [] > [], e.g., [1] > [2] > [3]. Only respond with the ranking results, do not say any word or explain."""
 
 
-class RankGPTReranker(BaseReranker):
+class RankGPTReranker(APIReranker):
     """Reranker using LLM-based listwise ranking (RankGPT method).
 
     This reranker uses an LLM to rank documents by comparing them all at once

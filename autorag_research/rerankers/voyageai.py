@@ -7,14 +7,16 @@ from typing import Any
 
 from pydantic import Field
 
-from autorag_research.rerankers.base import BaseReranker, RerankResult
+from autorag_research.rerankers.api_base import APIReranker, _create_retry_decorator
+from autorag_research.rerankers.base import RerankResult
 
 
-class VoyageAIReranker(BaseReranker):
+class VoyageAIReranker(APIReranker):
     """Reranker using Voyage AI's rerank API.
 
     Requires the `voyageai` package: `pip install voyageai`
     Requires `VOYAGE_API_KEY` environment variable.
+    Includes automatic retry with exponential backoff for transient errors.
     """
 
     model_name: str = Field(default="rerank-2", description="Voyage AI rerank model name.")
@@ -28,7 +30,7 @@ class VoyageAIReranker(BaseReranker):
     def model_post_init(self, __context) -> None:
         """Initialize Voyage AI clients after model creation."""
         try:
-            import voyageai
+            import voyageai  # ty: ignore[unresolved-import]
         except ImportError as e:
             msg = "voyageai package is required. Install with: pip install voyageai"
             raise ImportError(msg) from e
@@ -42,7 +44,7 @@ class VoyageAIReranker(BaseReranker):
         self._async_client = voyageai.AsyncClient(api_key=api_key)
 
     def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
-        """Rerank documents using Voyage AI's rerank API.
+        """Rerank documents using Voyage AI's rerank API with automatic retry.
 
         Args:
             query: The search query.
@@ -57,12 +59,16 @@ class VoyageAIReranker(BaseReranker):
 
         top_k = top_k or len(documents)
 
-        response = self._client.rerank(
-            model=self.model_name,
-            query=query,
-            documents=documents,
-            top_k=top_k,
-        )
+        @_create_retry_decorator()
+        def _call_api():
+            return self._client.rerank(
+                model=self.model_name,
+                query=query,
+                documents=documents,
+                top_k=top_k,
+            )
+
+        response = _call_api()
 
         return [
             RerankResult(
@@ -74,7 +80,7 @@ class VoyageAIReranker(BaseReranker):
         ]
 
     async def arerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
-        """Rerank documents asynchronously using Voyage AI's rerank API.
+        """Rerank documents asynchronously using Voyage AI's rerank API with automatic retry.
 
         Args:
             query: The search query.
@@ -89,12 +95,16 @@ class VoyageAIReranker(BaseReranker):
 
         top_k = top_k or len(documents)
 
-        response = await self._async_client.rerank(
-            model=self.model_name,
-            query=query,
-            documents=documents,
-            top_k=top_k,
-        )
+        @_create_retry_decorator()
+        async def _call_api():
+            return await self._async_client.rerank(
+                model=self.model_name,
+                query=query,
+                documents=documents,
+                top_k=top_k,
+            )
+
+        response = await _call_api()
 
         return [
             RerankResult(
