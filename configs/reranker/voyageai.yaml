@@ -1,0 +1,2 @@
+_target_: autorag_research.rerankers.voyageai.VoyageAIReranker
+model_name: rerank-2
