@@ -480,6 +480,13 @@ setup_pg_docker() {
     # Check for existing container
     if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
         if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            # Verify the running container's port matches what the user expects
+            local actual_port
+            actual_port=$(docker port "$container_name" 5432 2>/dev/null | grep -oE '[0-9]+$' || true)
+            if [[ -n "$actual_port" && "$actual_port" != "$pg_port" ]]; then
+                warn "Container '${container_name}' is running on port ${actual_port}, not ${pg_port}. Using actual port."
+                pg_port="$actual_port"
+            fi
             success "Container '${container_name}' is already running"
             write_db_yaml "localhost" "$pg_port" "postgres" "$pg_password"
             return
@@ -565,8 +572,8 @@ wait_for_pg() {
         else
             # Fallback: try a TCP connection
             if (echo > "/dev/tcp/${host}/${port}") &>/dev/null; then
-                # Give it a moment after TCP is available
-                sleep 2
+                # Give it a moment after TCP is available (PG may accept TCP before it's query-ready)
+                sleep 10
                 return 0
             fi
         fi
