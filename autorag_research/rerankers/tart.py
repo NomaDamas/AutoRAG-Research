@@ -77,8 +77,11 @@ class TARTReranker(LocalReranker):
         with torch.no_grad():
             outputs = self._model(**inputs)
 
+        if outputs.logits.shape[-1] != 2:
+            msg = f"TART expects 2-class model, got {outputs.logits.shape[-1]} classes"
+            raise ValueError(msg)
         probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-        scores = probs[:, -1].tolist()
+        scores = probs[:, 1].tolist()
 
         results = [
             RerankResult(index=i, text=doc, score=score)

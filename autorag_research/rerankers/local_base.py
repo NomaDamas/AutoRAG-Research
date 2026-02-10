@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from typing import Any
 
 from pydantic import Field
@@ -37,10 +38,12 @@ class LocalReranker(BaseReranker):
         """Auto-detect and set the compute device.
 
         Sets self._device based on self.device field or CUDA availability.
+        Also initializes per-instance inference lock for thread safety.
 
         Returns:
             The resolved device string.
         """
+        object.__setattr__(self, "_inference_lock", threading.Lock())
         try:
             import torch
 
@@ -61,4 +64,13 @@ class LocalReranker(BaseReranker):
             List of RerankResult objects sorted by relevance score (descending).
         """
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.rerank, query, documents, top_k)
+
+        lock = getattr(self, "_inference_lock", None)
+
+        def _locked_rerank() -> list[RerankResult]:
+            if lock is not None:
+                with lock:
+                    return self.rerank(query, documents, top_k)
+            return self.rerank(query, documents, top_k)
+
+        return await loop.run_in_executor(None, _locked_rerank)

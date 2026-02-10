@@ -72,23 +72,27 @@ class MonoT5Reranker(LocalReranker):
         import torch
 
         prompts = [f"Query: {query} Document: {doc} Relevant:" for doc in documents]
-        inputs = self._tokenizer(
-            prompts, return_tensors="pt", max_length=self.max_length, truncation=True, padding=True
-        ).to(self._device)
 
-        with torch.no_grad():
-            outputs = self._model.generate(
-                **inputs,
-                max_new_tokens=1,
-                output_scores=True,
-                return_dict_in_generate=True,
-            )
+        scores: list[float] = []
+        for batch_start in range(0, len(prompts), self.batch_size):
+            batch_prompts = prompts[batch_start : batch_start + self.batch_size]
+            inputs = self._tokenizer(
+                batch_prompts, return_tensors="pt", max_length=self.max_length, truncation=True, padding=True
+            ).to(self._device)
 
-        # outputs.scores[0] shape: [batch_size, vocab_size]
-        logits = outputs.scores[0]
-        true_false = logits[:, [self._true_token_id, self._false_token_id]]
-        probs = torch.nn.functional.softmax(true_false, dim=-1)
-        scores = probs[:, 0].tolist()
+            with torch.no_grad():
+                outputs = self._model.generate(
+                    **inputs,
+                    max_new_tokens=1,
+                    output_scores=True,
+                    return_dict_in_generate=True,
+                )
+
+            # outputs.scores[0] shape: [batch_size, vocab_size]
+            logits = outputs.scores[0]
+            true_false = logits[:, [self._true_token_id, self._false_token_id]]
+            probs = torch.nn.functional.softmax(true_false, dim=-1)
+            scores.extend(probs[:, 0].tolist())
 
         results = [
             RerankResult(index=i, text=doc, score=score)

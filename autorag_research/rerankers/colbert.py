@@ -77,7 +77,7 @@ class ColBERTReranker(LocalReranker):
 
         # Mask out padding tokens in query
         query_mask_squeezed = query_mask.squeeze(0).float()
-        max_sim = max_sim * query_mask_squeezed
+        max_sim = max_sim.clamp(min=0.0) * query_mask_squeezed
 
         # Average over valid query tokens
         score = max_sim.sum() / query_mask_squeezed.sum()
