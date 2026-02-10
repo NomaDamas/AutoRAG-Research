@@ -11,10 +11,12 @@ from omegaconf import OmegaConf
 
 from autorag_research.cli.utils import get_config_dir
 from autorag_research.embeddings.base import MultiVectorBaseEmbedding
+from autorag_research.rerankers.base import BaseReranker
 
 logger = logging.getLogger("AutoRAG-Research")
 
 EMBEDDING_MODEL_TYPES = Embeddings | MultiVectorBaseEmbedding
+RERANKER_MODEL_TYPES = BaseReranker
 
 T = TypeVar("T")
 
@@ -58,6 +60,23 @@ def health_check_llm(model: BaseLanguageModel) -> None:
         model.invoke("Hello, world!")
     except Exception as e:
         raise LLMError from e
+
+
+def health_check_reranker(model: BaseReranker) -> None:
+    """Health check reranker model by making a test rerank call.
+
+    Args:
+        model: BaseReranker instance.
+
+    Raises:
+        RerankerError: If health check fails.
+    """
+    from autorag_research.exceptions import RerankerError
+
+    try:
+        model.rerank("test query", ["document 1", "document 2"], top_k=1)
+    except Exception as e:
+        raise RerankerError from e
 
 
 class ModelManager(Generic[T]):
@@ -188,6 +207,12 @@ _llm_manager: ModelManager[BaseLanguageModel] = ModelManager(
     health_check_func=health_check_llm,
 )
 
+_reranker_manager: ModelManager[BaseReranker] = ModelManager(
+    config_subdir="reranker",
+    expected_types=(BaseReranker,),
+    health_check_func=health_check_reranker,
+)
+
 
 # ============================================================================
 # Embedding Functions (existing API preserved)
@@ -287,5 +312,55 @@ def with_llm(param_name: str = "llm"):
     return _create_with_model_decorator(
         manager=_llm_manager,
         valid_types=(BaseLanguageModel,),
+        param_name=param_name,
+    )
+
+
+# ============================================================================
+# Reranker Functions (parallel API to embedding/llm)
+# ============================================================================
+
+
+def load_reranker(config_name: str) -> BaseReranker:
+    """Load reranker model directly from YAML via Hydra instantiate.
+
+    Args:
+        config_name: Name of the reranker config file (without .yaml extension).
+                    e.g., "cohere", "jina", "voyageai"
+
+    Returns:
+        BaseReranker instance.
+
+    Raises:
+        FileNotFoundError: If the config file doesn't exist.
+        TypeError: If instantiated object is not a BaseReranker.
+    """
+    return _reranker_manager.load(config_name)
+
+
+def with_reranker(param_name: str = "reranker"):
+    """Decorator that injects cached reranker instances.
+
+    Args:
+        param_name: Parameter name to inject. Defaults to "reranker".
+
+    Behavior:
+        - String config name → cached BaseReranker instance (via load_reranker)
+        - BaseReranker instance → pass through unchanged
+
+    Example:
+        @with_reranker()
+        def my_func(reranker: BaseReranker | str):
+            ...
+
+        # Can be called with string (converted to cached instance):
+        my_func(reranker="cohere")
+
+        # Or with instance (passed through):
+        my_func(reranker=some_reranker_instance)
+    """
+    return _create_with_model_decorator(
+        manager=_reranker_manager,
+        valid_types=(BaseReranker,),
         param_name=param_name,
     )

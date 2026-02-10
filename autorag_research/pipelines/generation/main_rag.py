@@ -589,7 +589,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         return token_usage
 
     @staticmethod
-    def _build_token_usage_dict(results: list[dict]) -> dict[str, int]:
+    def _build_token_usage_dict(results: list[dict]) -> dict[str, Any]:
         """Aggregate token usage from multiple LLM calls using shared utility.
 
         Args:
@@ -598,10 +598,14 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         Returns:
             Aggregated token usage dict.
         """
-        prompt, completion, embedding, _ = aggregate_token_usage(results)
+        total: dict[str, int] | None = None
+        for r in results:
+            total = aggregate_token_usage(total, r.get("token_usage"))
+        if total is None:
+            return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "embedding_tokens": 0}
         return {
-            "prompt_tokens": prompt,
-            "completion_tokens": completion,
-            "total_tokens": prompt + completion,
-            "embedding_tokens": embedding,
+            "prompt_tokens": total.get("prompt_tokens", 0),
+            "completion_tokens": total.get("completion_tokens", 0),
+            "total_tokens": total.get("prompt_tokens", 0) + total.get("completion_tokens", 0),
+            "embedding_tokens": total.get("embedding_tokens", 0),
         }
