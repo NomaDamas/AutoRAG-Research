@@ -89,10 +89,7 @@ If the query fails, exit immediately:
 From the GraphQL response, filter threads that meet ALL of these criteria:
 
 1. **Thread is unresolved** (`isResolved == false`)
-2. **First comment is from /refactor** -- the first comment body contains either:
-   - `**Code Review Debate**` (majority finding)
-   - `**Code Review Note**` (single reviewer finding)
-3. **A reply exists with a human action** -- any comment after the first contains:
+2. **A reply exists with a human action** -- any comment after the first contains:
    - `[APPROVE]` -- human approves the suggested fix
    - `[IGNORE]` -- human wants to ignore this finding
 
