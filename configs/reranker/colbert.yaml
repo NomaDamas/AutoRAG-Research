@@ -1,2 +1,4 @@
 _target_: autorag_research.rerankers.colbert.ColBERTReranker
 model_name: colbert-ir/colbertv2.0
+batch_size: 64
+max_concurrency: 10
