@@ -418,28 +418,83 @@ def normalize_dbsf(scores: list[float | None]) -> list[float | None]:
     return [normalize_single(s) for s in scores]
 
 
-def aggregate_token_usage(results: list[dict]) -> tuple[int, int, int, int]:
-    """Aggregate token usage from generation results.
+def extract_langchain_token_usage(response: Any) -> dict[str, int] | None:
+    """Extract token usage from a LangChain LLM response.
+
+    Supports multiple LangChain response formats:
+    - usage_metadata (newer LangChain style with input_tokens/output_tokens)
+    - response_metadata.token_usage (older style with prompt_tokens/completion_tokens)
 
     Args:
-        results: List of generation result dicts with token_usage and execution_time.
+        response: LangChain LLM response object (AIMessage, etc.)
 
     Returns:
-        Tuple of (prompt_tokens, completion_tokens, embedding_tokens, execution_time_ms).
+        Dictionary with prompt_tokens, completion_tokens, total_tokens keys,
+        or None if token usage is not available.
+
+    Example:
+        ```python
+        response = llm.invoke("Hello")
+        token_usage = extract_langchain_token_usage(response)
+        if token_usage:
+            print(f"Total tokens: {token_usage['total_tokens']}")
+        ```
     """
-    prompt_tokens = 0
-    completion_tokens = 0
-    embedding_tokens = 0
-    execution_time_ms = 0
+    # Try newer LangChain style (usage_metadata with input_tokens/output_tokens)
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        usage = response.usage_metadata
+        return {
+            "prompt_tokens": usage.get("input_tokens", 0),
+            "completion_tokens": usage.get("output_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+        }
 
-    for result in results:
-        if result["token_usage"]:
-            prompt_tokens += result["token_usage"].get("prompt_tokens", 0)
-            completion_tokens += result["token_usage"].get("completion_tokens", 0)
-            embedding_tokens += result["token_usage"].get("embedding_tokens", 0)
-        execution_time_ms += result["execution_time"]
+    # Try older LangChain style (response_metadata.token_usage)
+    if hasattr(response, "response_metadata"):
+        usage = response.response_metadata.get("token_usage", {})
+        if usage:
+            return {
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+            }
 
-    return prompt_tokens, completion_tokens, embedding_tokens, execution_time_ms
+    return None
+
+
+def aggregate_token_usage(
+    current: dict[str, int] | None,
+    new: dict[str, int] | None,
+) -> dict[str, int] | None:
+    """Aggregate token usage from multiple LLM calls.
+
+    Combines token counts from multiple responses, useful for pipelines
+    that make multiple LLM calls (e.g., IRCoT iterative reasoning).
+
+    Args:
+        current: Current aggregated token usage (or None).
+        new: New token usage to add (or None).
+
+    Returns:
+        Aggregated token usage dict, or None if both inputs are None.
+
+    Example:
+        ```python
+        total = None
+        for response in responses:
+            usage = extract_langchain_token_usage(response)
+            total = aggregate_token_usage(total, usage)
+        print(f"Total tokens across all calls: {total['total_tokens']}")
+        ```
+    """
+    if current is None and new is None:
+        return None
+    if current is None:
+        return new
+    if new is None:
+        return current
+
+    return {key: current.get(key, 0) + new.get(key, 0) for key in {*current, *new}}
 
 
 def extract_token_logprobs(
