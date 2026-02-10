@@ -360,8 +360,9 @@ class TestIngestOverwriteBehavior:
         mock_conn = _make_mock_db_conn(create_returns=[False, True])
         mock_db_cls.from_config.return_value = mock_conn
 
-        cli_runner.invoke(app, ["ingest", "-n", "stub", "--overwrite"])
+        result = cli_runner.invoke(app, ["ingest", "-n", "stub", "--overwrite", "--skip-embedding"])
 
+        assert result.exit_code == 0, result.output
         mock_conn.terminate_connections.assert_called_once()
         mock_conn.drop_database.assert_called_once()
         assert mock_conn.create_database.call_count == 2
@@ -382,8 +383,9 @@ class TestIngestOverwriteBehavior:
         mock_conn = _make_mock_db_conn(create_returns=True)
         mock_db_cls.from_config.return_value = mock_conn
 
-        cli_runner.invoke(app, ["ingest", "-n", "stub"])
+        result = cli_runner.invoke(app, ["ingest", "-n", "stub", "--skip-embedding"])
 
+        assert result.exit_code == 0, result.output
         mock_conn.drop_database.assert_not_called()
         mock_conn.terminate_connections.assert_not_called()
         mock_conn.create_database.assert_called_once()

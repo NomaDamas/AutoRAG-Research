@@ -144,13 +144,13 @@ class DBConnection:
         pkey_type = self.detect_primary_key_type(schema_name)
         return create_schema(embedding_dim, pkey_type)
 
-    def create_database(self):
+    def create_database(self) -> bool:
         if self.database is None:
             raise MissingDBNameError
 
         from autorag_research.orm.util import create_database, install_vector_extensions
 
-        create_database(
+        created = create_database(
             host=self.host,
             port=self.port,
             user=self.username,
@@ -166,7 +166,10 @@ class DBConnection:
             database=self.database,
         )
 
-        logger.info(f"Database '{self.database}' created and vector extensions installed.")
+        if created:
+            logger.info(f"Database '{self.database}' created and vector extensions installed.")
+
+        return created
 
     def terminate_connections(self):
         """Terminate all connections to this database except the current one.
