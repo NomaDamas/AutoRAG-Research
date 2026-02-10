@@ -1,0 +1,2 @@
+_target_: autorag_research.rerankers.mixedbreadai.MixedbreadAIReranker
+model_name: mixedbread-ai/mxbai-rerank-large-v1

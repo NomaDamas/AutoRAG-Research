@@ -197,3 +197,10 @@ class MissingDBNameError(Exception):
 
     def __init__(self):
         super().__init__("Database name is missing in the configuration.")
+
+
+class RerankerError(Exception):
+    """Raised when the reranker model fails."""
+
+    def __init__(self, message: str = "Reranker model failed. Check the traceback above for details."):
+        super().__init__(message)
