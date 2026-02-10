@@ -208,9 +208,7 @@ class TestEmbedText:
         assert payload["input"] == ["test query"]
         assert payload["modality"] == "text"
 
-    def test_embed_query_delegates_to_text(
-        self, embeddings: InfinityEmbeddings, mock_response_single_base64: dict
-    ):
+    def test_embed_query_delegates_to_text(self, embeddings: InfinityEmbeddings, mock_response_single_base64: dict):
         mock_resp = MagicMock()
         mock_resp.json.return_value = mock_response_single_base64
         mock_resp.raise_for_status = MagicMock()
@@ -220,9 +218,7 @@ class TestEmbedText:
         assert len(result) == NUM_TOKENS
         assert len(result[0]) == HIDDEN_DIM
 
-    def test_embed_documents_single_api_call(
-        self, embeddings: InfinityEmbeddings, mock_response_batch_base64: dict
-    ):
+    def test_embed_documents_single_api_call(self, embeddings: InfinityEmbeddings, mock_response_batch_base64: dict):
         mock_resp = MagicMock()
         mock_resp.json.return_value = mock_response_batch_base64
         mock_resp.raise_for_status = MagicMock()
