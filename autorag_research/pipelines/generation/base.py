@@ -37,6 +37,9 @@ class BaseGenerationPipeline(BasePipeline, ABC):
                 chunk_ids = [r["doc_id"] for r in results]
                 chunk_contents = self._service.get_chunk_contents(chunk_ids)
 
+                # Retrieve relevant chunks (async)
+                results = await self._retrieval_pipeline.retrieve(query_text, top_k)
+                chunks = [self.get_chunk_content(r["doc_id"]) for r in results]
                 # Get query text (uses query_to_llm if available, else contents)
                 query_text = self._get_query_text(query_id)
 

@@ -13,7 +13,7 @@ description: "Simple retrieve-then-generate RAG"
 name: basic_rag
 retrieval_pipeline_name: bm25
 llm: gpt-4o-mini
-top_k: 5
+top_k: 10
 batch_size: 128
 max_concurrency: 8
 max_retries: 3
