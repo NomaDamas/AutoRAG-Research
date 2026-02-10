@@ -13,7 +13,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.util import extract_langchain_token_usage
+from autorag_research.util import TokenUsageTracker
 
 DEFAULT_PROMPT_TEMPLATE = """Context:
 {context}
@@ -177,7 +177,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
 
         # 5. Extract token usage from response metadata
 
-        token_usage = extract_langchain_token_usage(response)
+        token_usage = TokenUsageTracker.extract(response)
 
         # Extract text content from response
         text = response.content if hasattr(response, "content") else str(response)

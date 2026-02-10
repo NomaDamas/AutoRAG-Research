@@ -18,7 +18,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.util import aggregate_token_usage, extract_langchain_token_usage
+from autorag_research.util import TokenUsageTracker
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -272,7 +272,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
         chunk_ids: list[int | str] = []  # Track unique chunk IDs
         paragraphs: list[str] = []  # Paragraph contents
         cot_sentences: list[str] = []  # Chain-of-thought history
-        total_token_usage: dict[str, int] | None = None
+        tracker = TokenUsageTracker()
         steps_completed = 0
 
         # 1. Initial retrieval with original query
@@ -304,8 +304,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
             response_text = response.content if hasattr(response, "content") else str(response)
 
             # Aggregate token usage
-            token_usage = extract_langchain_token_usage(response)
-            total_token_usage = aggregate_token_usage(total_token_usage, token_usage)
+            tracker.record(response)
 
             # b. Extract first sentence only and add to history
             first_sentence = self._extract_first_sentence(response_text)
@@ -345,8 +344,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
         answer_text = qa_response.content if hasattr(qa_response, "content") else str(qa_response)
 
         # Aggregate final token usage
-        qa_token_usage = extract_langchain_token_usage(qa_response)
-        total_token_usage = aggregate_token_usage(total_token_usage, qa_token_usage)
+        tracker.record(qa_response)
 
         # 4. Build metadata
         metadata = {
@@ -357,7 +355,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
 
         return GenerationResult(
             text=answer_text,
-            token_usage=total_token_usage,
+            token_usage=tracker.total,
             metadata=metadata,
         )
 

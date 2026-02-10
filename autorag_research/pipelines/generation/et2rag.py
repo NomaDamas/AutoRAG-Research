@@ -30,7 +30,7 @@ from autorag_research.evaluation.metrics import calculate_cosine_similarity
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.util import aggregate_token_usage
+from autorag_research.util import TokenUsageTracker
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -242,11 +242,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         if not chunk_ids:
             return GenerationResult(
                 text="I don't have enough information to answer this question.",
-                token_usage={
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
-                },
+                token_usage=None,
                 metadata={
                     "retrieval_chunk_ids": [],
                     "organization_strategy": self._organization_strategy.value,
@@ -267,11 +263,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         if not documents:
             return GenerationResult(
                 text="Retrieved documents had no content.",
-                token_usage={
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
-                },
+                token_usage=None,
                 metadata={
                     "retrieval_chunk_ids": chunk_ids,
                     "organization_strategy": self._organization_strategy.value,
@@ -286,11 +278,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         if len(subsets) == 0:
             return GenerationResult(
                 text="Could not create context subsets from retrieved documents.",
-                token_usage={
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
-                },
+                token_usage=None,
                 metadata={
                     "retrieval_chunk_ids": chunk_ids,
                     "organization_strategy": self._organization_strategy.value,
@@ -321,11 +309,9 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         full_response, full_token_usage = await self._generate_full_response(query_text, selected_subset)
 
         # Step 8: Aggregate token usage (all partial + full)
-        total_token_usage: dict[str, int] | None = None
+        tracker = TokenUsageTracker()
         for tu in [*partial_token_usages, full_token_usage]:
-            total_token_usage = aggregate_token_usage(total_token_usage, tu)
-        if total_token_usage is None:
-            total_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            tracker.record_usage(tu)
 
         # Build metadata
         metadata = {
@@ -343,7 +329,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         return GenerationResult(
             text=full_response,
-            token_usage=total_token_usage,
+            token_usage=tracker.total,
             metadata=metadata,
         )
 
@@ -453,7 +439,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
     async def _generate_partial_responses(
         self, query: str, subsets: list[list[tuple[int, str]]]
-    ) -> tuple[list[str], list[dict]]:
+    ) -> tuple[list[str], list[dict[str, int] | None]]:
         """Generate partial responses for each subset sequentially.
 
         Each subset gets a DIFFERENT prompt because the context is different.
@@ -479,7 +465,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         return responses, token_usages
 
-    async def _generate_single(self, prompt: str, max_tokens: int | None = None) -> tuple[str, dict]:
+    async def _generate_single(self, prompt: str, max_tokens: int | None = None) -> tuple[str, dict[str, int] | None]:
         """Generate a single response asynchronously.
 
         Args:
@@ -496,11 +482,13 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         response = await self._llm.ainvoke(prompt, **kwargs)
         text = response.content if hasattr(response, "content") else str(response)
-        token_usage = self._extract_token_usage(response)
+        token_usage = TokenUsageTracker.extract(response)
 
         return text, token_usage
 
-    async def _generate_full_response(self, query: str, subset: list[tuple[int, str]]) -> tuple[str, dict]:
+    async def _generate_full_response(
+        self, query: str, subset: list[tuple[int, str]]
+    ) -> tuple[str, dict[str, int] | None]:
         """Generate the final full response with the selected subset.
 
         This is the SECOND stage of generation, after voting has selected
@@ -521,7 +509,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         response = await self._llm.ainvoke(prompt, **kwargs)
         text = response.content if hasattr(response, "content") else str(response)
-        token_usage = self._extract_token_usage(response)
+        token_usage = TokenUsageTracker.extract(response)
 
         return text, token_usage
 
@@ -609,36 +597,3 @@ class ET2RAGPipeline(BaseGenerationPipeline):
         confidence = max_score / avg_score if avg_score > 0 else 1.0
 
         return selected_index, confidence
-
-    def _extract_token_usage(self, response: Any) -> dict:
-        """Extract token usage from LangChain response.
-
-        Args:
-            response: LLM response object.
-
-        Returns:
-            Dictionary with prompt_tokens, completion_tokens, total_tokens.
-        """
-        # Try to get usage from response metadata (LangChain style)
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = response.usage_metadata
-            return {
-                "prompt_tokens": usage.get("input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0),
-            }
-        elif hasattr(response, "response_metadata"):
-            usage = response.response_metadata.get("token_usage", {})
-            if usage:
-                return {
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                }
-
-        # Default to zeros if no usage info available
-        return {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        }

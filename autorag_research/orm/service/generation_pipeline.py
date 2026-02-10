@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.service.base import BaseService
 from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
-from autorag_research.util import aggregate_token_usage, run_with_concurrency_limit
+from autorag_research.util import TokenUsageTracker, run_with_concurrency_limit
 
 __all__ = ["GenerateFunc", "GenerationPipelineService", "GenerationResult"]
 
@@ -248,7 +248,7 @@ class GenerationPipelineService(BaseService):
                 valid_results = self._filter_valid_results(query_ids, batch_results, failed_queries)
 
                 for r in valid_results:
-                    total_token_usage = aggregate_token_usage(total_token_usage, r["token_usage"])
+                    total_token_usage = TokenUsageTracker.aggregate(total_token_usage, r["token_usage"])
                     total_execution_time_ms += r["execution_time"]
 
                 self._save_executor_results(uow, valid_results)

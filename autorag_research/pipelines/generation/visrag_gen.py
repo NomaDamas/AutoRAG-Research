@@ -18,7 +18,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.util import extract_langchain_token_usage, image_chunk_to_pil_images, pil_image_to_data_uri
+from autorag_research.util import TokenUsageTracker, image_chunk_to_pil_images, pil_image_to_data_uri
 
 DEFAULT_VISRAG_PROMPT = """Based on the provided document images, answer the following question:
 
@@ -220,7 +220,7 @@ class VisRAGGenerationPipeline(BaseGenerationPipeline):
             GenerationResult containing text and token usage.
         """
         text = response.content if hasattr(response, "content") else str(response)
-        token_usage = extract_langchain_token_usage(response)
+        token_usage = TokenUsageTracker.extract(response)
         return GenerationResult(text=text, token_usage=token_usage)
 
     def _concatenate_images(
