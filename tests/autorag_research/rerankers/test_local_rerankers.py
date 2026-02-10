@@ -6,7 +6,134 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from autorag_research.rerankers.base import RerankResult
+from autorag_research.rerankers.base import BaseReranker, RerankResult
+from autorag_research.rerankers.local_base import LocalReranker
+
+# ===== LocalReranker Base Class Tests =====
+
+
+class TestLocalRerankerImport:
+    """Tests for LocalReranker import and hierarchy."""
+
+    def test_import_from_local_base(self) -> None:
+        """LocalReranker can be imported from local_base module."""
+        from autorag_research.rerankers.local_base import LocalReranker
+
+        assert LocalReranker is not None
+
+    def test_import_from_init(self) -> None:
+        """LocalReranker can be imported from rerankers package."""
+        from autorag_research.rerankers import LocalReranker
+
+        assert LocalReranker is not None
+
+    def test_inherits_from_base_reranker(self) -> None:
+        """LocalReranker inherits from BaseReranker."""
+        assert issubclass(LocalReranker, BaseReranker)
+
+    def test_default_device_is_none(self) -> None:
+        """Default device field is None (auto-detect)."""
+        assert LocalReranker.model_fields["device"].default is None
+
+    def test_default_max_length(self) -> None:
+        """Default max_length is 512."""
+        assert LocalReranker.model_fields["max_length"].default == 512
+
+
+class _MockLocalReranker(LocalReranker):
+    """Concrete LocalReranker subclass for testing."""
+
+    def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
+        return []
+
+    def model_post_init(self, __context) -> None:
+        pass
+
+
+class TestLocalRerankerInitDevice:
+    """Tests for LocalReranker._init_device method."""
+
+    @patch("torch.cuda.is_available", return_value=False)
+    def test_init_device_auto_cpu(self, mock_cuda: MagicMock) -> None:
+        """Auto-detects CPU when CUDA is not available."""
+        reranker = _MockLocalReranker()
+        result = reranker._init_device()
+        assert result == "cpu"
+        assert reranker._device == "cpu"
+
+    @patch("torch.cuda.is_available", return_value=True)
+    def test_init_device_auto_cuda(self, mock_cuda: MagicMock) -> None:
+        """Auto-detects CUDA when available."""
+        reranker = _MockLocalReranker()
+        result = reranker._init_device()
+        assert result == "cuda"
+        assert reranker._device == "cuda"
+
+    def test_init_device_explicit(self) -> None:
+        """Uses explicit device when provided."""
+        reranker = _MockLocalReranker(device="mps")
+        result = reranker._init_device()
+        assert result == "mps"
+        assert reranker._device == "mps"
+
+
+class TestLocalRerankerHierarchy:
+    """Tests for local reranker inheritance hierarchy."""
+
+    def test_colbert_is_local_reranker(self) -> None:
+        """ColBERTReranker inherits from LocalReranker."""
+        from autorag_research.rerankers.colbert import ColBERTReranker
+
+        assert issubclass(ColBERTReranker, LocalReranker)
+
+    def test_flag_embedding_is_local_reranker(self) -> None:
+        """FlagEmbeddingReranker inherits from LocalReranker."""
+        from autorag_research.rerankers.flag_embedding import FlagEmbeddingReranker
+
+        assert issubclass(FlagEmbeddingReranker, LocalReranker)
+
+    def test_flag_embedding_llm_is_local_reranker(self) -> None:
+        """FlagEmbeddingLLMReranker inherits from LocalReranker."""
+        from autorag_research.rerankers.flag_embedding_llm import FlagEmbeddingLLMReranker
+
+        assert issubclass(FlagEmbeddingLLMReranker, LocalReranker)
+
+    def test_flashrank_is_local_reranker(self) -> None:
+        """FlashRankReranker inherits from LocalReranker."""
+        from autorag_research.rerankers.flashrank import FlashRankReranker
+
+        assert issubclass(FlashRankReranker, LocalReranker)
+
+    def test_koreranker_is_local_reranker(self) -> None:
+        """KoRerankerReranker inherits from LocalReranker."""
+        from autorag_research.rerankers.koreranker import KoRerankerReranker
+
+        assert issubclass(KoRerankerReranker, LocalReranker)
+
+    def test_monot5_is_local_reranker(self) -> None:
+        """MonoT5Reranker inherits from LocalReranker."""
+        from autorag_research.rerankers.monot5 import MonoT5Reranker
+
+        assert issubclass(MonoT5Reranker, LocalReranker)
+
+    def test_openvino_is_local_reranker(self) -> None:
+        """OpenVINOReranker inherits from LocalReranker."""
+        from autorag_research.rerankers.openvino import OpenVINOReranker
+
+        assert issubclass(OpenVINOReranker, LocalReranker)
+
+    def test_sentence_transformer_is_local_reranker(self) -> None:
+        """SentenceTransformerReranker inherits from LocalReranker."""
+        from autorag_research.rerankers.sentence_transformer import SentenceTransformerReranker
+
+        assert issubclass(SentenceTransformerReranker, LocalReranker)
+
+    def test_tart_is_local_reranker(self) -> None:
+        """TARTReranker inherits from LocalReranker."""
+        from autorag_research.rerankers.tart import TARTReranker
+
+        assert issubclass(TARTReranker, LocalReranker)
+
 
 # ===== SentenceTransformerReranker Tests =====
 

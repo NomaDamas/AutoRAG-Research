@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
-from typing import Any
 
-from pydantic import ConfigDict, Field
+from pydantic import Field
 
-from autorag_research.rerankers.base import BaseReranker, RerankResult
+from autorag_research.rerankers.base import RerankResult
+from autorag_research.rerankers.local_base import LocalReranker
 
 logger = logging.getLogger("AutoRAG-Research")
 
 
-class KoRerankerReranker(BaseReranker):
+class KoRerankerReranker(LocalReranker):
     """Reranker using KoReranker for Korean-specific document reranking.
 
     Uses a cross-encoder model fine-tuned for Korean text.
@@ -23,29 +22,21 @@ class KoRerankerReranker(BaseReranker):
     Requires `torch` and `transformers` packages.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
     model_name: str = Field(
         default="Dongjin-kr/ko-reranker",
         description="KoReranker model name from HuggingFace.",
     )
-    max_length: int = Field(default=512, description="Maximum input sequence length.")
-    device: str | None = Field(default=None, description="Device to use (e.g. 'cuda', 'cpu'). Auto-detected if None.")
-
-    _model: Any = None
-    _tokenizer: Any = None
-    _device: str = "cpu"
 
     def model_post_init(self, __context) -> None:
         """Initialize KoReranker model and tokenizer after creation."""
         try:
-            import torch
+            import torch  # noqa: F401
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
         except ImportError as e:
             msg = "torch and transformers packages are required. Install with: pip install torch transformers"
             raise ImportError(msg) from e
 
-        self._device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._init_device()
         self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self._model = AutoModelForSequenceClassification.from_pretrained(self.model_name).to(self._device)
         self._model.eval()
@@ -100,17 +91,3 @@ class KoRerankerReranker(BaseReranker):
         ]
         results.sort(key=lambda x: x.score, reverse=True)
         return results[:top_k]
-
-    async def arerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
-        """Rerank documents asynchronously using KoReranker scoring.
-
-        Args:
-            query: The search query.
-            documents: List of document texts to rerank.
-            top_k: Number of top results to return. If None, returns all documents.
-
-        Returns:
-            List of RerankResult objects sorted by relevance score (descending).
-        """
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.rerank, query, documents, top_k)

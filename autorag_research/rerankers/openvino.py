@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
-from typing import Any
 
-from pydantic import ConfigDict, Field
+from pydantic import Field
 
-from autorag_research.rerankers.base import BaseReranker, RerankResult
+from autorag_research.rerankers.base import RerankResult
+from autorag_research.rerankers.local_base import LocalReranker
 
 logger = logging.getLogger("AutoRAG-Research")
 
 
-class OpenVINOReranker(BaseReranker):
+class OpenVINOReranker(LocalReranker):
     """Reranker using OpenVINO for Intel hardware-optimized inference.
 
     Uses the optimum-intel library to run cross-encoder models with OpenVINO
@@ -25,21 +24,15 @@ class OpenVINOReranker(BaseReranker):
     `pip install optimum-intel[openvino]`
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
     model_name: str = Field(
         default="BAAI/bge-reranker-large",
         description="Model name from HuggingFace (auto-exported to OpenVINO format).",
     )
-    max_length: int = Field(default=512, description="Maximum input sequence length.")
-
-    _model: Any = None
-    _tokenizer: Any = None
 
     def model_post_init(self, __context) -> None:
         """Initialize OpenVINO model and tokenizer after creation."""
         try:
-            from optimum.intel.openvino import OVModelForSequenceClassification
+            from optimum.intel.openvino import OVModelForSequenceClassification  # ty: ignore[unresolved-import]
             from transformers import AutoTokenizer
         except ImportError as e:
             msg = (
@@ -88,17 +81,3 @@ class OpenVINOReranker(BaseReranker):
         ]
         results.sort(key=lambda x: x.score, reverse=True)
         return results[:top_k]
-
-    async def arerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
-        """Rerank documents asynchronously using OpenVINO-optimized scoring.
-
-        Args:
-            query: The search query.
-            documents: List of document texts to rerank.
-            top_k: Number of top results to return. If None, returns all documents.
-
-        Returns:
-            List of RerankResult objects sorted by relevance score (descending).
-        """
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.rerank, query, documents, top_k)

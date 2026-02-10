@@ -1,6 +1,7 @@
 """Reranker wrappers for AutoRAG-Research."""
 
 from autorag_research.rerankers.base import BaseReranker, RerankResult
+from autorag_research.rerankers.local_base import LocalReranker
 
 __all__ = [
     "BaseReranker",
@@ -11,6 +12,7 @@ __all__ = [
     "FlashRankReranker",
     "JinaReranker",
     "KoRerankerReranker",
+    "LocalReranker",
     "MixedbreadAIReranker",
     "MonoT5Reranker",
     "OpenVINOReranker",
