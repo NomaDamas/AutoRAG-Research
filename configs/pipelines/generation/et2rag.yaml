@@ -1,0 +1,47 @@
+# ET2RAG Generation Pipeline Configuration
+#
+# Efficient Test-Time Retrieval Augmented Generation (arxiv:2511.01059)
+# Uses subset-based majority voting:
+#   1. Creates context subsets from retrieved documents
+#   2. Generates PARTIAL responses for each subset (different prompts!)
+#   3. Uses semantic similarity voting to select the BEST SUBSET
+#   4. Generates a FULL response with the selected subset
+#
+# Key features:
+#   - Three organization strategies (qa, recipe, image) for different data types
+#   - Async parallel partial generation for efficiency
+#   - Majority voting on subsets for robust context selection
+#   - Full generation after voting with optimal context
+#
+# Organization Strategies:
+#   qa:     {top1}, {top1,top2}, {top1,top3}, ... (factoid QA datasets)
+#   recipe: {top1}, {top2}, {top3}, ... (long documents)
+#   image:  4 captions per subset (image captioning)
+#
+# Parameters:
+#   retrieval_pipeline_name: Name of retrieval pipeline to use
+#   llm: LLM model identifier (must support ainvoke for async)
+#   embedding_model: Embedding model for similarity computation
+#   organization_strategy: qa | recipe | image (default: qa)
+#   num_subsets: Number of subsets to create (null = auto-determine)
+#   partial_generation_max_tokens: Max tokens per partial response (default: 100)
+#   full_generation_max_tokens: Max tokens for final generation (null = no limit)
+#   prompt_template: Custom prompt template with {context} and {query} placeholders
+#   top_k: Number of chunks to retrieve (default: 10)
+#
+_target_: autorag_research.pipelines.generation.et2rag.ET2RAGPipelineConfig
+description: "ET2RAG with subset-based majority voting"
+name: et2rag
+retrieval_pipeline_name: bm25
+llm: gpt-4o-mini
+embedding_model: openai-small
+organization_strategy: qa
+num_subsets: null
+partial_generation_max_tokens: 100
+full_generation_max_tokens: null
+prompt_template: null  # null = use default template
+top_k: 10
+batch_size: 128
+max_concurrency: 8
+max_retries: 3
+retry_delay: 1.0
