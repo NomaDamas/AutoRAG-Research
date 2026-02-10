@@ -7,6 +7,8 @@ import pytest
 from PIL import Image
 
 from autorag_research.util import (
+    TokenUsageTracker,
+    aggregate_token_usage,
     extract_image_from_data_uri,
     pil_image_to_bytes,
     run_with_concurrency_limit,
@@ -980,3 +982,202 @@ class TestPilImageToDataUri:
         # Verify base64 is valid
         decoded = base64.b64decode(base64_data)
         assert len(decoded) > 0
+
+
+class TestTokenUsageTracker:
+    """Tests for the simplified TokenUsageTracker class."""
+
+    def _make_newer_response(self, input_tokens: int, output_tokens: int, total_tokens: int) -> MagicMock:
+        """Create mock response with newer LangChain usage_metadata."""
+        response = MagicMock()
+        response.usage_metadata = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+        }
+        return response
+
+    def _make_older_response(self, prompt_tokens: int, completion_tokens: int, total_tokens: int) -> MagicMock:
+        """Create mock response with older LangChain response_metadata."""
+        response = MagicMock(spec=["response_metadata"])
+        response.response_metadata = {
+            "token_usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            }
+        }
+        return response
+
+    def _make_no_usage_response(self) -> MagicMock:
+        """Create mock response with no token usage info."""
+        response = MagicMock(spec=[])
+        return response
+
+    # --- record() tests ---
+
+    def test_record_newer_langchain_format(self):
+        """Test record() extracts from newer LangChain usage_metadata."""
+        tracker = TokenUsageTracker()
+        response = self._make_newer_response(100, 50, 150)
+
+        usage = tracker.record(response)
+
+        assert usage == {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
+
+    def test_record_older_langchain_format(self):
+        """Test record() extracts from older LangChain response_metadata."""
+        tracker = TokenUsageTracker()
+        response = self._make_older_response(200, 80, 280)
+
+        usage = tracker.record(response)
+
+        assert usage == {"prompt_tokens": 200, "completion_tokens": 80, "total_tokens": 280}
+
+    def test_record_no_usage_returns_none(self):
+        """Test record() returns None when no usage info is available."""
+        tracker = TokenUsageTracker()
+        response = self._make_no_usage_response()
+
+        usage = tracker.record(response)
+
+        assert usage is None
+        assert tracker.history == []
+
+    def test_record_empty_usage_metadata_falls_through(self):
+        """Test that empty usage_metadata falls through to response_metadata."""
+        tracker = TokenUsageTracker()
+        response = MagicMock()
+        response.usage_metadata = {}
+        response.response_metadata = {"token_usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
+
+        usage = tracker.record(response)
+
+        assert usage == {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+
+    def test_record_empty_token_usage_in_response_metadata(self):
+        """Test that empty token_usage dict results in None."""
+        tracker = TokenUsageTracker()
+        response = MagicMock(spec=["response_metadata"])
+        response.response_metadata = {"token_usage": {}}
+
+        usage = tracker.record(response)
+
+        assert usage is None
+
+    # --- total property tests ---
+
+    def test_total_initially_zero(self):
+        """Test that total starts as zeros dict."""
+        tracker = TokenUsageTracker()
+        assert tracker.total == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    def test_total_single_record(self):
+        """Test total after a single record."""
+        tracker = TokenUsageTracker()
+        response = self._make_newer_response(100, 50, 150)
+        tracker.record(response)
+
+        assert tracker.total == {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
+
+    def test_total_multiple_records(self):
+        """Test total aggregation across multiple records."""
+        tracker = TokenUsageTracker()
+        tracker.record(self._make_newer_response(100, 50, 150))
+        tracker.record(self._make_older_response(200, 80, 280))
+
+        assert tracker.total == {"prompt_tokens": 300, "completion_tokens": 130, "total_tokens": 430}
+
+    def test_total_computed_from_history(self):
+        """Test that total is computed (not stale cached value)."""
+        tracker = TokenUsageTracker()
+        tracker.record(self._make_newer_response(100, 50, 150))
+
+        # First check
+        assert tracker.total == {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
+
+        # Add more and check again
+        tracker.record(self._make_newer_response(200, 80, 280))
+        assert tracker.total == {"prompt_tokens": 300, "completion_tokens": 130, "total_tokens": 430}
+
+    # --- history property tests ---
+
+    def test_history_returns_defensive_copy(self):
+        """Test that history returns a copy, not the internal list."""
+        tracker = TokenUsageTracker()
+        tracker.record(self._make_newer_response(10, 5, 15))
+
+        history = tracker.history
+        history.append({"prompt_tokens": 999, "completion_tokens": 999, "total_tokens": 999})
+
+        assert len(tracker.history) == 1  # Internal list unaffected
+
+    def test_history_entries_are_copies(self):
+        """Test that history entries are copies of the original dicts."""
+        tracker = TokenUsageTracker()
+        response = self._make_newer_response(10, 5, 15)
+        tracker.record(response)
+
+        # Mutating the returned usage should not affect the tracker's history
+        returned_usage = tracker.history[0]
+        returned_usage["prompt_tokens"] = 999
+
+        assert tracker.history[0]["prompt_tokens"] == 10
+
+    def test_history_contains_per_call_data(self):
+        """Test that history contains individual call data."""
+        tracker = TokenUsageTracker()
+        tracker.record(self._make_newer_response(100, 50, 150))
+        tracker.record(self._make_older_response(200, 80, 280))
+
+        history = tracker.history
+        assert len(history) == 2
+        assert history[0] == {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
+        assert history[1] == {"prompt_tokens": 200, "completion_tokens": 80, "total_tokens": 280}
+
+    # --- Mixed scenarios ---
+
+    def test_mixed_none_and_real_usage(self):
+        """Test tracker with a mix of None and real usage responses."""
+        tracker = TokenUsageTracker()
+
+        tracker.record(self._make_newer_response(100, 50, 150))
+        tracker.record(self._make_no_usage_response())
+        tracker.record(self._make_older_response(200, 80, 280))
+
+        assert tracker.total == {"prompt_tokens": 300, "completion_tokens": 130, "total_tokens": 430}
+        assert len(tracker.history) == 2  # Only non-None entries
+
+
+class TestAggregateTokenUsage:
+    """Tests for the aggregate_token_usage standalone function."""
+
+    def test_both_none(self):
+        """Test that None + None returns None."""
+        assert aggregate_token_usage(None, None) is None
+
+    def test_current_none(self):
+        """Test that None + dict returns dict."""
+        new = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        result = aggregate_token_usage(None, new)
+        assert result == new
+
+    def test_new_none(self):
+        """Test that dict + None returns dict."""
+        current = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        result = aggregate_token_usage(current, None)
+        assert result == current
+
+    def test_both_dicts(self):
+        """Test that two dicts are summed correctly."""
+        current = {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
+        new = {"prompt_tokens": 200, "completion_tokens": 80, "total_tokens": 280}
+        result = aggregate_token_usage(current, new)
+        assert result == {"prompt_tokens": 300, "completion_tokens": 130, "total_tokens": 430}
+
+    def test_different_keys(self):
+        """Test aggregation with different key sets."""
+        current = {"prompt_tokens": 100, "total_tokens": 100}
+        new = {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70}
+        result = aggregate_token_usage(current, new)
+        assert result == {"prompt_tokens": 150, "completion_tokens": 20, "total_tokens": 170}

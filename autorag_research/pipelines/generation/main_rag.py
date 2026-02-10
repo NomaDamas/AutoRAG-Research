@@ -17,7 +17,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.util import aggregate_token_usage
+from autorag_research.util import TokenUsageTracker
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -304,7 +304,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
 
     # ==================== Async Methods for Parallel Execution ====================
 
-    async def _ainvoke_llm(self, system_prompt: str, user_prompt: str, **format_kwargs: Any) -> tuple[Any, dict]:
+    async def _ainvoke_llm(self, system_prompt: str, user_prompt: str, **format_kwargs: Any) -> Any:
         """Async version of _invoke_llm using LangChain's ainvoke.
 
         Args:
@@ -313,7 +313,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             **format_kwargs: Values to format into the user prompt.
 
         Returns:
-            Tuple of (response, token_usage_dict).
+            Raw LangChain LLM response.
         """
         from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -321,11 +321,9 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt.format(**format_kwargs)),
         ]
-        response = await self._llm.ainvoke(messages)
-        token_usage = self._extract_token_usage(response)
-        return response, token_usage
+        return await self._llm.ainvoke(messages)
 
-    async def _aagent_predict(self, query: str, document: str) -> tuple[str, dict]:
+    async def _aagent_predict(self, query: str, document: str) -> tuple[str, Any]:
         """Async version of Agent-1 (Predictor).
 
         Args:
@@ -333,17 +331,17 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             document: The document content.
 
         Returns:
-            Tuple of (answer_text, token_usage_dict).
+            Tuple of (answer_text, raw_response).
         """
-        response, token_usage = await self._ainvoke_llm(
+        response = await self._ainvoke_llm(
             self._predictor_system_prompt,
             self._predictor_user_prompt,
             query=query,
             document=document,
         )
-        return self._get_response_text(response), token_usage
+        return self._get_response_text(response), response
 
-    async def _aagent_judge(self, query: str, document: str, answer: str) -> tuple[float, dict]:
+    async def _aagent_judge(self, query: str, document: str, answer: str) -> tuple[float, Any]:
         """Async version of Agent-2 (Judge).
 
         Args:
@@ -352,14 +350,14 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             answer: The candidate answer from Agent-1.
 
         Returns:
-            Tuple of (relevance_score, token_usage_dict).
+            Tuple of (relevance_score, raw_response).
 
         Raises:
             LogprobsNotSupportedError: If LLM does not support logprobs.
         """
         from autorag_research.exceptions import LogprobsNotSupportedError
 
-        response, token_usage = await self._ainvoke_llm(
+        response = await self._ainvoke_llm(
             self._judge_system_prompt,
             self._judge_user_prompt,
             query=query,
@@ -372,9 +370,9 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         if not used_logprobs:
             raise LogprobsNotSupportedError(self.name)
 
-        return score, token_usage
+        return score, response
 
-    async def _aagent_final_predict(self, query: str, documents: list[str]) -> tuple[str, dict]:
+    async def _aagent_final_predict(self, query: str, documents: list[str]) -> tuple[str, Any]:
         """Async version of Agent-3 (Final Predictor).
 
         Args:
@@ -382,16 +380,16 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             documents: List of filtered document contents.
 
         Returns:
-            Tuple of (answer_text, token_usage_dict).
+            Tuple of (answer_text, raw_response).
         """
         formatted_docs = "\n\n".join(f"[Document {i + 1}]\n{doc}" for i, doc in enumerate(documents))
-        response, token_usage = await self._ainvoke_llm(
+        response = await self._ainvoke_llm(
             self._final_predictor_system_prompt,
             self._final_predictor_user_prompt,
             query=query,
             documents=formatted_docs,
         )
-        return self._get_response_text(response), token_usage
+        return self._get_response_text(response), response
 
     @staticmethod
     def _calculate_adaptive_threshold(scores: list[float], std_multiplier: float) -> float:
@@ -448,7 +446,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         """
         # Get query text from database
         query = self._service.get_query_text(query_id)
-        all_token_usages: list[dict] = []  # Each: {"token_usage": {...}, "execution_time": 0}
+        tracker = TokenUsageTracker()
 
         # ==================== Phase 1: Retrieval ====================
         retrieved = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
@@ -457,7 +455,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         if not retrieved:
             return GenerationResult(
                 text="",
-                token_usage=None,
+                token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
                     "pipeline_type": "main_rag",
                     "error": "No documents retrieved",
@@ -475,12 +473,12 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         # Edge case: Single document - skip filtering
         if len(chunk_contents) == 1:
             logger.debug("Single document retrieved, skipping filtering phase")
-            final_answer, final_usage = await self._aagent_final_predict(query, chunk_contents)
-            all_token_usages.append({"token_usage": final_usage, "execution_time": 0})
+            final_answer, final_response = await self._aagent_final_predict(query, chunk_contents)
+            tracker.record(final_response)
 
             return GenerationResult(
                 text=final_answer,
-                token_usage=self._build_token_usage_dict(all_token_usages),
+                token_usage=tracker.total,
                 metadata={
                     "pipeline_type": "main_rag",
                     "std_multiplier": self._std_multiplier,
@@ -497,16 +495,16 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         # ==================== Phase 2: Agent-1 (Predictor) ====================
         candidate_answers: list[str] = []
         for doc in chunk_contents:
-            answer, usage = await self._aagent_predict(query, doc)
+            answer, response = await self._aagent_predict(query, doc)
             candidate_answers.append(answer)
-            all_token_usages.append({"token_usage": usage, "execution_time": 0})
+            tracker.record(response)
 
         # ==================== Phase 3: Agent-2 (Judge) ====================
         relevance_scores: list[float] = []
         for doc, answer in zip(chunk_contents, candidate_answers, strict=True):
-            score, usage = await self._aagent_judge(query, doc, answer)
+            score, response = await self._aagent_judge(query, doc, answer)
             relevance_scores.append(score)
-            all_token_usages.append({"token_usage": usage, "execution_time": 0})
+            tracker.record(response)
 
         # ==================== Phase 4: Adaptive Filtering ====================
         threshold = self._calculate_adaptive_threshold(relevance_scores, self._std_multiplier)
@@ -533,15 +531,15 @@ class MAINRAGPipeline(BaseGenerationPipeline):
 
         # ==================== Phase 6: Agent-3 (Final Predictor) ====================
         filtered_contents = [doc["content"] for doc in filtered_docs]
-        final_answer, final_usage = await self._aagent_final_predict(query, filtered_contents)
-        all_token_usages.append({"token_usage": final_usage, "execution_time": 0})
+        final_answer, final_response = await self._aagent_final_predict(query, filtered_contents)
+        tracker.record(final_response)
 
         # Build metadata with filtering statistics
         relevance_scores_metadata = [{"doc_id": doc["doc_id"], "score": doc["score"]} for doc in filtered_docs]
 
         return GenerationResult(
             text=final_answer,
-            token_usage=self._build_token_usage_dict(all_token_usages),
+            token_usage=tracker.total,
             metadata={
                 "pipeline_type": "main_rag",
                 "std_multiplier": self._std_multiplier,
@@ -553,59 +551,3 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                 "relevance_scores": relevance_scores_metadata,
             },
         )
-
-    def _extract_token_usage(self, response: Any) -> dict[str, int]:
-        """Extract token usage from LLM response.
-
-        Args:
-            response: LangChain LLM response object.
-
-        Returns:
-            Dict with prompt_tokens, completion_tokens, total_tokens.
-        """
-        token_usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        }
-
-        # Try to get usage from response metadata (LangChain style)
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = response.usage_metadata
-            token_usage = {
-                "prompt_tokens": usage.get("input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0),
-            }
-        elif hasattr(response, "response_metadata"):
-            usage = response.response_metadata.get("token_usage", {})
-            if usage:
-                token_usage = {
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                }
-
-        return token_usage
-
-    @staticmethod
-    def _build_token_usage_dict(results: list[dict]) -> dict[str, Any]:
-        """Aggregate token usage from multiple LLM calls using shared utility.
-
-        Args:
-            results: List of dicts with 'token_usage' and 'execution_time' keys.
-
-        Returns:
-            Aggregated token usage dict.
-        """
-        total: dict[str, int] | None = None
-        for r in results:
-            total = aggregate_token_usage(total, r.get("token_usage"))
-        if total is None:
-            return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "embedding_tokens": 0}
-        return {
-            "prompt_tokens": total.get("prompt_tokens", 0),
-            "completion_tokens": total.get("completion_tokens", 0),
-            "total_tokens": total.get("prompt_tokens", 0) + total.get("completion_tokens", 0),
-            "embedding_tokens": total.get("embedding_tokens", 0),
-        }

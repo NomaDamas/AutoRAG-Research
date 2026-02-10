@@ -927,12 +927,12 @@ class TestMAINRAGParallelExecution:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        # Call async predict
-        answer, usage = await pipeline._aagent_predict("test query", "test document")
+        # Call async predict - returns (text, raw_response)
+        answer, response = await pipeline._aagent_predict("test query", "test document")
 
         assert answer == "Candidate answer 1"
-        assert usage is not None
-        assert usage["total_tokens"] == 70
+        assert response is not None
+        assert response.usage_metadata["total_tokens"] == 70
 
     @pytest.mark.asyncio
     async def test_aagent_judge_returns_correct_score(
@@ -980,13 +980,13 @@ class TestMAINRAGParallelExecution:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        # Call async judge
-        score, usage = await pipeline._aagent_judge("test query", "test document", "test answer")
+        # Call async judge - returns (score, raw_response)
+        score, response = await pipeline._aagent_judge("test query", "test document", "test answer")
 
         # Score should be log P(Yes) - log P(No) = -0.1 - (-2.5) = 2.4
         assert abs(score - 2.4) < 0.001
-        assert usage is not None
-        assert usage["total_tokens"] == 70
+        assert response is not None
+        assert response.usage_metadata["total_tokens"] == 70
 
     @pytest.mark.asyncio
     async def test_aagent_judge_raises_logprobs_not_supported(
