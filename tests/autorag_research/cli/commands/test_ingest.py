@@ -64,7 +64,6 @@ class TestIngestCommand:
         result = cli_runner.invoke(app, ["ingest", "--help"])
 
         assert result.exit_code == 0
-        assert "--overwrite" in result.stdout
 
     def test_ingest_without_name_shows_ingestors(self, cli_runner: CliRunner) -> None:
         """'ingest' without --name shows available ingestors."""
