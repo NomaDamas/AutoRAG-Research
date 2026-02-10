@@ -19,6 +19,7 @@
 | `run_with_concurrency_limit(items, async_func, max_concurrency)` | Async semaphore-based concurrency control |
 | `to_async_func(func)` | Convert sync function to async via `asyncio.to_thread` |
 | `unpack_and_run(target_list, func)` | Flatten sublists, run func, regroup by original lengths |
+| `load_image(img)` | ImageType (str/Path/bytes/BytesIO) → PIL Image (RGB) |
 | `pil_image_to_bytes(image)` | PIL Image → `(bytes, mimetype)` |
 | `extract_image_from_data_uri(data_uri)` | Data URI → `(bytes, mimetype)` |
 | `TokenUsageTracker` | Collect token usage from LangChain responses (see class details below) |
