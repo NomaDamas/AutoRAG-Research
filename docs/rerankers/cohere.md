@@ -11,6 +11,14 @@ Reranking via Cohere's API.
 | Default Model | `rerank-v3.5` |
 | Env Variable | `COHERE_API_KEY` |
 
+## Installation
+
+```bash
+pip install "autorag-research[reranker]"
+# or
+uv add "autorag-research[reranker]"
+```
+
 ## Configuration
 
 ```yaml

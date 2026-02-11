@@ -64,6 +64,9 @@ gpu = [
     "colpali-engine>=0.3.13",
     "torch>=2.8.0",
     "transformers>=4.57.1",
+    "FlagEmbedding>=1.0.0",
+    "flashrank>=0.2.0",
+    "sentence-transformers>=3.0.0",
 ]
 reporting = [
     "duckdb>=1.0.0",
@@ -73,14 +76,21 @@ reranker = [
     "cohere>=5.0.0",
     "voyageai>=0.3.0",
 ]
+openvino = [
+    "optimum-intel>=1.0.0",
+]
 all = [
     "colpali-engine>=0.3.13",
     "torch>=2.8.0",
     "transformers>=4.57.1",
+    "FlagEmbedding>=1.0.0",
+    "flashrank>=0.2.0",
+    "sentence-transformers>=3.0.0",
     "duckdb>=1.0.0",
     "gradio>=6.0.0",
     "cohere>=5.0.0",
     "voyageai>=0.3.0",
+    "optimum-intel>=1.0.0",
 ]
 
 [dependency-groups]
@@ -197,8 +207,15 @@ ignore = [
 [tool.ruff.format]
 preview = true
 
+[tool.uv]
+constraint-dependencies = [
+    "onnxruntime<1.24; python_version < '3.11'",  # 1.24+ dropped Python 3.10 wheels
+]
+
 [tool.deptry.per_rule_ignores]
+DEP001 = ["FlagEmbedding", "flashrank", "optimum"]  # Optional deps in try/except ImportError (gpu, openvino extras)
 DEP002 = ["bert-score", "langchain-openai", "transformers"]  # langchain-openai used via Hydra config instantiation, transformers used via lazy import in embeddings
+DEP003 = ["sentence_transformers"]  # Explicitly used optional dep (gpu extra), not just transitive
 
 [tool.deptry]
 exclude = ["tests/*", "scripts/*", ".venv/*", "venv/*"]
