@@ -247,7 +247,6 @@ class TestMetricEvaluationRules:
         mock_pipeline.run.return_value = {
             "pipeline_id": 999,
             "total_queries": 10,
-            "total_results": 100,
         }
 
         config.pipelines[0].get_pipeline_class = lambda: lambda **kw: mock_pipeline
@@ -314,7 +313,6 @@ class TestMetricEvaluationRules:
         mock_pipeline.run.return_value = {
             "pipeline_id": 999,
             "total_queries": 10,
-            "total_results": 100,
         }
 
         config.pipelines[0].get_pipeline_class = lambda: lambda **kw: mock_pipeline
