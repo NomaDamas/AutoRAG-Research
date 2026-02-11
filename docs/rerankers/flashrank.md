@@ -13,7 +13,9 @@ Lightweight ONNX-based reranking.
 ## Installation
 
 ```bash
-pip install flashrank
+pip install "autorag-research[gpu]"
+# or
+uv add "autorag-research[gpu]"
 ```
 
 ## Configuration

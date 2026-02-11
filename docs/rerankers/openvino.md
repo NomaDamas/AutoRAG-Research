@@ -13,7 +13,9 @@ Intel hardware-optimized reranking via OpenVINO.
 ## Installation
 
 ```bash
-pip install optimum-intel[openvino]
+pip install "autorag-research[openvino]"
+# or
+uv add "autorag-research[openvino]"
 ```
 
 ## Configuration

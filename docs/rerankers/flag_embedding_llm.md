@@ -13,7 +13,9 @@ LLM-based reranking via BAAI FlagEmbedding.
 ## Installation
 
 ```bash
-pip install FlagEmbedding
+pip install "autorag-research[gpu]"
+# or
+uv add "autorag-research[gpu]"
 ```
 
 ## Configuration

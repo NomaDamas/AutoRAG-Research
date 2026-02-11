@@ -13,7 +13,9 @@ Cross-encoder reranking via SentenceTransformers.
 ## Installation
 
 ```bash
-pip install sentence-transformers
+pip install "autorag-research[gpu]"
+# or
+uv add "autorag-research[gpu]"
 ```
 
 ## Configuration

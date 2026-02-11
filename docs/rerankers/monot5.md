@@ -14,7 +14,9 @@ Sequence-to-sequence reranking via T5 models.
 ## Installation
 
 ```bash
-pip install torch transformers
+pip install "autorag-research[gpu]"
+# or
+uv add "autorag-research[gpu]"
 ```
 
 ## Configuration

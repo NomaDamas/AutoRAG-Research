@@ -1,4 +1,5 @@
 _target_: autorag_research.rerankers.flag_embedding.FlagEmbeddingReranker
 model_name: BAAI/bge-reranker-large
+use_fp16: false
 batch_size: 64
 max_concurrency: 10
