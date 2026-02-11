@@ -1,14 +1,9 @@
 ![Thumbnail](./assets/thumbnail.png)
 
-# AutoRAG-Research
-
-<br /> Automate your RAG research <br />
-
----
+Automate your RAG research
 
  [Documentation](https://nomadamas.github.io/AutoRAG-Research/)
 
----
 
 ## What is AutoRAG-Research?
 
