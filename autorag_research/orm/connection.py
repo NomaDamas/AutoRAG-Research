@@ -12,6 +12,42 @@ from autorag_research.exceptions import MissingDBNameError
 logger = logging.getLogger("AutoRAG-Research")
 
 
+def _is_pg_restore_error_fatal(stderr: str) -> bool:
+    """Check if pg_restore stderr contains fatal errors beyond 'already exists' warnings.
+
+    pg_restore exits with code 1 for non-fatal warnings like 'schema already exists'.
+    This function inspects only pg_restore message lines and returns True only if there
+    are genuinely fatal errors that should cause restore_database() to raise.
+
+    Args:
+        stderr: The stderr output from pg_restore.
+
+    Returns:
+        True if stderr contains fatal errors, False if all errors are non-fatal.
+    """
+    if not stderr.strip():
+        return False
+
+    for line in stderr.strip().splitlines():
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+        line_lower = line_stripped.lower()
+        # Only inspect pg_restore message lines
+        if not line_lower.startswith("pg_restore:"):
+            continue
+        # Warning lines are non-fatal
+        if line_lower.startswith("pg_restore: warning"):
+            continue
+        # "already exists" errors are non-fatal
+        if "already exists" in line_lower:
+            continue
+        # Any other pg_restore error line is fatal
+        return True
+
+    return False
+
+
 @dataclass
 class DBConnection:
     """Database connection configuration."""
@@ -294,7 +330,15 @@ class DBConnection:
             raise FileNotFoundError
 
         if create:
-            self.create_database()
+            from autorag_research.orm.util import create_database
+
+            create_database(
+                host=self.host,
+                port=self.port,
+                user=self.username,
+                password=self.password,
+                database=self.database,
+            )
 
         optional_flags = [
             ("--clean", clean),
@@ -322,17 +366,33 @@ class DBConnection:
                 env=env,
                 capture_output=True,
                 text=True,
-                check=True,
+                check=False,
             )
             if result.stdout:
                 logger.debug(result.stdout)
+
+            if result.returncode != 0:
+                stderr = result.stderr or ""
+                if _is_pg_restore_error_fatal(stderr):
+                    raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+                logger.warning(
+                    "pg_restore completed with non-fatal warnings (exit code %d): %s",
+                    result.returncode,
+                    stderr.strip(),
+                )
         except FileNotFoundError as e:
             msg = "pg_restore command not found. Ensure PostgreSQL client tools are installed."
             raise RuntimeError(msg) from e
-        except subprocess.CalledProcessError as e:
-            logger.exception(f"pg_restore failed: {e.stderr}")
-            raise
 
+        from autorag_research.orm.util import install_vector_extensions
+
+        install_vector_extensions(
+            host=self.host,
+            port=self.port,
+            user=self.username,
+            password=self.password,
+            database=self.database,
+        )
         self._create_bm25_indexes()
         self._run_migrations()
         logger.info(f"Database '{self.database}' restored successfully")
@@ -378,6 +438,8 @@ class DBConnection:
             f"--dbname={self.database}",
             f"--format={output_format}",
             f"--file={output_path}",
+            "--exclude-schema=bm25_catalog",
+            "--exclude-schema=tokenizer_catalog",
         ]
 
         if no_owner:
