@@ -1,0 +1,5 @@
+# OpenAI GPT-5 Mini
+# pip install langchain-openai
+_target_: langchain_openai.ChatOpenAI
+model: gpt-5-mini
+api_key: ${oc.env:OPENAI_API_KEY}

@@ -1,0 +1,6 @@
+# Ollama Embeddings
+# pip install langchain-ollama
+# Start Ollama: ollama serve
+_target_: langchain_ollama.OllamaEmbeddings
+model: ${oc.env:OLLAMA_EMBEDDING_MODEL,nomic-embed-text}
+base_url: ${oc.env:OLLAMA_BASE_URL,http://localhost:11434}

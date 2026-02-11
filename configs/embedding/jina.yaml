@@ -1,0 +1,5 @@
+# Jina AI Embeddings
+# pip install langchain-community
+_target_: langchain_community.embeddings.JinaEmbeddings
+model_name: ${oc.env:JINA_EMBEDDING_MODEL,jina-embeddings-v3}
+jina_api_key: ${oc.env:JINA_API_KEY}

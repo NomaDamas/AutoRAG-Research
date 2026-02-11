@@ -1,0 +1,9 @@
+# ColPali Multi-Vector Multi-Modal Embeddings (late interaction)
+# pip install colpali-engine torch
+# Produces multi-vector embeddings (one vector per token/patch)
+_target_: autorag_research.embeddings.colpali.ColPaliEmbeddings
+model_name: ${oc.env:COLPALI_MODEL_NAME,vidore/colpali-v1.3}
+model_type: ${oc.env:COLPALI_MODEL_TYPE,pali}
+device: ${oc.env:COLPALI_DEVICE,cpu}
+torch_dtype: ${oc.env:COLPALI_TORCH_DTYPE,bfloat16}
+embed_batch_size: 10
