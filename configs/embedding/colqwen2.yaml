@@ -1,0 +1,9 @@
+# ColQwen2 Multi-Vector Multi-Modal Embeddings (late interaction)
+# pip install colpali-engine torch
+# Produces multi-vector embeddings (one vector per token/patch)
+_target_: autorag_research.embeddings.colpali.ColPaliEmbeddings
+model_name: ${oc.env:COLQWEN2_MODEL_NAME,vidore/colqwen2-v1.0}
+model_type: qwen2
+device: ${oc.env:COLQWEN2_DEVICE,cpu}
+torch_dtype: ${oc.env:COLQWEN2_TORCH_DTYPE,bfloat16}
+embed_batch_size: 10

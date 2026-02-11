@@ -1,0 +1,7 @@
+# Azure OpenAI Embeddings
+# pip install langchain-openai
+_target_: langchain_openai.AzureOpenAIEmbeddings
+azure_deployment: ${oc.env:AZURE_OPENAI_EMBEDDING_DEPLOYMENT}
+azure_endpoint: ${oc.env:AZURE_OPENAI_ENDPOINT}
+api_key: ${oc.env:AZURE_OPENAI_API_KEY}
+api_version: ${oc.env:AZURE_OPENAI_API_VERSION,2024-12-01-preview}

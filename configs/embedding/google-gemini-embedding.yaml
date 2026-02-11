@@ -1,0 +1,5 @@
+# Google Gemini Embedding
+# pip install langchain-google-genai
+_target_: langchain_google_genai.GoogleGenerativeAIEmbeddings
+model: models/gemini-embedding-001
+google_api_key: ${oc.env:GOOGLE_API_KEY}

@@ -1,0 +1,5 @@
+# Together AI
+# pip install langchain-together
+_target_: langchain_together.ChatTogether
+model: ${oc.env:TOGETHER_MODEL,meta-llama/Llama-3.1-8B-Instruct-Turbo}
+together_api_key: ${oc.env:TOGETHER_API_KEY}

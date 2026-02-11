@@ -67,6 +67,7 @@ Table RetrievalRelation {
 
   chunk_id bigint [ref: > Chunk.id]
   image_chunk_id bigint [ref: > ImageChunk.id]
+  score int [default: 1]
 
   indexes {
     (query_id, group_index, group_order) [pk]

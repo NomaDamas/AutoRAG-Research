@@ -57,6 +57,8 @@
 | `drop_database(host, user, password, database)` | Drop PostgreSQL database |
 | `database_exists(host, user, password, database)` | Check if database exists |
 | `install_vector_extensions(host, user, password, database)` | Install vchord/vector/BM25 extensions |
+| `create_bm25_indexes(host, user, password, database)` | Create BM25 indexes on chunk table |
+| `run_migrations(host, user, password, database)` | Run idempotent schema migrations for backward compatibility |
 
 ### `autorag_research/cli/utils.py` — CLI Helpers
 
