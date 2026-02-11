@@ -27,26 +27,26 @@ We provide pre-processed datasets with unified formats. Some include pre-compute
 
 | Dataset | Description |
 |---------|-------------|
-| [BEIR](https://vkehfdl1.github.io/AutoRAG-Research/datasets/text/beir/) | Standard IR benchmark across 14 diverse domains (scifact, nq, hotpotqa, ...) |
-| [MTEB](https://vkehfdl1.github.io/AutoRAG-Research/datasets/text/mteb/) | Large-scale embedding benchmark with any MTEB retrieval task |
-| [RAGBench](https://vkehfdl1.github.io/AutoRAG-Research/datasets/text/ragbench/) | End-to-end RAG evaluation with generation ground truth across 12 domains |
-| [MrTyDi](https://vkehfdl1.github.io/AutoRAG-Research/datasets/text/mrtydi/) | Multilingual retrieval across 11 languages |
-| [BRIGHT](https://vkehfdl1.github.io/AutoRAG-Research/datasets/text/bright/) | Reasoning-intensive retrieval requiring multi-step inference |
+| [BEIR](https://huggingface.co/BeIR) | Standard IR benchmark across 14 diverse domains (scifact, nq, hotpotqa, ...) |
+| [MTEB](https://huggingface.co/mteb) | Large-scale embedding benchmark with any MTEB retrieval task |
+| [RAGBench](https://huggingface.co/datasets/galileo-ai/ragbench) | End-to-end RAG evaluation with generation ground truth across 12 domains |
+| [MrTyDi](https://huggingface.co/datasets/castorini/mr-tydi) | Multilingual retrieval across 11 languages |
+| [BRIGHT](https://huggingface.co/datasets/xlangai/BRIGHT) | Reasoning-intensive retrieval requiring multi-step inference |
 
 **Image**
 
 | Dataset | Description |
 |---------|-------------|
-| [ViDoRe](https://vkehfdl1.github.io/AutoRAG-Research/datasets/multimodal/vidore/) | Visual document QA with 1:1 query-to-page mapping |
-| [ViDoRe v2](https://vkehfdl1.github.io/AutoRAG-Research/datasets/multimodal/vidorev2/) | Visual document retrieval with corpus-level search |
-| [ViDoRe v3](https://vkehfdl1.github.io/AutoRAG-Research/datasets/multimodal/vidorev3/) | Visual document retrieval across 8 industry domains |
-| [VisRAG](https://vkehfdl1.github.io/AutoRAG-Research/datasets/multimodal/visrag/) | Vision-based RAG benchmark (ChartQA, SlideVQA, DocVQA, ...) |
+| [ViDoRe](https://huggingface.co/collections/vidore/vidore-benchmark) | Visual document QA with 1:1 query-to-page mapping |
+| [ViDoRe v2](https://huggingface.co/collections/vidore/vidore-benchmark-v2) | Visual document retrieval with corpus-level search |
+| [ViDoRe v3](https://huggingface.co/collections/vidore/vidore-benchmark-v3) | Visual document retrieval across 8 industry domains |
+| [VisRAG](https://huggingface.co/collections/openbmb/visrag) | Vision-based RAG benchmark (ChartQA, SlideVQA, DocVQA, ...) |
 
 **Text + Image**
 
 | Dataset | Description |
 |---------|-------------|
-| [Open-RAGBench](https://vkehfdl1.github.io/AutoRAG-Research/datasets/text/open-ragbench/) | arXiv PDF RAG with generation ground truth and multimodal understanding |
+| [Open-RAGBench](https://huggingface.co/datasets/vectara/open_ragbench) | arXiv PDF RAG with generation ground truth and multimodal understanding |
 
 ## Available Pipelines
 
@@ -57,24 +57,24 @@ SOTA pipelines implemented from papers, ready to run. There are two ways to buil
 Standalone retrieval pipelines. Use them on their own for retrieval-only evaluation. If you also want to evaluate generation quality, combine any retrieval pipeline with an LLM using the **BasicRAG** generation pipeline — it takes a retrieval pipeline as input, feeds the retrieved results to an LLM, and produces generated answers you can evaluate with generation metrics.
 
 | Pipeline | Description | Reference |
-|----------|-------------|-----------|
-| [Vector Search](https://vkehfdl1.github.io/AutoRAG-Research/pipelines/retrieval/vector-search/) | Dense vector similarity search (single-vector and multi-vector MaxSim) | - |
-| [BM25](https://vkehfdl1.github.io/AutoRAG-Research/pipelines/retrieval/bm25/) | Sparse full-text retrieval | - |
-| [HyDE](https://vkehfdl1.github.io/AutoRAG-Research/pipelines/retrieval/hyde/) | Hypothetical Document Embeddings | [Gao et al., 2022](https://arxiv.org/abs/2212.10496) |
-| [Hybrid RRF](https://vkehfdl1.github.io/AutoRAG-Research/pipelines/retrieval/hybrid/) | Reciprocal Rank Fusion of two retrieval pipelines | - |
-| [Hybrid CC](https://vkehfdl1.github.io/AutoRAG-Research/pipelines/retrieval/hybrid/) | Convex Combination fusion with score normalization | - |
+|----------|-------------|---------|
+| Vector Search | Dense vector similarity search (single-vector and multi-vector MaxSim) | - |
+| BM25 | Sparse full-text retrieval | - |
+| [HyDE](https://arxiv.org/abs/2212.10496) | Hypothetical Document Embeddings | ACL 23 |
+| Hybrid RRF | Reciprocal Rank Fusion of two retrieval pipelines | - |
+| Hybrid CC | Convex Combination fusion with score normalization | - |
 
 ### 2. Generation Pipeline
 
 These pipelines handle retrieval and generation together as a single algorithm. Each implements a specific paper's approach end-to-end.
 
-| Pipeline | Description | Reference |
-|----------|-------------|-----------|
-| BasicRAG | Any retrieval pipeline + LLM | - |
-| IRCoT | Interleaving Retrieval with Chain-of-Thought | [Trivedi et al., ACL 2023](https://arxiv.org/abs/2212.10509) |
-| ET2RAG | Majority voting on context subsets | [arXiv:2511.01059](https://arxiv.org/abs/2511.01059) |
-| VisRAG-Gen | Vision-language model generation from retrieved images | - |
-| MAIN-RAG | Multi-Agent Filtering RAG | [ACL 2025](https://arxiv.org/abs/2501.00332) |
+| Pipeline                                     | Description                                            | Reference |
+|----------------------------------------------|--------------------------------------------------------|-----------|
+| BasicRAG                                     | Any retrieval pipeline + LLM                           | -         |
+| [IRCoT](https://arxiv.org/abs/2212.10509)    | Interleaving Retrieval with Chain-of-Thought           | ACL 23    |
+| [ET2RAG](https://arxiv.org/abs/2511.01059)   | Majority voting on context subsets                     | -    / 25 |
+| [VisRAG](https://arxiv.org/abs/2410.10594)   | Vision-language model generation from retrieved images | ICLR 25   |
+| [MAIN-RAG](https://arxiv.org/abs/2501.00332) | Multi-Agent Filtering RAG                              | ACL 25    |
 
 ## Available Metrics
 
