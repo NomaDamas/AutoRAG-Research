@@ -28,7 +28,7 @@ class EvaluatorResultRepository(GenericRepository[Any]):
             model_cls = EvaluationResult
         super().__init__(session, model_cls)
 
-    def get_by_composite_key(self, query_id: int, pipeline_id: int, metric_id: int) -> Any | None:
+    def get_by_composite_key(self, query_id: int | str, pipeline_id: int | str, metric_id: int | str) -> Any | None:
         """Retrieve an evaluation result by its composite primary key.
 
         Args:
@@ -46,7 +46,7 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_query_id(self, query_id: int) -> list[Any]:
+    def get_by_query_id(self, query_id: int | str) -> list[Any]:
         """Retrieve all evaluation results for a specific query.
 
         Args:
@@ -58,7 +58,7 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.query_id == query_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_pipeline_id(self, pipeline_id: int) -> list[Any]:
+    def get_by_pipeline_id(self, pipeline_id: int | str) -> list[Any]:
         """Retrieve all evaluation results for a specific pipeline.
 
         Args:
@@ -70,7 +70,7 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.pipeline_id == pipeline_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_metric_id(self, metric_id: int) -> list[Any]:
+    def get_by_metric_id(self, metric_id: int | str) -> list[Any]:
         """Retrieve all evaluation results for a specific metric.
 
         Args:
@@ -82,7 +82,7 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.metric_id == metric_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_query_and_pipeline(self, query_id: int, pipeline_id: int) -> list[Any]:
+    def get_by_query_and_pipeline(self, query_id: int | str, pipeline_id: int | str) -> list[Any]:
         """Retrieve all evaluation results for a specific query and pipeline.
 
         Args:
@@ -98,7 +98,7 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_all_relations(self, query_id: int, pipeline_id: int, metric_id: int) -> Any | None:
+    def get_with_all_relations(self, query_id: int | str, pipeline_id: int | str, metric_id: int | str) -> Any | None:
         """Retrieve an evaluation result with all relations eagerly loaded.
 
         Args:
@@ -124,7 +124,9 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_with_non_null_metric_result(self, query_id: int, pipeline_id: int, metric_id: int) -> Any | None:
+    def get_with_non_null_metric_result(
+        self, query_id: int | str, pipeline_id: int | str, metric_id: int | str
+    ) -> Any | None:
         """Retrieve evaluation result with non-null metric result.
 
         Args:
@@ -143,7 +145,7 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_metric_result_range(self, metric_id: int, min_score: float, max_score: float) -> list[Any]:
+    def get_by_metric_result_range(self, metric_id: int | str, min_score: float, max_score: float) -> list[Any]:
         """Retrieve evaluation results within a metric result range.
 
         Args:
@@ -161,7 +163,7 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_pipeline_and_metric(self, pipeline_id: int, metric_id: int) -> list[Any]:
+    def get_by_pipeline_and_metric(self, pipeline_id: int | str, metric_id: int | str) -> list[Any]:
         """Retrieve all evaluation results for a specific pipeline and metric.
 
         Args:
@@ -177,7 +179,9 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_pipeline_metric_and_queries(self, pipeline_id: int, metric_id: int, query_ids: list[int]) -> list[Any]:
+    def get_by_pipeline_metric_and_queries(
+        self, pipeline_id: int | str, metric_id: int | str, query_ids: list[int | str]
+    ) -> list[Any]:
         """Retrieve evaluation results filtered by pipeline, metric, and query IDs.
 
         Args:
@@ -197,7 +201,7 @@ class EvaluatorResultRepository(GenericRepository[Any]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def delete_by_composite_key(self, query_id: int, pipeline_id: int, metric_id: int) -> bool:
+    def delete_by_composite_key(self, query_id: int | str, pipeline_id: int | str, metric_id: int | str) -> bool:
         """Delete an evaluation result by its composite primary key.
 
         Args:
@@ -214,7 +218,7 @@ class EvaluatorResultRepository(GenericRepository[Any]):
             return True
         return False
 
-    def exists_by_composite_key(self, query_id: int, pipeline_id: int, metric_id: int) -> bool:
+    def exists_by_composite_key(self, query_id: int | str, pipeline_id: int | str, metric_id: int | str) -> bool:
         """Check if an evaluation result exists with the given composite key.
 
         Args:

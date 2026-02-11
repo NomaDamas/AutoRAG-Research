@@ -87,7 +87,9 @@ class GenerationEvaluationService(BaseEvaluationService):
             "EvaluationResult": EvaluationResult,
         }
 
-    def _get_execution_results(self, pipeline_id: int, query_ids: list[int]) -> dict[int, dict[str, Any]]:
+    def _get_execution_results(
+        self, pipeline_id: int | str, query_ids: list[int | str]
+    ) -> dict[int | str, dict[str, Any]]:
         """Fetch execution results for given query IDs.
 
         Fetches generation results (ExecutorResult) and ground truth
@@ -103,10 +105,10 @@ class GenerationEvaluationService(BaseEvaluationService):
                 - 'generation_gt': list of ground truth texts from Query
         """
         with self._create_uow() as uow:
-            result: dict[int, dict[str, Any]] = {}
+            result: dict[int | str, dict[str, Any]] = {}
 
             chunk_results = uow.executor_results.get_by_queries_and_pipeline(query_ids, pipeline_id)
-            generated_texts: dict[int, str] = {elem.query_id: elem.generation_result for elem in chunk_results}
+            generated_texts: dict[int | str, str] = {elem.query_id: elem.generation_result for elem in chunk_results}
 
             for query_id in query_ids:
                 query = uow.queries.get_by_id(query_id)
@@ -122,7 +124,9 @@ class GenerationEvaluationService(BaseEvaluationService):
 
             return result
 
-    def _filter_missing_query_ids(self, pipeline_id: int, metric_id: int, query_ids: list[int]) -> list[int]:
+    def _filter_missing_query_ids(
+        self, pipeline_id: int | str, metric_id: int | str, query_ids: list[int | str]
+    ) -> list[int | str]:
         """Filter query IDs that don't have evaluation results for the metric.
 
         Args:
@@ -141,7 +145,9 @@ class GenerationEvaluationService(BaseEvaluationService):
 
             return [qid for qid in query_ids if qid not in existing_query_ids]
 
-    def _prepare_metric_input(self, pipeline_id: int, query_id: int, execution_result: dict[str, Any]) -> MetricInput:
+    def _prepare_metric_input(
+        self, pipeline_id: int | str, query_id: int | str, execution_result: dict[str, Any]
+    ) -> MetricInput:
         """Prepare MetricInput for metric computation.
 
         Args:
@@ -157,7 +163,7 @@ class GenerationEvaluationService(BaseEvaluationService):
             generation_gt=execution_result.get("generation_gt"),
         )
 
-    def _has_results_for_queries(self, pipeline_id: int, query_ids: list[int]) -> bool:
+    def _has_results_for_queries(self, pipeline_id: int | str, query_ids: list[int | str]) -> bool:
         """Check if all given query IDs have generation results for the pipeline.
 
         Checks ExecutorResult table for this pipeline.

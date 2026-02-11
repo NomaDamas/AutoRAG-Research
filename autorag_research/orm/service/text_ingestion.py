@@ -76,7 +76,7 @@ class TextDataIngestionService(BaseIngestionService):
         }
 
     # ==================== Retrieval GT Operations ====================
-    def get_retrieval_gt_by_query(self, query_id: int) -> list[Any]:
+    def get_retrieval_gt_by_query(self, query_id: int | str) -> list[Any]:
         """Get all retrieval ground truth relations for a query.
 
         Args:

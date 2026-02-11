@@ -31,7 +31,7 @@ class BaseGenerationPipeline(BasePipeline, ABC):
     Example:
         ```python
         class BasicRAGPipeline(BaseGenerationPipeline):
-            async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+            async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
                 # Retrieve relevant chunks by query_id (async)
                 results = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
                 chunk_ids = [r["doc_id"] for r in results]
