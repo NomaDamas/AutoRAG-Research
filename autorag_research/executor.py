@@ -127,9 +127,7 @@ class Executor:
             pipelines=[
                 BM25PipelineConfig(
                     name="bm25_baseline",
-                    index_path="/data/index",
-                    k1=0.9,
-                    b=0.4,
+                    tokenizer="bert",
                     top_k=10,
                 ),
             ],
