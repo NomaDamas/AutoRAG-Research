@@ -156,8 +156,8 @@ vim configs/experiment.yaml
 # 4. Run your experiment
 autorag-research run --db-name=beir_scifact_test
 
-# 5. View results
-autorag-research show databases   # see all available result databases
+# 5. View results in a Gradio leaderboard UI
+python -m autorag_research.reporting.ui
 ```
 
 `configs/experiment.yaml` is where you define which pipelines and metrics to run:
@@ -197,13 +197,41 @@ For the full YAML configuration guide, see the [Documentation](https://nomadamas
 | `AUTORAG_CONFIG_PATH` | Default configuration directory path |
 
 
-## Implementing New Pipelines (with Claude Code)
+## Build Your Own Plugin
 
-This project includes specialized Claude Code agents for implementing new RAG pipelines from research papers.
+AutoRAG-Research supports a plugin system so you can add your own retrieval pipelines, generation pipelines, or evaluation metrics — and use them alongside the built-in ones in the same experiment.
 
-### Quick Start
+A plugin is a standalone Python package. You implement your logic, register it via Python's `entry_points`, and the framework discovers and loads it automatically. No need to fork the repo or modify the core codebase.
+
+**What you can build:**
+
+| Plugin Type | What it does | Base Class |
+|-------------|--------------|------------|
+| Retrieval Pipeline | Custom search/retrieval logic | `BaseRetrievalPipeline` |
+| Generation Pipeline | Custom retrieve-then-generate logic | `BaseGenerationPipeline` |
+| Retrieval Metric | Custom retrieval evaluation metric | `BaseRetrievalMetricConfig` |
+| Generation Metric | Custom generation evaluation metric | `BaseGenerationMetricConfig` |
+
+**How it works:**
 
 ```bash
-# Full workflow from paper to validated code
-/implement-pipeline https://arxiv.org/abs/2212.10496
+# 1. Scaffold — generates a ready-to-edit project with config, code, YAML, and tests
+autorag-research plugin create my_search --type=retrieval
+
+# 2. Implement — edit the generated pipeline.py (or metric.py)
+cd my_search_plugin
+vim src/my_search_plugin/pipeline.py
+
+# 3. Install — register the plugin in your environment
+pip install -e .
+
+# 4. Sync — copy the plugin's YAML config into your project's configs/ directory
+autorag-research plugin sync
+
+# 5. Use — add it to experiment.yaml and run like any built-in pipeline
+autorag-research run --db-name=my_dataset
 ```
+
+After `plugin sync`, your plugin appears in `configs/pipelines/` or `configs/metrics/` and can be referenced in `experiment.yaml` just like any built-in component.
+
+For the full implementation guide, see the [Plugin Documentation](https://nomadamas.github.io/AutoRAG-Research/plugins/).

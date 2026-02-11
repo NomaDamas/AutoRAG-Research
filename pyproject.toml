@@ -214,7 +214,7 @@ constraint-dependencies = [
 
 [tool.deptry.per_rule_ignores]
 DEP001 = ["FlagEmbedding", "flashrank", "optimum"]  # Optional deps in try/except ImportError (gpu, openvino extras)
-DEP002 = ["bert-score", "langchain-openai", "transformers"]  # langchain-openai used via Hydra config instantiation, transformers used via lazy import in embeddings
+DEP002 = ["bert-score", "langchain-openai", "transformers", "FlagEmbedding", "optimum-intel"]  # langchain-openai used via Hydra config instantiation, transformers used via lazy import in embeddings, FlagEmbedding/optimum-intel used via lazy import in rerankers
 DEP003 = ["sentence_transformers"]  # Explicitly used optional dep (gpu extra), not just transitive
 
 [tool.deptry]

@@ -30,7 +30,7 @@ class FlagEmbeddingLLMReranker(LocalReranker):
     def model_post_init(self, __context) -> None:
         """Initialize FlagLLMReranker model after creation."""
         try:
-            from FlagEmbedding import FlagLLMReranker
+            from FlagEmbedding import FlagLLMReranker  # ty: ignore[unresolved-import]
         except ImportError as e:
             msg = "FlagEmbedding package is required. Install with: pip install FlagEmbedding"
             raise ImportError(msg) from e
