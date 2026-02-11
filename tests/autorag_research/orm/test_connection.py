@@ -109,7 +109,51 @@ class TestDBConnectionRestoreDatabase:
                 ).fetchone()
                 assert bm25_index is not None, "idx_chunk_bm25 index should exist after restore"
 
+                # Verify score column exists after restore (migration v1)
+                score_col = rest_conn.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'retrieval_relation' AND column_name = 'score'"
+                    )
+                ).fetchone()
+                assert score_col is not None, "score column should exist after restore"
+
         finally:
             # Cleanup: drop the restored database
             restored_conn.terminate_connections()
             restored_conn.drop_database()
+
+
+class TestDBConnectionRunMigrations:
+    """Tests for schema migration via DBConnection._run_migrations."""
+
+    def test_retrieval_relation_score_column_exists(self, db_connection):
+        """Test that the score column exists on retrieval_relation after migrations."""
+        engine = db_connection.get_engine()
+
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'retrieval_relation' AND column_name = 'score'"
+                )
+            ).fetchone()
+
+        assert result is not None, "score column should exist on retrieval_relation"
+
+    def test_run_migrations_is_idempotent(self, db_connection):
+        """Test that calling _run_migrations multiple times is safe."""
+        db_connection._run_migrations()
+        db_connection._run_migrations()
+
+        engine = db_connection.get_engine()
+
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'retrieval_relation' AND column_name = 'score'"
+                )
+            ).fetchone()
+
+        assert result is not None, "score column should exist after multiple migration runs"

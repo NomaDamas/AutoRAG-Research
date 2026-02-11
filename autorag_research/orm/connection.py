@@ -128,6 +128,7 @@ class DBConnection:
         schema = create_schema(embedding_dim, primary_key_type)
         schema.Base.metadata.create_all(self.get_engine())
         self._create_bm25_indexes()
+        self._run_migrations()
         return schema
 
     def get_schema(self, schema_name: str = "public"):
@@ -143,6 +144,7 @@ class DBConnection:
 
         embedding_dim = self.detect_embedding_dimension(schema_name)
         pkey_type = self.detect_primary_key_type(schema_name)
+        self._run_migrations()
         return create_schema(embedding_dim, pkey_type)
 
     def create_database(self):
@@ -177,6 +179,21 @@ class DBConnection:
         from autorag_research.orm.util import create_bm25_indexes
 
         create_bm25_indexes(
+            host=self.host,
+            port=self.port,
+            user=self.username,
+            password=self.password,
+            database=self.database,
+        )
+
+    def _run_migrations(self):
+        """Run schema migrations to add missing columns for backward compatibility."""
+        if self.database is None:
+            raise MissingDBNameError
+
+        from autorag_research.orm.util import run_migrations
+
+        run_migrations(
             host=self.host,
             port=self.port,
             user=self.username,
@@ -319,6 +336,7 @@ class DBConnection:
             raise
 
         self._create_bm25_indexes()
+        self._run_migrations()
         logger.info(f"Database '{self.database}' restored successfully")
 
     def dump_database(
