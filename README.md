@@ -5,7 +5,15 @@
 [![Commit activity](https://img.shields.io/github/commit-activity/m/vkehfdl1/AutoRAG-Research)](https://img.shields.io/github/commit-activity/m/vkehfdl1/AutoRAG-Research)
 [![License](https://img.shields.io/github/license/vkehfdl1/AutoRAG-Research)](https://img.shields.io/github/license/vkehfdl1/AutoRAG-Research)
 
-Automate your RAG research.
+## What is AutoRAG-Research?
+
+| Problem | Solution |
+|---------|----------|
+| Every dataset has a different format. | Unified formats with pre-computed embeddings. |
+| Comparing against SOTA pipelines requires implementing each one. | Paper-based SOTA pipelines ready to benchmark. |
+| Every paper claims SOTA. Which one actually is? | Run them on your data and find out. |
+
+Which pipeline is really SOTA? What datasets are out there? Find it all here.
 
 - **Github repository**: <https://github.com/vkehfdl1/AutoRAG-Research/>
 - **Documentation** <https://vkehfdl1.github.io/AutoRAG-Research/>
