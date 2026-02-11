@@ -115,6 +115,7 @@ confirm() {
 }
 
 # ── Optional dependency selection ──────────────────────────────────────
+# Keep in sync with [project.optional-dependencies] in pyproject.toml
 VALID_GROUPS="gpu reporting reranker"
 
 select_optional_deps() {
@@ -135,7 +136,7 @@ select_optional_deps() {
         local validated="" invalid=""
         IFS=',' read -ra groups <<< "$deps"
         for g in "${groups[@]}"; do
-            g=$(echo "$g" | xargs)  # trim whitespace
+            g="${g// /}"  # trim whitespace
             if [[ " $VALID_GROUPS " == *" $g "* ]]; then
                 if [[ -n "$validated" ]]; then
                     validated="${validated},${g}"
