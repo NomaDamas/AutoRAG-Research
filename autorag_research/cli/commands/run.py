@@ -86,7 +86,7 @@ def run_command(  # noqa: C901
     typer.echo("\nAutoRAG-Research Experiment Runner")
     typer.echo("=" * 60)
 
-    typer.echo(f"\nDatabase name: {db_name}")
+    typer.echo(f"\nDatabase name: {resolved_db_name}")
     typer.echo(f"Database: {db_conn.host}:{db_conn.port}/{db_conn.database}")
 
     typer.echo("\nPipelines:")
@@ -173,13 +173,17 @@ def print_results(result) -> None:
     typer.echo("\nMetric Results:")
     typer.echo("-" * 60)
     for mr in result.metric_results:
-        typer.echo(f"  {mr.metric_name} @ {mr.pipeline_name}")
-        typer.echo(f"      Score: {mr.score:.4f}")
+        typer.echo(f"  {mr.metric_name} @ {mr.pipeline_id}")
+        if mr.success and mr.average is not None:
+            typer.echo(f"      Score: {mr.average:.4f}")
+        else:
+            typer.echo(f"      Error: {mr.error_message}")
 
     successful_pipelines = sum(1 for pr in result.pipeline_results if pr.success)
     total_pipelines = len(result.pipeline_results)
     typer.echo(f"\nSummary: {successful_pipelines}/{total_pipelines} pipelines completed")
 
-    if result.metric_results:
-        avg_score = sum(mr.score for mr in result.metric_results) / len(result.metric_results)
+    successful_metrics = [mr for mr in result.metric_results if mr.success and mr.average is not None]
+    if successful_metrics:
+        avg_score = sum(mr.average for mr in successful_metrics) / len(successful_metrics)
         typer.echo(f"Average metric score: {avg_score:.4f}")
