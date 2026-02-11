@@ -1,0 +1,7 @@
+# vLLM Embedding (OpenAI-compatible API)
+# pip install langchain-openai
+# Start vLLM server: vllm serve <model_name> --port 8000
+_target_: langchain_openai.OpenAIEmbeddings
+model: ${oc.env:VLLM_EMBEDDING_MODEL_NAME,BAAI/bge-m3}
+base_url: ${oc.env:VLLM_EMBEDDING_API_BASE,http://localhost:8000/v1}
+api_key: ${oc.env:VLLM_API_KEY,token-abc123}

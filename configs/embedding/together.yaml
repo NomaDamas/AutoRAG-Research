@@ -1,0 +1,5 @@
+# Together AI Embeddings
+# pip install langchain-together
+_target_: langchain_together.TogetherEmbeddings
+model: ${oc.env:TOGETHER_EMBEDDING_MODEL,BAAI/bge-large-en-v1.5}
+together_api_key: ${oc.env:TOGETHER_API_KEY}

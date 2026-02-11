@@ -1,0 +1,4 @@
+# HuggingFace Embeddings (local, uses sentence-transformers)
+# pip install langchain-huggingface sentence-transformers
+_target_: langchain_huggingface.HuggingFaceEmbeddings
+model_name: ${oc.env:HF_EMBEDDING_MODEL,BAAI/bge-m3}

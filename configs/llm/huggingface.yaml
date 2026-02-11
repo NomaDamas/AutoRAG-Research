@@ -1,0 +1,5 @@
+# HuggingFace Inference Endpoint
+# pip install langchain-huggingface
+_target_: langchain_huggingface.HuggingFaceEndpoint
+repo_id: ${oc.env:HF_MODEL_REPO_ID,meta-llama/Llama-3.1-8B-Instruct}
+huggingfacehub_api_token: ${oc.env:HUGGINGFACEHUB_API_TOKEN}
