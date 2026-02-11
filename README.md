@@ -152,13 +152,16 @@ autorag-research show datasets
 # 2. Ingest a dataset
 autorag-research ingest --name beir --extra dataset-name=scifact
 
-# 3. Edit experiment config — choose pipelines and metrics
+# 3. Configure LLM — pick or create a config in configs/llm/
+vim configs/llm/openai-gpt5-mini.yaml
+
+# 4. Edit experiment config — choose pipelines and metrics
 vim configs/experiment.yaml
 
-# 4. Run your experiment
+# 5. Run your experiment
 autorag-research run --db-name=beir_scifact_test
 
-# 5. View results in a Gradio leaderboard UI
+# 6. View results in a Gradio leaderboard UI
 python -m autorag_research.reporting.ui
 ```
 
@@ -175,6 +178,15 @@ metrics:
   retrieval: [recall, ndcg]
   generation: [rouge]
 ```
+
+Generation pipelines (and some retrieval pipelines like HyDE) require an LLM. The `llm` field in each pipeline config references a file in `configs/llm/` by name (without `.yaml`):
+
+```yaml
+# configs/pipelines/generation/basic_rag.yaml
+llm: openai-gpt5-mini   # → loads configs/llm/openai-gpt5-mini.yaml
+```
+
+Pre-configured LLM options include `anthropic-claude-4.5-sonnet`, `openai-gpt5-mini`, `google-gemini-3-flash`, `ollama`, `vllm`, and more. See all options in `configs/llm/`.
 
 For the full YAML configuration guide, see the [Documentation](https://nomadamas.github.io/AutoRAG-Research/cli/).
 
