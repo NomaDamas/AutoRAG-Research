@@ -254,7 +254,7 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
 
         logger.info(f"Selected {len(selected_indices)} items from {total_count} total")
 
-        ds_subset = ds.select(selected_indices)
+        ds_subset = ds.select(selected_indices)  # ty: ignore[possibly-missing-attribute]
 
         # Extract data from selected subset
         image_list = list(ds_subset["image"])

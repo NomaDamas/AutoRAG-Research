@@ -30,7 +30,7 @@ class CohereReranker(APIReranker):
     def model_post_init(self, __context) -> None:
         """Initialize Cohere clients after model creation."""
         try:
-            import cohere  # ty: ignore[unresolved-import]
+            import cohere
         except ImportError as e:
             msg = "cohere package is required. Install with: pip install cohere"
             raise ImportError(msg) from e

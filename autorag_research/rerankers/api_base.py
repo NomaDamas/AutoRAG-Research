@@ -122,7 +122,7 @@ class APIReranker(BaseReranker):
 
         @_create_retry_decorator()
         def _call_api():
-            response = self._client.post(
+            response = self._client.post(  # ty: ignore[possibly-missing-attribute]
                 self._get_api_url(),
                 headers=self._get_headers(),
                 json=self._build_payload(query, documents, top_k),
@@ -154,7 +154,7 @@ class APIReranker(BaseReranker):
 
         @_create_retry_decorator()
         async def _call_api():
-            response = await self._async_client.post(
+            response = await self._async_client.post(  # ty: ignore[possibly-missing-attribute]
                 self._get_api_url(),
                 headers=self._get_headers(),
                 json=self._build_payload(query, documents, top_k),
