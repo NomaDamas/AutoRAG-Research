@@ -229,7 +229,7 @@ $ autorag-research list pipelines
 
 Available Pipelines:
 ------------------------------------------------------------
-  bm25_baseline              BM25 retrieval with Pyserini
+  bm25_baseline              BM25 retrieval with VectorChord-BM25
   vector_search              Dense vector similarity search
   elasticsearch:es_search    Elasticsearch hybrid search    ← 자동 표시
 ```

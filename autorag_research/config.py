@@ -52,9 +52,8 @@ class BasePipelineConfig(ABC):
         ```python
         @dataclass
         class BM25PipelineConfig(BasePipelineConfig):
-            index_path: str
-            k1: float = 0.9
-            b: float = 0.4
+            tokenizer: str = "bert"
+            index_name: str = "idx_chunk_bm25"
             pipeline_type: PipelineType = field(default=PipelineType.RETRIEVAL, init=False)
 
             def get_pipeline_class(self) -> Type:
@@ -62,7 +61,7 @@ class BasePipelineConfig(ABC):
                 return BM25RetrievalPipeline
 
             def get_pipeline_kwargs(self) -> dict[str, Any]:
-                return {"index_path": self.index_path, "k1": self.k1, "b": self.b}
+                return {"tokenizer": self.tokenizer, "index_name": self.index_name}
         ```
     """
 
@@ -268,7 +267,7 @@ class ExecutorConfig:
         ```python
         config = ExecutorConfig(
             pipelines=[
-                BM25PipelineConfig(name="bm25_v1", index_path="/data/index"),
+                BM25PipelineConfig(name="bm25_v1", tokenizer="bert"),
             ],
             metrics=[
                 RecallConfig(),
