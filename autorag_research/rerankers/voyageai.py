@@ -30,7 +30,7 @@ class VoyageAIReranker(APIReranker):
     def model_post_init(self, __context) -> None:
         """Initialize Voyage AI clients after model creation."""
         try:
-            import voyageai  # ty: ignore[unresolved-import]
+            import voyageai
         except ImportError as e:
             msg = "voyageai package is required. Install with: pip install voyageai"
             raise ImportError(msg) from e

@@ -11,6 +11,14 @@ Reranking via Voyage AI's API.
 | Default Model | `rerank-2` |
 | Env Variable | `VOYAGE_API_KEY` |
 
+## Installation
+
+```bash
+pip install "autorag-research[reranker]"
+# or
+uv add "autorag-research[reranker]"
+```
+
 ## Configuration
 
 ```yaml
