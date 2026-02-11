@@ -169,7 +169,13 @@ class DBConnection:
             database=self.database,
         )
 
-        logger.info(f"Database '{self.database}' created and vector extensions installed.")
+        self._create_bm25_indexes()
+        self._run_migrations()
+
+        logger.info(
+            f"Database '{self.database}' created and vector extensions installed."
+            "The BM25 indexes have been created and migrations have been run."
+        )
 
     def _create_bm25_indexes(self):
         """Create BM25 indexes after tables exist."""
@@ -288,15 +294,7 @@ class DBConnection:
             raise FileNotFoundError
 
         if create:
-            from autorag_research.orm.util import create_database
-
-            create_database(
-                host=self.host,
-                port=self.port,
-                user=self.username,
-                password=self.password,
-                database=self.database,
-            )
+            self.create_database()
 
         optional_flags = [
             ("--clean", clean),

@@ -20,7 +20,7 @@ from pathlib import Path
 import psycopg
 import psycopg.sql
 
-from autorag_research.orm.util import create_database, drop_database, install_vector_extensions
+from autorag_research.orm.connection import DBConnection
 
 # Database names for UI testing
 DATABASES = ["dataset_alpha", "dataset_beta", "dataset_gamma"]
@@ -300,18 +300,16 @@ def setup_database(db_name: str, schema_sql: str, seed_func) -> None:
     """
     print(f"  Setting up '{db_name}'...")
 
+    db_conn = DBConnection.from_env()
+    db_conn.database = db_name
+
     # 1. Drop if exists (clean slate)
-    dropped = drop_database(HOST, USER, PASSWORD, db_name, PORT, force=True)
+    dropped = db_conn.drop_database()
     if dropped:
         print("    Dropped existing database")
 
     # 2. Create new database
-    create_database(HOST, USER, PASSWORD, db_name, PORT)
-    print("    Created database")
-
-    # 3. Install vector extensions
-    install_vector_extensions(HOST, USER, PASSWORD, db_name, PORT)
-    print("    Installed vector extensions")
+    db_conn.create_database()
 
     # 4. Apply schema + seed data
     with psycopg.connect(host=HOST, port=PORT, user=USER, password=PASSWORD, dbname=db_name) as conn:
