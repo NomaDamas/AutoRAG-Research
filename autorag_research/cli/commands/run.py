@@ -173,13 +173,13 @@ def print_results(result) -> None:
     typer.echo("\nMetric Results:")
     typer.echo("-" * 60)
     for mr in result.metric_results:
-        typer.echo(f"  {mr.metric_name} @ {mr.pipeline_name}")
-        typer.echo(f"      Score: {mr.score:.4f}")
+        typer.echo(f"  {mr.metric_name} @ {mr.pipeline_id}")
+        typer.echo(f"      Score: {mr.average:.4f}")
 
     successful_pipelines = sum(1 for pr in result.pipeline_results if pr.success)
     total_pipelines = len(result.pipeline_results)
     typer.echo(f"\nSummary: {successful_pipelines}/{total_pipelines} pipelines completed")
 
     if result.metric_results:
-        avg_score = sum(mr.score for mr in result.metric_results) / len(result.metric_results)
+        avg_score = sum(mr.average for mr in result.metric_results) / len(result.metric_results)
         typer.echo(f"Average metric score: {avg_score:.4f}")
