@@ -27,7 +27,7 @@ prompt_template: |
   Context:
   {context}
 
-  Question: {question}
+  Question: {query}
 
   Answer:
 top_k: 5
@@ -41,7 +41,7 @@ batch_size: 100
 | name | str | required | Unique pipeline instance name |
 | retrieval_pipeline_name | str | required | Name of retrieval pipeline to use |
 | llm | str or BaseLLM | required | LLM instance or config name |
-| prompt_template | str | default | Template with `{context}` and `{question}` |
+| prompt_template | str | default | Template with `{context}` and `{query}` |
 | top_k | int | 10 | Documents to retrieve |
 | batch_size | int | 100 | Queries per batch |
 
@@ -50,7 +50,7 @@ batch_size: 100
 | Variable | Description |
 |----------|-------------|
 | `{context}` | Retrieved document contents |
-| `{question}` | Original query |
+| `{query}` | Original query |
 
 ## When to Use
 

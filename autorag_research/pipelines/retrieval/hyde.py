@@ -23,7 +23,7 @@ from autorag_research.injection import health_check_embedding, health_check_llm
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 
 DEFAULT_HYDE_PROMPT_TEMPLATE = """Please write a passage to answer the question.
-Question: {question}
+Question: {query}
 Passage:"""
 
 
@@ -35,7 +35,7 @@ class HyDEPipelineConfig(BaseRetrievalPipelineConfig):
         name: Unique name for this pipeline instance.
         llm: LLM config name or instance for generating hypothetical documents.
         embedding: Embedding config name or instance for embedding the hypothetical doc.
-        prompt_template: Template with {question} placeholder for generating hypothetical docs.
+        prompt_template: Template with {query} placeholder for generating hypothetical docs.
         top_k: Number of results to retrieve per query.
         batch_size: Number of queries to process in each batch.
 
@@ -57,7 +57,7 @@ class HyDEPipelineConfig(BaseRetrievalPipelineConfig):
     """Embedding model for the hypothetical document. Can be config name or instance."""
 
     prompt_template: str = field(default=DEFAULT_HYDE_PROMPT_TEMPLATE)
-    """Template with {question} placeholder for generating hypothetical documents."""
+    """Template with {query} placeholder for generating hypothetical documents."""
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Auto-convert string config names to model instances."""
@@ -136,7 +136,7 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
             name: Name for this pipeline.
             llm: LangChain LLM for generating hypothetical documents.
             embedding: LangChain embeddings model for embedding hypothetical docs.
-            prompt_template: Template with {question} placeholder for generating
+            prompt_template: Template with {query} placeholder for generating
                 hypothetical documents. Defaults to the paper's general template.
             schema: Schema namespace from create_schema(). If None, uses default schema.
         """
@@ -144,6 +144,9 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
         # because _get_pipeline_config() is called in super().__init__
         self.llm = llm
         self.embedding = embedding
+        if "{query}" not in prompt_template:
+            msg = "prompt_template must contain '{query}' placeholder"
+            raise ValueError(msg)
         self.prompt_template = prompt_template
 
         super().__init__(session_factory, name, schema)
@@ -168,7 +171,7 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
         Returns:
             Generated hypothetical document text.
         """
-        prompt = self.prompt_template.format(question=query_text)
+        prompt = self.prompt_template.format(query=query_text)
         response = await self.llm.ainvoke(prompt)
         return self._extract_response_content(response)
 

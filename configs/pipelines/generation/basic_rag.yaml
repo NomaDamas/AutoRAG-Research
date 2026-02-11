@@ -25,6 +25,6 @@ prompt_template: |
   {context}
 
   Question:
-  {question}
+  {query}
 
   Answer:
