@@ -31,7 +31,7 @@ class FlashRankReranker(LocalReranker):
     def model_post_init(self, __context) -> None:
         """Initialize FlashRank Ranker after creation."""
         try:
-            from flashrank import Ranker  # ty: ignore[unresolved-import]
+            from flashrank import Ranker
         except ImportError as e:
             msg = "flashrank package is required. Install with: pip install flashrank"
             raise ImportError(msg) from e
@@ -57,7 +57,7 @@ class FlashRankReranker(LocalReranker):
         top_k = min(top_k, len(documents))
 
         try:
-            from flashrank import RerankRequest  # ty: ignore[unresolved-import]
+            from flashrank import RerankRequest
         except ImportError as e:
             msg = "flashrank package is required. Install with: pip install flashrank"
             raise ImportError(msg) from e
