@@ -52,7 +52,7 @@ class FileRepository(GenericRepository):
         stmt = select(self.model_cls).where(self.model_cls.type == file_type)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_documents(self, file_id: int) -> Any | None:
+    def get_with_documents(self, file_id: int | str) -> Any | None:
         """Retrieve a file with its documents eagerly loaded.
 
         Args:

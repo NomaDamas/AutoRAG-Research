@@ -412,7 +412,7 @@ class BaseVectorRepository(GenericRepository[T]):
 
     def set_multi_vector_embedding(
         self,
-        entity_id: int,
+        entity_id: int | str,
         embeddings: list[list[float]],
         vector_column: str = "embeddings",
         id_column: str = "id",
@@ -443,7 +443,7 @@ class BaseVectorRepository(GenericRepository[T]):
 
     def set_multi_vector_embeddings_batch(
         self,
-        entity_ids: list[int],
+        entity_ids: list[int | str],
         embeddings_list: list[list[list[float]]],
         vector_column: str = "embeddings",
         id_column: str = "id",
@@ -525,7 +525,7 @@ class BaseVectorRepository(GenericRepository[T]):
         vector_column: str = "embeddings",
         id_column: str = "id",
         limit: int = 10,
-    ) -> list[tuple[int, float]]:
+    ) -> list[tuple[int | str, float]]:
         """Perform MaxSim search and return only IDs with scores.
 
         This is more efficient when you only need IDs and scores.
@@ -553,7 +553,7 @@ class BaseVectorRepository(GenericRepository[T]):
         """)  # noqa: S608
 
         results = self.session.execute(sql, {"limit": limit}).fetchall()
-        return [(int(row[0]), float(row[1])) for row in results]
+        return [(row[0], float(row[1])) for row in results]
 
 
 class BaseEmbeddingRepository(GenericRepository[T]):

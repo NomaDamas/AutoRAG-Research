@@ -45,7 +45,7 @@ class PipelineResult:
         error_message: Error message if the pipeline failed.
     """
 
-    pipeline_id: int
+    pipeline_id: int | str
     pipeline_name: str
     pipeline_type: PipelineType
     total_queries: int
@@ -71,7 +71,7 @@ class MetricResult:
 
     metric_name: str
     metric_type: MetricType
-    pipeline_id: int
+    pipeline_id: int | str
     queries_evaluated: int
     average: float | None
     success: bool
@@ -127,9 +127,7 @@ class Executor:
             pipelines=[
                 BM25PipelineConfig(
                     name="bm25_baseline",
-                    index_path="/data/index",
-                    k1=0.9,
-                    b=0.4,
+                    tokenizer="bert",
                     top_k=10,
                 ),
             ],
@@ -293,7 +291,7 @@ class Executor:
             error_message=error_msg,
         )
 
-    def _verify_pipeline_completion(self, pipeline_id: int, pipeline_type: PipelineType) -> bool:
+    def _verify_pipeline_completion(self, pipeline_id: int | str, pipeline_type: PipelineType) -> bool:
         """Verify all queries have results for the pipeline.
 
         Uses ID comparison to check that each query has a corresponding result.
@@ -311,7 +309,7 @@ class Executor:
         else:
             return self._generation_eval_service.verify_pipeline_completion(pipeline_id)
 
-    def _evaluate_metrics_for_pipeline(self, pipeline_id: int, pipeline_type: PipelineType) -> list[MetricResult]:
+    def _evaluate_metrics_for_pipeline(self, pipeline_id: int | str, pipeline_type: PipelineType) -> list[MetricResult]:
         """Evaluate all applicable metrics for a pipeline.
 
         Metric evaluation rules:
@@ -343,7 +341,7 @@ class Executor:
 
         return results
 
-    def _evaluate_metric(self, pipeline_id: int, config: BaseMetricConfig) -> MetricResult:
+    def _evaluate_metric(self, pipeline_id: int | str, config: BaseMetricConfig) -> MetricResult:
         """Evaluate a single metric for a pipeline.
 
         Args:

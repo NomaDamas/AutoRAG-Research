@@ -163,7 +163,7 @@ class BaseIngestionService(BaseService, ABC):
 
     def _set_embeddings(
         self,
-        entity_ids: list[int],
+        entity_ids: list[int | str],
         embeddings: list,
         repo_attr: str,
         is_multi_vector: bool,
@@ -213,7 +213,7 @@ class BaseIngestionService(BaseService, ABC):
 
     def set_query_embeddings(
         self,
-        query_ids: list[int],
+        query_ids: list[int | str],
         embeddings: list[list[float]],
     ) -> int:
         """Set embeddings for multiple queries.
@@ -232,7 +232,7 @@ class BaseIngestionService(BaseService, ABC):
 
     def set_query_multi_embeddings(
         self,
-        query_ids: list[int],
+        query_ids: list[int | str],
         embeddings: list[list[list[float]]],
     ) -> int:
         """Batch set multi-vector embeddings for queries.
@@ -251,7 +251,7 @@ class BaseIngestionService(BaseService, ABC):
 
     def set_chunk_embeddings(
         self,
-        chunk_ids: list[int],
+        chunk_ids: list[int | str],
         embeddings: list[list[float]],
     ) -> int:
         """Set embeddings for multiple chunks.
@@ -270,7 +270,7 @@ class BaseIngestionService(BaseService, ABC):
 
     def set_chunk_multi_embeddings(
         self,
-        chunk_ids: list[int],
+        chunk_ids: list[int | str],
         embeddings: list[list[list[float]]],
     ) -> int:
         """Batch set multi-vector embeddings for chunks.

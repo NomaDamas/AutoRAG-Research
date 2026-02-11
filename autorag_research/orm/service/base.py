@@ -46,7 +46,7 @@ class BaseService(ABC):
         """
         ...
 
-    def _add(self, obj: list[dict], table_name: str, repository_property: str) -> list[int]:
+    def _add(self, obj: list[dict], table_name: str, repository_property: str) -> list[int | str]:
         """
         Add objects to the specified table.
 

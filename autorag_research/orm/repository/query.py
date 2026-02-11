@@ -54,7 +54,7 @@ class QueryRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.contents == contents).limit(1)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_with_retrieval_relations(self, query_id: int) -> Any | None:
+    def get_with_retrieval_relations(self, query_id: int | str) -> Any | None:
         """Retrieve a query with its retrieval relations eagerly loaded.
 
         Args:
@@ -70,7 +70,7 @@ class QueryRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_executor_results(self, query_id: int) -> Any | None:
+    def get_with_executor_results(self, query_id: int | str) -> Any | None:
         """Retrieve a query with its executor results eagerly loaded.
 
         Args:
@@ -86,7 +86,7 @@ class QueryRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_all_relations(self, query_id: int) -> Any | None:
+    def get_with_all_relations(self, query_id: int | str) -> Any | None:
         """Retrieve a query with all relations eagerly loaded.
 
         Args:
@@ -158,7 +158,7 @@ class QueryRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one()
 
-    def get_all_ids(self, limit: int, offset: int = 0) -> list[int]:
+    def get_all_ids(self, limit: int, offset: int = 0) -> list[int | str]:
         """Get all query IDs with pagination.
 
         Args:

@@ -28,7 +28,7 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
             model_cls = Chunk
         super().__init__(session, model_cls)
 
-    def get_with_page_chunk_relations(self, chunk_id: int) -> Any | None:
+    def get_with_page_chunk_relations(self, chunk_id: int | str) -> Any | None:
         """Retrieve a chunk with its page-chunk relations eagerly loaded.
 
         Args:
@@ -44,7 +44,7 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_retrieval_relations(self, chunk_id: int) -> Any | None:
+    def get_with_retrieval_relations(self, chunk_id: int | str) -> Any | None:
         """Retrieve a chunk with its retrieval relations eagerly loaded.
 
         Args:
@@ -60,7 +60,7 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_chunk_retrieved_results(self, chunk_id: int) -> Any | None:
+    def get_with_chunk_retrieved_results(self, chunk_id: int | str) -> Any | None:
         """Retrieve a chunk with its chunk retrieved results eagerly loaded.
 
         Args:
@@ -100,7 +100,7 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.contents == contents)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_all_relations(self, chunk_id: int) -> Any | None:
+    def get_with_all_relations(self, chunk_id: int | str) -> Any | None:
         """Retrieve a chunk with all relationships eagerly loaded.
 
         Args:

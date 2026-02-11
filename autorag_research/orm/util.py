@@ -237,6 +237,18 @@ BEGIN
 END $$;
 """
 
+_CREATE_BM25_INDEX_SQL = """
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vchord_bm25') THEN
+        -- BM25 index on chunk table
+        BEGIN
+            CREATE INDEX IF NOT EXISTS idx_chunk_bm25 ON chunk USING bm25 (bm25_tokens bm25_ops);
+        EXCEPTION WHEN others THEN PERFORM 1; END;
+    END IF;
+END $$;
+"""
+
 _INSTALL_BM25_TOKENIZER_SQL = """
 DO $$
 BEGIN
@@ -293,3 +305,35 @@ def install_vector_extensions(
             cursor.execute(_INSTALL_BM25_TOKENIZER_SQL)
         conn.commit()
     logger.info("Vector extensions installed successfully")
+
+
+def create_bm25_indexes(
+    host: str,
+    user: str,
+    password: str,
+    database: str,
+    port: int = 5432,
+) -> None:
+    """Create BM25 indexes on chunk table if vchord_bm25 extension is available.
+
+    Should be called after tables are created (via create_all or pg_restore).
+    Silently skips if the extension is not installed or the table does not exist.
+
+    Args:
+        host: PostgreSQL server host.
+        user: PostgreSQL user.
+        password: User password.
+        database: Target database name.
+        port: PostgreSQL server port (default: 5432).
+    """
+    with psycopg.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        dbname=database,
+    ) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(_CREATE_BM25_INDEX_SQL)
+        conn.commit()
+    logger.info("BM25 indexes created successfully")

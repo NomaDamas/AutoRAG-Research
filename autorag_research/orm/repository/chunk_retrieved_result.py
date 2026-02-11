@@ -19,7 +19,7 @@ class BaseRetrievedResultRepository(GenericRepository[Any]):
     Subclasses should override __init__ to provide the appropriate model class.
     """
 
-    def get_by_query_and_pipeline(self, query_ids: list[int], pipeline_id: int) -> list[Any]:
+    def get_by_query_and_pipeline(self, query_ids: list[int | str], pipeline_id: int | str) -> list[Any]:
         """Retrieve all chunk retrieved results for the specified query IDs and pipeline.
 
         Args:
@@ -38,7 +38,7 @@ class BaseRetrievedResultRepository(GenericRepository[Any]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_pipeline(self, pipeline_id: int, limit: int | None = None) -> list[Any]:
+    def get_by_pipeline(self, pipeline_id: int | str, limit: int | None = None) -> list[Any]:
         """Retrieve all retrieved results for a specific pipeline.
 
         Args:
@@ -53,7 +53,7 @@ class BaseRetrievedResultRepository(GenericRepository[Any]):
             stmt = stmt.limit(limit)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_query(self, query_id: int) -> list[Any]:
+    def get_by_query(self, query_id: int | str) -> list[Any]:
         """Retrieve all retrieved results for a specific query.
 
         Args:
@@ -65,7 +65,7 @@ class BaseRetrievedResultRepository(GenericRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.query_id == query_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def delete_by_pipeline(self, pipeline_id: int) -> int:
+    def delete_by_pipeline(self, pipeline_id: int | str) -> int:
         """Delete all retrieved results for a specific pipeline.
 
         Args:
@@ -78,7 +78,7 @@ class BaseRetrievedResultRepository(GenericRepository[Any]):
         result = self.session.execute(stmt)
         return result.rowcount  # ty: ignore
 
-    def delete_by_query_and_pipeline(self, query_id: int, pipeline_id: int) -> int:
+    def delete_by_query_and_pipeline(self, query_id: int | str, pipeline_id: int | str) -> int:
         """Delete all retrieved results for a specific query and pipeline.
 
         Args:
@@ -94,7 +94,7 @@ class BaseRetrievedResultRepository(GenericRepository[Any]):
         result = self.session.execute(stmt)
         return result.rowcount  # ty: ignore
 
-    def delete_by_composite_key(self, query_id: int, pipeline_id: int, chunk_id: int) -> int:
+    def delete_by_composite_key(self, query_id: int | str, pipeline_id: int | str, chunk_id: int | str) -> int:
         """Delete a retrieved result by its composite key.
 
         Args:

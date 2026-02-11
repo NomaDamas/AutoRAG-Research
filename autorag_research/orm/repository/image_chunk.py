@@ -28,7 +28,7 @@ class ImageChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[An
             model_cls = ImageChunk
         super().__init__(session, model_cls)
 
-    def get_by_page_id(self, page_id: int) -> list[Any]:
+    def get_by_page_id(self, page_id: int | str) -> list[Any]:
         """Retrieve all image chunks for a specific page.
 
         Args:
@@ -40,7 +40,7 @@ class ImageChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[An
         stmt = select(self.model_cls).where(self.model_cls.parent_page == page_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_page(self, image_chunk_id: int) -> Any | None:
+    def get_with_page(self, image_chunk_id: int | str) -> Any | None:
         """Retrieve an image chunk with its page eagerly loaded.
 
         Args:
@@ -54,7 +54,7 @@ class ImageChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[An
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_retrieval_relations(self, image_chunk_id: int) -> Any | None:
+    def get_with_retrieval_relations(self, image_chunk_id: int | str) -> Any | None:
         """Retrieve an image chunk with its retrieval relations eagerly loaded.
 
         Args:
@@ -70,7 +70,7 @@ class ImageChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[An
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_image_chunk_retrieved_results(self, image_chunk_id: int) -> Any | None:
+    def get_with_image_chunk_retrieved_results(self, image_chunk_id: int | str) -> Any | None:
         """Retrieve an image chunk with its image chunk retrieved results eagerly loaded.
 
         Args:
@@ -86,7 +86,7 @@ class ImageChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[An
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def count_by_page(self, page_id: int) -> int:
+    def count_by_page(self, page_id: int | str) -> int:
         """Count the number of image chunks for a specific page.
 
         Args:
@@ -97,7 +97,7 @@ class ImageChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[An
         """
         return self.session.query(self.model_cls).filter(self.model_cls.parent_page == page_id).count()
 
-    def get_with_all_relations(self, image_chunk_id: int) -> Any | None:
+    def get_with_all_relations(self, image_chunk_id: int | str) -> Any | None:
         """Retrieve an image chunk with all relationships eagerly loaded.
 
         Args:

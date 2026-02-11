@@ -275,7 +275,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         corpus_ds = load_dataset(dataset_path, "corpus", streaming=True, split="test")
         ingested_ids: set[int] = set()
 
-        page_key_to_db_id: dict[tuple[str, int], int] = {}
+        page_key_to_db_id: dict[tuple[str, int], int | str] = {}
 
         for row in corpus_ds:
             corpus_id = int(row["corpus_id"])

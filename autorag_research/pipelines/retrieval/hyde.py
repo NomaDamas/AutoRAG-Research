@@ -200,7 +200,7 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
             List of result dicts with doc_id and score.
         """
         # Get query text from DB
-        query_texts = self._service.fetch_query_texts([int(query_id)])
+        query_texts = self._service.fetch_query_texts([query_id])
         if not query_texts:
             return []
 

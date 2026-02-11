@@ -1,20 +1,15 @@
 # BM25 Retrieval Pipeline Configuration
 #
-# Uses Pyserini for BM25 retrieval.
-# Requires: pyserini (pip install autorag-research[search])
+# Uses VectorChord-BM25 for full-text BM25 retrieval from PostgreSQL.
 #
 # Parameters:
-#   k1: Term frequency saturation (default: 0.9)
-#   b: Length normalization (default: 0.4)
+#   tokenizer: Tokenizer for BM25 sparse retrieval (default: "bert")
 #   top_k: Number of results to retrieve (default: 10)
 #
 _target_: autorag_research.pipelines.retrieval.bm25.BM25PipelineConfig
-description: "BM25 retrieval with Pyserini"
+description: "BM25 retrieval with VectorChord-BM25"
 name: bm25
-index_path: ${hydra:runtime.cwd}/indices/bm25
-k1: 0.9
-b: 0.4
-language: en
+tokenizer: bert
 top_k: 10
 batch_size: 128
 max_concurrency: 16

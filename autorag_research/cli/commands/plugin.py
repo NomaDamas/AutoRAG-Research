@@ -292,7 +292,7 @@ class {class_name}Pipeline(BaseGenerationPipeline):
     def _get_pipeline_config(self) -> dict[str, Any]:
         return {{"type": "{name}"}}
 
-    async def _generate(self, query_id: int, top_k: int) -> GenerationResult:
+    async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         raise NotImplementedError("Implement generation logic")
 '''
     (src_dir / "pipeline.py").write_text(content)

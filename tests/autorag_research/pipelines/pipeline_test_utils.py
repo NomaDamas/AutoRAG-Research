@@ -10,7 +10,7 @@ Usage:
         create_mock_llm,
     )
 
-    # Retrieval Pipeline (uses real BM25RetrievalPipeline with bm25_index_path fixture)
+    # Retrieval Pipeline (uses real BM25RetrievalPipeline with mocked bm25_search)
     config = PipelineTestConfig(
         pipeline_type="retrieval",
         expected_total_queries=5,
@@ -357,7 +357,7 @@ def create_mock_llm(
 
     Note: We mock LLM because API calls are expensive and require API keys.
     For retrieval pipelines, use real BM25RetrievalPipeline with the
-    bm25_index_path fixture from conftest.py.
+    mocked bm25_search service from conftest.py.
 
     Args:
         response_text: The text to return from invoke()/ainvoke().
