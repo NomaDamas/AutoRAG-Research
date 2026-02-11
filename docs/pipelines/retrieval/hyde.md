@@ -29,7 +29,7 @@ llm: openai-gpt4
 embedding: openai-small
 prompt_template: |
   Please write a passage to answer the question.
-  Question: {question}
+  Question: {query}
   Passage:
 top_k: 10
 batch_size: 100
@@ -42,14 +42,14 @@ batch_size: 100
 | name | str | required | Unique pipeline instance name |
 | llm | str | required | LLM config name (from configs/llm/) |
 | embedding | str | required | Embedding config name (from configs/embedding/) |
-| prompt_template | str | see below | Template with {question} placeholder |
+| prompt_template | str | see below | Template with {query} placeholder |
 | top_k | int | 10 | Results per query |
 | batch_size | int | 100 | Queries per batch |
 
 **Default prompt template:**
 ```
 Please write a passage to answer the question.
-Question: {question}
+Question: {query}
 Passage:
 ```
 
@@ -61,7 +61,7 @@ The paper recommends domain-specific prompts. Examples:
 ```yaml
 prompt_template: |
   Please write a passage to answer the question
-  Question: {question}
+  Question: {query}
   Passage:
 ```
 
@@ -69,7 +69,7 @@ prompt_template: |
 ```yaml
 prompt_template: |
   Please write a scientific paper passage to support/refute the claim
-  Claim: {question}
+  Claim: {query}
   Passage:
 ```
 
@@ -77,7 +77,7 @@ prompt_template: |
 ```yaml
 prompt_template: |
   Please write a scientific paper passage to answer the question
-  Question: {question}
+  Question: {query}
   Passage:
 ```
 
@@ -85,7 +85,7 @@ prompt_template: |
 ```yaml
 prompt_template: |
   Please write a financial article passage to answer the question
-  Question: {question}
+  Question: {query}
   Passage:
 ```
 
@@ -93,7 +93,7 @@ prompt_template: |
 ```yaml
 prompt_template: |
   Please write a news passage about the topic.
-  Topic: {question}
+  Topic: {query}
   Passage:
 ```
 
@@ -101,7 +101,7 @@ prompt_template: |
 ```yaml
 prompt_template: |
   Please write a counter argument for the passage
-  Passage: {question}
+  Passage: {query}
   Counter Argument:
 ```
 
@@ -109,7 +109,7 @@ prompt_template: |
 ```yaml
 prompt_template: |
   Please write a passage in Korean to answer the question in detail.
-  Question: {question}
+  Question: {query}
   Passage:
 ```
 
@@ -131,7 +131,7 @@ pipeline = HyDERetrievalPipeline(
     llm=ChatOpenAI(model="gpt-4"),
     embedding=OpenAIEmbeddings(model="text-embedding-3-small"),
     # Optional: custom prompt for domain-specific documents
-    prompt_template="Write a Wikipedia passage about: {question}\n\nPassage:",
+    prompt_template="Write a Wikipedia passage about: {query}\n\nPassage:",
 )
 
 # Single query
