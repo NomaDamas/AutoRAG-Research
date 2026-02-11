@@ -30,7 +30,7 @@ from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 
 if TYPE_CHECKING:
-    from autorag_research.embeddings.bipali import BiPaliEmbeddings
+    from autorag_research.embeddings.base import SingleVectorMultiModalEmbedding
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import image, or_all
 from autorag_research.util import pil_image_to_bytes
@@ -75,7 +75,7 @@ class ViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,
         dataset_name: VIDOREV2_DATASETS,
-        embedding_model: BiPaliEmbeddings | None = None,
+        embedding_model: SingleVectorMultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         """Initialize ViDoReV2 ingestor.

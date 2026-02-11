@@ -12,9 +12,6 @@ from datasets import load_dataset
 from autorag_research.data.base import MultiModalEmbeddingDataIngestor
 from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
-
-if TYPE_CHECKING:
-    from autorag_research.embeddings.bipali import BiPaliEmbeddings
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import (
     ImageId,
@@ -27,6 +24,9 @@ from autorag_research.orm.models import (
     text,
 )
 from autorag_research.util import pil_image_to_bytes, to_list
+
+if TYPE_CHECKING:
+    from autorag_research.embeddings.base import SingleVectorMultiModalEmbedding
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -58,7 +58,7 @@ class ViDoReV3Ingestor(MultiModalEmbeddingDataIngestor):
         self,
         config_name: VIDOREV3_CONFIGS,
         qrels_mode: QrelsMode = "image",
-        embedding_model: BiPaliEmbeddings | None = None,
+        embedding_model: SingleVectorMultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         """

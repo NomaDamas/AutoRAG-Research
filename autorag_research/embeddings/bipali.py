@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from langchain_core.embeddings import Embeddings
 from PIL import Image
 from pydantic import ConfigDict, Field, PrivateAttr
+
+from autorag_research.embeddings.base import SingleVectorMultiModalEmbedding
 
 if TYPE_CHECKING:
     from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
@@ -61,7 +62,7 @@ def _load_image(img_file_path: ImageType) -> Image.Image:
         raise TypeError(img_file_path)
 
 
-class BiPaliEmbeddings(Embeddings):
+class BiPaliEmbeddings(SingleVectorMultiModalEmbedding):
     """BiPali-style embeddings supporting multiple model types.
 
     This class provides a unified interface for BiEncoder models from colpali_engine

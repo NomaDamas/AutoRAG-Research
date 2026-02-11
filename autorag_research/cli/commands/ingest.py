@@ -253,7 +253,7 @@ def ingest(  # noqa: C901
 
     # 7. Create ingestor with embedding model
     from autorag_research.data.base import MultiModalEmbeddingDataIngestor, TextEmbeddingDataIngestor
-    from autorag_research.embeddings.bipali import BiPaliEmbeddings
+    from autorag_research.embeddings.base import SingleVectorMultiModalEmbedding
 
     ingestor_class = meta.ingestor_class
     if issubclass(ingestor_class, TextEmbeddingDataIngestor):
@@ -261,13 +261,13 @@ def ingest(  # noqa: C901
             raise TypeError("Text ingestor requires an Embeddings model")  # noqa: TRY003
         ingestor = ingestor_class(embed_model, **init_kwargs)
     elif issubclass(ingestor_class, MultiModalEmbeddingDataIngestor):
-        if isinstance(embed_model, BiPaliEmbeddings):
+        if isinstance(embed_model, SingleVectorMultiModalEmbedding):
             ingestor = ingestor_class(embedding_model=embed_model, **init_kwargs)
         elif isinstance(embed_model, MultiVectorMultiModalEmbedding):
             ingestor = ingestor_class(late_interaction_embedding_model=embed_model, **init_kwargs)
         else:
             typer.echo(
-                "Error: Multi-modal ingestor requires a BiPaliEmbeddings model or MultiVectorMultiModalEmbedding",
+                "Error: Multi-modal ingestor requires a SingleVectorMultiModalEmbedding or MultiVectorMultiModalEmbedding",
                 err=True,
             )
             raise typer.Exit(1)

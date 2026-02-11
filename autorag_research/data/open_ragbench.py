@@ -13,7 +13,7 @@ from autorag_research.data.util import make_id
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 
 if TYPE_CHECKING:
-    from autorag_research.embeddings.bipali import BiPaliEmbeddings
+    from autorag_research.embeddings.base import SingleVectorMultiModalEmbedding
 from autorag_research.exceptions import ServiceNotSetError
 from autorag_research.orm.models import ImageId, TextId
 from autorag_research.util import extract_image_from_data_uri
@@ -33,7 +33,7 @@ DATA_PATH = "pdf/arxiv"
 class OpenRAGBenchIngestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,
-        embedding_model: BiPaliEmbeddings | None = None,
+        embedding_model: SingleVectorMultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
         data_path: str = DATA_PATH,
     ):

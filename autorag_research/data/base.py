@@ -1,18 +1,13 @@
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from langchain_core.embeddings import Embeddings
 
-from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
+from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding, SingleVectorMultiModalEmbedding
 from autorag_research.exceptions import EmbeddingError, ServiceNotSetError
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
-
-if TYPE_CHECKING:
-    from autorag_research.embeddings.bipali import BiPaliEmbeddings
 
 
 @dataclass
@@ -83,7 +78,7 @@ class TextEmbeddingDataIngestor(DataIngestor, ABC):
 class MultiModalEmbeddingDataIngestor(DataIngestor, ABC):
     def __init__(
         self,
-        embedding_model: BiPaliEmbeddings | None = None,
+        embedding_model: SingleVectorMultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
         **kwargs,
     ):

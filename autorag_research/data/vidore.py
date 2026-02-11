@@ -33,7 +33,7 @@ from autorag_research.data.registry import register_ingestor
 from autorag_research.embeddings.base import MultiVectorMultiModalEmbedding
 
 if TYPE_CHECKING:
-    from autorag_research.embeddings.bipali import BiPaliEmbeddings
+    from autorag_research.embeddings.base import SingleVectorMultiModalEmbedding
 from autorag_research.exceptions import InvalidDatasetNameError, ServiceNotSetError
 from autorag_research.util import pil_image_to_bytes
 
@@ -81,7 +81,7 @@ class ViDoReIngestor(MultiModalEmbeddingDataIngestor):
     def __init__(
         self,
         dataset_name: VIDORE_V1_DATASETS,
-        embedding_model: BiPaliEmbeddings | None = None,
+        embedding_model: SingleVectorMultiModalEmbedding | None = None,
         late_interaction_embedding_model: MultiVectorMultiModalEmbedding | None = None,
     ):
         """Initialize ViDoReIngestor.
