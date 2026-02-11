@@ -7,11 +7,11 @@ Automate your RAG research
 
 ## What is AutoRAG-Research?
 
-| Problem | What AutoRAG-Research does |
-|---------|---------------------------|
-| Every dataset has a different format. | We unify the formats and pre-compute embeddings for you. Just download and use. |
-| Comparing against SOTA pipelines requires implementing each one. | We implement SOTA pipelines from papers. Benchmark yours against them. |
-| Every paper claims SOTA. Which one actually is? | Run all pipelines on your data with one command and compare. |
+| Problem | What AutoRAG-Research does                                                       |
+|---------|----------------------------------------------------------------------------------|
+| Every dataset has a different format. | We unify the formats and pre-computed embeddings for you. Just download and use. |
+| Comparing against SOTA pipelines requires implementing each one. | We implement SOTA pipelines from papers. Benchmark yours against them.           |
+| Every paper claims SOTA. Which one actually is? | Run all pipelines on your data with one command and compare.                     |
 
 Which pipeline is really SOTA? What datasets are out there? Find it all here.
 
@@ -21,26 +21,26 @@ Which pipeline is really SOTA? What datasets are out there? Find it all here.
 
 ## Available Datasets
 
-We provide pre-processed datasets with unified formats. Some include pre-computed embeddings.
+We provide pre-processed datasets with unified formats. Some include **pre-computed embeddings**.
 
 **Text**
 
 | Dataset | Pipeline Support | Description |
 |---------|:----------------:|-------------|
-| [BEIR](https://huggingface.co/BeIR) | Retrieval | Standard IR benchmark across 14 diverse domains (scifact, nq, hotpotqa, ...) |
-| [MTEB](https://huggingface.co/mteb) | Retrieval | Large-scale embedding benchmark with any MTEB retrieval task |
-| [RAGBench](https://huggingface.co/datasets/galileo-ai/ragbench) | Retrieval + Generation | End-to-end RAG evaluation with generation ground truth across 12 domains |
-| [MrTyDi](https://huggingface.co/datasets/castorini/mr-tydi) | Retrieval | Multilingual retrieval across 11 languages |
-| [BRIGHT](https://huggingface.co/datasets/xlangai/BRIGHT) | Retrieval + Generation | Reasoning-intensive retrieval with gold answers |
+| [BEIR](https://arxiv.org/pdf/2104.08663) | Retrieval | Standard IR benchmark across 14 diverse domains (scifact, nq, hotpotqa, ...) |
+| [MTEB](https://aclanthology.org/2023.eacl-main.148.pdf) | Retrieval | Large-scale embedding benchmark with any MTEB retrieval task |
+| [RAGBench](https://arxiv.org/pdf/2407.11005v1) | Retrieval + Generation | End-to-end RAG evaluation with generation ground truth across 12 domains |
+| [MrTyDi](https://aclanthology.org/2021.mrl-1.12.pdf) | Retrieval | Multilingual retrieval across 11 languages |
+| [BRIGHT](https://arxiv.org/pdf/2407.12883) | Retrieval + Generation | Reasoning-intensive retrieval with gold answers |
 
 **Image**
 
-| Dataset | Pipeline Support | Description |
-|---------|:----------------:|-------------|
-| [ViDoRe](https://huggingface.co/collections/vidore/vidore-benchmark) | Retrieval + Generation* | Visual document QA with 1:1 query-to-page mapping |
-| [ViDoRe v2](https://huggingface.co/collections/vidore/vidore-benchmark-v2) | Retrieval | Visual document retrieval with corpus-level search |
-| [ViDoRe v3](https://huggingface.co/collections/vidore/vidore-benchmark-v3) | Retrieval | Visual document retrieval across 8 industry domains |
-| [VisRAG](https://huggingface.co/collections/openbmb/visrag) | Retrieval + Generation* | Vision-based RAG benchmark (ChartQA, SlideVQA, DocVQA, ...) |
+| Dataset |    Pipeline Support     | Description |
+|---------|:-----------------------:|-------------|
+| [ViDoRe](https://arxiv.org/pdf/2407.01449) | Retrieval + Generation* | Visual document QA with 1:1 query-to-page mapping |
+| [ViDoRe v2](https://arxiv.org/pdf/2505.17166) |        Retrieval        | Visual document retrieval with corpus-level search |
+| [ViDoRe v3](https://arxiv.org/pdf/2601.08620) |        Retrieval        | Visual document retrieval across 8 industry domains |
+| [VisRAG](https://arxiv.org/pdf/2410.10594) | Retrieval + Generation* | Vision-based RAG benchmark (ChartQA, SlideVQA, DocVQA, ...) |
 
 **Text + Image**
 
@@ -58,25 +58,25 @@ SOTA pipelines implemented from papers, ready to run. There are two ways to buil
 
 Standalone retrieval pipelines. Use them on their own for retrieval-only evaluation. If you also want to evaluate generation quality, combine any retrieval pipeline with an LLM using the **BasicRAG** generation pipeline — it takes a retrieval pipeline as input, feeds the retrieved results to an LLM, and produces generated answers you can evaluate with generation metrics.
 
-| Pipeline | Description | Reference |
-|----------|-------------|---------|
-| Vector Search | Dense vector similarity search (single-vector and multi-vector MaxSim) | - |
-| BM25 | Sparse full-text retrieval | - |
-| [HyDE](https://arxiv.org/abs/2212.10496) | Hypothetical Document Embeddings | ACL 23 |
-| Hybrid RRF | Reciprocal Rank Fusion of two retrieval pipelines | - |
-| Hybrid CC | Convex Combination fusion with score normalization | - |
+| Pipeline                                                                         | Description                                                            | Reference |
+|----------------------------------------------------------------------------------|------------------------------------------------------------------------|-----------|
+| [Vector Search (DPR)](https://aclanthology.org/2020.emnlp-main.550.pdf)          | Dense vector similarity search (single-vector and multi-vector MaxSim) | EMNLP 20  |
+| [BM25](https://www.staff.city.ac.uk/~sbrp622/papers/foundations_bm25_review.pdf) | Sparse full-text retrieval                                             | -         |
+| [HyDE](https://arxiv.org/abs/2212.10496)                                         | Hypothetical Document Embeddings                                       | ACL 23    |
+| [Hybrid RRF](https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf)                | Reciprocal Rank Fusion of two retrieval pipelines                      | -         |
+| [Hybrid CC](https://arxiv.org/pdf/2210.11934)                                    | Convex Combination fusion of two retrieval pipelines                   | -         |
 
 ### 2. Generation Pipeline
 
 These pipelines handle retrieval and generation together as a single algorithm. Each implements a specific paper's approach end-to-end.
 
-| Pipeline                                     | Description                                            | Reference |
-|----------------------------------------------|--------------------------------------------------------|-----------|
-| BasicRAG                                     | Any retrieval pipeline + LLM                           | -         |
-| [IRCoT](https://arxiv.org/abs/2212.10509)    | Interleaving Retrieval with Chain-of-Thought           | ACL 23    |
-| [ET2RAG](https://arxiv.org/abs/2511.01059)   | Majority voting on context subsets                     | -    / 25 |
-| [VisRAG](https://arxiv.org/abs/2410.10594)   | Vision-language model generation from retrieved images | ICLR 25   |
-| [MAIN-RAG](https://arxiv.org/abs/2501.00332) | Multi-Agent Filtering RAG                              | ACL 25    |
+| Pipeline                                     | Description                                            | Reference     |
+|----------------------------------------------|--------------------------------------------------------|---------------|
+| [BasicRAG](https://arxiv.org/pdf/2005.11401) | Any retrieval pipeline + LLM                           | NeurIPS 20    |
+| [IRCoT](https://arxiv.org/abs/2212.10509)    | Interleaving Retrieval with Chain-of-Thought           | ACL 23        |
+| [ET2RAG](https://arxiv.org/abs/2511.01059)   | Majority voting on context subsets                     | Preprint / 25 |
+| [VisRAG](https://arxiv.org/abs/2410.10594)   | Vision-language model generation from retrieved images | ICLR 25       |
+| [MAIN-RAG](https://arxiv.org/abs/2501.00332) | Multi-Agent Filtering RAG                              | ACL 25        |
 
 ## Available Metrics
 
@@ -84,7 +84,7 @@ These pipelines handle retrieval and generation together as a single algorithm. 
 
 **Generation** — N-gram based: BLEU, METEOR, ROUGE / Embedding based: BERTScore, SemScore
 
-> **Missing something?** [Open an issue](https://github.com/vkehfdl1/AutoRAG-Research/issues) and we will implement it. Or check our [Build Your Own](https://vkehfdl1.github.io/AutoRAG-Research/tutorial/) guide.
+> **Missing something?** [Open an issue](https://github.com/vkehfdl1/AutoRAG-Research/issues) and we will implement it. Or check our [Plugin](https://nomadamas.github.io/AutoRAG-Research/plugins/) guide.
 
 ## Setup
 
@@ -92,7 +92,7 @@ These pipelines handle retrieval and generation together as a single algorithm. 
 
 > We strongly recommend using [uv](https://docs.astral.sh/uv/) as your virtual environment manager. If you use uv, you **must** activate the virtual environment first — otherwise the CLI will not use your uv environment.
 
-**Option 1: Install Script (Recommended)**
+**Option 1: Install Script (Recommended, Mac OS / Linux)**
 
 The install script handles Python environment, package installation, and PostgreSQL setup in one go.
 
@@ -120,7 +120,7 @@ source .venv/bin/activate
 
 ```bash
 # uv (recommended)
-uv pip install autorag-research
+uv add autorag-research
 
 # or pip
 pip install autorag-research
@@ -140,6 +140,7 @@ autorag-research init
 ```
 
 This creates `configs/` with database, pipeline, metric, and experiment YAML files.
+Now you can edit YAML files to setup your own experiments.
 
 </details>
 
@@ -149,19 +150,27 @@ This creates `configs/` with database, pipeline, metric, and experiment YAML fil
 # 1. See available datasets
 autorag-research show datasets
 
-# 2. Ingest a dataset
+# 2-1. Ingest a dataset
 autorag-research ingest --name beir --extra dataset-name=scifact
+
+# 2-2. Or download a pre-ingested dataset including pre-computed embeddings
+autorag-rsearch show datasets beir # type your ingestor name to see if pre-ingested versions are available
+autorag-research data restore beir beir_arguana_test_qwen_3_0.6b # example command
 
 # 3. Configure LLM — pick or create a config in configs/llm/
 vim configs/llm/openai-gpt5-mini.yaml
+# You should set your embedding models in embedding/ folder if needed
 
 # 4. Edit experiment config — choose pipelines and metrics
 vim configs/experiment.yaml
 
-# 5. Run your experiment
+# 5. Check your DB connection
+vim configs/db.yaml
+
+# 6. Run your experiment
 autorag-research run --db-name=beir_scifact_test
 
-# 6. View results in a Gradio leaderboard UI
+# 7. View results in a Gradio leaderboard UI (need to load your env variable for DB connection)
 python -m autorag_research.reporting.ui
 ```
 
@@ -203,12 +212,8 @@ For the full YAML configuration guide, see the [Documentation](https://nomadamas
 | `autorag-research ingest --name <name>` | Ingest a dataset into PostgreSQL |
 | `autorag-research run --db-name <name>` | Run experiment with configured pipelines and metrics |
 
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `POSTGRES_PASSWORD` | PostgreSQL password (recommended for security) |
-| `AUTORAG_CONFIG_PATH` | Default configuration directory path |
+You can also type `--help` in any command to see detailed usage instructions.
+Also, we provide a [CLI Reference](https://nomadamas.github.io/AutoRAG-Research/cli/).
 
 
 ## Build Your Own Plugin
@@ -249,3 +254,15 @@ autorag-research run --db-name=my_dataset
 After `plugin sync`, your plugin appears in `configs/pipelines/` or `configs/metrics/` and can be referenced in `experiment.yaml` just like any built-in component.
 
 For the full implementation guide, see the [Plugin Documentation](https://nomadamas.github.io/AutoRAG-Research/plugins/).
+
+
+## Contributing
+
+We are open source project and always welcome contributions who love RAG! Feel free to open issues or submit pull requests on GitHub.
+You can check our [Contribution Guide](https://nomadamas.github.io/AutoRAG-Research/contributing/) for more details.
+
+
+## Acknowledgements
+
+This project is made by the creator of [AutoRAG](https://github.com/Marker-Inc-Korea/AutoRAG), Jeffrey & Bobb Kim. 
+All works are done in [NomaDamas](https://github.com/NomaDamas), AI Hacker House in Seoul, Korea.
