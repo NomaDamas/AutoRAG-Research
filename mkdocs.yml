@@ -47,6 +47,9 @@ nav:
       - Generation:
           - pipelines/generation/index.md
           - pipelines/generation/basic-rag.md
+  - Embeddings:
+      - embeddings/index.md
+      - embeddings/infinity.md
   - Rerankers:
       - rerankers/index.md
       - rerankers/cohere.md

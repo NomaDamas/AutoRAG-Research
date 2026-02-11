@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from transformers import PreTrainedModel
 
 from autorag_research.types import ImageType
+from autorag_research.util import load_image
 
 # Model type registry: maps model_type to (model_class, processor_class)
 MODEL_REGISTRY: dict[str, tuple[str, str]] = {
@@ -216,7 +217,7 @@ class BiPaliEmbeddings(SingleVectorMultiModalEmbedding):
 
         for i in range(0, len(img_file_paths), self.embed_batch_size):
             batch_paths = img_file_paths[i : i + self.embed_batch_size]
-            images = [_load_image(p) for p in batch_paths]
+            images = [load_image(p) for p in batch_paths]
 
             image_inputs = self._processor.process_images(images)
             image_inputs = {k: v.to(self.device) for k, v in image_inputs.items()}
