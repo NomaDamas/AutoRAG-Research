@@ -65,7 +65,7 @@ class MetricRepository(GenericRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.type == metric_type).order_by(self.model_cls.name)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_summaries(self, metric_id: int) -> Any | None:
+    def get_with_summaries(self, metric_id: int | str) -> Any | None:
         """Retrieve a metric with its summaries eagerly loaded.
 
         Args:
@@ -79,7 +79,7 @@ class MetricRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_all_relations(self, metric_id: int) -> Any | None:
+    def get_with_all_relations(self, metric_id: int | str) -> Any | None:
         """Retrieve a metric with all relations eagerly loaded.
 
         Args:

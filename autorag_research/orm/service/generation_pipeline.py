@@ -46,7 +46,7 @@ class GenerationResult:
 # Type alias for async generation function - processes ONE query
 # Signature: (query_id: int, top_k: int) -> Awaitable[GenerationResult]
 # The function has internal access to retrieval pipeline via closure/method binding
-GenerateFunc = Callable[[int, int], Awaitable[GenerationResult]]
+GenerateFunc = Callable[[int | str, int], Awaitable[GenerationResult]]
 
 
 class GenerationPipelineService(BaseService):
@@ -118,7 +118,7 @@ class GenerationPipelineService(BaseService):
         """Create a new GenerationUnitOfWork instance."""
         return GenerationUnitOfWork(self.session_factory, self._schema)
 
-    def save_pipeline(self, name: str, config: dict) -> int:
+    def save_pipeline(self, name: str, config: dict) -> int | str:
         """Create a new pipeline in the database.
 
         Args:
@@ -138,9 +138,9 @@ class GenerationPipelineService(BaseService):
 
     def _filter_valid_results(
         self,
-        query_ids: list[int],
+        query_ids: list[int | str],
         batch_results: list[dict | None],
-        failed_queries: list[int],
+        failed_queries: list[int | str],
     ) -> list[dict]:
         """Filter valid results and track failed queries."""
         valid_results = []
@@ -161,7 +161,7 @@ class GenerationPipelineService(BaseService):
     def run_pipeline(
         self,
         generate_func: GenerateFunc,
-        pipeline_id: int,
+        pipeline_id: int | str,
         top_k: int = 10,
         batch_size: int = 128,
         max_concurrency: int = 16,
@@ -199,10 +199,10 @@ class GenerationPipelineService(BaseService):
         total_queries = 0
         total_token_usage: dict[str, int] | None = None
         total_execution_time_ms = 0
-        failed_queries: list[int] = []
+        failed_queries: list[int | str] = []
         offset = 0
 
-        async def process_query_with_retry(query_id: int) -> dict | None:
+        async def process_query_with_retry(query_id: int | str) -> dict | None:
             """Process a single query with retry logic."""
             start_time = time.time()
             try:
@@ -228,7 +228,7 @@ class GenerationPipelineService(BaseService):
                 logger.exception(f"Generation failed for query {query_id}")
             return None
 
-        async def process_batch(query_ids: list[int]) -> list[dict | None]:
+        async def process_batch(query_ids: list[int | str]) -> list[dict | None]:
             """Process a batch of queries with concurrency limit."""
             return await run_with_concurrency_limit(
                 items=query_ids,
@@ -271,7 +271,7 @@ class GenerationPipelineService(BaseService):
             "failed_queries": failed_queries,
         }
 
-    def get_pipeline_config(self, pipeline_id: int) -> dict | None:
+    def get_pipeline_config(self, pipeline_id: int | str) -> dict | None:
         """Get pipeline configuration by ID.
 
         Args:
@@ -284,7 +284,7 @@ class GenerationPipelineService(BaseService):
             pipeline = uow.pipelines.get_by_id(pipeline_id)
             return pipeline.config if pipeline else None
 
-    def delete_pipeline_results(self, pipeline_id: int) -> int:
+    def delete_pipeline_results(self, pipeline_id: int | str) -> int:
         """Delete all generation results for a specific pipeline.
 
         Args:
@@ -298,7 +298,7 @@ class GenerationPipelineService(BaseService):
             uow.commit()
             return deleted_count
 
-    def get_image_chunk_contents(self, image_chunk_ids: list[int]) -> list[tuple[bytes, str]]:
+    def get_image_chunk_contents(self, image_chunk_ids: list[int | str]) -> list[tuple[bytes, str]]:
         """Fetch image chunk contents (bytes, mimetype) by IDs.
 
         Args:

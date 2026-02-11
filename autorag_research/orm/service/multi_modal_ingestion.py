@@ -101,7 +101,7 @@ class MultiModalIngestionService(BaseIngestionService):
 
     # ==================== Batch Add Operations ====================
 
-    def add_files(self, files: list[dict[str, str]]) -> list[int]:
+    def add_files(self, files: list[dict[str, str]]) -> list[int | str]:
         """Batch add files to the database.
 
         Args:
@@ -113,7 +113,7 @@ class MultiModalIngestionService(BaseIngestionService):
         """
         return self._add(files, table_name="File", repository_property="files")
 
-    def add_documents(self, documents: list[dict]) -> list[int]:
+    def add_documents(self, documents: list[dict]) -> list[int | str]:
         """Batch add documents to the database.
 
         Args:
@@ -129,7 +129,7 @@ class MultiModalIngestionService(BaseIngestionService):
         """
         return self._add(documents, table_name="Document", repository_property="documents")
 
-    def add_pages(self, pages: list[dict]) -> list[int]:
+    def add_pages(self, pages: list[dict]) -> list[int | str]:
         """Batch add pages to the database.
 
         Args:
@@ -166,7 +166,7 @@ class MultiModalIngestionService(BaseIngestionService):
 
     def set_image_chunk_embeddings(
         self,
-        image_chunk_ids: list[int],
+        image_chunk_ids: list[int | str],
         embeddings: list[list[float]],
     ) -> int:
         """Batch set embeddings for image chunks.
@@ -185,7 +185,7 @@ class MultiModalIngestionService(BaseIngestionService):
 
     def set_image_chunk_multi_embeddings(
         self,
-        image_chunk_ids: list[int],
+        image_chunk_ids: list[int | str],
         embeddings: list[list[list[float]]],
     ) -> int:
         """Batch set multi-vector embeddings for image chunks.

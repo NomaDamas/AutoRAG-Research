@@ -68,11 +68,11 @@ class BaseEvaluationService(BaseService, ABC):
             schema: Schema namespace from create_schema(). If None, uses default 768-dim schema.
         """
         super().__init__(session_factory, schema)
-        self._metric_id: int | None = None
+        self._metric_id: int | str | None = None
         self._metric_func: MetricFunc | None = None
 
     @property
-    def metric_id(self) -> int | None:
+    def metric_id(self) -> int | str | None:
         """Get current metric ID."""
         return self._metric_id
 
@@ -81,7 +81,7 @@ class BaseEvaluationService(BaseService, ABC):
         """Get current metric function."""
         return self._metric_func
 
-    def set_metric(self, metric_id: int, metric_func: MetricFunc) -> None:
+    def set_metric(self, metric_id: int | str, metric_func: MetricFunc) -> None:
         """Set the metric ID and function for evaluation.
 
         Args:
@@ -106,7 +106,7 @@ class BaseEvaluationService(BaseService, ABC):
                 return uow.metrics.get_by_name_and_type(metric_name, metric_type)
             return uow.metrics.get_by_name(metric_name)
 
-    def get_or_create_metric(self, name: str, metric_type: str) -> int:
+    def get_or_create_metric(self, name: str, metric_type: str) -> int | str:
         """Get existing metric or create a new one.
 
         Args:
@@ -133,7 +133,7 @@ class BaseEvaluationService(BaseService, ABC):
             uow.commit()
             return metric_id
 
-    def _iter_query_id_batches(self, batch_size: int) -> Generator[list[int], None, None]:
+    def _iter_query_id_batches(self, batch_size: int) -> Generator[list[int | str], None, None]:
         """Iterate over query IDs in batches using pagination.
 
         This method uses limit/offset to fetch query IDs in batches,
@@ -153,7 +153,7 @@ class BaseEvaluationService(BaseService, ABC):
             yield batch
             offset += batch_size
 
-    def _fetch_query_ids_batch(self, limit: int, offset: int) -> list[int]:
+    def _fetch_query_ids_batch(self, limit: int, offset: int) -> list[int | str]:
         """Fetch a batch of query IDs with pagination.
 
         Uses QueryRepository to get all query IDs ordered by ID.
@@ -178,7 +178,7 @@ class BaseEvaluationService(BaseService, ABC):
             return uow.queries.count_all()
 
     @abstractmethod
-    def _get_execution_results(self, pipeline_id: int, query_ids: list[int]) -> dict[int, Any]:
+    def _get_execution_results(self, pipeline_id: int | str, query_ids: list[int | str]) -> dict[int | str, Any]:
         """Fetch execution results for given query IDs.
 
         Args:
@@ -191,7 +191,9 @@ class BaseEvaluationService(BaseService, ABC):
         ...
 
     @abstractmethod
-    def _filter_missing_query_ids(self, pipeline_id: int, metric_id: int, query_ids: list[int]) -> list[int]:
+    def _filter_missing_query_ids(
+        self, pipeline_id: int | str, metric_id: int | str, query_ids: list[int | str]
+    ) -> list[int | str]:
         """Filter query IDs that don't have evaluation results for the metric.
 
         Args:
@@ -205,7 +207,7 @@ class BaseEvaluationService(BaseService, ABC):
         ...
 
     @abstractmethod
-    def _prepare_metric_input(self, pipeline_id: int, query_id: int, execution_result: Any) -> MetricInput:
+    def _prepare_metric_input(self, pipeline_id: int | str, query_id: int | str, execution_result: Any) -> MetricInput:
         """Prepare input data for metric computation.
 
         Args:
@@ -218,7 +220,9 @@ class BaseEvaluationService(BaseService, ABC):
         """
         ...
 
-    def _save_evaluation_results(self, pipeline_id: int, metric_id: int, results: list[tuple[int, float]]) -> None:
+    def _save_evaluation_results(
+        self, pipeline_id: int | str, metric_id: int | str, results: list[tuple[int | str, float]]
+    ) -> None:
         """Save computed evaluation results to the database.
 
         Args:
@@ -250,9 +254,9 @@ class BaseEvaluationService(BaseService, ABC):
 
     def _compute_metrics_batch(
         self,
-        query_ids: list[int],
+        query_ids: list[int | str],
         metric_inputs: list[MetricInput],
-    ) -> list[tuple[int, float | None]]:
+    ) -> list[tuple[int | str, float | None]]:
         """Compute metrics for a batch of items.
 
         Args:
@@ -274,7 +278,7 @@ class BaseEvaluationService(BaseService, ABC):
 
     def evaluate(
         self,
-        pipeline_id: int,
+        pipeline_id: int | str,
         batch_size: int = 100,
     ) -> tuple[int, float | None]:
         """Run the full evaluation pipeline for the current metric.
@@ -325,7 +329,7 @@ class BaseEvaluationService(BaseService, ABC):
             execution_results = self._get_execution_results(pipeline_id, missing_query_ids)
 
             # Prepare metric inputs
-            query_ids: list[int] = []
+            query_ids: list[int | str] = []
             metric_inputs: list[MetricInput] = []
             for query_id in missing_query_ids:
                 if query_id in execution_results:
@@ -361,8 +365,8 @@ class BaseEvaluationService(BaseService, ABC):
 
     def is_evaluation_complete(
         self,
-        pipeline_id: int,
-        metric_id: int,
+        pipeline_id: int | str,
+        metric_id: int | str,
         batch_size: int = 100,
     ) -> bool:
         """Check if evaluation is complete for all queries.
@@ -388,7 +392,7 @@ class BaseEvaluationService(BaseService, ABC):
 
         return True
 
-    def verify_pipeline_completion(self, pipeline_id: int, batch_size: int = 100) -> bool:
+    def verify_pipeline_completion(self, pipeline_id: int | str, batch_size: int = 100) -> bool:
         """Verify all queries have execution results for the pipeline.
 
         Iterates through query IDs in batches and checks each batch has results.
@@ -417,7 +421,7 @@ class BaseEvaluationService(BaseService, ABC):
         return True
 
     @abstractmethod
-    def _has_results_for_queries(self, pipeline_id: int, query_ids: list[int]) -> bool:
+    def _has_results_for_queries(self, pipeline_id: int | str, query_ids: list[int | str]) -> bool:
         """Check if all given query IDs have execution results for the pipeline.
 
         Args:

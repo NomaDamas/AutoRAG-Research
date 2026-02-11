@@ -97,7 +97,7 @@ class RetrievalPipelineService(BaseService):
         """Create a new RetrievalUnitOfWork instance."""
         return RetrievalUnitOfWork(self.session_factory, self._schema)
 
-    def save_pipeline(self, name: str, config: dict) -> int:
+    def save_pipeline(self, name: str, config: dict) -> int | str:
         """Create a new pipeline in the database.
 
         Args:
@@ -117,10 +117,10 @@ class RetrievalPipelineService(BaseService):
 
     def _collect_retrieval_results(
         self,
-        query_ids: list[int],
+        query_ids: list[int | str],
         results: list[list[dict] | None],
-        pipeline_id: int,
-        failed_queries: list[int],
+        pipeline_id: int | str,
+        failed_queries: list[int | str],
     ) -> list[dict]:
         """Collect valid retrieval results and track failed queries.
 
@@ -150,7 +150,7 @@ class RetrievalPipelineService(BaseService):
     def run_pipeline(
         self,
         retrieval_func: RetrievalFunc,
-        pipeline_id: int,
+        pipeline_id: int | str,
         top_k: int = 10,
         batch_size: int = 128,
         max_concurrency: int = 16,
@@ -181,7 +181,7 @@ class RetrievalPipelineService(BaseService):
 
         from autorag_research.util import run_with_concurrency_limit
 
-        async def process_query_with_retry(query_id: int) -> list[dict] | None:
+        async def process_query_with_retry(query_id: int | str) -> list[dict] | None:
             """Process a single query with retry logic."""
             try:
                 async for attempt in AsyncRetrying(
@@ -197,7 +197,7 @@ class RetrievalPipelineService(BaseService):
                 logger.exception(f"Retrieval failed for query {query_id}")
             return None
 
-        async def process_batch(query_ids: list[int]) -> list[list[dict] | None]:
+        async def process_batch(query_ids: list[int | str]) -> list[list[dict] | None]:
             """Process a batch of queries with concurrency limit."""
             return await run_with_concurrency_limit(
                 items=query_ids,
@@ -208,7 +208,7 @@ class RetrievalPipelineService(BaseService):
 
         total_queries = 0
         total_results = 0
-        failed_queries: list[int] = []
+        failed_queries: list[int | str] = []
         offset = 0
 
         while True:
@@ -242,7 +242,7 @@ class RetrievalPipelineService(BaseService):
             "failed_queries": failed_queries,
         }
 
-    def get_pipeline_config(self, pipeline_id: int) -> dict | None:
+    def get_pipeline_config(self, pipeline_id: int | str) -> dict | None:
         """Get pipeline configuration by ID.
 
         Args:
@@ -255,7 +255,7 @@ class RetrievalPipelineService(BaseService):
             pipeline = uow.pipelines.get_by_id(pipeline_id)
             return pipeline.config if pipeline else None
 
-    def delete_pipeline_results(self, pipeline_id: int) -> int:
+    def delete_pipeline_results(self, pipeline_id: int | str) -> int:
         """Delete all retrieval results for a specific pipeline.
 
         Args:
@@ -447,7 +447,7 @@ class RetrievalPipelineService(BaseService):
             )
             return [self._make_retrieval_result(chunk, 1 - distance) for chunk, distance in results]
 
-    def fetch_query_texts(self, query_ids: list[int]) -> list[str]:
+    def fetch_query_texts(self, query_ids: list[int | str]) -> list[str]:
         """Batch fetch query texts from database.
 
         Args:
