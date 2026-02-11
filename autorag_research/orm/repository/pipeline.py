@@ -28,7 +28,7 @@ class PipelineRepository(GenericRepository[Any]):
             model_cls = Pipeline
         super().__init__(session, model_cls)
 
-    def get_with_executor_results(self, pipeline_id: int) -> Any | None:
+    def get_with_executor_results(self, pipeline_id: int | str) -> Any | None:
         """Retrieve a pipeline with its executor results eagerly loaded.
 
         Args:
@@ -44,7 +44,7 @@ class PipelineRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_summaries(self, pipeline_id: int) -> Any | None:
+    def get_with_summaries(self, pipeline_id: int | str) -> Any | None:
         """Retrieve a pipeline with its summaries eagerly loaded.
 
         Args:
@@ -58,7 +58,7 @@ class PipelineRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_retrieved_results(self, pipeline_id: int) -> Any | None:
+    def get_with_retrieved_results(self, pipeline_id: int | str) -> Any | None:
         """Retrieve a pipeline with its retrieved results eagerly loaded.
 
         Args:
@@ -77,7 +77,7 @@ class PipelineRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_all_relations(self, pipeline_id: int) -> Any | None:
+    def get_with_all_relations(self, pipeline_id: int | str) -> Any | None:
         """Retrieve a pipeline with all relations eagerly loaded.
 
         Args:

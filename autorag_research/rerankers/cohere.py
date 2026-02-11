@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -10,12 +11,15 @@ from pydantic import Field
 from autorag_research.rerankers.api_base import APIReranker, _create_retry_decorator
 from autorag_research.rerankers.base import RerankResult
 
+logger = logging.getLogger("AutoRAG-Research")
+
 
 class CohereReranker(APIReranker):
     """Reranker using Cohere's rerank API.
 
     Requires the `cohere` package: `pip install cohere`
     Requires `COHERE_API_KEY` environment variable.
+
     Includes automatic retry with exponential backoff for transient errors.
     """
 

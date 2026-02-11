@@ -237,6 +237,18 @@ BEGIN
 END $$;
 """
 
+_CREATE_BM25_INDEX_SQL = """
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vchord_bm25') THEN
+        -- BM25 index on chunk table
+        BEGIN
+            CREATE INDEX IF NOT EXISTS idx_chunk_bm25 ON chunk USING bm25 (bm25_tokens bm25_ops);
+        EXCEPTION WHEN others THEN PERFORM 1; END;
+    END IF;
+END $$;
+"""
+
 _INSTALL_BM25_TOKENIZER_SQL = """
 DO $$
 BEGIN
@@ -293,3 +305,106 @@ def install_vector_extensions(
             cursor.execute(_INSTALL_BM25_TOKENIZER_SQL)
         conn.commit()
     logger.info("Vector extensions installed successfully")
+
+
+def create_bm25_indexes(
+    host: str,
+    user: str,
+    password: str,
+    database: str,
+    port: int = 5432,
+) -> None:
+    """Create BM25 indexes on chunk table if vchord_bm25 extension is available.
+
+    Should be called after tables are created (via create_all or pg_restore).
+    Silently skips if the extension is not installed or the table does not exist.
+
+    Args:
+        host: PostgreSQL server host.
+        user: PostgreSQL user.
+        password: User password.
+        database: Target database name.
+        port: PostgreSQL server port (default: 5432).
+    """
+    with psycopg.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        dbname=database,
+    ) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(_CREATE_BM25_INDEX_SQL)
+        conn.commit()
+    logger.info("BM25 indexes created successfully")
+
+
+_MIGRATION_SQL = """
+DO $$
+BEGIN
+    -- ============================================================
+    -- Migration v1: Add 'score' column to retrieval_relation
+    -- Date: 2026-02-11
+    -- Issue: #262 — backward compatibility for graded relevance
+    -- ============================================================
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'retrieval_relation'
+    ) THEN
+        BEGIN
+            ALTER TABLE retrieval_relation
+                ADD COLUMN IF NOT EXISTS score INTEGER DEFAULT 1;
+        EXCEPTION WHEN others THEN PERFORM 1;
+        END;
+    END IF;
+
+    -- ============================================================
+    -- Future migrations go here (v2, v3, ...)
+    -- Template:
+    -- -- Migration vN: <description>
+    -- -- Date: YYYY-MM-DD
+    -- -- Issue: #NNN — <context>
+    -- IF EXISTS (...) THEN
+    --     BEGIN
+    --         ALTER TABLE ...;
+    --     EXCEPTION WHEN others THEN PERFORM 1;
+    --     END;
+    -- END IF;
+    -- ============================================================
+END $$;
+"""
+
+
+def run_migrations(
+    host: str,
+    user: str,
+    password: str,
+    database: str,
+    port: int = 5432,
+) -> None:
+    """Run all schema migrations to ensure backward compatibility.
+
+    Executes idempotent ALTER TABLE statements for columns that may be missing
+    from databases created before those columns were added. Safe to call
+    multiple times — uses IF NOT EXISTS and exception handlers.
+
+    Should be called after tables are created (via create_all or pg_restore).
+
+    Args:
+        host: PostgreSQL server host.
+        user: PostgreSQL user.
+        password: User password.
+        database: Target database name.
+        port: PostgreSQL server port (default: 5432).
+    """
+    with psycopg.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        dbname=database,
+    ) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(_MIGRATION_SQL)
+        conn.commit()
+    logger.info("Schema migrations completed successfully")

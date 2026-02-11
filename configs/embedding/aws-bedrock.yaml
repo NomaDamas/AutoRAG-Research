@@ -1,0 +1,5 @@
+# AWS Bedrock Embeddings
+# pip install langchain-aws
+_target_: langchain_aws.BedrockEmbeddings
+model_id: ${oc.env:BEDROCK_EMBEDDING_MODEL_ID,amazon.titan-embed-text-v2:0}
+region_name: ${oc.env:AWS_REGION,us-east-1}

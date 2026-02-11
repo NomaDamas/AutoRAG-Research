@@ -39,17 +39,15 @@ class PipelineResult:
         pipeline_name: The name of the pipeline.
         pipeline_type: The type of pipeline (RETRIEVAL or GENERATION).
         total_queries: Total number of queries processed.
-        total_results: Total number of results stored.
         retries_used: Number of retry attempts used.
         success: Whether the pipeline execution was successful.
         error_message: Error message if the pipeline failed.
     """
 
-    pipeline_id: int
+    pipeline_id: int | str
     pipeline_name: str
     pipeline_type: PipelineType
     total_queries: int
-    total_results: int
     retries_used: int
     success: bool
     error_message: str | None = None
@@ -71,7 +69,7 @@ class MetricResult:
 
     metric_name: str
     metric_type: MetricType
-    pipeline_id: int
+    pipeline_id: int | str
     queries_evaluated: int
     average: float | None
     success: bool
@@ -127,9 +125,7 @@ class Executor:
             pipelines=[
                 BM25PipelineConfig(
                     name="bm25_baseline",
-                    index_path="/data/index",
-                    k1=0.9,
-                    b=0.4,
+                    tokenizer="bert",
                     top_k=10,
                 ),
             ],
@@ -259,8 +255,7 @@ class Executor:
                     logger.info(
                         f"Pipeline '{config.name}' completed successfully "
                         f"(pipeline_id={pipeline_id}, "
-                        f"queries={run_result['total_queries']}, "
-                        f"results={run_result['total_results']})"
+                        f"queries={run_result['total_queries']})"
                     )
 
                     return PipelineResult(
@@ -268,7 +263,6 @@ class Executor:
                         pipeline_name=config.name,
                         pipeline_type=config.pipeline_type,
                         total_queries=run_result["total_queries"],
-                        total_results=run_result["total_results"],
                         retries_used=attempt,
                         success=True,
                     )
@@ -287,13 +281,12 @@ class Executor:
             pipeline_name=config.name,
             pipeline_type=config.pipeline_type,
             total_queries=0,
-            total_results=0,
             retries_used=self.config.max_retries,
             success=False,
             error_message=error_msg,
         )
 
-    def _verify_pipeline_completion(self, pipeline_id: int, pipeline_type: PipelineType) -> bool:
+    def _verify_pipeline_completion(self, pipeline_id: int | str, pipeline_type: PipelineType) -> bool:
         """Verify all queries have results for the pipeline.
 
         Uses ID comparison to check that each query has a corresponding result.
@@ -311,7 +304,7 @@ class Executor:
         else:
             return self._generation_eval_service.verify_pipeline_completion(pipeline_id)
 
-    def _evaluate_metrics_for_pipeline(self, pipeline_id: int, pipeline_type: PipelineType) -> list[MetricResult]:
+    def _evaluate_metrics_for_pipeline(self, pipeline_id: int | str, pipeline_type: PipelineType) -> list[MetricResult]:
         """Evaluate all applicable metrics for a pipeline.
 
         Metric evaluation rules:
@@ -343,7 +336,7 @@ class Executor:
 
         return results
 
-    def _evaluate_metric(self, pipeline_id: int, config: BaseMetricConfig) -> MetricResult:
+    def _evaluate_metric(self, pipeline_id: int | str, config: BaseMetricConfig) -> MetricResult:
         """Evaluate a single metric for a pipeline.
 
         Args:

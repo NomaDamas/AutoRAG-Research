@@ -31,7 +31,7 @@ class RetrievalRelationRepository(GenericRepository[Any]):
             model_cls = RetrievalRelation
         super().__init__(session, model_cls)
 
-    def get_by_query_id(self, query_id: int) -> list[Any]:
+    def get_by_query_id(self, query_id: int | str) -> list[Any]:
         """Retrieve all retrieval relations for a specific query.
 
         Args:
@@ -47,7 +47,7 @@ class RetrievalRelationRepository(GenericRepository[Any]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_query_and_chunk(self, query_id: int, chunk_id: int) -> Any | None:
+    def get_by_query_and_chunk(self, query_id: int | str, chunk_id: int | str) -> Any | None:
         """Retrieve relation by query and text chunk.
 
         Args:
@@ -63,7 +63,7 @@ class RetrievalRelationRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_query_and_image_chunk(self, query_id: int, image_chunk_id: int) -> Any | None:
+    def get_by_query_and_image_chunk(self, query_id: int | str, image_chunk_id: int | str) -> Any | None:
         """Retrieve relation by query and image chunk.
 
         Args:
@@ -79,7 +79,7 @@ class RetrievalRelationRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_max_group_index(self, query_id: int) -> int | None:
+    def get_max_group_index(self, query_id: int | str) -> int | None:
         """Get the maximum group_index for a query.
 
         Args:
@@ -91,7 +91,7 @@ class RetrievalRelationRepository(GenericRepository[Any]):
         stmt = select(func.max(self.model_cls.group_index)).where(self.model_cls.query_id == query_id)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_max_group_order(self, query_id: int, group_index: int) -> int | None:
+    def get_max_group_order(self, query_id: int | str, group_index: int) -> int | None:
         """Get the maximum group_order for a specific group.
 
         Args:
@@ -107,7 +107,7 @@ class RetrievalRelationRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def count_by_query(self, query_id: int) -> int:
+    def count_by_query(self, query_id: int | str) -> int:
         """Count the number of retrieval relations for a query.
 
         Args:
@@ -119,7 +119,7 @@ class RetrievalRelationRepository(GenericRepository[Any]):
         stmt = select(func.count()).select_from(self.model_cls).where(self.model_cls.query_id == query_id)
         return self.session.execute(stmt).scalar_one()
 
-    def count_text_chunks_by_query(self, query_id: int) -> int:
+    def count_text_chunks_by_query(self, query_id: int | str) -> int:
         """Count text chunk relations for a query.
 
         Args:
@@ -138,7 +138,7 @@ class RetrievalRelationRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one()
 
-    def count_image_chunks_by_query(self, query_id: int) -> int:
+    def count_image_chunks_by_query(self, query_id: int | str) -> int:
         """Count image chunk relations for a query.
 
         Args:
@@ -157,7 +157,7 @@ class RetrievalRelationRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one()
 
-    def delete_by_query_id(self, query_id: int) -> int:
+    def delete_by_query_id(self, query_id: int | str) -> int:
         """Delete all retrieval relations for a specific query.
 
         Args:
@@ -172,7 +172,7 @@ class RetrievalRelationRepository(GenericRepository[Any]):
             self.session.delete(rel)
         return count
 
-    def delete_by_chunk_id(self, chunk_id: int) -> int:
+    def delete_by_chunk_id(self, chunk_id: int | str) -> int:
         """Delete all retrieval relations referencing a specific chunk.
 
         Args:

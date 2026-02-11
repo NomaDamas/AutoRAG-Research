@@ -3,6 +3,62 @@
 from unittest.mock import MagicMock, patch
 
 from autorag_research.cli.app import app
+from autorag_research.cli.commands.run import build_executor_config
+from autorag_research.config import ExecutorConfig
+
+
+class TestBuildExecutorConfig:
+    """Test cases for build_executor_config."""
+
+    def test_build_executor_config_returns_executor_config(self):
+        """build_executor_config returns an ExecutorConfig with instantiated objects."""
+        fake_pipeline_cfg = MagicMock(name="pipeline_cfg")
+        fake_metric_cfg = MagicMock(name="metric_cfg")
+        instantiated_pipeline = MagicMock(name="instantiated_pipeline")
+        instantiated_metric = MagicMock(name="instantiated_metric")
+
+        def mock_instantiate(cfg):
+            if cfg is fake_pipeline_cfg:
+                return instantiated_pipeline
+            if cfg is fake_metric_cfg:
+                return instantiated_metric
+            raise ValueError(cfg)
+
+        with patch("autorag_research.cli.commands.run.instantiate", side_effect=mock_instantiate):
+            result = build_executor_config(
+                pipelines=[fake_pipeline_cfg],
+                metrics=[fake_metric_cfg],
+                max_retries=5,
+                eval_batch_size=50,
+            )
+
+        assert isinstance(result, ExecutorConfig)
+        assert result.pipelines == [instantiated_pipeline]
+        assert result.metrics == [instantiated_metric]
+        assert result.max_retries == 5
+        assert result.eval_batch_size == 50
+
+    def test_build_executor_config_does_not_mutate_input_lists(self):
+        """build_executor_config must not modify the original pipeline/metric lists."""
+        pipeline_cfgs = [MagicMock(name="p1"), MagicMock(name="p2")]
+        metric_cfgs = [MagicMock(name="m1")]
+        original_pipeline_len = len(pipeline_cfgs)
+        original_metric_len = len(metric_cfgs)
+
+        with patch("autorag_research.cli.commands.run.instantiate", return_value=MagicMock()):
+            build_executor_config(pipelines=pipeline_cfgs, metrics=metric_cfgs)
+
+        assert len(pipeline_cfgs) == original_pipeline_len
+        assert len(metric_cfgs) == original_metric_len
+
+    def test_build_executor_config_with_empty_lists(self):
+        """build_executor_config handles empty pipeline and metric lists."""
+        with patch("autorag_research.cli.commands.run.instantiate") as mock_inst:
+            result = build_executor_config(pipelines=[], metrics=[])
+
+        assert result.pipelines == []
+        assert result.metrics == []
+        mock_inst.assert_not_called()
 
 
 class TestRunCommand:

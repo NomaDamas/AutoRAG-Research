@@ -1,0 +1,5 @@
+# Anthropic Claude 4.5 Sonnet
+# pip install langchain-anthropic
+_target_: langchain_anthropic.ChatAnthropic
+model: claude-sonnet-4-5-20250929
+api_key: ${oc.env:ANTHROPIC_API_KEY}

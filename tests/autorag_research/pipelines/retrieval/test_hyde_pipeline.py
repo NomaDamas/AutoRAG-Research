@@ -44,7 +44,7 @@ class TestHyDEPipelineConfig:
         """Test that config returns correct pipeline kwargs."""
         llm = FakeListLLM(responses=["hypothetical document"])
         embedding = FakeEmbeddings(size=768)
-        custom_template = "Custom template: {question}"
+        custom_template = "Custom template: {query}"
 
         config = HyDEPipelineConfig(
             name="test_hyde",
@@ -147,7 +147,7 @@ class TestHyDERetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test that pipeline accepts custom prompt template."""
-        custom_template = "Write a Wikipedia passage about: {question}"
+        custom_template = "Write a Wikipedia passage about: {query}"
 
         pipeline = HyDERetrievalPipeline(
             session_factory=session_factory,
@@ -168,7 +168,7 @@ class TestHyDERetrievalPipeline:
         cleanup_pipeline_results: list[int],
     ):
         """Test that pipeline config is correct."""
-        custom_template = "Custom: {question}"
+        custom_template = "Custom: {query}"
 
         pipeline = HyDERetrievalPipeline(
             session_factory=session_factory,
@@ -195,7 +195,7 @@ class TestHyDERetrievalPipeline:
 
         llm = MagicMock()
         llm.ainvoke = AsyncMock(return_value="Hypothetical response")
-        custom_template = "Custom prompt for: {question}"
+        custom_template = "Custom prompt for: {query}"
 
         pipeline = HyDERetrievalPipeline(
             session_factory=session_factory,

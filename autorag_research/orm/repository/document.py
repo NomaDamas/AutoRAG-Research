@@ -64,7 +64,7 @@ class DocumentRepository(GenericRepository):
         stmt = select(self.model_cls).where(self.model_cls.author == author)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_pages(self, document_id: int) -> Any | None:
+    def get_with_pages(self, document_id: int | str) -> Any | None:
         """Retrieve a document with its pages eagerly loaded.
 
         Args:
@@ -76,7 +76,7 @@ class DocumentRepository(GenericRepository):
         stmt = select(self.model_cls).where(self.model_cls.id == document_id).options(joinedload(self.model_cls.pages))
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
-    def get_with_file(self, document_id: int) -> Any | None:
+    def get_with_file(self, document_id: int | str) -> Any | None:
         """Retrieve a document with its file eagerly loaded.
 
         Args:
@@ -118,7 +118,7 @@ class DocumentRepository(GenericRepository):
         stmt = select(self.model_cls).where(self.model_cls.doc_metadata[metadata_key].astext == metadata_value)
         return list(self.session.execute(stmt).scalars().all())
 
-    def count_pages(self, document_id: int) -> int:
+    def count_pages(self, document_id: int | str) -> int:
         """Count the number of pages in a document.
 
         Args:
@@ -130,7 +130,7 @@ class DocumentRepository(GenericRepository):
         document = self.get_with_pages(document_id)
         return len(document.pages) if document else 0
 
-    def get_by_path_id(self, path_id: int) -> Any | None:
+    def get_by_path_id(self, path_id: int | str) -> Any | None:
         """Retrieve a document by its file path ID.
 
         Args:

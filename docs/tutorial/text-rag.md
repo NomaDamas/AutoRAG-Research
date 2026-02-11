@@ -49,7 +49,7 @@ prompt_template: |
   Context:
   {context}
 
-  Question: {question}
+  Question: {query}
 
   Answer:
 top_k: 5

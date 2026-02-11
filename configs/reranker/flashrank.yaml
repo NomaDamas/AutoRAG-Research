@@ -1,0 +1,4 @@
+_target_: autorag_research.rerankers.flashrank.FlashRankReranker
+model_name: ms-marco-MiniLM-L-12-v2
+batch_size: 64
+max_concurrency: 10

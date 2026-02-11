@@ -158,7 +158,9 @@ class RetrievalEvaluationService(BaseEvaluationService):
             "EvaluationResult": EvaluationResult,
         }
 
-    def _get_execution_results(self, pipeline_id: int, query_ids: list[int]) -> dict[int, dict[str, Any]]:
+    def _get_execution_results(
+        self, pipeline_id: int | str, query_ids: list[int | str]
+    ) -> dict[int | str, dict[str, Any]]:
         """Fetch execution results for given query IDs.
 
         Fetches both retrieval results (ChunkRetrievedResult and ImageChunkRetrievedResult)
@@ -176,18 +178,18 @@ class RetrievalEvaluationService(BaseEvaluationService):
                 - 'relevance_scores': dict mapping prefixed_id -> graded relevance score
         """
         with self._create_uow() as uow:
-            result: dict[int, dict[str, Any]] = {}
+            result: dict[int | str, dict[str, Any]] = {}
 
             chunk_results = uow.chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
             image_chunk_results = uow.image_chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
 
             # Group chunk results by query_id
-            chunk_results_by_query: dict[int, list[Any]] = {qid: [] for qid in query_ids}
+            chunk_results_by_query: dict[int | str, list[Any]] = {qid: [] for qid in query_ids}
             for r in chunk_results:
                 if r.query_id in chunk_results_by_query:
                     chunk_results_by_query[r.query_id].append(r)
 
-            image_chunk_results_by_query: dict[int, list[Any]] = {qid: [] for qid in query_ids}
+            image_chunk_results_by_query: dict[int | str, list[Any]] = {qid: [] for qid in query_ids}
             for r in image_chunk_results:
                 if r.query_id in image_chunk_results_by_query:
                     image_chunk_results_by_query[r.query_id].append(r)
@@ -214,7 +216,9 @@ class RetrievalEvaluationService(BaseEvaluationService):
 
             return result
 
-    def _filter_missing_query_ids(self, pipeline_id: int, metric_id: int, query_ids: list[int]) -> list[int]:
+    def _filter_missing_query_ids(
+        self, pipeline_id: int | str, metric_id: int | str, query_ids: list[int | str]
+    ) -> list[int | str]:
         """Filter query IDs that don't have evaluation results for the metric.
 
         Args:
@@ -235,7 +239,9 @@ class RetrievalEvaluationService(BaseEvaluationService):
             # Return query IDs that don't have results
             return [qid for qid in query_ids if qid not in existing_query_ids]
 
-    def _prepare_metric_input(self, pipeline_id: int, query_id: int, execution_result: dict[str, Any]) -> MetricInput:
+    def _prepare_metric_input(
+        self, pipeline_id: int | str, query_id: int | str, execution_result: dict[str, Any]
+    ) -> MetricInput:
         """Prepare MetricInput for metric computation.
 
         Args:
@@ -252,7 +258,7 @@ class RetrievalEvaluationService(BaseEvaluationService):
             relevance_scores=execution_result.get("relevance_scores"),
         )
 
-    def _has_results_for_queries(self, pipeline_id: int, query_ids: list[int]) -> bool:
+    def _has_results_for_queries(self, pipeline_id: int | str, query_ids: list[int | str]) -> bool:
         """Check if all given query IDs have retrieval results for the pipeline.
 
         Checks both ChunkRetrievedResult and ImageChunkRetrievedResult tables.

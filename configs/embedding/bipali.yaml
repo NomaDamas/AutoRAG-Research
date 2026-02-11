@@ -1,0 +1,9 @@
+# BiPali Single-Vector Multi-Modal Embeddings
+# pip install colpali-engine torch
+# Produces single-vector embeddings for both text and images
+_target_: autorag_research.embeddings.bipali.BiPaliEmbeddings
+model_name: ${oc.env:BIPALI_MODEL_NAME,ModernVBERT/bimodernvbert}
+model_type: ${oc.env:BIPALI_MODEL_TYPE,modernvbert}
+device: ${oc.env:BIPALI_DEVICE,cpu}
+torch_dtype: ${oc.env:BIPALI_TORCH_DTYPE,bfloat16}
+embed_batch_size: 10

@@ -28,7 +28,7 @@ class ExecutorResultRepository(GenericRepository[Any]):
             model_cls = ExecutorResult
         super().__init__(session, model_cls)
 
-    def get_by_composite_key(self, query_id: int, pipeline_id: int) -> Any | None:
+    def get_by_composite_key(self, query_id: int | str, pipeline_id: int | str) -> Any | None:
         """Retrieve an executor result by its composite primary key.
 
         Args:
@@ -44,7 +44,7 @@ class ExecutorResultRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_queries_and_pipeline(self, query_ids: list[int], pipeline_id: int) -> list[Any]:
+    def get_by_queries_and_pipeline(self, query_ids: list[int | str], pipeline_id: int | str) -> list[Any]:
         """Retrieve executor results for multiple queries under a specific pipeline.
 
         Args:
@@ -63,7 +63,7 @@ class ExecutorResultRepository(GenericRepository[Any]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_query_id(self, query_id: int) -> list[Any]:
+    def get_by_query_id(self, query_id: int | str) -> list[Any]:
         """Retrieve all executor results for a specific query.
 
         Args:
@@ -75,7 +75,7 @@ class ExecutorResultRepository(GenericRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.query_id == query_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_pipeline_id(self, pipeline_id: int) -> list[Any]:
+    def get_by_pipeline_id(self, pipeline_id: int | str) -> list[Any]:
         """Retrieve all executor results for a specific pipeline.
 
         Args:
@@ -87,7 +87,7 @@ class ExecutorResultRepository(GenericRepository[Any]):
         stmt = select(self.model_cls).where(self.model_cls.pipeline_id == pipeline_id)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_with_all_relations(self, query_id: int, pipeline_id: int) -> Any | None:
+    def get_with_all_relations(self, query_id: int | str, pipeline_id: int | str) -> Any | None:
         """Retrieve an executor result with all relations eagerly loaded.
 
         Args:
@@ -110,7 +110,7 @@ class ExecutorResultRepository(GenericRepository[Any]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_execution_time_range(self, pipeline_id: int, min_time: int, max_time: int) -> list[Any]:
+    def get_by_execution_time_range(self, pipeline_id: int | str, min_time: int, max_time: int) -> list[Any]:
         """Retrieve executor results within an execution time range.
 
         Args:
@@ -128,7 +128,7 @@ class ExecutorResultRepository(GenericRepository[Any]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def delete_by_composite_key(self, query_id: int, pipeline_id: int) -> bool:
+    def delete_by_composite_key(self, query_id: int | str, pipeline_id: int | str) -> bool:
         """Delete an executor result by its composite primary key.
 
         Args:
@@ -144,7 +144,7 @@ class ExecutorResultRepository(GenericRepository[Any]):
             return True
         return False
 
-    def exists_by_composite_key(self, query_id: int, pipeline_id: int) -> bool:
+    def exists_by_composite_key(self, query_id: int | str, pipeline_id: int | str) -> bool:
         """Check if an executor result exists with the given composite key.
 
         Args:
@@ -156,7 +156,7 @@ class ExecutorResultRepository(GenericRepository[Any]):
         """
         return self.get_by_composite_key(query_id, pipeline_id) is not None
 
-    def delete_by_pipeline(self, pipeline_id: int) -> int:
+    def delete_by_pipeline(self, pipeline_id: int | str) -> int:
         """Delete all executor results for a specific pipeline.
 
         Args:

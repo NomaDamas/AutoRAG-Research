@@ -102,7 +102,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
         retrieval_pipeline = BM25RetrievalPipeline(
             session_factory=session_factory,
             name="bm25_baseline",
-            index_path="/path/to/index",
+            tokenizer="bert",
         )
 
         # Create generation pipeline
