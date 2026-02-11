@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from PIL import Image
 from pydantic import ConfigDict, Field, PrivateAttr
 
 from autorag_research.embeddings.base import SingleVectorMultiModalEmbedding
@@ -49,18 +48,6 @@ def _load_model_classes(model_type: str) -> tuple[PreTrainedModel, BaseVisualRet
         ) from e
 
     return model_class, processor_class
-
-
-def _load_image(img_file_path: ImageType) -> Image.Image:
-    """Load an image from file path or bytes."""
-    if isinstance(img_file_path, str):
-        return Image.open(img_file_path).convert("RGB")
-    elif isinstance(img_file_path, bytes):
-        import io
-
-        return Image.open(io.BytesIO(img_file_path)).convert("RGB")
-    else:
-        raise TypeError(img_file_path)
 
 
 class BiPaliEmbeddings(SingleVectorMultiModalEmbedding):
@@ -179,7 +166,7 @@ class BiPaliEmbeddings(SingleVectorMultiModalEmbedding):
         """
         import torch
 
-        image = _load_image(img_file_path)
+        image = load_image(img_file_path)
         image_inputs = self._processor.process_images([image])
 
         # Move inputs to device

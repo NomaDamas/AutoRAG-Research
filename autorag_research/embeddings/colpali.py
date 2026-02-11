@@ -172,7 +172,7 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         """
         import torch
 
-        image = _load_image(img_file_path)
+        image = load_image(img_file_path)
         image_inputs = self._processor.process_images([image])
         image_inputs = {k: v.to(self.device) for k, v in image_inputs.items()}
 
