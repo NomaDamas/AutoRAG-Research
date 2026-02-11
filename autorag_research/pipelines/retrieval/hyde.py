@@ -144,6 +144,9 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
         # because _get_pipeline_config() is called in super().__init__
         self.llm = llm
         self.embedding = embedding
+        if "{query}" not in prompt_template:
+            msg = "prompt_template must contain '{query}' placeholder"
+            raise ValueError(msg)
         self.prompt_template = prompt_template
 
         super().__init__(session_factory, name, schema)
