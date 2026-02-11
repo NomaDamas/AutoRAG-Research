@@ -23,6 +23,7 @@ GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}"
 SCHEMA_URL="${GITHUB_RAW}/postgresql/db/init/001-schema.sql"
 MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=10
+GUM_VERSION="0.17.0"
 
 # ── Non-interactive env vars ─────────────────────────────────────────
 NONINTERACTIVE="${AUTORAG_RESEARCH_NONINTERACTIVE:-0}"
@@ -42,29 +43,141 @@ VENV_PATH=""
 USED_UV=0
 SELECTED_EXTRAS=""
 
-# ── Color helpers ────────────────────────────────────────────────────
-setup_colors() {
-    if [[ -t 1 ]]; then
-        BOLD='\033[1m'
-        DIM='\033[2m'
-        RED='\033[0;31m'
-        GREEN='\033[0;32m'
-        YELLOW='\033[0;33m'
-        BLUE='\033[0;34m'
-        CYAN='\033[0;36m'
-        RESET='\033[0m'
+# ── Detection helpers ────────────────────────────────────────────────
+has_command() { command -v "$1" &>/dev/null; }
+
+detect_os() {
+    case "$(uname -s)" in
+        Darwin) echo "macos" ;;
+        Linux)
+            if has_command apt-get; then echo "debian"
+            elif has_command dnf; then echo "fedora"
+            else echo "linux"
+            fi ;;
+        *) echo "unknown" ;;
+    esac
+}
+
+# ── gum installation ─────────────────────────────────────────────────
+install_gum() {
+    # Non-interactive mode never uses gum — skip installation
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        return 0
+    fi
+
+    # Already installed
+    if has_command gum; then
+        return 0
+    fi
+
+    echo ":: Installing gum (terminal UI toolkit)..."
+
+    # macOS or Linux with Homebrew
+    if has_command brew; then
+        if brew install gum 2>/dev/null; then
+            echo ":: gum installed via Homebrew"
+            return 0
+        fi
+    fi
+
+    # Linux with apt
+    if has_command apt-get && has_command sudo; then
+        if sudo mkdir -p /etc/apt/keyrings \
+            && curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg 2>/dev/null \
+            && echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list > /dev/null \
+            && sudo apt-get update -qq 2>/dev/null \
+            && sudo apt-get install -y -qq gum 2>/dev/null; then
+            echo ":: gum installed via apt"
+            return 0
+        fi
+    fi
+
+    # Fallback: download binary from GitHub releases
+    local os arch
+    os="$(uname -s)"
+    arch="$(uname -m)"
+
+    # Normalize architecture
+    case "$arch" in
+        aarch64) arch="arm64" ;;
+        x86_64)  arch="x86_64" ;;
+        arm64)   arch="arm64" ;;
+        *)
+            echo ":: ERROR: Unsupported architecture: ${arch}" >&2
+            echo ":: Please install gum manually: https://github.com/charmbracelet/gum#installation" >&2
+            exit 1
+            ;;
+    esac
+
+    local url="https://github.com/charmbracelet/gum/releases/download/v${GUM_VERSION}/gum_${GUM_VERSION}_${os}_${arch}.tar.gz"
+    local install_dir="$HOME/.local/bin"
+    mkdir -p "$install_dir"
+
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    if curl -fsSL "$url" -o "${tmp_dir}/gum.tar.gz" \
+        && tar -xzf "${tmp_dir}/gum.tar.gz" -C "$tmp_dir" \
+        && { mv "${tmp_dir}/gum_${GUM_VERSION}_${os}_${arch}/gum" "${install_dir}/gum" 2>/dev/null \
+             || mv "${tmp_dir}/gum" "${install_dir}/gum" 2>/dev/null; }; then
+        chmod +x "${install_dir}/gum"
+        export PATH="${install_dir}:${PATH}"
+        rm -rf "$tmp_dir"
+        echo ":: gum installed to ${install_dir}/gum"
+        return 0
+    fi
+    rm -rf "$tmp_dir"
+
+    echo ":: ERROR: Failed to install gum." >&2
+    echo ":: Please install gum manually: https://github.com/charmbracelet/gum#installation" >&2
+    exit 1
+}
+
+# ── Logging helpers (gum-based with non-interactive fallback) ────────
+info() {
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        echo ":: $*"
     else
-        BOLD='' DIM='' RED='' GREEN='' YELLOW='' BLUE='' CYAN='' RESET=''
+        gum log --level info "$*"
     fi
 }
 
-info()    { echo -e "${BLUE}::${RESET} $*"; }
-success() { echo -e "${GREEN}::${RESET} $*"; }
-warn()    { echo -e "${YELLOW}:: WARNING:${RESET} $*"; }
-error()   { echo -e "${RED}:: ERROR:${RESET} $*" >&2; }
-header()  { echo -e "\n${BOLD}${CYAN}▸ $*${RESET}\n"; }
+success() {
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        echo ":: OK: $*"
+    else
+        gum log --level info --prefix "OK" "$*"
+    fi
+}
 
-# ── Interactive helpers ──────────────────────────────────────────────
+warn() {
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        echo ":: WARNING: $*"
+    else
+        gum log --level warn "$*"
+    fi
+}
+
+error() {
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        echo ":: ERROR: $*" >&2
+    else
+        gum log --level error "$*" >&2
+    fi
+}
+
+header() {
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        echo ""
+        echo "▸ $*"
+        echo ""
+    else
+        echo ""
+        gum style --bold --foreground 36 "▸ $*"
+        echo ""
+    fi
+}
+
+# ── Interactive helpers (gum-based with non-interactive fallback) ────
 # ask VARNAME "prompt" "default"
 ask() {
     local varname="$1" prompt="$2" default="${3:-}"
@@ -72,14 +185,29 @@ ask() {
         eval "$varname=\"$default\""
         return
     fi
-    local input
+    local result
     if [[ -n "$default" ]]; then
-        read -rp "  ${prompt} [${default}]: " input
-        eval "$varname=\"${input:-$default}\""
+        result=$(gum input --prompt "$prompt: " --value "$default")
     else
-        read -rp "  ${prompt}: " input
-        eval "$varname=\"$input\""
+        result=$(gum input --prompt "$prompt: ")
     fi
+    eval "$varname=\"$result\""
+}
+
+# ask_password VARNAME "prompt" "default"
+ask_password() {
+    local varname="$1" prompt="$2" default="${3:-}"
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        eval "$varname=\"$default\""
+        return
+    fi
+    local result
+    if [[ -n "$default" ]]; then
+        result=$(gum input --password --prompt "$prompt: " --value "$default")
+    else
+        result=$(gum input --password --prompt "$prompt: ")
+    fi
+    eval "$varname=\"$result\""
 }
 
 # select_option VARNAME "prompt" "opt1" "opt2" ...
@@ -88,30 +216,35 @@ select_option() {
     local varname="$1" prompt="$2"
     shift 2
     local options=("$@")
-    echo -e "  ${BOLD}${prompt}${RESET}"
+    local chosen
+    chosen=$(gum choose --header "$prompt" "${options[@]}")
+    # Map chosen text back to 1-based index
     local i=1
     for opt in "${options[@]}"; do
-        echo -e "    ${CYAN}${i})${RESET} ${opt}"
-        ((i++))
-    done
-    local choice
-    while true; do
-        read -rp "  Enter choice [1-${#options[@]}]: " choice
-        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#options[@]} )); then
-            eval "$varname=$choice"
+        if [[ "$opt" == "$chosen" ]]; then
+            eval "$varname=$i"
             return
         fi
-        echo "  Please enter a number between 1 and ${#options[@]}"
+        ((i++))
     done
+    # Should not reach here, but default to first
+    eval "$varname=1"
 }
 
 confirm() {
-    local prompt="$1" default="${2:-y}"
+    local prompt="$1"
     if [[ "$NONINTERACTIVE" == "1" ]]; then return 0; fi
-    local yn
-    read -rp "  ${prompt} [Y/n]: " yn
-    yn="${yn:-$default}"
-    [[ "$yn" =~ ^[Yy] ]]
+    gum confirm "$prompt"
+}
+
+# ── Spinner helper for long-running operations ───────────────────────
+run_with_spinner() {
+    local title="$1"; shift
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        "$@"
+    else
+        gum spin --spinner dot --title "$title" -- "$@"
+    fi
 }
 
 # ── Optional dependency selection ──────────────────────────────────────
@@ -165,71 +298,52 @@ select_optional_deps() {
         return
     fi
 
-    # Interactive mode
+    # Interactive mode: multi-select with gum
     echo ""
-    local choice
-    select_option choice \
-        "Which optional dependencies would you like to install?" \
-        "Install all optional dependencies (Recommended)" \
-        "Select specific groups to install" \
-        "Skip optional dependencies (base package only)"
+    local selections
+    selections=$(gum choose --no-limit \
+        --header "Select optional dependency groups (space to toggle, enter to confirm):" \
+        "all - Install all optional dependencies (Recommended)" \
+        "gpu - GPU-accelerated embeddings (colpali-engine, torch, transformers)" \
+        "reporting - Reporting & dashboards (duckdb, gradio)" \
+        "reranker - Reranking models (cohere, voyageai)" \
+        "none - Skip optional dependencies (base package only)") || true
 
-    case "$choice" in
-        1)
-            SELECTED_EXTRAS="[all]"
-            ;;
-        2)
-            echo ""
-            echo -e "  ${BOLD}Select which optional dependency groups to install:${RESET}"
-            echo ""
-            local selected=""
-            if confirm "gpu - GPU-accelerated embeddings (colpali-engine, torch, transformers)?"; then
-                selected="gpu"
-            fi
-            if confirm "reporting - Reporting & dashboards (duckdb, gradio)?"; then
-                if [[ -n "$selected" ]]; then
-                    selected="${selected},reporting"
-                else
-                    selected="reporting"
-                fi
-            fi
-            if confirm "reranker - Reranking models (cohere, voyageai)?"; then
-                if [[ -n "$selected" ]]; then
-                    selected="${selected},reranker"
-                else
-                    selected="reranker"
-                fi
-            fi
+    # Parse selections — extract group name before " - "
+    if [[ -z "$selections" ]] || echo "$selections" | grep -q "^none - "; then
+        SELECTED_EXTRAS=""
+        info "Skipping optional dependencies (base package only)"
+        return
+    fi
+
+    if echo "$selections" | grep -q "^all - "; then
+        SELECTED_EXTRAS="[all]"
+        info "Will install all optional dependencies"
+        return
+    fi
+
+    local selected=""
+    while IFS= read -r line; do
+        local group="${line%% - *}"
+        if [[ " $VALID_GROUPS " == *" $group "* ]]; then
             if [[ -n "$selected" ]]; then
-                SELECTED_EXTRAS="[${selected}]"
-                echo ""
-                info "Will install optional dependencies: ${selected}"
+                selected="${selected},${group}"
             else
-                SELECTED_EXTRAS=""
-                echo ""
-                info "No groups selected, installing base package only"
+                selected="$group"
             fi
-            ;;
-        3)
-            SELECTED_EXTRAS=""
-            ;;
-    esac
+        fi
+    done <<< "$selections"
+
+    if [[ -n "$selected" ]]; then
+        SELECTED_EXTRAS="[${selected}]"
+        info "Will install optional dependencies: ${selected}"
+    else
+        SELECTED_EXTRAS=""
+        info "No groups selected, installing base package only"
+    fi
 }
 
-# ── Detection helpers ────────────────────────────────────────────────
-has_command() { command -v "$1" &>/dev/null; }
-
-detect_os() {
-    case "$(uname -s)" in
-        Darwin) echo "macos" ;;
-        Linux)
-            if has_command apt-get; then echo "debian"
-            elif has_command dnf; then echo "fedora"
-            else echo "linux"
-            fi ;;
-        *) echo "unknown" ;;
-    esac
-}
+# ── python helpers ───────────────────────────────────────────────────
 
 # python_version CMD -> "3.12" or empty
 python_version() {
@@ -324,7 +438,7 @@ setup_env_uv() {
     USED_UV=1
     if ! has_command uv; then
         info "Installing uv..."
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+        run_with_spinner "Installing uv..." bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
         # Source the env so uv is available
         export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
         if ! has_command uv; then
@@ -337,7 +451,7 @@ setup_env_uv() {
     fi
 
     info "Creating virtual environment with uv..."
-    uv venv .venv --python ">=${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}"
+    run_with_spinner "Creating virtual environment..." uv venv .venv --python ">=${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}"
 
     # shellcheck disable=SC1091
     source .venv/bin/activate
@@ -376,7 +490,7 @@ setup_env_venv() {
     info "Using ${best_cmd} (Python ${best_ver})"
 
     info "Creating virtual environment..."
-    "$best_cmd" -m venv .venv
+    run_with_spinner "Creating virtual environment..." "$best_cmd" -m venv .venv
 
     # shellcheck disable=SC1091
     source .venv/bin/activate
@@ -389,24 +503,28 @@ setup_env_venv() {
 
 print_manual_env_instructions() {
     echo ""
-    echo -e "${BOLD}Manual Environment Setup Instructions${RESET}"
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        echo "Manual Environment Setup Instructions"
+    else
+        gum style --bold "Manual Environment Setup Instructions"
+    fi
     echo ""
     echo "  Set up a Python >= ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR} environment using your preferred tool:"
     echo ""
-    echo -e "  ${CYAN}conda:${RESET}"
+    echo "  conda:"
     echo "    conda create -n autorag python=3.12 -y"
     echo "    conda activate autorag"
     echo ""
-    echo -e "  ${CYAN}pyenv + virtualenv:${RESET}"
+    echo "  pyenv + virtualenv:"
     echo "    pyenv install 3.12"
     echo "    pyenv virtualenv 3.12 autorag"
     echo "    pyenv activate autorag"
     echo ""
-    echo -e "  ${CYAN}venv:${RESET}"
+    echo "  venv:"
     echo "    python3 -m venv .venv"
     echo "    source .venv/bin/activate"
     echo ""
-    echo -e "  ${CYAN}uv:${RESET}"
+    echo "  uv:"
     echo "    uv venv .venv --python '>=3.10'"
     echo "    source .venv/bin/activate"
     echo ""
@@ -453,7 +571,7 @@ do_install() {
         # Try uv add first (works in uv-managed projects with pyproject.toml)
         if [[ -f "pyproject.toml" ]]; then
             info "Installing with uv add..."
-            if uv add "${pkg_spec}" 2>/dev/null; then
+            if run_with_spinner "Installing ${pkg_spec}..." uv add "${pkg_spec}" 2>/dev/null; then
                 success "${pkg_spec} installed via uv add"
                 return
             fi
@@ -462,16 +580,16 @@ do_install() {
 
         info "Installing with uv pip install..."
         if [[ "$upgrade_flag" == "--upgrade" ]]; then
-            uv pip install --upgrade "${pkg_spec}"
+            run_with_spinner "Installing ${pkg_spec}..." uv pip install --upgrade "${pkg_spec}"
         else
-            uv pip install "${pkg_spec}"
+            run_with_spinner "Installing ${pkg_spec}..." uv pip install "${pkg_spec}"
         fi
     else
         info "Installing with pip..."
         if [[ "$upgrade_flag" == "--upgrade" ]]; then
-            pip install --upgrade "${pkg_spec}"
+            run_with_spinner "Installing ${pkg_spec}..." pip install --upgrade "${pkg_spec}"
         else
-            pip install "${pkg_spec}"
+            run_with_spinner "Installing ${pkg_spec}..." pip install "${pkg_spec}"
         fi
     fi
 
@@ -576,7 +694,7 @@ setup_pg_docker() {
         container_name="$NI_CONTAINER"
         pg_db="$NI_PG_DB"
     else
-        ask pg_password "PostgreSQL password" "postgres"
+        ask_password pg_password "PostgreSQL password" "postgres"
         ask pg_port "Host port for PostgreSQL" "5432"
         ask container_name "Docker container name" "autorag_postgres"
         ask pg_db "Database name" "autorag"
@@ -648,7 +766,7 @@ COMPOSE
 
     # Download schema SQL
     info "Downloading database schema..."
-    if curl -fsSL "$SCHEMA_URL" -o "${pg_dir}/db/init/001-schema.sql"; then
+    if run_with_spinner "Downloading schema..." curl -fsSL "$SCHEMA_URL" -o "${pg_dir}/db/init/001-schema.sql"; then
         success "Schema downloaded"
     else
         warn "Failed to download schema. You can download it manually later:"
@@ -657,7 +775,7 @@ COMPOSE
 
     # Start container
     info "Starting PostgreSQL container..."
-    docker compose -f "${pg_dir}/docker-compose.yml" up -d
+    run_with_spinner "Starting PostgreSQL container..." docker compose -f "${pg_dir}/docker-compose.yml" up -d
 
     wait_for_pg "localhost" "$pg_port" "postgres" "$pg_password"
     success "PostgreSQL is ready (port ${pg_port})"
@@ -668,28 +786,47 @@ COMPOSE
 wait_for_pg() {
     local host="$1" port="$2" user="$3" password="$4"
     local retries=30
-    info "Waiting for PostgreSQL to be ready..."
-    for ((i=1; i<=retries; i++)); do
-        if has_command pg_isready; then
-            if PGPASSWORD="$password" pg_isready -h "$host" -p "$port" -U "$user" &>/dev/null; then
-                return 0
+
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        info "Waiting for PostgreSQL to be ready..."
+        for ((i=1; i<=retries; i++)); do
+            if has_command pg_isready; then
+                if PGPASSWORD="$password" pg_isready -h "$host" -p "$port" -U "$user" &>/dev/null; then
+                    return 0
+                fi
+            else
+                if (echo > "/dev/tcp/${host}/${port}") &>/dev/null; then
+                    sleep 10
+                    return 0
+                fi
             fi
-        else
-            # Fallback: try a TCP connection
-            if (echo > "/dev/tcp/${host}/${port}") &>/dev/null; then
-                # Give it a moment after TCP is available (PG may accept TCP before it's query-ready)
-                sleep 10
-                return 0
-            fi
-        fi
-        sleep 1
-    done
-    warn "PostgreSQL did not become ready within ${retries}s — it may still be starting."
+            sleep 1
+        done
+        warn "PostgreSQL did not become ready within ${retries}s — it may still be starting."
+    else
+        # Wrap the retry loop in a gum spinner
+        gum spin --spinner dot --title "Waiting for PostgreSQL to be ready..." -- bash -c "
+            for i in \$(seq 1 $retries); do
+                if command -v pg_isready &>/dev/null; then
+                    if PGPASSWORD=\"$password\" pg_isready -h \"$host\" -p \"$port\" -U \"$user\" &>/dev/null; then
+                        exit 0
+                    fi
+                else
+                    if (echo > \"/dev/tcp/${host}/${port}\") &>/dev/null; then
+                        sleep 10
+                        exit 0
+                    fi
+                fi
+                sleep 1
+            done
+            exit 1
+        " || warn "PostgreSQL did not become ready within ${retries}s — it may still be starting."
+    fi
 }
 
 setup_pg_existing() {
     echo ""
-    echo -e "  ${YELLOW}Note:${RESET} The schema initialization script (001-schema.sql) will install"
+    warn "The schema initialization script (001-schema.sql) will install"
     echo "  VectorChord extensions (vector search + BM25) on your PostgreSQL server."
     echo "  Your server must support these extensions (PostgreSQL 18 with VectorChord suite)."
     echo ""
@@ -705,7 +842,7 @@ setup_pg_existing() {
         ask pg_host "PostgreSQL host" "localhost"
         ask pg_port "PostgreSQL port" "5432"
         ask pg_user "PostgreSQL user" "postgres"
-        ask pg_password "PostgreSQL password" "postgres"
+        ask_password pg_password "PostgreSQL password" "postgres"
         ask pg_db "Database name" "autorag"
     fi
 
@@ -727,7 +864,7 @@ setup_pg_existing() {
         info "Downloading schema initialization script..."
         local schema_file
         schema_file=$(mktemp)
-        if curl -fsSL "$SCHEMA_URL" -o "$schema_file"; then
+        if run_with_spinner "Downloading schema..." curl -fsSL "$SCHEMA_URL" -o "$schema_file"; then
             if [[ "$NONINTERACTIVE" == "1" ]] || confirm "Run schema initialization on the database?"; then
                 info "Applying schema..."
                 if PGPASSWORD="$pg_password" psql -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$pg_db" -f "$schema_file" &>/dev/null; then
@@ -756,11 +893,11 @@ skip_pg_setup() {
     echo ""
     echo "  To set up PostgreSQL later, you have two options:"
     echo ""
-    echo -e "  ${CYAN}Option A: Docker (recommended)${RESET}"
+    echo "  Option A: Docker (recommended)"
     echo "    Re-run this script and choose the Docker option, or see:"
     echo "    https://github.com/${GITHUB_REPO}#postgresql-setup"
     echo ""
-    echo -e "  ${CYAN}Option B: Existing server${RESET}"
+    echo "  Option B: Existing server"
     echo "    Ensure your server runs PostgreSQL 18 with VectorChord suite."
     echo "    Apply the schema: curl -fsSL ${SCHEMA_URL} | psql -h HOST -U USER -d DB"
     echo "    Then edit configs/db.yaml with your connection details."
@@ -787,7 +924,7 @@ phase_init_and_configure() {
     header "Finalizing: Initialize Configs"
 
     info "Running autorag-research init..."
-    autorag-research init
+    run_with_spinner "Initializing configuration..." autorag-research init
 
     # Overwrite db.yaml with user's actual settings
     if [[ -n "$DB_YAML_CONTENT" ]]; then
@@ -806,22 +943,27 @@ print_summary() {
     workdir="$(pwd)"
 
     echo ""
-    echo -e "${BOLD}========================================"
-    echo "  AutoRAG-Research Setup Complete!"
-    echo -e "========================================${RESET}"
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        echo "========================================"
+        echo "  AutoRAG-Research Setup Complete!"
+        echo "========================================"
+    else
+        gum style --border double --border-foreground 36 --padding "1 3" --margin "1 0" --bold \
+            "AutoRAG-Research Setup Complete!"
+    fi
     echo ""
-    echo -e "  Working directory:    ${workdir}"
-    echo -e "  Configuration:        ${workdir}/configs/"
+    echo "  Working directory:    ${workdir}"
+    echo "  Configuration:        ${workdir}/configs/"
     if [[ -n "$VENV_PATH" ]]; then
-        echo -e "  Virtual environment:  ${VENV_PATH}"
+        echo "  Virtual environment:  ${VENV_PATH}"
     fi
     if [[ -n "$SELECTED_EXTRAS" ]]; then
-        echo -e "  Optional deps:        ${SELECTED_EXTRAS}"
+        echo "  Optional deps:        ${SELECTED_EXTRAS}"
     else
-        echo -e "  Optional deps:        none (base only)"
+        echo "  Optional deps:        none (base only)"
     fi
     echo ""
-    echo -e "  ${BOLD}Quick Start:${RESET}"
+    echo "  Quick Start:"
     if [[ -n "$VENV_PATH" && -d ".venv" ]]; then
         echo "    source .venv/bin/activate"
     fi
@@ -834,16 +976,23 @@ print_summary() {
 #  Main
 # ══════════════════════════════════════════════════════════════════════
 main() {
-    setup_colors
-
     # Pipe detection (non-interactive allowed via env var)
     if [[ "$NONINTERACTIVE" != "1" ]]; then
         check_not_piped
     fi
 
+    # Install gum for interactive mode
+    install_gum
+
     echo ""
-    echo -e "${BOLD}${CYAN}AutoRAG-Research Installer${RESET}"
-    echo -e "${DIM}Automated setup for RAG research workflows${RESET}"
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        echo "AutoRAG-Research Installer"
+        echo "Automated setup for RAG research workflows"
+    else
+        gum style --border double --border-foreground 36 --padding "1 3" --margin "1 0" --bold \
+            "AutoRAG-Research Installer" \
+            "Automated setup for RAG research workflows"
+    fi
     echo ""
 
     phase_python_env
