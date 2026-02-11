@@ -167,8 +167,8 @@ def print_results(result) -> None:
     for pr in result.pipeline_results:
         status = "+" if pr.success else "x"
         typer.echo(f"  {status} {pr.pipeline_name}")
-        if pr.error:
-            typer.echo(f"      Error: {pr.error}")
+        if pr.error_message:
+            typer.echo(f"      Error: {pr.error_message}")
 
     typer.echo("\nMetric Results:")
     typer.echo("-" * 60)

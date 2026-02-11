@@ -39,7 +39,6 @@ class PipelineResult:
         pipeline_name: The name of the pipeline.
         pipeline_type: The type of pipeline (RETRIEVAL or GENERATION).
         total_queries: Total number of queries processed.
-        total_results: Total number of results stored.
         retries_used: Number of retry attempts used.
         success: Whether the pipeline execution was successful.
         error_message: Error message if the pipeline failed.
@@ -49,7 +48,6 @@ class PipelineResult:
     pipeline_name: str
     pipeline_type: PipelineType
     total_queries: int
-    total_results: int
     retries_used: int
     success: bool
     error_message: str | None = None
@@ -257,8 +255,7 @@ class Executor:
                     logger.info(
                         f"Pipeline '{config.name}' completed successfully "
                         f"(pipeline_id={pipeline_id}, "
-                        f"queries={run_result['total_queries']}, "
-                        f"results={run_result['total_results']})"
+                        f"queries={run_result['total_queries']})"
                     )
 
                     return PipelineResult(
@@ -266,7 +263,6 @@ class Executor:
                         pipeline_name=config.name,
                         pipeline_type=config.pipeline_type,
                         total_queries=run_result["total_queries"],
-                        total_results=run_result["total_results"],
                         retries_used=attempt,
                         success=True,
                     )
@@ -285,7 +281,6 @@ class Executor:
             pipeline_name=config.name,
             pipeline_type=config.pipeline_type,
             total_queries=0,
-            total_results=0,
             retries_used=self.config.max_retries,
             success=False,
             error_message=error_msg,
