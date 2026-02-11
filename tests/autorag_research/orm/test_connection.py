@@ -24,6 +24,21 @@ class TestDBConnectionDumpDatabase:
         assert output_file.stat().st_size > 0
 
 
+class TestDBConnectionCreateBm25Indexes:
+    """Tests for BM25 index creation during create_schema."""
+
+    def test_create_schema_creates_bm25_index(self, db_connection):
+        """Test that create_schema creates the idx_chunk_bm25 index."""
+        engine = db_connection.get_engine()
+
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("SELECT indexname FROM pg_indexes WHERE indexname = 'idx_chunk_bm25'")
+            ).fetchone()
+
+        assert result is not None, "idx_chunk_bm25 index should exist after create_schema"
+
+
 class TestDBConnectionRestoreDatabase:
     """Tests for DBConnection.restore_database method."""
 
@@ -87,6 +102,12 @@ class TestDBConnectionRestoreDatabase:
                 orig_pipelines = orig_conn.execute(text("SELECT id, name, config FROM pipeline ORDER BY id")).fetchall()
                 rest_pipelines = rest_conn.execute(text("SELECT id, name, config FROM pipeline ORDER BY id")).fetchall()
                 assert orig_pipelines == rest_pipelines, "Pipeline data mismatch"
+
+                # Verify BM25 index exists after restore
+                bm25_index = rest_conn.execute(
+                    text("SELECT indexname FROM pg_indexes WHERE indexname = 'idx_chunk_bm25'")
+                ).fetchone()
+                assert bm25_index is not None, "idx_chunk_bm25 index should exist after restore"
 
         finally:
             # Cleanup: drop the restored database

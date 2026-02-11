@@ -127,6 +127,7 @@ class DBConnection:
 
         schema = create_schema(embedding_dim, primary_key_type)
         schema.Base.metadata.create_all(self.get_engine())
+        self._create_bm25_indexes()
         return schema
 
     def get_schema(self, schema_name: str = "public"):
@@ -167,6 +168,21 @@ class DBConnection:
         )
 
         logger.info(f"Database '{self.database}' created and vector extensions installed.")
+
+    def _create_bm25_indexes(self):
+        """Create BM25 indexes after tables exist."""
+        if self.database is None:
+            raise MissingDBNameError
+
+        from autorag_research.orm.util import create_bm25_indexes
+
+        create_bm25_indexes(
+            host=self.host,
+            port=self.port,
+            user=self.username,
+            password=self.password,
+            database=self.database,
+        )
 
     def terminate_connections(self):
         """Terminate all connections to this database except the current one.
@@ -302,6 +318,7 @@ class DBConnection:
             logger.exception(f"pg_restore failed: {e.stderr}")
             raise
 
+        self._create_bm25_indexes()
         logger.info(f"Database '{self.database}' restored successfully")
 
     def dump_database(
