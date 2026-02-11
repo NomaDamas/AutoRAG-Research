@@ -1,0 +1,6 @@
+# Ollama
+# pip install langchain-ollama
+# Start Ollama: ollama serve
+_target_: langchain_ollama.ChatOllama
+model: ${oc.env:OLLAMA_MODEL,llama3.1:8b}
+base_url: ${oc.env:OLLAMA_BASE_URL,http://localhost:11434}

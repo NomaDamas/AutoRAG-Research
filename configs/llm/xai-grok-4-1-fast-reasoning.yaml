@@ -1,0 +1,5 @@
+# xAI Grok 4-1 Fast (Reasoning)
+# pip install langchain-xai
+_target_: langchain_xai.ChatXAI
+model: grok-4-1-fast-reasoning
+xai_api_key: ${oc.env:XAI_API_KEY}

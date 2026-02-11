@@ -1,0 +1,5 @@
+# OpenAI GPT-5.2
+# pip install langchain-openai
+_target_: langchain_openai.ChatOpenAI
+model: gpt-5.2
+api_key: ${oc.env:OPENAI_API_KEY}
