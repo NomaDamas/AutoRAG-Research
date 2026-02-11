@@ -16,9 +16,6 @@ Automate your RAG research
 Which pipeline is really SOTA? What datasets are out there? Find it all here.
 
 
-(Action Video)
-
-
 ## Available Datasets
 
 We provide pre-processed datasets with unified formats. Some include **pre-computed embeddings**.
