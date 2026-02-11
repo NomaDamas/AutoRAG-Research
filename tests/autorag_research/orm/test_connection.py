@@ -1,11 +1,13 @@
 """Tests for autorag_research.orm.connection module."""
 
 import copy
+import subprocess
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import text
 
-from autorag_research.orm.connection import DBConnection
+from autorag_research.orm.connection import DBConnection, _is_pg_restore_error_fatal
 
 
 class TestDBConnectionDumpDatabase:
@@ -122,6 +124,128 @@ class TestDBConnectionRestoreDatabase:
             # Cleanup: drop the restored database
             restored_conn.terminate_connections()
             restored_conn.drop_database()
+
+
+class TestIsPgRestoreErrorFatal:
+    """Tests for _is_pg_restore_error_fatal helper."""
+
+    def test_empty_stderr_is_not_fatal(self):
+        """Test that empty stderr is not considered fatal."""
+        assert _is_pg_restore_error_fatal("") is False
+
+    def test_whitespace_only_stderr_is_not_fatal(self):
+        """Test that whitespace-only stderr is not considered fatal."""
+        assert _is_pg_restore_error_fatal("   \n  \n  ") is False
+
+    def test_already_exists_error_is_not_fatal(self):
+        """Test that 'already exists' schema error is not fatal."""
+        stderr = (
+            'pg_restore: error: could not execute query: ERROR:  schema "bm25_catalog" already exists\n'
+            "Command was: CREATE SCHEMA bm25_catalog;\n"
+        )
+        assert _is_pg_restore_error_fatal(stderr) is False
+
+    def test_multiple_already_exists_errors_are_not_fatal(self):
+        """Test that multiple 'already exists' errors are all non-fatal."""
+        stderr = (
+            'pg_restore: error: could not execute query: ERROR:  schema "bm25_catalog" already exists\n'
+            "Command was: CREATE SCHEMA bm25_catalog;\n"
+            "\n"
+            'pg_restore: error: could not execute query: ERROR:  schema "tokenizer_catalog" already exists\n'
+            "Command was: CREATE SCHEMA tokenizer_catalog;\n"
+            "\n"
+            "pg_restore: warning: errors ignored on restore: 2\n"
+        )
+        assert _is_pg_restore_error_fatal(stderr) is False
+
+    def test_warning_lines_are_not_fatal(self):
+        """Test that pg_restore warning lines are not fatal."""
+        stderr = "pg_restore: warning: errors ignored on restore: 2\n"
+        assert _is_pg_restore_error_fatal(stderr) is False
+
+    def test_permission_denied_is_fatal(self):
+        """Test that permission denied error is fatal."""
+        stderr = "pg_restore: error: could not execute query: ERROR:  permission denied for schema public\n"
+        assert _is_pg_restore_error_fatal(stderr) is True
+
+    def test_connection_error_is_fatal(self):
+        """Test that connection failure error is fatal."""
+        stderr = "pg_restore: error: connection to server failed: Connection refused\n"
+        assert _is_pg_restore_error_fatal(stderr) is True
+
+    def test_mixed_nonfatal_and_fatal_is_fatal(self):
+        """Test that mix of non-fatal and fatal errors is considered fatal."""
+        stderr = (
+            'pg_restore: error: could not execute query: ERROR:  schema "bm25_catalog" already exists\n'
+            "Command was: CREATE SCHEMA bm25_catalog;\n"
+            "pg_restore: error: could not execute query: ERROR:  permission denied for relation chunk\n"
+        )
+        assert _is_pg_restore_error_fatal(stderr) is True
+
+
+class TestRestoreDatabaseErrorHandling:
+    """Tests for restore_database error tolerance."""
+
+    def test_restore_tolerates_already_exists_warnings(self, tmp_path):
+        """Test that restore_database does not raise on 'already exists' pg_restore warnings."""
+        conn = DBConnection(host="localhost", port=5432, username="user", password="pass", database="testdb")  # noqa: S106
+        dump_file = tmp_path / "test.dump"
+        dump_file.write_bytes(b"fake dump")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = (
+            'pg_restore: error: could not execute query: ERROR:  schema "bm25_catalog" already exists\n'
+            "pg_restore: warning: errors ignored on restore: 1\n"
+        )
+
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            patch("autorag_research.orm.util.install_vector_extensions"),
+            patch.object(conn, "_create_bm25_indexes"),
+            patch.object(conn, "_run_migrations"),
+        ):
+            # Should NOT raise
+            conn.restore_database(dump_file, create=False)
+
+    def test_restore_raises_on_fatal_errors(self, tmp_path):
+        """Test that restore_database raises CalledProcessError on fatal pg_restore errors."""
+        conn = DBConnection(host="localhost", port=5432, username="user", password="pass", database="testdb")  # noqa: S106
+        dump_file = tmp_path / "test.dump"
+        dump_file.write_bytes(b"fake dump")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = "pg_restore: error: connection to server failed: Connection refused\n"
+
+        with patch("subprocess.run", return_value=mock_result), pytest.raises(subprocess.CalledProcessError):
+            conn.restore_database(dump_file, create=False)
+
+
+class TestDumpDatabaseExcludesExtensionSchemas:
+    """Tests for dump_database --exclude-schema flags."""
+
+    def test_dump_excludes_bm25_and_tokenizer_schemas(self, tmp_path):
+        """Test that dump_database passes --exclude-schema for extension-owned schemas."""
+        conn = DBConnection(host="localhost", port=5432, username="user", password="pass", database="testdb")  # noqa: S106
+        output_file = tmp_path / "test.dump"
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch("subprocess.run", return_value=mock_result):
+            # Create the file to prevent "Dump file was not created" error
+            output_file.write_bytes(b"fake dump")
+
+            conn.dump_database(output_file=output_file)
+
+            cmd = subprocess.run.call_args[0][0]
+            assert "--exclude-schema=bm25_catalog" in cmd
+            assert "--exclude-schema=tokenizer_catalog" in cmd
 
 
 class TestDBConnectionRunMigrations:
