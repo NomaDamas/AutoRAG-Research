@@ -145,19 +145,12 @@ def build_executor_config(
     pipelines: list, metrics: list, max_retries: int = 3, eval_batch_size: int = 100
 ) -> ExecutorConfig:
     """Build ExecutorConfig from Hydra configuration using instantiate."""
-    # Instantiate pipeline configs via _target_
-    for p_cfg in pipelines:
-        pipeline_config = instantiate(p_cfg)
-        pipelines.append(pipeline_config)
-
-    # Instantiate metric configs via _target_
-    for m_cfg in metrics:
-        metric_config = instantiate(m_cfg)
-        metrics.append(metric_config)
+    instantiated_pipelines = [instantiate(p_cfg) for p_cfg in pipelines]
+    instantiated_metrics = [instantiate(m_cfg) for m_cfg in metrics]
 
     return ExecutorConfig(
-        pipelines=pipelines,
-        metrics=metrics,
+        pipelines=instantiated_pipelines,
+        metrics=instantiated_metrics,
         max_retries=max_retries,
         eval_batch_size=eval_batch_size,
     )
