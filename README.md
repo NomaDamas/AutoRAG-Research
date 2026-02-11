@@ -25,28 +25,30 @@ We provide pre-processed datasets with unified formats. Some include pre-compute
 
 **Text**
 
-| Dataset | Description |
-|---------|-------------|
-| [BEIR](https://huggingface.co/BeIR) | Standard IR benchmark across 14 diverse domains (scifact, nq, hotpotqa, ...) |
-| [MTEB](https://huggingface.co/mteb) | Large-scale embedding benchmark with any MTEB retrieval task |
-| [RAGBench](https://huggingface.co/datasets/galileo-ai/ragbench) | End-to-end RAG evaluation with generation ground truth across 12 domains |
-| [MrTyDi](https://huggingface.co/datasets/castorini/mr-tydi) | Multilingual retrieval across 11 languages |
-| [BRIGHT](https://huggingface.co/datasets/xlangai/BRIGHT) | Reasoning-intensive retrieval requiring multi-step inference |
+| Dataset | Pipeline Support | Description |
+|---------|:----------------:|-------------|
+| [BEIR](https://huggingface.co/BeIR) | Retrieval | Standard IR benchmark across 14 diverse domains (scifact, nq, hotpotqa, ...) |
+| [MTEB](https://huggingface.co/mteb) | Retrieval | Large-scale embedding benchmark with any MTEB retrieval task |
+| [RAGBench](https://huggingface.co/datasets/galileo-ai/ragbench) | Retrieval + Generation | End-to-end RAG evaluation with generation ground truth across 12 domains |
+| [MrTyDi](https://huggingface.co/datasets/castorini/mr-tydi) | Retrieval | Multilingual retrieval across 11 languages |
+| [BRIGHT](https://huggingface.co/datasets/xlangai/BRIGHT) | Retrieval + Generation | Reasoning-intensive retrieval with gold answers |
 
 **Image**
 
-| Dataset | Description |
-|---------|-------------|
-| [ViDoRe](https://huggingface.co/collections/vidore/vidore-benchmark) | Visual document QA with 1:1 query-to-page mapping |
-| [ViDoRe v2](https://huggingface.co/collections/vidore/vidore-benchmark-v2) | Visual document retrieval with corpus-level search |
-| [ViDoRe v3](https://huggingface.co/collections/vidore/vidore-benchmark-v3) | Visual document retrieval across 8 industry domains |
-| [VisRAG](https://huggingface.co/collections/openbmb/visrag) | Vision-based RAG benchmark (ChartQA, SlideVQA, DocVQA, ...) |
+| Dataset | Pipeline Support | Description |
+|---------|:----------------:|-------------|
+| [ViDoRe](https://huggingface.co/collections/vidore/vidore-benchmark) | Retrieval + Generation* | Visual document QA with 1:1 query-to-page mapping |
+| [ViDoRe v2](https://huggingface.co/collections/vidore/vidore-benchmark-v2) | Retrieval | Visual document retrieval with corpus-level search |
+| [ViDoRe v3](https://huggingface.co/collections/vidore/vidore-benchmark-v3) | Retrieval | Visual document retrieval across 8 industry domains |
+| [VisRAG](https://huggingface.co/collections/openbmb/visrag) | Retrieval + Generation* | Vision-based RAG benchmark (ChartQA, SlideVQA, DocVQA, ...) |
 
 **Text + Image**
 
-| Dataset | Description |
-|---------|-------------|
-| [Open-RAGBench](https://huggingface.co/datasets/vectara/open_ragbench) | arXiv PDF RAG with generation ground truth and multimodal understanding |
+| Dataset | Pipeline Support | Description |
+|---------|:----------------:|-------------|
+| [Open-RAGBench](https://huggingface.co/datasets/vectara/open_ragbench) | Retrieval + Generation | arXiv PDF RAG with generation ground truth and multimodal understanding |
+
+> *\* Generation ground truth is available only for some sub-datasets.*
 
 ## Available Pipelines
 
