@@ -122,3 +122,177 @@ class TestVectorSearchByEmbedding:
             call_args = mock_search.call_args
             query_vector = call_args.kwargs.get("query_vector") or call_args.args[0]
             assert query_vector == test_embedding
+
+
+class TestGetOrCreatePipeline:
+    """Tests for RetrievalPipelineService.get_or_create_pipeline method."""
+
+    @pytest.fixture
+    def service(self, session_factory):
+        return RetrievalPipelineService(session_factory)
+
+    @pytest.fixture
+    def unique_name(self):
+        """Generate a unique pipeline name to avoid collisions with stale test data."""
+        import uuid
+
+        return f"test_ret_gocp_{uuid.uuid4().hex[:8]}"
+
+    def test_get_or_create_pipeline_new(self, service, unique_name):
+        """When no pipeline with the name exists, a new one is created."""
+        pipeline_id, is_new = service.get_or_create_pipeline(
+            name=unique_name,
+            config={"type": "bm25", "tokenizer": "bert"},
+        )
+
+        assert is_new is True
+        assert pipeline_id is not None
+
+        config = service.get_pipeline_config(pipeline_id)
+        assert config == {"type": "bm25", "tokenizer": "bert"}
+
+    def test_get_or_create_pipeline_existing(self, service, unique_name):
+        """When a pipeline with the name exists, its ID is returned."""
+        pipeline_id, is_new = service.get_or_create_pipeline(
+            name=unique_name,
+            config={"type": "bm25", "tokenizer": "bert"},
+        )
+        assert is_new is True
+
+        # Second call should find the existing pipeline
+        pipeline_id2, is_new2 = service.get_or_create_pipeline(
+            name=unique_name,
+            config={"type": "bm25", "tokenizer": "bert"},
+        )
+
+        assert is_new2 is False
+        assert pipeline_id2 == pipeline_id
+
+    def test_get_or_create_pipeline_config_mismatch(self, service, unique_name, caplog):
+        """When pipeline exists with different config, logs a warning and reuses it."""
+        import logging
+
+        pipeline_id, _ = service.get_or_create_pipeline(
+            name=unique_name,
+            config={"type": "bm25", "tokenizer": "bert"},
+        )
+
+        with caplog.at_level(logging.WARNING, logger="AutoRAG-Research"):
+            pipeline_id2, is_new = service.get_or_create_pipeline(
+                name=unique_name,
+                config={"type": "bm25", "tokenizer": "spacy"},
+            )
+
+        assert is_new is False
+        assert pipeline_id2 == pipeline_id
+        assert "different config" in caplog.text
+
+
+class TestRetrievalPipelineResume:
+    """Tests for query skip logic in retrieval run_pipeline (resume support)."""
+
+    @pytest.fixture
+    def service(self, session_factory):
+        return RetrievalPipelineService(session_factory)
+
+    @pytest.fixture
+    def mock_retrieval_func(self):
+        call_log: list[int | str] = []
+
+        async def retrieval_func(query_id: int | str, top_k: int) -> list[dict]:
+            call_log.append(query_id)
+            return [{"doc_id": 1, "score": 0.9}]
+
+        retrieval_func.call_log = call_log  # type: ignore[attr-defined]
+        return retrieval_func
+
+    def test_run_pipeline_skips_completed_queries(self, service, mock_retrieval_func, session_factory):
+        """Pre-insert results for some queries, verify retrieval_func not called for them."""
+        with session_factory() as session:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+
+        pipeline_id = service.save_pipeline(
+            name="test_skip_completed_retrieval",
+            config={"type": "test"},
+        )
+
+        # Pre-insert results for the first query (query_id=1)
+        with service._create_uow() as uow:
+            queries = uow.queries.get_all(limit=1, offset=0)
+            first_query_id = queries[0].id
+            uow.chunk_results.bulk_insert([
+                {
+                    "query_id": first_query_id,
+                    "pipeline_id": pipeline_id,
+                    "chunk_id": 1,
+                    "rel_score": 0.95,
+                }
+            ])
+            uow.commit()
+
+        # Run pipeline - should skip the first query
+        result = service.run_pipeline(
+            retrieval_func=mock_retrieval_func,
+            pipeline_id=pipeline_id,
+            top_k=1,
+        )
+
+        # The pre-inserted query should NOT appear in the call log
+        assert first_query_id not in mock_retrieval_func.call_log
+        # Should process remaining queries
+        assert result["total_queries"] == query_count - 1
+
+        service.delete_pipeline_results(pipeline_id)
+
+    def test_run_pipeline_all_completed(self, service, mock_retrieval_func, session_factory):
+        """When all queries have results, processes 0 queries."""
+        pipeline_id = service.save_pipeline(
+            name="test_all_completed_retrieval",
+            config={"type": "test"},
+        )
+
+        # Pre-insert results for ALL queries
+        with service._create_uow() as uow:
+            queries = uow.queries.get_all(limit=1000, offset=0)
+            results_to_insert = [
+                {"query_id": q.id, "pipeline_id": pipeline_id, "chunk_id": 1, "rel_score": 0.9} for q in queries
+            ]
+            uow.chunk_results.bulk_insert(results_to_insert)
+            uow.commit()
+
+        # Run pipeline - should skip everything
+        result = service.run_pipeline(
+            retrieval_func=mock_retrieval_func,
+            pipeline_id=pipeline_id,
+            top_k=1,
+        )
+
+        assert result["total_queries"] == 0
+        assert len(mock_retrieval_func.call_log) == 0
+
+        service.delete_pipeline_results(pipeline_id)
+
+    def test_run_pipeline_backward_compat(self, service, session_factory):
+        """New pipeline with no pre-existing results processes all queries."""
+        with session_factory() as session:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+
+        async def retrieval_func(query_id: int | str, top_k: int) -> list[dict]:
+            return [{"doc_id": 1, "score": 0.9}]
+
+        pipeline_id = service.save_pipeline(
+            name="test_backward_compat_retrieval",
+            config={"type": "test"},
+        )
+
+        result = service.run_pipeline(
+            retrieval_func=retrieval_func,
+            pipeline_id=pipeline_id,
+            top_k=1,
+        )
+
+        assert result["total_queries"] == query_count
+
+        service.delete_pipeline_results(pipeline_id)

@@ -136,6 +136,40 @@ class GenerationPipelineService(BaseService):
             uow.commit()
             return pipeline_id
 
+    def get_or_create_pipeline(self, name: str, config: dict) -> tuple[int | str, bool]:
+        """Get existing pipeline by name or create a new one.
+
+        If a pipeline with the given name already exists, returns its ID.
+        If the existing pipeline has a different config, logs a warning.
+        If no pipeline exists, creates a new one.
+
+        Args:
+            name: Name for this pipeline (used as experiment identifier).
+            config: Configuration dictionary for the pipeline.
+
+        Returns:
+            Tuple of (pipeline_id, is_new) where is_new is True if a new pipeline was created.
+        """
+        with self._create_uow() as uow:
+            existing = uow.pipelines.get_by_name(name)
+            if existing is not None:
+                if existing.config != config:
+                    logger.warning(
+                        f"Pipeline '{name}' exists with different config. "
+                        f"Existing: {existing.config}, New: {config}. Reusing existing pipeline."
+                    )
+                else:
+                    logger.info(f"Resuming pipeline '{name}' (pipeline_id={existing.id})")
+                return existing.id, False
+
+            pipeline = self._get_schema_classes()["Pipeline"](name=name, config=config)
+            uow.pipelines.add(pipeline)
+            uow.flush()
+            pipeline_id = pipeline.id
+            uow.commit()
+            logger.info(f"Created new pipeline '{name}' (pipeline_id={pipeline_id})")
+            return pipeline_id, True
+
     def _filter_valid_results(
         self,
         query_ids: list[int | str],
@@ -158,7 +192,7 @@ class GenerationPipelineService(BaseService):
             entities = [executor_result_class(**item) for item in valid_results]
             uow.executor_results.add_all(entities)
 
-    def run_pipeline(
+    def run_pipeline(  # noqa: C901
         self,
         generate_func: GenerateFunc,
         pipeline_id: int | str,
@@ -244,6 +278,16 @@ class GenerationPipelineService(BaseService):
                     break
 
                 query_ids = [q.id for q in queries]
+
+                # Skip queries that already have results (resume support)
+                existing = uow.executor_results.get_by_queries_and_pipeline(query_ids, pipeline_id)
+                completed_ids = {r.query_id for r in existing}
+                query_ids = [qid for qid in query_ids if qid not in completed_ids]
+
+                if not query_ids:
+                    offset += batch_size
+                    continue
+
                 batch_results = asyncio.run(process_batch(query_ids))
                 valid_results = self._filter_valid_results(query_ids, batch_results, failed_queries)
 
