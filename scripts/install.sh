@@ -8,6 +8,11 @@
 #
 # Non-interactive (CI):
 #   AUTORAG_RESEARCH_NONINTERACTIVE=1 AUTORAG_RESEARCH_PG_SETUP=skip bash install.sh
+#
+# Optional dependencies (non-interactive):
+#   AUTORAG_RESEARCH_OPTIONAL_DEPS=all      # Install all extras (default)
+#   AUTORAG_RESEARCH_OPTIONAL_DEPS=none     # Base package only
+#   AUTORAG_RESEARCH_OPTIONAL_DEPS=gpu,reranker  # Specific groups
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -29,11 +34,13 @@ NI_PG_USER="${AUTORAG_RESEARCH_PG_USER:-postgres}"
 NI_PG_PASSWORD="${AUTORAG_RESEARCH_PG_PASSWORD:-postgres}"
 NI_PG_DB="${AUTORAG_RESEARCH_PG_DB:-autorag}"
 NI_CONTAINER="${AUTORAG_RESEARCH_CONTAINER_NAME:-autorag_postgres}"
+NI_OPTIONAL_DEPS="${AUTORAG_RESEARCH_OPTIONAL_DEPS:-all}"
 
 # ── Saved state across phases ────────────────────────────────────────
 DB_YAML_CONTENT=""
 VENV_PATH=""
 USED_UV=0
+SELECTED_EXTRAS=""
 
 # ── Color helpers ────────────────────────────────────────────────────
 setup_colors() {
@@ -105,6 +112,108 @@ confirm() {
     read -rp "  ${prompt} [Y/n]: " yn
     yn="${yn:-$default}"
     [[ "$yn" =~ ^[Yy] ]]
+}
+
+# ── Optional dependency selection ──────────────────────────────────────
+# Keep in sync with [project.optional-dependencies] in pyproject.toml
+VALID_GROUPS="gpu reporting reranker"
+
+select_optional_deps() {
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+        # Non-interactive: read from env var
+        local deps="$NI_OPTIONAL_DEPS"
+        if [[ "$deps" == "none" ]]; then
+            SELECTED_EXTRAS=""
+            info "Skipping optional dependencies (base package only)"
+            return
+        fi
+        if [[ "$deps" == "all" ]]; then
+            SELECTED_EXTRAS="[all]"
+            info "Will install all optional dependencies"
+            return
+        fi
+        # Validate comma-separated group names
+        local validated="" invalid=""
+        IFS=',' read -ra groups <<< "$deps"
+        for g in "${groups[@]}"; do
+            g="${g// /}"  # trim whitespace
+            if [[ " $VALID_GROUPS " == *" $g "* ]]; then
+                if [[ -n "$validated" ]]; then
+                    validated="${validated},${g}"
+                else
+                    validated="$g"
+                fi
+            else
+                if [[ -n "$invalid" ]]; then
+                    invalid="${invalid}, ${g}"
+                else
+                    invalid="$g"
+                fi
+            fi
+        done
+        if [[ -n "$invalid" ]]; then
+            warn "Unknown optional dependency group(s): ${invalid}"
+            warn "Valid groups are: ${VALID_GROUPS}"
+        fi
+        if [[ -n "$validated" ]]; then
+            SELECTED_EXTRAS="[${validated}]"
+            info "Will install optional dependencies: ${validated}"
+        else
+            SELECTED_EXTRAS=""
+            warn "No valid groups specified, installing base package only"
+        fi
+        return
+    fi
+
+    # Interactive mode
+    echo ""
+    local choice
+    select_option choice \
+        "Which optional dependencies would you like to install?" \
+        "Install all optional dependencies (Recommended)" \
+        "Select specific groups to install" \
+        "Skip optional dependencies (base package only)"
+
+    case "$choice" in
+        1)
+            SELECTED_EXTRAS="[all]"
+            ;;
+        2)
+            echo ""
+            echo -e "  ${BOLD}Select which optional dependency groups to install:${RESET}"
+            echo ""
+            local selected=""
+            if confirm "gpu - GPU-accelerated embeddings (colpali-engine, torch, transformers)?"; then
+                selected="gpu"
+            fi
+            if confirm "reporting - Reporting & dashboards (duckdb, gradio)?"; then
+                if [[ -n "$selected" ]]; then
+                    selected="${selected},reporting"
+                else
+                    selected="reporting"
+                fi
+            fi
+            if confirm "reranker - Reranking models (cohere, voyageai)?"; then
+                if [[ -n "$selected" ]]; then
+                    selected="${selected},reranker"
+                else
+                    selected="reranker"
+                fi
+            fi
+            if [[ -n "$selected" ]]; then
+                SELECTED_EXTRAS="[${selected}]"
+                echo ""
+                info "Will install optional dependencies: ${selected}"
+            else
+                SELECTED_EXTRAS=""
+                echo ""
+                info "No groups selected, installing base package only"
+            fi
+            ;;
+        3)
+            SELECTED_EXTRAS=""
+            ;;
+    esac
 }
 
 # ── Detection helpers ────────────────────────────────────────────────
@@ -318,6 +427,7 @@ phase_install_package() {
         info "autorag-research ${current_ver} is already installed"
         if [[ "$NONINTERACTIVE" != "1" ]]; then
             if confirm "Upgrade to latest version?"; then
+                select_optional_deps
                 do_install --upgrade
                 return
             else
@@ -325,23 +435,26 @@ phase_install_package() {
                 return
             fi
         else
+            select_optional_deps
             do_install --upgrade
             return
         fi
     fi
 
+    select_optional_deps
     do_install
 }
 
 do_install() {
     local upgrade_flag="${1:-}"
+    local pkg_spec="autorag-research${SELECTED_EXTRAS}"
 
     if [[ "$USED_UV" == "1" ]]; then
         # Try uv add first (works in uv-managed projects with pyproject.toml)
         if [[ -f "pyproject.toml" ]]; then
             info "Installing with uv add..."
-            if uv add autorag-research 2>/dev/null; then
-                success "autorag-research installed via uv add"
+            if uv add "${pkg_spec}" 2>/dev/null; then
+                success "${pkg_spec} installed via uv add"
                 return
             fi
             info "uv add failed, falling back to uv pip install..."
@@ -349,20 +462,20 @@ do_install() {
 
         info "Installing with uv pip install..."
         if [[ "$upgrade_flag" == "--upgrade" ]]; then
-            uv pip install --upgrade autorag-research
+            uv pip install --upgrade "${pkg_spec}"
         else
-            uv pip install autorag-research
+            uv pip install "${pkg_spec}"
         fi
     else
         info "Installing with pip..."
         if [[ "$upgrade_flag" == "--upgrade" ]]; then
-            pip install --upgrade autorag-research
+            pip install --upgrade "${pkg_spec}"
         else
-            pip install autorag-research
+            pip install "${pkg_spec}"
         fi
     fi
 
-    success "autorag-research installed"
+    success "${pkg_spec} installed"
 }
 
 # ══════════════════════════════════════════════════════════════════════
@@ -701,6 +814,11 @@ print_summary() {
     echo -e "  Configuration:        ${workdir}/configs/"
     if [[ -n "$VENV_PATH" ]]; then
         echo -e "  Virtual environment:  ${VENV_PATH}"
+    fi
+    if [[ -n "$SELECTED_EXTRAS" ]]; then
+        echo -e "  Optional deps:        ${SELECTED_EXTRAS}"
+    else
+        echo -e "  Optional deps:        none (base only)"
     fi
     echo ""
     echo -e "  ${BOLD}Quick Start:${RESET}"

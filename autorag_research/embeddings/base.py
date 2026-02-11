@@ -1,11 +1,33 @@
-"""Base classes for multi-vector embeddings."""
+"""Base classes for multi-modal embeddings."""
 
 import asyncio
 from abc import abstractmethod
 
+from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel, ConfigDict, Field
 
 from autorag_research.types import ImageType
+
+
+class SingleVectorMultiModalEmbedding(Embeddings):
+    """Base class for single-vector multi-modal embeddings (e.g., BiPali).
+
+    Extends LangChain's Embeddings interface with image embedding support.
+    Each image/text produces a single embedding vector.
+    """
+
+    @abstractmethod
+    def embed_image(self, img_file_path: ImageType) -> list[float]: ...
+
+    @abstractmethod
+    async def aembed_image(self, img_file_path: ImageType) -> list[float]: ...
+
+    def embed_images(self, img_file_paths: list[ImageType]) -> list[list[float]]:
+        return [self.embed_image(p) for p in img_file_paths]
+
+    async def aembed_images(self, img_file_paths: list[ImageType]) -> list[list[float]]:
+        return await asyncio.gather(*[self.aembed_image(p) for p in img_file_paths])
+
 
 # Type alias for multi-vector embeddings (e.g., ColBERT, ColPali)
 # Each text/image produces multiple vectors (one per token/patch)
