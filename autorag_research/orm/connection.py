@@ -172,8 +172,10 @@ class DBConnection:
         self._create_bm25_indexes()
         self._run_migrations()
 
-        logger.info(f"Database '{self.database}' created and vector extensions installed."
-                    "The BM25 indexes have been created and migrations have been run.")
+        logger.info(
+            f"Database '{self.database}' created and vector extensions installed."
+            "The BM25 indexes have been created and migrations have been run."
+        )
 
     def _create_bm25_indexes(self):
         """Create BM25 indexes after tables exist."""
