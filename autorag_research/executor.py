@@ -236,6 +236,7 @@ class Executor:
             if attempt > 0:
                 logger.warning(f"Retry {attempt}/{self.config.max_retries} for pipeline: {config.name}")
 
+            pipeline = None
             try:
                 # Instantiate pipeline
                 pipeline_class = config.get_pipeline_class()
@@ -267,11 +268,15 @@ class Executor:
                         success=True,
                     )
                 else:
+                    error_msg += f"\n\nVerification failed for pipeline_id={pipeline_id}"
                     logger.warning(f"Pipeline '{config.name}' verification failed, will retry")
 
             except Exception as e:
                 error_msg += f"\n\n{e}"
                 logger.exception(f"Pipeline '{config.name}' failed with error")
+            finally:
+                if pipeline is not None and hasattr(pipeline, "close"):
+                    pipeline.close()
 
         # All retries exhausted
         logger.error(f"Pipeline '{config.name}' failed: {error_msg}")

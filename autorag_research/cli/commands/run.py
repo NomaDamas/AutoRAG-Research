@@ -86,7 +86,7 @@ def run_command(  # noqa: C901
     typer.echo("\nAutoRAG-Research Experiment Runner")
     typer.echo("=" * 60)
 
-    typer.echo(f"\nDatabase name: {db_name}")
+    typer.echo(f"\nDatabase name: {resolved_db_name}")
     typer.echo(f"Database: {db_conn.host}:{db_conn.port}/{db_conn.database}")
 
     typer.echo("\nPipelines:")
