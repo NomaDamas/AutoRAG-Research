@@ -261,5 +261,5 @@ You can check our [Contribution Guide](https://nomadamas.github.io/AutoRAG-Resea
 
 ## Acknowledgements
 
-This project is made by the creator of [AutoRAG](https://github.com/Marker-Inc-Korea/AutoRAG), Jeffrey & Bobb Kim. 
+This project is made by the creator of [AutoRAG](https://github.com/Marker-Inc-Korea/AutoRAG), Jeffrey & Bobb Kim.
 All works are done in [NomaDamas](https://github.com/NomaDamas), AI Hacker House in Seoul, Korea.
