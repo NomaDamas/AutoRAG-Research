@@ -290,6 +290,7 @@ class DBConnection:
             user=self.username,
             password=self.password,
             database=self.database,
+            force=True,
         )
 
         logger.info(f"Database '{self.database}' dropped.")

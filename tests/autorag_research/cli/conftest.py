@@ -11,7 +11,7 @@ import autorag_research.cli as cli
 @pytest.fixture
 def cli_runner() -> CliRunner:
     """Return a Typer CliRunner for testing commands."""
-    return CliRunner()
+    return CliRunner(env={"NO_COLOR": "1"})
 
 
 @pytest.fixture

@@ -113,6 +113,14 @@ class TestAppStructure:
         assert result.exit_code == 0
         assert "Usage:" in result.stdout
 
+    def test_app_has_drop_command(self, cli_runner: CliRunner) -> None:
+        """App has 'drop' command registered."""
+        result = cli_runner.invoke(app, ["drop", "--help"])
+
+        assert result.exit_code == 0
+        assert "Usage:" in result.stdout
+        assert "database" in result.stdout
+
     def test_app_has_init_command(self, cli_runner: CliRunner) -> None:
         """App has 'init' command registered."""
         result = cli_runner.invoke(app, ["init", "--help"])
