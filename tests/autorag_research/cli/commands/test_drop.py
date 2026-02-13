@@ -10,20 +10,27 @@ from autorag_research.cli.app import app
 class TestDropDatabaseCommand:
     """Tests for 'drop database' command."""
 
+    @staticmethod
+    def _combined_output(result) -> str:
+        return f"{result.stdout}\n{result.stderr}".lower()
+
     def test_drop_help_shows_options(self, cli_runner: CliRunner) -> None:
         """'drop database --help' shows available options."""
         result = cli_runner.invoke(app, ["drop", "database", "--help"])
 
         assert result.exit_code == 0
-        assert "--db-name" in result.stdout
-        assert "--yes" in result.stdout
+        output = self._combined_output(result)
+        assert "database name to drop" in output
+        assert "skip confirmation prompts" in output
 
     def test_drop_requires_db_name(self, cli_runner: CliRunner) -> None:
         """'drop database' requires --db-name option."""
         result = cli_runner.invoke(app, ["drop", "database"])
 
         assert result.exit_code != 0
-        assert "--db-name" in result.stderr
+        output = self._combined_output(result)
+        assert "missing option" in output
+        assert "db-name" in output
 
     @patch("autorag_research.orm.connection.DBConnection.from_config")
     def test_drop_protects_system_database(self, mock_from_config: MagicMock, cli_runner: CliRunner) -> None:
