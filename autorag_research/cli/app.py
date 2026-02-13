@@ -9,6 +9,7 @@ import typer
 
 import autorag_research.cli as cli
 from autorag_research.cli.commands.data import data_app
+from autorag_research.cli.commands.drop import drop_app
 from autorag_research.cli.commands.ingest import ingest_app
 from autorag_research.cli.commands.init import init
 from autorag_research.cli.commands.plugin import plugin_app
@@ -70,6 +71,7 @@ def main_callback(
 
 # Add sub-apps
 app.add_typer(data_app, name="data")
+app.add_typer(drop_app, name="drop")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(plugin_app, name="plugin")
 

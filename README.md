@@ -207,6 +207,7 @@ For the full YAML configuration guide, see the [Documentation](https://nomadamas
 | `autorag-research show metrics` | List available evaluation metrics |
 | `autorag-research show databases` | List ingested database schemas |
 | `autorag-research ingest --name <name>` | Ingest a dataset into PostgreSQL |
+| `autorag-research drop database --db-name <name>` | Drop a PostgreSQL database quickly |
 | `autorag-research run --db-name <name>` | Run experiment with configured pipelines and metrics |
 
 You can also type `--help` in any command to see detailed usage instructions.
