@@ -30,11 +30,13 @@ def load_db_connection() -> str:
         sys.path.insert(0, str(Path.cwd()))
         try:
             from autorag_research.orm.connection import DBConnection
+
             db_conn = DBConnection.from_config(Path.cwd() / "configs")
-            return db_conn.db_url
         except Exception as e:
             print(f"Warning: Failed to load from config file: {e}", file=sys.stderr)
             print("Falling back to environment variables...", file=sys.stderr)
+        else:
+            return db_conn.db_url
 
     # Fallback to environment variables
     host = os.getenv("POSTGRES_HOST", "localhost")
@@ -44,11 +46,12 @@ def load_db_connection() -> str:
     database = os.getenv("POSTGRES_DB", "autorag_research")
 
     if not password:
-        raise ValueError(
+        msg = (
             "Database connection not found. Either:\n"
             "1. Run from AutoRAG-Research project root with configs/db.yaml, or\n"
             "2. Set POSTGRES_* environment variables"
         )
+        raise ValueError(msg)
 
     return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
 
@@ -56,55 +59,59 @@ def load_db_connection() -> str:
 def validate_query(query: str) -> None:
     """Validate query is SELECT-only and safe."""
     # Remove comments and normalize whitespace
-    query_clean = re.sub(r'--.*$', '', query, flags=re.MULTILINE)
-    query_clean = re.sub(r'/\*.*?\*/', '', query_clean, flags=re.DOTALL)
-    query_clean = ' '.join(query_clean.split()).upper()
+    query_clean = re.sub(r"--.*$", "", query, flags=re.MULTILINE)
+    query_clean = re.sub(r"/\*.*?\*/", "", query_clean, flags=re.DOTALL)
+    query_clean = " ".join(query_clean.split()).upper()
 
     # Must contain SELECT
-    if 'SELECT' not in query_clean:
-        raise ValueError("Query must be a SELECT statement")
+    if "SELECT" not in query_clean:
+        msg = "Query must be a SELECT statement"
+        raise ValueError(msg)
 
     # Reject DDL/DML keywords
     forbidden = [
-        'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER',
-        'TRUNCATE', 'GRANT', 'REVOKE', 'EXECUTE', 'CALL'
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "DROP",
+        "CREATE",
+        "ALTER",
+        "TRUNCATE",
+        "GRANT",
+        "REVOKE",
+        "EXECUTE",
+        "CALL",
     ]
     for keyword in forbidden:
-        if re.search(rf'\b{keyword}\b', query_clean):
-            raise ValueError(f"Forbidden keyword: {keyword}. Only SELECT queries allowed.")
+        if re.search(rf"\b{keyword}\b", query_clean):
+            msg = f"Forbidden keyword: {keyword}. Only SELECT queries allowed."
+            raise ValueError(msg)
 
     # Reject dangerous system functions
-    dangerous_funcs = [
-        'PG_READ_FILE', 'PG_EXECUTE', 'PG_LS_DIR', 'COPY',
-        'LO_IMPORT', 'LO_EXPORT'
-    ]
+    dangerous_funcs = ["PG_READ_FILE", "PG_EXECUTE", "PG_LS_DIR", "COPY", "LO_IMPORT", "LO_EXPORT"]
     for func in dangerous_funcs:
         if func in query_clean:
-            raise ValueError(f"Forbidden function: {func}")
+            msg = f"Forbidden function: {func}"
+            raise ValueError(msg)
 
 
 def remove_vector_columns(query: str) -> str:
     """Remove vector/embedding columns from SELECT clause."""
     # Simple heuristic: remove problematic column names
-    vector_cols = ['embedding', 'embeddings', 'bm25_tokens', 'bm25vector']
+    vector_cols = ["embedding", "embeddings", "bm25_tokens", "bm25vector"]
 
     for col in vector_cols:
         # Remove "column_name," or ", column_name"
-        query = re.sub(rf'\b{col}\b\s*,', '', query, flags=re.IGNORECASE)
-        query = re.sub(rf',\s*\b{col}\b', '', query, flags=re.IGNORECASE)
+        query = re.sub(rf"\b{col}\b\s*,", "", query, flags=re.IGNORECASE)
+        query = re.sub(rf",\s*\b{col}\b", "", query, flags=re.IGNORECASE)
 
     return query
 
 
-def execute_query(
-    engine: Engine,
-    query: str,
-    timeout: int,
-    limit: int
-) -> list[dict[str, Any]]:
+def execute_query(engine: Engine, query: str, timeout: int, limit: int) -> list[dict[str, Any]]:
     """Execute query with timeout and return results."""
     # Add LIMIT if not present
-    if 'LIMIT' not in query.upper() and limit > 0:
+    if "LIMIT" not in query.upper() and limit > 0:
         query = f"{query.rstrip(';')} LIMIT {limit}"
 
     with engine.connect() as conn:
@@ -117,36 +124,36 @@ def execute_query(
             columns = result.keys()
 
             # Convert to list of dicts
-            return [dict(zip(columns, row)) for row in rows]
+            return [dict(zip(columns, row, strict=True)) for row in rows]
 
         except Exception as e:
             error_msg = str(e).lower()
-            if 'vector' in error_msg or 'bm25' in error_msg:
+            if "vector" in error_msg or "bm25" in error_msg:
                 # Try removing vector columns
                 print("Warning: Vector columns detected, retrying without them...", file=sys.stderr)
                 modified_query = remove_vector_columns(query)
                 result = conn.execute(text(modified_query))
                 rows = result.fetchall()
                 columns = result.keys()
-                return [dict(zip(columns, row)) for row in rows]
+                return [dict(zip(columns, row, strict=True)) for row in rows]
             raise
 
 
-def format_output(results: list[dict[str, Any]], format: str) -> str:
+def format_output(results: list[dict[str, Any]], output_format: str) -> str:
     """Format results as table, JSON, or CSV."""
     if not results:
         return "No results found."
 
-    if format == 'json':
+    if output_format == "json":
         # Handle non-serializable types
         def json_serializer(obj):
-            if hasattr(obj, 'isoformat'):
+            if hasattr(obj, "isoformat"):
                 return obj.isoformat()
             return str(obj)
 
         return json.dumps(results, indent=2, default=json_serializer)
 
-    elif format == 'csv':
+    elif output_format == "csv":
         import csv
         import io
 
@@ -159,41 +166,21 @@ def format_output(results: list[dict[str, Any]], format: str) -> str:
     else:  # table
         # Convert dicts to list of lists
         headers = list(results[0].keys())
-        rows = [[str(row[key]) if row[key] is not None else 'NULL' for key in headers] for row in results]
-        return tabulate(rows, headers=headers, tablefmt='simple')
+        rows = [[str(row[key]) if row[key] is not None else "NULL" for key in headers] for row in results]
+        return tabulate(rows, headers=headers, tablefmt="simple")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Execute SELECT queries against AutoRAG-Research database'
-    )
+    parser = argparse.ArgumentParser(description="Execute SELECT queries against AutoRAG-Research database")
+    parser.add_argument("--query", "-q", required=True, help="SQL query to execute (SELECT only)")
     parser.add_argument(
-        '--query', '-q',
-        required=True,
-        help='SQL query to execute (SELECT only)'
+        "--format", "-f", choices=["table", "json", "csv"], default="table", help="Output format (default: table)"
     )
+    parser.add_argument("--timeout", "-t", type=int, default=10, help="Query timeout in seconds (default: 10)")
     parser.add_argument(
-        '--format', '-f',
-        choices=['table', 'json', 'csv'],
-        default='table',
-        help='Output format (default: table)'
+        "--limit", "-l", type=int, default=10000, help="Maximum rows to return (default: 10000, 0=unlimited)"
     )
-    parser.add_argument(
-        '--timeout', '-t',
-        type=int,
-        default=10,
-        help='Query timeout in seconds (default: 10)'
-    )
-    parser.add_argument(
-        '--limit', '-l',
-        type=int,
-        default=10000,
-        help='Maximum rows to return (default: 10000, 0=unlimited)'
-    )
-    parser.add_argument(
-        '--database', '-d',
-        help='Database name (overrides config/env)'
-    )
+    parser.add_argument("--database", "-d", help="Database name (overrides config/env)")
 
     args = parser.parse_args()
 
@@ -205,7 +192,7 @@ def main():
         conn_string = load_db_connection()
         if args.database:
             # Replace database name in connection string
-            conn_string = re.sub(r'/[^/]+$', f'/{args.database}', conn_string)
+            conn_string = re.sub(r"/[^/]+$", f"/{args.database}", conn_string)
 
         # Create engine
         engine = create_engine(conn_string)
@@ -225,5 +212,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
