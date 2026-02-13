@@ -16,3 +16,9 @@ Command-line interface for AutoRAG-Research.
 ::: mkdocs-typer2
  :module: autorag_research.cli.app
  :name: autorag-research
+
+### Quick Cleanup Example
+
+```bash
+autorag-research drop database --db-name=beir_scifact_test_openai_small --yes
+```
