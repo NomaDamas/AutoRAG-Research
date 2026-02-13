@@ -30,7 +30,7 @@ class TestDropDatabaseCommand:
         assert result.exit_code != 0
         output = self._combined_output(result)
         assert "missing option" in output
-        assert "db-name" in output
+        assert "autorag-research drop database" in output
 
     @patch("autorag_research.orm.connection.DBConnection.from_config")
     def test_drop_protects_system_database(self, mock_from_config: MagicMock, cli_runner: CliRunner) -> None:
