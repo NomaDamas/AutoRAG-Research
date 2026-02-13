@@ -7,21 +7,22 @@ validates queries for safety (SELECT-only), and executes with
 timeout and result limits.
 """
 
-import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
+import typer
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from tabulate import tabulate
 
+app = typer.Typer()
 
-def load_db_connection() -> str:
-    """Load database connection string from config or environment."""
+
+def load_db_connection(database: str | None = None) -> str:
+    """Load database connection string using DBConnection class."""
     # Try loading from config file first
     config_path = Path.cwd() / "configs" / "db.yaml"
 
@@ -32,28 +33,34 @@ def load_db_connection() -> str:
             from autorag_research.orm.connection import DBConnection
 
             db_conn = DBConnection.from_config(Path.cwd() / "configs")
+            if database:
+                db_conn.database = database
         except Exception as e:
-            print(f"Warning: Failed to load from config file: {e}", file=sys.stderr)
-            print("Falling back to environment variables...", file=sys.stderr)
+            typer.echo(f"Warning: Failed to load from config file: {e}", err=True)
+            typer.echo("Falling back to environment variables...", err=True)
         else:
             return db_conn.db_url
 
-    # Fallback to environment variables
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
-    user = os.getenv("POSTGRES_USER", "postgres")
-    password = os.getenv("POSTGRES_PASSWORD", "")
-    database = os.getenv("POSTGRES_DB", "autorag_research")
+    # Fallback to environment variables using DBConnection.from_env()
+    try:
+        sys.path.insert(0, str(Path.cwd()))
+        from autorag_research.orm.connection import DBConnection
 
-    if not password:
+        db_conn = DBConnection.from_env()
+        if database:
+            db_conn.database = database
+    except Exception as e:
         msg = (
-            "Database connection not found. Either:\n"
+            f"Failed to load database connection: {e}\n"
+            "Either:\n"
             "1. Run from AutoRAG-Research project root with configs/db.yaml, or\n"
-            "2. Set POSTGRES_* environment variables"
+            "2. Set POSTGRES_* environment variables (POSTGRES_HOST, POSTGRES_PORT, "
+            "POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB)"
         )
-        raise ValueError(msg)
-
-    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
+        typer.echo(msg, err=True)
+        raise typer.Exit(code=1) from e
+    else:
+        return db_conn.db_url
 
 
 def validate_query(query: str) -> None:
@@ -130,7 +137,7 @@ def execute_query(engine: Engine, query: str, timeout: int, limit: int) -> list[
             error_msg = str(e).lower()
             if "vector" in error_msg or "bm25" in error_msg:
                 # Try removing vector columns
-                print("Warning: Vector columns detected, retrying without them...", file=sys.stderr)
+                typer.echo("Warning: Vector columns detected, retrying without them...", err=True)
                 modified_query = remove_vector_columns(query)
                 result = conn.execute(text(modified_query))
                 rows = result.fetchall()
@@ -170,47 +177,46 @@ def format_output(results: list[dict[str, Any]], output_format: str) -> str:
         return tabulate(rows, headers=headers, tablefmt="simple")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Execute SELECT queries against AutoRAG-Research database")
-    parser.add_argument("--query", "-q", required=True, help="SQL query to execute (SELECT only)")
-    parser.add_argument(
-        "--format", "-f", choices=["table", "json", "csv"], default="table", help="Output format (default: table)"
-    )
-    parser.add_argument("--timeout", "-t", type=int, default=10, help="Query timeout in seconds (default: 10)")
-    parser.add_argument(
-        "--limit", "-l", type=int, default=10000, help="Maximum rows to return (default: 10000, 0=unlimited)"
-    )
-    parser.add_argument("--database", "-d", help="Database name (overrides config/env)")
-
-    args = parser.parse_args()
+@app.command()
+def main(
+    query: str = typer.Option(..., "--query", "-q", help="SQL query to execute (SELECT only)"),
+    output_format: str = typer.Option("table", "--format", "-f", help="Output format: table, json, or csv"),
+    timeout: int = typer.Option(10, "--timeout", "-t", help="Query timeout in seconds"),
+    limit: int = typer.Option(10000, "--limit", "-l", help="Maximum rows to return (0=unlimited)"),
+    database: str | None = typer.Option(None, "--database", "-d", help="Database name (overrides config/env)"),
+):
+    """Execute SELECT queries against AutoRAG-Research database."""
+    if output_format not in ["table", "json", "csv"]:
+        typer.echo(f"Error: Invalid format '{output_format}'. Choose: table, json, or csv", err=True)
+        raise typer.Exit(code=1)
 
     try:
         # Validate query
-        validate_query(args.query)
+        validate_query(query)
 
         # Load connection
-        conn_string = load_db_connection()
-        if args.database:
-            # Replace database name in connection string
-            conn_string = re.sub(r"/[^/]+$", f"/{args.database}", conn_string)
+        conn_string = load_db_connection(database)
 
         # Create engine
         engine = create_engine(conn_string)
 
         # Execute query
-        results = execute_query(engine, args.query, args.timeout, args.limit)
+        results = execute_query(engine, query, timeout, limit)
 
         # Format and print output
-        output = format_output(results, args.format)
-        print(output)
+        output = format_output(results, output_format)
+        typer.echo(output)
 
         # Print row count to stderr
-        print(f"\n({len(results)} rows)", file=sys.stderr)
+        typer.echo(f"\n({len(results)} rows)", err=True)
 
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1) from e
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1) from e
 
 
 if __name__ == "__main__":
-    main()
+    app()
