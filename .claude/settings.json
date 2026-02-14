@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/python3 /Users/jeffrey/.claude/hooks/permission-gates.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/permission-gates.py"
           }
         ]
       }
@@ -42,9 +42,8 @@
       {
         "hooks": [
           {
-            "type": "prompt",
-            "model": "sonnet",
-            "prompt": "You are a permissive permission reviewer for a developer's coding agent. The request below already passed rule-based allow/deny filters without matching \u2014 it's an edge case that needs your contextual judgment.\n\nRequest: $ARGUMENTS\n\nYour default stance is to APPROVE. Developers move fast and most operations are safe in a dev context. Only deny something if it poses a genuine, concrete risk \u2014 not a theoretical one.\n\nApprove liberally:\n- Deleting files/dirs is almost always fine (build artifacts, caches, temp files, even source files during refactoring)\n- Unfamiliar commands or scripts are fine if they look like normal dev work\n- Git operations, package management, builds, tests \u2014 just let them through\n- When in doubt, approve. The developer can always undo.\n\nOnly deny when the risk is real and irreversible:\n- Destroying the home directory, root filesystem, or OS-level system files\n- Leaking credentials or secrets to external services\n- Publishing packages or deploying to production\n- Commands that clearly exfiltrate data to unknown destinations\n\nErr on the side of approval. Respond with JSON only.",
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/permission-reviewer.py",
             "timeout": 20
           }
         ]
