@@ -40,7 +40,7 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": "Bash|Read|Edit|Write",
+        "matcher": "Bash|Read|Edit|Write|NotebookEdit|WebFetch|Skill",
         "hooks": [
           {
             "type": "command",
