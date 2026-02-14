@@ -187,6 +187,20 @@ class TestGetOrCreatePipeline:
         assert pipeline_id2 == pipeline_id
         assert "different config" in caplog.text
 
+    def test_get_or_create_pipeline_config_mismatch_strict(self, service, unique_name):
+        """When strict=True and pipeline exists with different config, raises ValueError."""
+        service.get_or_create_pipeline(
+            name=unique_name,
+            config={"type": "bm25", "tokenizer": "bert"},
+        )
+
+        with pytest.raises(ValueError, match="different config"):
+            service.get_or_create_pipeline(
+                name=unique_name,
+                config={"type": "bm25", "tokenizer": "spacy"},
+                strict=True,
+            )
+
 
 class TestRetrievalPipelineResume:
     """Tests for query skip logic in retrieval run_pipeline (resume support)."""

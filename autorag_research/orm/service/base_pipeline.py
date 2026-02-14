@@ -24,24 +24,35 @@ class BasePipelineService(BaseService, ABC):
     The UoW returned by _create_uow() must expose a `pipelines` property (PipelineRepository).
     """
 
-    def get_or_create_pipeline(self, name: str, config: dict) -> tuple[int | str, bool]:
+    def get_or_create_pipeline(self, name: str, config: dict, *, strict: bool = False) -> tuple[int | str, bool]:
         """Get existing pipeline by name or create a new one.
 
         If a pipeline with the given name already exists, returns its ID.
-        If the existing pipeline has a different config, logs a warning.
+        If the existing pipeline has a different config, behavior depends on ``strict``:
+        - strict=False (default): logs a warning and reuses the existing pipeline.
+        - strict=True: raises ``ValueError``.
         If no pipeline exists, creates a new one.
 
         Args:
             name: Name for this pipeline (used as experiment identifier).
             config: Configuration dictionary for the pipeline.
+            strict: When True, raise ValueError on config mismatch instead of warning.
 
         Returns:
             Tuple of (pipeline_id, is_new) where is_new is True if a new pipeline was created.
+
+        Raises:
+            ValueError: If strict=True and an existing pipeline has a different config.
         """
         with self._create_uow() as uow:
             existing = uow.pipelines.get_by_name(name)
             if existing is not None:
                 if existing.config != config:
+                    if strict:
+                        raise ValueError(  # noqa: TRY003
+                            f"Pipeline '{name}' exists with different config. "
+                            f"Existing: {existing.config}, New: {config}."
+                        )
                     logger.warning(
                         f"Pipeline '{name}' exists with different config. "
                         f"Existing: {existing.config}, New: {config}. Reusing existing pipeline."
