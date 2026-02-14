@@ -117,6 +117,7 @@ def main():
     tool_name = payload.get("tool_name", "unknown")
     tool_input = payload.get("tool_input", {})
 
+    # matcher가 Bash|Edit|Write만 통과시키므로 여기엔 해당 도구만 옴
     if tool_name == "Bash":
         request_info = "Tool: Bash\nCommand: " + tool_input.get("command", "")
     elif tool_name in ("Edit", "Write"):

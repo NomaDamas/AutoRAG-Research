@@ -40,6 +40,7 @@
     ],
     "PermissionRequest": [
       {
+        "matcher": "Bash|Edit|Write",
         "hooks": [
           {
             "type": "command",
