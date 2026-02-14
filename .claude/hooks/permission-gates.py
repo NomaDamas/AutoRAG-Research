@@ -5,22 +5,46 @@ import shlex
 import sys
 
 WRITEY = [
-    "insert", "update", "delete", "truncate", "alter", "create",
-    "grant", "revoke", "vacuum", "analyze", "comment", "do", "call",
-    "copy", "refresh", "reindex", "cluster", "lock",
-    "set", "reset",
-    "begin", "commit", "rollback", "savepoint",
-    "prepare", "execute",
+    "insert",
+    "update",
+    "delete",
+    "truncate",
+    "alter",
+    "create",
+    "grant",
+    "revoke",
+    "vacuum",
+    "analyze",
+    "comment",
+    "do",
+    "call",
+    "copy",
+    "refresh",
+    "reindex",
+    "cluster",
+    "lock",
+    "set",
+    "reset",
+    "begin",
+    "commit",
+    "rollback",
+    "savepoint",
+    "prepare",
+    "execute",
 ]
 
+
 def emit(decision, reason):
-    sys.stdout.write(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": decision,
-            "permissionDecisionReason": reason
-        }
-    }))
+    sys.stdout.write(
+        json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": decision,
+                "permissionDecisionReason": reason,
+            }
+        })
+    )
+
 
 def tokens(cmd):
     try:
@@ -28,29 +52,33 @@ def tokens(cmd):
     except Exception:
         return cmd.split()
 
+
 def env_ref(cmd):
     return bool(re.search(r'(^|[ \t"\'/])\.env(\.[^ \t"\'/]+)?($|[ \t"\'/])', cmd))
 
+
 def is_psql(ts):
     i = 0
-    while i < len(ts) and re.match(r'^[A-Za-z_][A-Za-z0-9_]*=.*$', ts[i]):
+    while i < len(ts) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=.*$", ts[i]):
         i += 1
     if i < len(ts) and (ts[i] == "psql" or ts[i].endswith("/psql") or ts[i].endswith("\\psql.exe")):
         return i
     return None
+
 
 def extract_sql(ts, psql_i):
     i = psql_i + 1
     while i < len(ts):
         t = ts[i]
         if t in ("-c", "--command"):
-            return ts[i+1] if i+1 < len(ts) else ""
+            return ts[i + 1] if i + 1 < len(ts) else ""
         if t.startswith("--command="):
             return t.split("=", 1)[1]
         if t in ("-f", "--file"):
             return None
         i += 1
     return None
+
 
 def classify(sql):
     s = sql.strip()
@@ -68,6 +96,7 @@ def classify(sql):
         return "allow", "psql: read-only query auto-allowed"
 
     return "ask", "psql: non-SELECT query requires confirmation"
+
 
 def main():
     payload = json.load(sys.stdin)
@@ -92,6 +121,7 @@ def main():
         decision, reason = classify(sql)
         emit(decision, reason)
         return
+
 
 if __name__ == "__main__":
     main()
