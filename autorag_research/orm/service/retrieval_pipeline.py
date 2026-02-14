@@ -11,9 +11,7 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any, Literal
 
-from sqlalchemy.orm import Session, sessionmaker
-
-from autorag_research.orm.service.base import BaseService
+from autorag_research.orm.service.base_pipeline import BasePipelineService
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
 
 __all__ = ["RetrievalFunc", "RetrievalPipelineService"]
@@ -26,7 +24,7 @@ logger = logging.getLogger("AutoRAG-Research")
 RetrievalFunc = Callable[[int | str, int], Coroutine[Any, Any, list[dict[str, Any]]]]
 
 
-class RetrievalPipelineService(BaseService):
+class RetrievalPipelineService(BasePipelineService):
     """Service for running retrieval pipelines.
 
     This service handles the common workflow for all retrieval pipelines:
@@ -62,19 +60,6 @@ class RetrievalPipelineService(BaseService):
         ```
     """
 
-    def __init__(
-        self,
-        session_factory: sessionmaker[Session],
-        schema: Any | None = None,
-    ):
-        """Initialize retrieval pipeline service.
-
-        Args:
-            session_factory: SQLAlchemy sessionmaker for database connections.
-            schema: Schema namespace from create_schema(). If None, uses default schema.
-        """
-        super().__init__(session_factory, schema)
-
     def _get_schema_classes(self) -> dict[str, Any]:
         """Get schema classes from the schema namespace.
 
@@ -96,40 +81,6 @@ class RetrievalPipelineService(BaseService):
     def _create_uow(self) -> RetrievalUnitOfWork:
         """Create a new RetrievalUnitOfWork instance."""
         return RetrievalUnitOfWork(self.session_factory, self._schema)
-
-    def get_or_create_pipeline(self, name: str, config: dict) -> tuple[int | str, bool]:
-        """Get existing pipeline by name or create a new one.
-
-        If a pipeline with the given name already exists, returns its ID.
-        If the existing pipeline has a different config, logs a warning.
-        If no pipeline exists, creates a new one.
-
-        Args:
-            name: Name for this pipeline (used as experiment identifier).
-            config: Configuration dictionary for the pipeline.
-
-        Returns:
-            Tuple of (pipeline_id, is_new) where is_new is True if a new pipeline was created.
-        """
-        with self._create_uow() as uow:
-            existing = uow.pipelines.get_by_name(name)
-            if existing is not None:
-                if existing.config != config:
-                    logger.warning(
-                        f"Pipeline '{name}' exists with different config. "
-                        f"Existing: {existing.config}, New: {config}. Reusing existing pipeline."
-                    )
-                else:
-                    logger.info(f"Resuming pipeline '{name}' (pipeline_id={existing.id})")
-                return existing.id, False
-
-            pipeline = self._get_schema_classes()["Pipeline"](name=name, config=config)
-            uow.pipelines.add(pipeline)
-            uow.flush()
-            pipeline_id = pipeline.id
-            uow.commit()
-            logger.info(f"Created new pipeline '{name}' (pipeline_id={pipeline_id})")
-            return pipeline_id, True
 
     def _collect_retrieval_results(
         self,
@@ -267,19 +218,6 @@ class RetrievalPipelineService(BaseService):
             "total_results": total_results,
             "failed_queries": failed_queries,
         }
-
-    def get_pipeline_config(self, pipeline_id: int | str) -> dict | None:
-        """Get pipeline configuration by ID.
-
-        Args:
-            pipeline_id: ID of the pipeline.
-
-        Returns:
-            Pipeline config dict if found, None otherwise.
-        """
-        with self._create_uow() as uow:
-            pipeline = uow.pipelines.get_by_id(pipeline_id)
-            return pipeline.config if pipeline else None
 
     def delete_pipeline_results(self, pipeline_id: int | str) -> int:
         """Delete all retrieval results for a specific pipeline.
