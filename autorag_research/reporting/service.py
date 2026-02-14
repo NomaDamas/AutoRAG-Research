@@ -258,15 +258,15 @@ class ReportingService:
 
         results = []
         for db_name in db_names:
-            escaped_dataset = self._escape_sql_value(db_name)
             sql = f"""
-                SELECT '{escaped_dataset}' as dataset, s.metric_result as score, s.execution_time as time_ms
+                SELECT s.metric_result as score, s.execution_time as time_ms
                 FROM summary s
                 JOIN pipeline p ON s.pipeline_id = p.id
                 JOIN metric m ON s.metric_id = m.id
                 WHERE p.name = '{escaped_pipeline}' AND m.name = '{escaped_metric}'
                 """  # noqa: S608
             df = self._pg_query(db_name, sql)
+            df["dataset"] = db_name
             results.append(df)
 
         return pd.concat(results, ignore_index=True) if results else pd.DataFrame()
