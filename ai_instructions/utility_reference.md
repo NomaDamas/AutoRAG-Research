@@ -83,7 +83,7 @@
 | `vector_search_by_embedding(embedding, top_k)` | Vector search with raw embedding |
 | `fetch_query_texts(query_ids)` | Batch fetch query texts |
 | `find_query_by_text(query_text)` | Find query by text content |
-| `save_pipeline(name, config)` | Create pipeline, return ID |
+| `get_or_create_pipeline(name, config)` | Get or create pipeline, return (ID, is_new) |
 | `run_pipeline(retrieval_func, pipeline_id, top_k)` | Batch retrieval with retry |
 
 ### GenerationPipelineService
@@ -92,7 +92,7 @@
 |---|---|
 | `get_query_text(query_id)` | Get query text (prefers `query_to_llm`) |
 | `get_chunk_contents(chunk_ids)` | Get chunk contents by IDs |
-| `save_pipeline(name, config)` | Create pipeline, return ID |
+| `get_or_create_pipeline(name, config)` | Get or create pipeline, return (ID, is_new) |
 | `run_pipeline(generate_func, pipeline_id, top_k)` | Batch generation with retry |
 
 ### BaseIngestionService

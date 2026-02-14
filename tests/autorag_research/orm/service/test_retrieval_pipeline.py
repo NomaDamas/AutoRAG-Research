@@ -30,7 +30,7 @@ class TestRetrievalPipelineService:
             query_repo = QueryRepository(session)
             query_count = query_repo.count()
 
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_pipeline",
             config={"type": "test"},
         )
@@ -56,7 +56,7 @@ class TestRetrievalPipelineService:
             query_repo = QueryRepository(session)
             query_count = query_repo.count()
 
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_delete_pipeline",
             config={"type": "test"},
         )
@@ -212,7 +212,7 @@ class TestRetrievalPipelineResume:
             query_repo = QueryRepository(session)
             query_count = query_repo.count()
 
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_skip_completed_retrieval",
             config={"type": "test"},
         )
@@ -247,7 +247,7 @@ class TestRetrievalPipelineResume:
 
     def test_run_pipeline_all_completed(self, service, mock_retrieval_func, session_factory):
         """When all queries have results, processes 0 queries."""
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_all_completed_retrieval",
             config={"type": "test"},
         )
@@ -282,7 +282,7 @@ class TestRetrievalPipelineResume:
         async def retrieval_func(query_id: int | str, top_k: int) -> list[dict]:
             return [{"doc_id": 1, "score": 0.9}]
 
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_backward_compat_retrieval",
             config={"type": "test"},
         )

@@ -50,7 +50,7 @@ class RetrievalPipelineService(BaseService):
         results = service.vector_search(query_ids=[1, 2, 3], top_k=10)
 
         # Or use run_pipeline for batch processing with result persistence
-        pipeline_id = service.save_pipeline(
+        pipeline_id, is_new = service.get_or_create_pipeline(
             name="bm25",
             config={"type": "bm25", "tokenizer": "bert"},
         )
@@ -96,24 +96,6 @@ class RetrievalPipelineService(BaseService):
     def _create_uow(self) -> RetrievalUnitOfWork:
         """Create a new RetrievalUnitOfWork instance."""
         return RetrievalUnitOfWork(self.session_factory, self._schema)
-
-    def save_pipeline(self, name: str, config: dict) -> int | str:
-        """Create a new pipeline in the database.
-
-        Args:
-            name: Name for this pipeline.
-            config: Configuration dictionary for the pipeline.
-
-        Returns:
-            The pipeline ID.
-        """
-        with self._create_uow() as uow:
-            pipeline = self._get_schema_classes()["Pipeline"](name=name, config=config)
-            uow.pipelines.add(pipeline)
-            uow.flush()
-            pipeline_id = pipeline.id
-            uow.commit()
-            return pipeline_id
 
     def get_or_create_pipeline(self, name: str, config: dict) -> tuple[int | str, bool]:
         """Get existing pipeline by name or create a new one.

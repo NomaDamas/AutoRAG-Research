@@ -39,14 +39,15 @@ class TestGenerationPipelineService:
         for pipeline_id in created_pipeline_ids:
             service.delete_pipeline_results(pipeline_id)
 
-    def test_save_pipeline(self, service, cleanup_pipeline_results):
-        pipeline_id = service.save_pipeline(
+    def test_get_or_create_pipeline(self, service, cleanup_pipeline_results):
+        pipeline_id, is_new = service.get_or_create_pipeline(
             name="test_gen_pipeline",
             config={"type": "naive_rag", "model": "test-model"},
         )
         cleanup_pipeline_results.append(pipeline_id)
 
         assert pipeline_id > 0
+        assert is_new is True
 
         config = service.get_pipeline_config(pipeline_id)
         assert config is not None
@@ -60,7 +61,7 @@ class TestGenerationPipelineService:
             query_repo = QueryRepository(session)
             query_count = query_repo.count()
 
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_run_gen_pipeline",
             config={"type": "test"},
         )
@@ -92,7 +93,7 @@ class TestGenerationPipelineService:
             query_repo = QueryRepository(session)
             query_count = query_repo.count()
 
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_delete_gen_pipeline",
             config={"type": "test"},
         )
@@ -128,7 +129,7 @@ class TestGenerationPipelineService:
         async def generate_func_no_tokens(query_id: int, top_k: int) -> GenerationResult:
             return GenerationResult(text=f"Answer for query: {query_id}", token_usage=None)
 
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_no_tokens_pipeline",
             config={"type": "test"},
         )
@@ -168,7 +169,7 @@ class TestGenerationPipelineService:
                 metadata={"retrieved_chunk_ids": [1, 2]},
             )
 
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_token_jsonb_pipeline",
             config={"type": "test"},
         )
@@ -284,7 +285,7 @@ class TestGenerationPipelineResume:
             query_repo = QueryRepository(session)
             query_count = query_repo.count()
 
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_skip_completed_gen",
             config={"type": "test"},
         )
@@ -323,7 +324,7 @@ class TestGenerationPipelineResume:
 
     def test_run_pipeline_all_completed(self, service, cleanup_pipeline_results, session_factory):
         """When all queries have results, processes 0 queries."""
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_all_completed_gen",
             config={"type": "test"},
         )
@@ -369,7 +370,7 @@ class TestGenerationPipelineResume:
         async def generate_func(query_id: int | str, top_k: int) -> GenerationResult:
             return GenerationResult(text=f"Answer for {query_id}", token_usage=None)
 
-        pipeline_id = service.save_pipeline(
+        pipeline_id, _ = service.get_or_create_pipeline(
             name="test_backward_compat_gen",
             config={"type": "test"},
         )
