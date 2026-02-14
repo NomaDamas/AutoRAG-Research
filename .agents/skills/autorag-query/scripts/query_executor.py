@@ -9,7 +9,6 @@ timeout and result limits.
 
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -21,18 +20,19 @@ from tabulate import tabulate
 app = typer.Typer()
 
 
-def load_db_connection(database: str | None = None) -> str:
-    """Load database connection string using DBConnection class."""
-    # Try loading from config file first
-    config_path = Path.cwd() / "configs" / "db.yaml"
+def load_db_connection(config_path: Path | None = None, database: str | None = None) -> str:
+    """Load database connection string using DBConnection class.
 
-    if config_path.exists():
-        # Import here to avoid issues if not in project root
-        sys.path.insert(0, str(Path.cwd()))
+    Args:
+        config_path: Explicit path to configs directory containing db.yaml.
+        database: Database name override.
+    """
+    from autorag_research.orm.connection import DBConnection
+
+    # Try explicit config path first
+    if config_path and (config_path / "db.yaml").exists():
         try:
-            from autorag_research.orm.connection import DBConnection
-
-            db_conn = DBConnection.from_config(Path.cwd() / "configs")
+            db_conn = DBConnection.from_config(config_path)
             if database:
                 db_conn.database = database
         except Exception as e:
@@ -41,11 +41,8 @@ def load_db_connection(database: str | None = None) -> str:
         else:
             return db_conn.db_url
 
-    # Fallback to environment variables using DBConnection.from_env()
+    # Fallback to environment variables
     try:
-        sys.path.insert(0, str(Path.cwd()))
-        from autorag_research.orm.connection import DBConnection
-
         db_conn = DBConnection.from_env()
         if database:
             db_conn.database = database
@@ -53,7 +50,7 @@ def load_db_connection(database: str | None = None) -> str:
         msg = (
             f"Failed to load database connection: {e}\n"
             "Either:\n"
-            "1. Run from AutoRAG-Research project root with configs/db.yaml, or\n"
+            "1. Provide --config-path pointing to configs directory with db.yaml, or\n"
             "2. Set POSTGRES_* environment variables (POSTGRES_HOST, POSTGRES_PORT, "
             "POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB)"
         )
@@ -102,31 +99,26 @@ def validate_query(query: str) -> None:
             raise ValueError(msg)
 
 
-def remove_vector_columns(query: str) -> str:
-    """Remove vector/embedding columns from SELECT clause."""
-    # Simple heuristic: remove problematic column names
-    vector_cols = ["embedding", "embeddings", "bm25_tokens", "bm25vector"]
-
-    for col in vector_cols:
-        # Remove "column_name," or ", column_name"
-        query = re.sub(rf"\b{col}\b\s*,", "", query, flags=re.IGNORECASE)
-        query = re.sub(rf",\s*\b{col}\b", "", query, flags=re.IGNORECASE)
-
-    return query
+def enforce_limit(query: str, max_limit: int) -> str:
+    """Enforce maximum result limit with subquery wrapper."""
+    if max_limit <= 0:
+        return query
+    return f"SELECT * FROM ({query.rstrip(';')}) AS limited LIMIT {max_limit}"  # noqa: S608
 
 
-def execute_query(engine: Engine, query: str, timeout: int, limit: int) -> list[dict[str, Any]]:
+def execute_query(
+    engine: Engine, query: str, timeout: int, limit: int, params: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     """Execute query with timeout and return results."""
-    # Add LIMIT if not present
-    if "LIMIT" not in query.upper() and limit > 0:
-        query = f"{query.rstrip(';')} LIMIT {limit}"
+    # Enforce max limit via subquery wrapper (prevents LIMIT bypass)
+    query = enforce_limit(query, limit)
 
     with engine.connect() as conn:
         # Set statement timeout
         conn.execute(text(f"SET statement_timeout = '{timeout}s'"))
 
         try:
-            result = conn.execute(text(query))
+            result = conn.execute(text(query), params or {})
             rows = result.fetchall()
             columns = result.keys()
 
@@ -136,13 +128,14 @@ def execute_query(engine: Engine, query: str, timeout: int, limit: int) -> list[
         except Exception as e:
             error_msg = str(e).lower()
             if "vector" in error_msg or "bm25" in error_msg:
-                # Try removing vector columns
-                typer.echo("Warning: Vector columns detected, retrying without them...", err=True)
-                modified_query = remove_vector_columns(query)
-                result = conn.execute(text(modified_query))
-                rows = result.fetchall()
-                columns = result.keys()
-                return [dict(zip(columns, row, strict=True)) for row in rows]
+                hint = "SELECT id, contents FROM chunk WHERE ..."
+                msg = (
+                    f"Error: Query contains vector/embedding columns that cannot be serialized.\n"
+                    f"Original error: {e}\n"
+                    f"Exclude: embedding, embeddings, bm25_tokens, bm25vector\n"
+                    f"Example: {hint}"
+                )
+                raise ValueError(msg) from e
             raise
 
 
@@ -184,24 +177,40 @@ def main(
     timeout: int = typer.Option(10, "--timeout", "-t", help="Query timeout in seconds"),
     limit: int = typer.Option(10000, "--limit", "-l", help="Maximum rows to return (0=unlimited)"),
     database: str | None = typer.Option(None, "--database", "-d", help="Database name (overrides config/env)"),
+    config_path: Path | None = typer.Option(  # noqa: B008
+        None, "--config-path", "-c", help="Path to configs directory with db.yaml"
+    ),
+    params: str | None = typer.Option(
+        None, "--params", "-p", help='JSON params for :param_name placeholders, e.g. \'{"metric_name": "bleu"}\''
+    ),
 ):
     """Execute SELECT queries against AutoRAG-Research database."""
     if output_format not in ["table", "json", "csv"]:
         typer.echo(f"Error: Invalid format '{output_format}'. Choose: table, json, or csv", err=True)
         raise typer.Exit(code=1)
 
+    # Parse params JSON
+    param_dict: dict[str, Any] | None = None
+    if params:
+        try:
+            param_dict = json.loads(params)
+        except json.JSONDecodeError as e:
+            typer.echo(f"Error: Invalid JSON for --params: {e}", err=True)
+            raise typer.Exit(code=1) from e
+
+    engine = None
     try:
         # Validate query
         validate_query(query)
 
         # Load connection
-        conn_string = load_db_connection(database)
+        conn_string = load_db_connection(config_path, database)
 
-        # Create engine
-        engine = create_engine(conn_string)
+        # Create engine with limited pool
+        engine = create_engine(conn_string, pool_size=1, max_overflow=0)
 
         # Execute query
-        results = execute_query(engine, query, timeout, limit)
+        results = execute_query(engine, query, timeout, limit, param_dict)
 
         # Format and print output
         output = format_output(results, output_format)
@@ -216,6 +225,9 @@ def main(
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1) from e
+    finally:
+        if engine is not None:
+            engine.dispose()
 
 
 if __name__ == "__main__":

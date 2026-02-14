@@ -4,6 +4,9 @@ This document provides curated SQL query templates for common analysis tasks in 
 
 **IMPORTANT**: Always exclude vector/embedding columns: `embedding`, `embeddings`, `bm25_tokens`
 
+**Parameterized Queries**: Templates use `:param_name` syntax for safe value substitution.
+Pass parameters via `--params '{"param_name": "value"}'` to the query executor.
+
 ## Pipeline Performance Comparison
 
 ### Top pipelines by metric score
@@ -492,5 +495,6 @@ ORDER BY query_count DESC;
 - **Always exclude**: `embedding`, `embeddings`, `bm25_tokens` columns
 - **JSONB extraction**: Use `->>` for text, cast to type for numbers
 - **Performance**: Add `LIMIT` clauses to prevent large result sets
-- **Parameterization**: Use `:param_name` for safe value substitution
+- **Parameterization**: Use `:param_name` with `--params '{"param_name": "value"}'` for safe value substitution
 - **NULL handling**: Use `NULLIF()` and `COALESCE()` for division and defaults
+- **Example with params**: `python query_executor.py -q "SELECT * FROM pipeline WHERE name = :name" -p '{"name": "naive_rag"}'`
