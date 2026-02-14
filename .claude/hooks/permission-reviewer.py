@@ -1,3 +1,4 @@
+# ruff: noqa: S110, S603, S607, TRY300
 #!/usr/bin/env python3
 """
 PermissionRequest hook: Sonnet API to auto-judge gray-zone commands.
@@ -6,6 +7,7 @@ PermissionRequest hook: Sonnet API to auto-judge gray-zone commands.
 - Only deny genuine, irreversible risks
 Requires ANTHROPIC_API_KEY environment variable.
 """
+
 import json
 import os
 import subprocess
@@ -19,7 +21,9 @@ def load_api_key():
     try:
         result = subprocess.run(
             ["zsh", "-lc", "echo $ANTHROPIC_API_KEY"],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True,
+            text=True,
+            timeout=3,
         )
         key = result.stdout.strip()
         if key:
@@ -61,22 +65,29 @@ def call_sonnet(request_info, api_key):
     payload = json.dumps({
         "model": "claude-sonnet-4-5-20250929",
         "max_tokens": 150,
-        "messages": [
-            {"role": "user", "content": "Review this request:\n\n" + request_info}
-        ],
+        "messages": [{"role": "user", "content": "Review this request:\n\n" + request_info}],
         "system": SYSTEM_PROMPT,
     })
     try:
         result = subprocess.run(
             [
-                "curl", "-s", "--max-time", "15",
+                "curl",
+                "-s",
+                "--max-time",
+                "15",
                 "https://api.anthropic.com/v1/messages",
-                "-H", "content-type: application/json",
-                "-H", "x-api-key: " + api_key,
-                "-H", "anthropic-version: 2023-06-01",
-                "-d", payload,
+                "-H",
+                "content-type: application/json",
+                "-H",
+                "x-api-key: " + api_key,
+                "-H",
+                "anthropic-version: 2023-06-01",
+                "-d",
+                payload,
             ],
-            capture_output=True, text=True, timeout=18,
+            capture_output=True,
+            text=True,
+            timeout=18,
         )
         resp = json.loads(result.stdout)
         text = resp["content"][0]["text"]
