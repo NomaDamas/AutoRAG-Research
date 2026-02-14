@@ -144,7 +144,7 @@ uv run python .agents/skills/autorag-query/scripts/query_executor.py \
 | Error | Cause | Fix |
 |-------|-------|-----|
 | "Forbidden keyword" | Non-SELECT query | Use SELECT-only |
-| "Vector type error" | Selected vector columns | Script auto-retries after removing them |
+| "Vector type error" | Selected vector columns | Exclude `embedding`, `embeddings`, `bm25_tokens` from SELECT |
 | "Query timeout" | Query too slow | Add WHERE/LIMIT |
 | "Connection failed" | Missing credentials | Check `configs/db.yaml` or set env vars |
 
