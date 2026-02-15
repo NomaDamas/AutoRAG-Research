@@ -231,6 +231,7 @@ class Executor:
         """
         logger.info(f"Starting pipeline: {config.name} ({config.pipeline_type.value})")
         error_msg = ""
+        pipeline_id: int | str = -1
 
         for attempt in range(self.config.max_retries + 1):
             if attempt > 0:
@@ -246,10 +247,10 @@ class Executor:
                     schema=self._schema,
                     **config.get_pipeline_kwargs(),
                 )
+                pipeline_id = pipeline.pipeline_id
 
                 # Run pipeline
                 run_result = pipeline.run(**config.get_run_kwargs())
-                pipeline_id = run_result["pipeline_id"]
 
                 # Verify completion
                 if self._verify_pipeline_completion(pipeline_id, config.pipeline_type):
@@ -282,7 +283,7 @@ class Executor:
         logger.error(f"Pipeline '{config.name}' failed: {error_msg}")
 
         return PipelineResult(
-            pipeline_id=-1,
+            pipeline_id=pipeline_id,
             pipeline_name=config.name,
             pipeline_type=config.pipeline_type,
             total_queries=0,

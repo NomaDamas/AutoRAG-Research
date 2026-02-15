@@ -13,9 +13,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy.orm import Session, sessionmaker
-
-from autorag_research.orm.service.base import BaseService
+from autorag_research.orm.service.base_pipeline import BasePipelineService
 from autorag_research.orm.uow.generation_uow import GenerationUnitOfWork
 from autorag_research.util import aggregate_token_usage, run_with_concurrency_limit
 
@@ -49,7 +47,7 @@ class GenerationResult:
 GenerateFunc = Callable[[int | str, int], Awaitable[GenerationResult]]
 
 
-class GenerationPipelineService(BaseService):
+class GenerationPipelineService(BasePipelineService):
     """Service for running generation pipelines.
 
     This service handles the common workflow for all generation pipelines:
@@ -68,8 +66,8 @@ class GenerationPipelineService(BaseService):
         # Create service
         service = GenerationPipelineService(session_factory, schema)
 
-        # Create pipeline
-        pipeline_id = service.save_pipeline(
+        # Create or resume pipeline
+        pipeline_id, is_new = service.get_or_create_pipeline(
             name="naive_rag_v1",
             config={"type": "naive_rag", "llm_model": "gpt-4"},
         )
@@ -82,19 +80,6 @@ class GenerationPipelineService(BaseService):
         )
         ```
     """
-
-    def __init__(
-        self,
-        session_factory: sessionmaker[Session],
-        schema: Any | None = None,
-    ):
-        """Initialize generation pipeline service.
-
-        Args:
-            session_factory: SQLAlchemy sessionmaker for database connections.
-            schema: Schema namespace from create_schema(). If None, uses default schema.
-        """
-        super().__init__(session_factory, schema)
 
     def _get_schema_classes(self) -> dict[str, Any]:
         """Get schema classes from the schema namespace.
@@ -118,24 +103,6 @@ class GenerationPipelineService(BaseService):
         """Create a new GenerationUnitOfWork instance."""
         return GenerationUnitOfWork(self.session_factory, self._schema)
 
-    def save_pipeline(self, name: str, config: dict) -> int | str:
-        """Create a new pipeline in the database.
-
-        Args:
-            name: Name for this pipeline.
-            config: Configuration dictionary for the pipeline.
-
-        Returns:
-            The pipeline ID.
-        """
-        with self._create_uow() as uow:
-            pipeline = self._get_schema_classes()["Pipeline"](name=name, config=config)
-            uow.pipelines.add(pipeline)
-            uow.flush()
-            pipeline_id = pipeline.id
-            uow.commit()
-            return pipeline_id
-
     def _filter_valid_results(
         self,
         query_ids: list[int | str],
@@ -158,7 +125,7 @@ class GenerationPipelineService(BaseService):
             entities = [executor_result_class(**item) for item in valid_results]
             uow.executor_results.add_all(entities)
 
-    def run_pipeline(
+    def run_pipeline(  # noqa: C901
         self,
         generate_func: GenerateFunc,
         pipeline_id: int | str,
@@ -244,6 +211,16 @@ class GenerationPipelineService(BaseService):
                     break
 
                 query_ids = [q.id for q in queries]
+
+                # Skip queries that already have results (resume support)
+                existing = uow.executor_results.get_by_queries_and_pipeline(query_ids, pipeline_id)
+                completed_ids = {r.query_id for r in existing}
+                query_ids = [qid for qid in query_ids if qid not in completed_ids]
+
+                if not query_ids:
+                    offset += batch_size
+                    continue
+
                 batch_results = asyncio.run(process_batch(query_ids))
                 valid_results = self._filter_valid_results(query_ids, batch_results, failed_queries)
 
@@ -270,19 +247,6 @@ class GenerationPipelineService(BaseService):
             "avg_execution_time_ms": avg_execution_time_ms,
             "failed_queries": failed_queries,
         }
-
-    def get_pipeline_config(self, pipeline_id: int | str) -> dict | None:
-        """Get pipeline configuration by ID.
-
-        Args:
-            pipeline_id: ID of the pipeline.
-
-        Returns:
-            Pipeline config dict if found, None otherwise.
-        """
-        with self._create_uow() as uow:
-            pipeline = uow.pipelines.get_by_id(pipeline_id)
-            return pipeline.config if pipeline else None
 
     def delete_pipeline_results(self, pipeline_id: int | str) -> int:
         """Delete all generation results for a specific pipeline.

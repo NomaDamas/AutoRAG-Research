@@ -3,6 +3,7 @@
 Provides abstract base class for all retrieval pipelines.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
 from autorag_research.pipelines.base import BasePipeline
+
+logger = logging.getLogger("AutoRAG-Research")
 
 
 class BaseRetrievalPipeline(BasePipeline, ABC):
@@ -44,11 +47,13 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
         # Initialize service
         self._service = RetrievalPipelineService(session_factory, schema)
 
-        # Create pipeline in DB
-        self.pipeline_id = self._service.save_pipeline(
+        # Get or create pipeline in DB (supports restart/resume)
+        self.pipeline_id, self._is_new_pipeline = self._service.get_or_create_pipeline(
             name=name,
             config=self._get_pipeline_config(),
         )
+        if not self._is_new_pipeline:
+            logger.info(f"Resuming existing retrieval pipeline '{name}' (pipeline_id={self.pipeline_id})")
 
     @abstractmethod
     async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:

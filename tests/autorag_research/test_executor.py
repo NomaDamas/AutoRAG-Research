@@ -341,3 +341,93 @@ class TestMetricEvaluationRules:
         assert "mock_retrieval" in evaluated_metrics
         assert "mock_generation" in evaluated_metrics
         assert result.total_metrics_evaluated == 2
+
+
+class TestExecutorResumePartialPipeline:
+    """Test that the executor resumes partial pipeline runs correctly."""
+
+    @pytest.fixture
+    def cleanup_pipelines(self, session_factory):
+        """Clean up created pipelines after tests."""
+        created_pipeline_ids = []
+
+        yield created_pipeline_ids
+
+        from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
+        from autorag_research.orm.repository.evaluator_result import EvaluatorResultRepository
+        from autorag_research.orm.repository.pipeline import PipelineRepository
+
+        session = session_factory()
+        try:
+            result_repo = ChunkRetrievedResultRepository(session)
+            eval_repo = EvaluatorResultRepository(session)
+            pipeline_repo = PipelineRepository(session)
+
+            for pipeline_id in created_pipeline_ids:
+                result_repo.delete_by_pipeline(pipeline_id)
+                eval_results = eval_repo.get_by_pipeline_id(pipeline_id)
+                for eval_result in eval_results:
+                    eval_repo.delete(eval_result)
+            session.commit()
+
+            for pipeline_id in created_pipeline_ids:
+                pipeline_repo.delete_by_id(pipeline_id)
+            session.commit()
+        finally:
+            session.close()
+
+    def test_executor_resume_reuses_pipeline_id(self, session_factory, cleanup_pipelines):
+        """When executor runs the same pipeline name twice, it reuses the pipeline_id."""
+        import uuid
+
+        from autorag_research.orm.repository.query import QueryRepository
+
+        with session_factory() as session:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+
+        def mock_search(self, query_ids: list[int | str], top_k: int = 10, **kwargs) -> list[list[dict]]:
+            results = []
+            for _ in query_ids:
+                results.append([{"doc_id": i + 1, "score": 0.9 - i * 0.1} for i in range(top_k)])
+            return results
+
+        unique_name = f"test_executor_resume_{uuid.uuid4().hex[:8]}"
+        config = ExecutorConfig(
+            pipelines=[
+                BM25PipelineConfig(
+                    name=unique_name,
+                    tokenizer="bert",
+                    top_k=3,
+                ),
+            ],
+            metrics=[RecallConfig()],
+            max_retries=1,
+        )
+
+        # First run
+        executor = Executor(session_factory, config)
+        with patch(
+            "autorag_research.orm.service.retrieval_pipeline.RetrievalPipelineService.bm25_search",
+            mock_search,
+        ):
+            result1 = executor.run()
+
+        first_pipeline_id = result1.pipeline_results[0].pipeline_id
+        cleanup_pipelines.append(first_pipeline_id)
+        assert result1.pipeline_results[0].success is True
+        assert result1.pipeline_results[0].total_queries == query_count
+
+        # Second run with same pipeline name - should reuse pipeline_id and skip all queries
+        executor2 = Executor(session_factory, config)
+        with patch(
+            "autorag_research.orm.service.retrieval_pipeline.RetrievalPipelineService.bm25_search",
+            mock_search,
+        ):
+            result2 = executor2.run()
+
+        second_pipeline_id = result2.pipeline_results[0].pipeline_id
+        assert second_pipeline_id == first_pipeline_id
+        # All queries were already completed, so 0 new queries processed
+        assert result2.pipeline_results[0].total_queries == 0
+        assert result2.pipeline_results[0].success is True
