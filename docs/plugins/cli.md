@@ -132,7 +132,7 @@ pytest tests/
 # 4. Install
 pip install -e .
 # or for uv users:
-uv add --editable ./my_dataset_plugin
+uv pip install -e ./my_dataset_plugin
 
 # 5. Run the ingestor
 autorag-research ingest --name=my_dataset
@@ -156,7 +156,7 @@ pytest tests/
 # 4. Install
 pip install -e .
 # or for uv users:
-uv add --editable ./my_search_plugin
+uv pip install -e ./my_search_plugin
 
 # 5. Sync configs
 cd /path/to/your/project

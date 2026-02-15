@@ -120,12 +120,12 @@ def create(
     if plugin_type == "ingestor":
         console.print(f"  2. Edit src/{package_name}/ingestor.py  (implement your logic)")
         console.print("  3. pip install -e .")
-        console.print(f"     (uv users: uv add --editable ./{plugin_dir_name})")
+        console.print(f"     (uv users: uv pip install -e ./{plugin_dir_name})")
         console.print(f"  4. autorag-research ingest --name={name}")
     else:
         console.print(f"  2. Edit src/{package_name}/pipeline.py  (implement your logic)")
         console.print("  3. pip install -e .")
-        console.print(f"     (uv users: uv add --editable ./{plugin_dir_name})")
+        console.print(f"     (uv users: uv pip install -e ./{plugin_dir_name})")
         console.print("  4. Go back to root directory and run:")
         console.print("  autorag-research plugin sync")
 

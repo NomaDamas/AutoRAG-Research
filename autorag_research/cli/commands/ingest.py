@@ -134,7 +134,7 @@ def ingest(  # noqa: C901
         typer.Option(
             "--name",
             "-n",
-            help="Ingestor name (beir, mteb, ragbench, etc.). Use 'autorag-research list ingestors' to see all.",
+            help="Ingestor name (beir, mteb, ragbench, etc.). Use 'autorag-research show ingestors' to see all.",
         ),
     ] = None,
     # Dynamic parameters: --extra key=value
@@ -172,7 +172,7 @@ def ingest(  # noqa: C901
     """Ingest a dataset into PostgreSQL.
 
     Specify the ingestor with --name and pass ingestor-specific parameters using --extra.
-    Use 'autorag-research list ingestors' to see available ingestors and their parameters.
+    Use 'autorag-research show ingestors' to see available ingestors and their parameters.
 
     Examples:
       autorag-research ingest --name=beir --extra dataset-name=scifact
@@ -183,7 +183,7 @@ def ingest(  # noqa: C901
     # If no --name provided, show help
     if name is None:
         typer.echo(ctx.get_help())
-        typer.echo("\nUse 'autorag-research list ingestors' to see available ingestors and their parameters.")
+        typer.echo("\nUse 'autorag-research show ingestors' to see available ingestors and their parameters.")
         # Show available embedding configs
         typer.echo("\nAvailable embedding models (--embedding-model):")
         for emb_name, target in discover_embedding_configs().items():
@@ -199,7 +199,7 @@ def ingest(  # noqa: C901
     meta = get_ingestor(name)
     if meta is None:
         typer.echo(f"Error: Unknown ingestor '{name}'", err=True)
-        typer.echo("Use 'autorag-research list ingestors' to see available ingestors.", err=True)
+        typer.echo("Use 'autorag-research show ingestors' to see available ingestors.", err=True)
         raise typer.Exit(1)
 
     # 3. Validate required parameters
