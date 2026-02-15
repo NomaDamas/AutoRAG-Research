@@ -71,7 +71,7 @@ def create(
         typer.Option(
             "--type",
             "-t",
-            help="Plugin type: retrieval, generation, metric_retrieval, metric_generation",
+            help="Plugin type: retrieval, generation, metric_retrieval, metric_generation, ingestor",
         ),
     ],
 ) -> None:
@@ -99,7 +99,7 @@ def create(
         )
         raise typer.Exit(1)
 
-    valid_types = {"retrieval", "generation", "metric_retrieval", "metric_generation"}
+    valid_types = {"retrieval", "generation", "metric_retrieval", "metric_generation", "ingestor"}
     if plugin_type not in valid_types:
         console.print(f"[red]Error:[/red] --type must be one of: {', '.join(sorted(valid_types))}")
         raise typer.Exit(1)
@@ -117,11 +117,17 @@ def create(
     console.print(f"\n[green]Created plugin scaffold:[/green] {plugin_dir_name}/")
     console.print("\nNext steps:")
     console.print(f"  1. cd {plugin_dir_name}")
-    console.print(f"  2. Edit src/{package_name}/pipeline.py  (implement your logic)")
-    console.print("  3. pip install -e .")
-    console.print(f"     (uv users: uv add --editable ./{plugin_dir_name})")
-    console.print("  4. Go back to root directory and run:")
-    console.print("  autorag-research plugin sync")
+    if plugin_type == "ingestor":
+        console.print(f"  2. Edit src/{package_name}/ingestor.py  (implement your logic)")
+        console.print("  3. pip install -e .")
+        console.print(f"     (uv users: uv pip install -e ./{plugin_dir_name})")
+        console.print(f"  4. autorag-research ingest --name={name}")
+    else:
+        console.print(f"  2. Edit src/{package_name}/pipeline.py  (implement your logic)")
+        console.print("  3. pip install -e .")
+        console.print(f"     (uv users: uv pip install -e ./{plugin_dir_name})")
+        console.print("  4. Go back to root directory and run:")
+        console.print("  autorag-research plugin sync")
 
 
 def _scaffold_plugin(plugin_dir: Path, package_name: str, name: str, plugin_type: str) -> None:
@@ -139,13 +145,17 @@ def _scaffold_plugin(plugin_dir: Path, package_name: str, name: str, plugin_type
     src_dir.mkdir(parents=True)
     test_dir.mkdir(parents=True)
 
+    is_ingestor = plugin_type == "ingestor"
     is_metric = plugin_type.startswith("metric_")
     base_type = plugin_type.removeprefix("metric_") if is_metric else plugin_type
 
     # Generate files
     _write_pyproject_toml(plugin_dir, package_name, name, plugin_type, is_metric, base_type)
     _write_init_py(src_dir)
-    if is_metric:
+    if is_ingestor:
+        _write_ingestor_py(src_dir, package_name, name)
+        _write_ingestor_test(test_dir, package_name, name)
+    elif is_metric:
         _write_metric_py(src_dir, package_name, name, base_type)
         _write_metric_yaml(src_dir, package_name, name, base_type)
         _write_metric_test(test_dir, package_name, name, base_type)
@@ -164,7 +174,10 @@ def _write_pyproject_toml(
     base_type: str,
 ) -> None:
     """Write pyproject.toml with entry_points."""
-    if is_metric:
+    if plugin_type == "ingestor":
+        entry_group = "autorag_research.ingestors"
+        entry_value = f"{package_name}.ingestor"
+    elif is_metric:
         entry_group = "autorag_research.metrics"
         entry_value = f"{package_name}"
     else:
@@ -411,6 +424,70 @@ def test_{name}_pipeline_config():
         retrieval_pipeline_name="bm25",
     )
     assert config.name == "{name}"
+'''
+    (test_dir / f"test_{name}.py").write_text(content)
+
+
+def _write_ingestor_py(src_dir: Path, package_name: str, name: str) -> None:
+    """Write ingestor.py skeleton for ingestor plugin."""
+    class_name = _to_class_name(name)
+    content = f'''"""Ingestor implementation for {name} plugin."""
+
+from typing import Literal
+
+from langchain_core.embeddings import Embeddings
+
+from autorag_research.data.base import TextEmbeddingDataIngestor
+from autorag_research.data.registry import register_ingestor
+
+DATASETS = Literal["dataset_a", "dataset_b"]
+
+
+@register_ingestor(name="{name}", description="{class_name} data ingestor")
+class {class_name}Ingestor(TextEmbeddingDataIngestor):
+    """{class_name} data ingestor."""
+
+    def __init__(
+        self,
+        embedding_model: Embeddings,
+        dataset_name: DATASETS,
+    ):
+        super().__init__(embedding_model)
+        self.dataset_name = dataset_name
+
+    def ingest(
+        self,
+        subset: Literal["train", "dev", "test"] = "test",
+        query_limit: int | None = None,
+        min_corpus_cnt: int | None = None,
+    ) -> None:
+        raise NotImplementedError("Implement data ingestion logic")
+
+    def detect_primary_key_type(self) -> Literal["bigint", "string"]:
+        raise NotImplementedError("Return \\"bigint\\" or \\"string\\"")
+'''
+    (src_dir / "ingestor.py").write_text(content)
+
+
+def _write_ingestor_test(test_dir: Path, package_name: str, name: str) -> None:
+    """Write basic test skeleton for ingestor plugin."""
+    class_name = _to_class_name(name)
+    content = f'''"""Tests for {name} ingestor plugin."""
+
+from langchain_core.embeddings import FakeEmbeddings
+
+from {package_name}.ingestor import {class_name}Ingestor
+
+
+def test_{name}_ingestor_instantiation():
+    """Test that the ingestor can be instantiated."""
+    embeddings = FakeEmbeddings(size=128)
+    ingestor = {class_name}Ingestor(
+        embedding_model=embeddings,
+        dataset_name="dataset_a",
+    )
+    assert ingestor.dataset_name == "dataset_a"
+    assert ingestor.embedding_model is embeddings
 '''
     (test_dir / f"test_{name}.py").write_text(content)
 

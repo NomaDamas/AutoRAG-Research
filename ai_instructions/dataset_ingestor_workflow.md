@@ -232,7 +232,7 @@ class MyDatasetIngestor(TextEmbeddingDataIngestor):
 
 ```bash
 # Check registered ingestors
-autorag-research list ingestors
+autorag-research show ingestors
 
 # Check specific ingestor options
 autorag-research ingest my_dataset --help
@@ -249,7 +249,7 @@ autorag-research ingest my_dataset --help
 * [ ] Ingestor class implemented to pass the tests.
 * [ ] **`@register_ingestor` decorator is applied**.
 * [ ] **Define choices by `Literal` type**.
-* [ ] **New dataset ingestor is shown in the 'autorag-research list ingestors' cli command**.
+* [ ] **New dataset ingestor is shown in the 'autorag-research show ingestors' cli command**.
 * [ ] Static analysis (Lint/Type) passed.
 * [ ] Integration tests pass against real data subsets.
 * [ ] Intermediate files removed or excluded from git.

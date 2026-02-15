@@ -162,6 +162,38 @@ class TestPluginCreate:
         # Check YAML is in generation subdirectory
         assert (plugin_dir / "src" / "custom_score_plugin" / "generation" / "custom_score.yaml").exists()
 
+    def test_create_ingestor(self, tmp_path, monkeypatch):
+        """Scaffolds correct ingestor plugin structure."""
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["plugin", "create", "my_dataset", "--type", "ingestor"])
+
+        assert result.exit_code == 0
+        plugin_dir = tmp_path / "my_dataset_plugin"
+        assert plugin_dir.exists()
+        assert (plugin_dir / "pyproject.toml").exists()
+        assert (plugin_dir / "src" / "my_dataset_plugin" / "__init__.py").exists()
+        assert (plugin_dir / "src" / "my_dataset_plugin" / "ingestor.py").exists()
+        assert (plugin_dir / "tests" / "test_my_dataset.py").exists()
+
+        # Check pyproject.toml has ingestors entry point
+        toml_content = (plugin_dir / "pyproject.toml").read_text()
+        assert "autorag_research.ingestors" in toml_content
+        assert "my_dataset" in toml_content
+
+        # Check ingestor.py has correct base class and decorator
+        ingestor_content = (plugin_dir / "src" / "my_dataset_plugin" / "ingestor.py").read_text()
+        assert "register_ingestor" in ingestor_content
+        assert "TextEmbeddingDataIngestor" in ingestor_content
+        assert "MyDatasetIngestor" in ingestor_content
+
+        # No YAML directory created (unlike pipeline/metric)
+        assert not (plugin_dir / "src" / "my_dataset_plugin" / "retrieval").exists()
+        assert not (plugin_dir / "src" / "my_dataset_plugin" / "generation").exists()
+
+        # Check next-steps message mentions ingest command
+        assert "ingest" in result.output
+
     def test_create_invalid_name(self, tmp_path, monkeypatch):
         """Exits with error for invalid plugin name."""
         monkeypatch.chdir(tmp_path)

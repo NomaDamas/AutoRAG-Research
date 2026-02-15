@@ -41,7 +41,15 @@ src/my_plugin/
     └── my_search.yaml
 ```
 
-The subcategory directory determines where configs are synced:
+For ingestor plugins, no YAML config directory is needed:
+
+```
+src/my_dataset_plugin/
+├── __init__.py
+└── ingestor.py          # @register_ingestor decorated class
+```
+
+The subcategory directory determines where configs are synced (pipelines/metrics only):
 
 - `retrieval/` syncs to `configs/pipelines/retrieval/` or `configs/metrics/retrieval/`
 - `generation/` syncs to `configs/pipelines/generation/` or `configs/metrics/generation/`
@@ -79,6 +87,22 @@ def test_pipeline_integration(db_session):
     """Integration test with real database (requires Docker)."""
     # Use db_session fixture from conftest.py
     pass
+```
+
+For ingestor plugins, use `FakeEmbeddings` from langchain_core:
+
+```python
+from langchain_core.embeddings import FakeEmbeddings
+
+
+def test_ingestor_instantiation():
+    """Test ingestor can be created with fake embeddings."""
+    embeddings = FakeEmbeddings(size=128)
+    ingestor = MyDatasetIngestor(
+        embedding_model=embeddings,
+        dataset_name="dataset_a",
+    )
+    assert ingestor.dataset_name == "dataset_a"
 ```
 
 ## Development Workflow
