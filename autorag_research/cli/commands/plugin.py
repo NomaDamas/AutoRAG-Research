@@ -176,7 +176,7 @@ def _write_pyproject_toml(
     """Write pyproject.toml with entry_points."""
     if plugin_type == "ingestor":
         entry_group = "autorag_research.ingestors"
-        entry_value = f"{package_name}"
+        entry_value = f"{package_name}.ingestor"
     elif is_metric:
         entry_group = "autorag_research.metrics"
         entry_value = f"{package_name}"
