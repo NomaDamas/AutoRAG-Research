@@ -11,4 +11,3 @@ Text-based benchmarks for retrieval and RAG evaluation.
 | [RAGBench](ragbench.md) | RAG evaluation benchmark | Yes |
 | [MrTyDi](mrtydi.md) | Multilingual retrieval | No |
 | [BRIGHT](bright.md) | Reasoning-intensive retrieval | No |
-| [Open-RAGBench](open-ragbench.md) | Open RAG benchmark from arXiv | Yes |
