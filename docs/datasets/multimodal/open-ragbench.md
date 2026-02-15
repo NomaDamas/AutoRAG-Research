@@ -6,7 +6,7 @@ Open RAG Benchmark from arXiv PDFs by Vectara.
 
 | Field | Value |
 |-------|-------|
-| Modality | Text |
+| Modality | Multimodal |
 | Generation GT | Yes |
 | HF Repository | `open-ragbench-dumps` |
 

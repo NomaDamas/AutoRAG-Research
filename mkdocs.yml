@@ -31,13 +31,13 @@ nav:
           - datasets/text/ragbench.md
           - datasets/text/mrtydi.md
           - datasets/text/bright.md
-          - datasets/text/open-ragbench.md
       - Multimodal:
           - datasets/multimodal/index.md
           - datasets/multimodal/vidore.md
           - datasets/multimodal/vidorev2.md
           - datasets/multimodal/vidorev3.md
           - datasets/multimodal/visrag.md
+          - datasets/multimodal/open-ragbench.md
   - Pipelines:
       - pipelines/index.md
       - Retrieval:
