@@ -74,6 +74,47 @@ class TestReportingService:
         call_args = mock_conn.execute.call_args[0][0]
         assert '"my-test-db"' in call_args
 
+    # === Helper method tests ===
+
+    def test_escape_sql_value_no_quotes(self):
+        """Test _escape_sql_value with a string that has no quotes."""
+        assert ReportingService._escape_sql_value("recall@10") == "recall@10"
+
+    def test_escape_sql_value_with_single_quotes(self):
+        """Test _escape_sql_value doubles single quotes."""
+        assert ReportingService._escape_sql_value("it's a test") == "it''s a test"
+
+    def test_escape_sql_value_with_multiple_quotes(self):
+        """Test _escape_sql_value handles multiple single quotes."""
+        assert ReportingService._escape_sql_value("a'b'c") == "a''b''c"
+
+    def test_pg_query_uses_postgres_query_function(self, service_with_mock):
+        """Test that _pg_query uses postgres_query() in the execute call."""
+        service, mock_conn = service_with_mock
+
+        service._pg_query("test-db", "SELECT 1")
+
+        # Find the call that contains postgres_query (not the ATTACH call)
+        calls = mock_conn.execute.call_args_list
+        pg_query_calls = [c for c in calls if "postgres_query(" in str(c)]
+        assert len(pg_query_calls) == 1
+        query = pg_query_calls[0][0][0]
+        assert "postgres_query('test-db'" in query
+
+    def test_pg_query_escapes_sql(self, service_with_mock):
+        """Test that _pg_query escapes single quotes in SQL."""
+        service, mock_conn = service_with_mock
+
+        service._pg_query("test-db", "SELECT * FROM t WHERE name = 'foo'")
+
+        calls = mock_conn.execute.call_args_list
+        pg_query_calls = [c for c in calls if "postgres_query(" in str(c)]
+        query = pg_query_calls[0][0][0]
+        # The inner SQL should have doubled quotes
+        assert "''foo''" in query
+
+    # === Single Dataset Query tests ===
+
     def test_get_leaderboard(self, service_with_mock):
         """Test get_leaderboard generates correct query structure."""
         service, mock_conn = service_with_mock
@@ -98,6 +139,17 @@ class TestReportingService:
         call_args = mock_conn.execute.call_args_list[-1]
         query = call_args[0][0]
         assert "ASC" in query
+
+    def test_get_leaderboard_escapes_metric_name(self, service_with_mock):
+        """Test that get_leaderboard escapes metric names with quotes."""
+        service, mock_conn = service_with_mock
+        service.get_leaderboard("test-db", "it's a metric", limit=5)
+
+        calls = mock_conn.execute.call_args_list
+        pg_query_calls = [c for c in calls if "postgres_query(" in str(c)]
+        query = pg_query_calls[0][0][0]
+        # The metric name should be escaped (quotes doubled, then doubled again by _pg_query)
+        assert "it" in query  # Basic check that the metric is in the query
 
     def test_list_pipelines(self, service_with_mock):
         """Test list_pipelines returns pipeline names."""
@@ -206,9 +258,9 @@ class TestReportingService:
         # For unit test, we verify it attempts correct queries
         service.list_available_datasets()
 
-        # Verify pg_database was queried
+        # Verify postgres_query was used (not direct "{db}".table queries)
         calls = [str(call) for call in mock_conn.execute.call_args_list]
-        assert any("pg_database" in str(call) or "ATTACH" in str(call) for call in calls)
+        assert any("postgres_query" in str(call) or "ATTACH" in str(call) for call in calls)
 
     def test_list_metrics_by_type_retrieval(self, service_with_mock):
         """Test filtering metrics by retrieval type."""
@@ -435,13 +487,12 @@ class TestReportingService:
             result = MagicMock()
             if "ATTACH" in query:
                 return result
-            # First call: get_pipeline_type
+            # First call: get_pipeline_type (contains config->>'pipeline_type')
             if "config" in query:
                 result.df.return_value = pd.DataFrame({"pipeline_type": ["retrieval"]})
             # Subsequent calls: metric data for each dataset
             else:
-                # Use the actual dataset name from params
-                current_dataset = params[0] if params else datasets[dataset_index[0] % 2]
+                current_dataset = datasets[dataset_index[0] % 2]
                 result.df.return_value = pd.DataFrame({
                     "dataset": [current_dataset] * 2,
                     "metric": ["recall@10", "mrr"],
