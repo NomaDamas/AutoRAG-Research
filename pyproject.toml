@@ -216,4 +216,4 @@ constraint-dependencies = [
 DEP002 = ["bert-score", "langchain-openai"]  # langchain-openai used via Hydra config instantiation in test, the bert score is used silently via `evaluate` library at Bert Score
 
 [tool.deptry]
-exclude = ["tests/*", "scripts/*", ".venv/*", "venv/*"]
+exclude = ["tests/*", "scripts/*", ".venv/*", "venv/*", ".agents/*"]
