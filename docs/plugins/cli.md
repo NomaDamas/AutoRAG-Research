@@ -23,7 +23,7 @@ autorag-research plugin create NAME --type=TYPE
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `NAME` | Yes | Plugin name (lowercase letters, digits, underscores only. Must start with a letter.) |
-| `--type`, `-t` | Yes | Plugin type: `retrieval`, `generation`, `metric_retrieval`, `metric_generation` |
+| `--type`, `-t` | Yes | Plugin type: `retrieval`, `generation`, `metric_retrieval`, `metric_generation`, `ingestor` |
 
 ### Name Validation
 
@@ -77,6 +77,9 @@ autorag-research plugin create my_recall --type=metric_retrieval
 
 # Generation metric plugin
 autorag-research plugin create my_bleu --type=metric_generation
+
+# Ingestor plugin
+autorag-research plugin create my_dataset --type=ingestor
 ```
 
 ## plugin sync
@@ -110,7 +113,32 @@ Skipped 1 config(s) (already exist):
 Total: 2 copied, 1 skipped
 ```
 
-## Workflow
+## Ingestor Workflow
+
+Ingestor plugins use decorator-based registration (`@register_ingestor`) instead of
+Hydra YAML configs. No `plugin sync` step is needed.
+
+```bash
+# 1. Scaffold
+autorag-research plugin create my_dataset --type=ingestor
+
+# 2. Implement
+cd my_dataset_plugin
+# Edit src/my_dataset_plugin/ingestor.py
+
+# 3. Test locally
+pytest tests/
+
+# 4. Install
+pip install -e .
+# or for uv users:
+uv add --editable ./my_dataset_plugin
+
+# 5. Run the ingestor
+autorag-research ingest --name=my_dataset
+```
+
+## Pipeline / Metric Workflow
 
 Full development lifecycle for a plugin:
 
