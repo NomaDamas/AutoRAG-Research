@@ -16,6 +16,10 @@ class ReportingService:
     This service enables querying evaluation results across single or multiple
     PostgreSQL databases (each representing a dataset) using DuckDB's PostgreSQL
     extension for efficient cross-database analytics.
+
+    All queries use ``postgres_query()`` to send raw SQL to PostgreSQL, avoiding
+    DuckDB schema introspection of tables with unsupported types (e.g. pgvector
+    VECTOR, VectorChord bm25vector).
     """
 
     def __init__(self, config: DBConnection | None = None):
@@ -51,6 +55,30 @@ class ReportingService:
             self._attached_dbs.add(db_name)
         return db_name
 
+    # === Helpers ===
+
+    @staticmethod
+    def _escape_sql_value(value: str) -> str:
+        """Escape a string value for safe embedding in SQL by doubling single quotes."""
+        return value.replace("'", "''")
+
+    def _pg_query(self, db_name: str, sql: str) -> pd.DataFrame:
+        """Execute a raw SQL query against PostgreSQL via DuckDB's postgres_query().
+
+        This bypasses DuckDB's schema introspection of ATTACH'ed databases,
+        avoiding crashes on tables with unsupported types (VECTOR, bm25vector).
+
+        Args:
+            db_name: Name of the PostgreSQL database (must be attached).
+            sql: Raw PostgreSQL SQL to execute.
+
+        Returns:
+            Query results as a pandas DataFrame.
+        """
+        self.attach_dataset(db_name)
+        escaped_sql = sql.replace("'", "''")
+        return self._conn.execute(f"SELECT * FROM postgres_query('{db_name}', '{escaped_sql}')").df()  # noqa: S608
+
     # === Single Dataset Queries ===
 
     def get_leaderboard(self, db_name: str, metric_name: str, limit: int = 10, ascending: bool = False) -> pd.DataFrame:
@@ -65,25 +93,22 @@ class ReportingService:
         Returns:
             DataFrame with columns: rank, pipeline, score, time_ms
         """
-        db = self.attach_dataset(db_name)
         order = "ASC" if ascending else "DESC"
-        # S608: db is from attach_dataset (user-controlled but quoted), order is hardcoded
-        return self._conn.execute(
-            f'''
+        escaped_metric = self._escape_sql_value(metric_name)
+        sql = f"""
             SELECT
                 ROW_NUMBER() OVER (ORDER BY s.metric_result {order}) as rank,
                 p.name as pipeline,
                 s.metric_result as score,
                 s.execution_time as time_ms
-            FROM "{db}".summary s
-            JOIN "{db}".pipeline p ON s.pipeline_id = p.id
-            JOIN "{db}".metric m ON s.metric_id = m.id
-            WHERE m.name = $1
+            FROM summary s
+            JOIN pipeline p ON s.pipeline_id = p.id
+            JOIN metric m ON s.metric_id = m.id
+            WHERE m.name = '{escaped_metric}'
             ORDER BY s.metric_result {order}
-            LIMIT $2
-            ''',  # noqa: S608
-            [metric_name, limit],
-        ).df()
+            LIMIT {int(limit)}
+            """  # noqa: S608
+        return self._pg_query(db_name, sql)
 
     def list_pipelines(self, db_name: str) -> list[str]:
         """List all pipelines in a database.
@@ -94,8 +119,7 @@ class ReportingService:
         Returns:
             List of pipeline names.
         """
-        db = self.attach_dataset(db_name)
-        return self._conn.execute(f'SELECT name FROM "{db}".pipeline').df()["name"].tolist()  # noqa: S608
+        return self._pg_query(db_name, "SELECT name FROM pipeline")["name"].tolist()
 
     def get_pipeline_type(self, db_name: str, pipeline_name: str) -> Literal["retrieval", "generation"] | None:
         """Get the type of a pipeline from its config.
@@ -107,17 +131,13 @@ class ReportingService:
         Returns:
             Pipeline type ('retrieval' or 'generation'), or None if not found.
         """
-        db = self.attach_dataset(db_name)
-        # Query config JSONB field for pipeline_type
-        # S608: db from attach_dataset (quoted)
-        result = self._conn.execute(
-            f"""
+        escaped_name = self._escape_sql_value(pipeline_name)
+        sql = f"""
             SELECT config->>'pipeline_type' as pipeline_type
-            FROM "{db}".pipeline
-            WHERE name = $1
-            """,  # noqa: S608
-            [pipeline_name],
-        ).df()
+            FROM pipeline
+            WHERE name = '{escaped_name}'
+            """  # noqa: S608
+        result = self._pg_query(db_name, sql)
         if result.empty or result["pipeline_type"].iloc[0] is None:
             return None
         return result["pipeline_type"].iloc[0]
@@ -131,8 +151,7 @@ class ReportingService:
         Returns:
             List of metric names.
         """
-        db = self.attach_dataset(db_name)
-        return self._conn.execute(f'SELECT name FROM "{db}".metric').df()["name"].tolist()  # noqa: S608
+        return self._pg_query(db_name, "SELECT name FROM metric")["name"].tolist()
 
     # === Dataset Discovery ===
 
@@ -147,38 +166,29 @@ class ReportingService:
         """
         # First, get all non-template databases from PostgreSQL
         # We need to connect to 'postgres' database to query pg_database
-        pg = self.attach_dataset("postgres")
-
-        # Query pg_database for all user databases (excluding templates)
-        # S608: pg is from attach_dataset, quoted identifier
-        all_dbs = (
-            self._conn.execute(
-                f'''
-            SELECT datname
-            FROM "{pg}".pg_catalog.pg_database
-            WHERE datistemplate = false
-              AND datname NOT IN ('postgres')
-            ORDER BY datname
-            '''  # noqa: S608
-            )
-            .df()["datname"]
-            .tolist()
-        )
+        all_dbs = self._pg_query(
+            "postgres",
+            """
+                SELECT datname
+                FROM pg_catalog.pg_database
+                WHERE datistemplate = false
+                  AND datname NOT IN ('postgres')
+                ORDER BY datname
+                """,
+        )["datname"].tolist()
 
         # Check each database for AutoRAG-Research schema (presence of 'summary' table)
         valid_datasets = []
         for db_name in all_dbs:
             try:
-                db = self.attach_dataset(db_name)
-                # Check if summary table exists by querying information_schema
-                # S608: db is from attach_dataset, quoted identifier
-                result = self._conn.execute(
-                    f'''
+                result = self._pg_query(
+                    db_name,
+                    """
                     SELECT COUNT(*) as cnt
-                    FROM "{db}".information_schema.tables
+                    FROM information_schema.tables
                     WHERE table_schema = 'public' AND table_name = 'summary'
-                    '''  # noqa: S608
-                ).df()
+                    """,
+                )
                 if result["cnt"].iloc[0] > 0:
                     valid_datasets.append(db_name)
             except Exception:
@@ -203,15 +213,9 @@ class ReportingService:
         if metric_type not in ("retrieval", "generation"):
             raise ValueError(f"Invalid metric_type: '{metric_type}'. Must be 'retrieval' or 'generation'.")  # noqa: TRY003
 
-        db = self.attach_dataset(db_name)
-        # Embed validated metric_type directly to avoid DuckDB PostgreSQL extension
-        # parameter pushdown issues with ATTACH'ed databases
-        # S608: db from attach_dataset (quoted), metric_type validated above
-        return (
-            self._conn.execute(f"SELECT name FROM \"{db}\".metric WHERE type = '{metric_type}' ORDER BY name")  # noqa: S608
-            .df()["name"]
-            .tolist()
-        )
+        return self._pg_query(db_name, f"SELECT name FROM metric WHERE type = '{metric_type}' ORDER BY name")[  # noqa: S608
+            "name"
+        ].tolist()
 
     def get_dataset_stats(self, db_name: str) -> dict:
         """Return dataset statistics including query, chunk, and document counts.
@@ -222,15 +226,11 @@ class ReportingService:
         Returns:
             Dictionary with keys: query_count, chunk_count, document_count.
         """
-        db = self.attach_dataset(db_name)
-
-        # Query counts from each table
         stats = {}
 
-        # S608: db from attach_dataset (quoted), table names are hardcoded
         for table, key in [("query", "query_count"), ("chunk", "chunk_count"), ("document", "document_count")]:
             try:
-                result = self._conn.execute(f'SELECT COUNT(*) as cnt FROM "{db}".{table}').df()  # noqa: S608
+                result = self._pg_query(db_name, f"SELECT COUNT(*) as cnt FROM {table}")  # noqa: S608
                 stats[key] = int(result["cnt"].iloc[0])
             except Exception:
                 stats[key] = 0
@@ -253,20 +253,20 @@ class ReportingService:
         if not db_names:
             return pd.DataFrame()
 
+        escaped_pipeline = self._escape_sql_value(pipeline_name)
+        escaped_metric = self._escape_sql_value(metric_name)
+
         results = []
         for db_name in db_names:
-            db = self.attach_dataset(db_name)
-            # S608: db is from attach_dataset (quoted)
-            df = self._conn.execute(
-                f'''
-                SELECT $1 as dataset, s.metric_result as score, s.execution_time as time_ms
-                FROM "{db}".summary s
-                JOIN "{db}".pipeline p ON s.pipeline_id = p.id
-                JOIN "{db}".metric m ON s.metric_id = m.id
-                WHERE p.name = $2 AND m.name = $3
-                ''',  # noqa: S608
-                [db_name, pipeline_name, metric_name],
-            ).df()
+            sql = f"""
+                SELECT s.metric_result as score, s.execution_time as time_ms
+                FROM summary s
+                JOIN pipeline p ON s.pipeline_id = p.id
+                JOIN metric m ON s.metric_id = m.id
+                WHERE p.name = '{escaped_pipeline}' AND m.name = '{escaped_metric}'
+                """  # noqa: S608
+            df = self._pg_query(db_name, sql)
+            df["dataset"] = db_name
             results.append(df)
 
         return pd.concat(results, ignore_index=True) if results else pd.DataFrame()
@@ -287,17 +287,14 @@ class ReportingService:
         if metric_type not in ("retrieval", "generation"):
             raise ValueError(f"Invalid metric_type: '{metric_type}'. Must be 'retrieval' or 'generation'.")  # noqa: TRY003
 
-        db = self.attach_dataset(db_name)
-        # S608: db from attach_dataset (quoted), metric_type validated above
-        df = self._conn.execute(
-            f"""
+        sql = f"""
             SELECT p.name as pipeline, m.name as metric, s.metric_result as score
-            FROM "{db}".summary s
-            JOIN "{db}".pipeline p ON s.pipeline_id = p.id
-            JOIN "{db}".metric m ON s.metric_id = m.id
+            FROM summary s
+            JOIN pipeline p ON s.pipeline_id = p.id
+            JOIN metric m ON s.metric_id = m.id
             WHERE m.type = '{metric_type}'
-            """,  # noqa: S608
-        ).df()
+            """  # noqa: S608
+        df = self._pg_query(db_name, sql)
 
         if df.empty:
             return pd.DataFrame()
@@ -332,20 +329,19 @@ class ReportingService:
         if not pipeline_type:
             return pd.DataFrame()
 
+        escaped_pipeline = self._escape_sql_value(pipeline_name)
+
         results = []
         for db_name in db_names:
-            db = self.attach_dataset(db_name)
-            # S608: db from attach_dataset (quoted), pipeline_type from get_pipeline_type (validated)
-            df = self._conn.execute(
-                f"""
-                SELECT $1 as dataset, m.name as metric, s.metric_result as score
-                FROM "{db}".summary s
-                JOIN "{db}".pipeline p ON s.pipeline_id = p.id
-                JOIN "{db}".metric m ON s.metric_id = m.id
-                WHERE p.name = $2 AND m.type = '{pipeline_type}'
-                """,  # noqa: S608
-                [db_name, pipeline_name],
-            ).df()
+            escaped_dataset = self._escape_sql_value(db_name)
+            sql = f"""
+                SELECT '{escaped_dataset}' as dataset, m.name as metric, s.metric_result as score
+                FROM summary s
+                JOIN pipeline p ON s.pipeline_id = p.id
+                JOIN metric m ON s.metric_id = m.id
+                WHERE p.name = '{escaped_pipeline}' AND m.type = '{pipeline_type}'
+                """  # noqa: S608
+            df = self._pg_query(db_name, sql)
             results.append(df)
 
         if not results:
@@ -400,26 +396,22 @@ class ReportingService:
         all_rankings: list[pd.DataFrame] = []
 
         for db_name in db_names:
-            db = self.attach_dataset(db_name)
-
             for metric_name in metric_names:
                 # Determine sort order for this metric
                 ascending = metric_name in ascending_metrics
                 order = "ASC" if ascending else "DESC"
+                escaped_metric = self._escape_sql_value(metric_name)
 
-                # S608: db from attach_dataset (quoted), order is hardcoded
-                df = self._conn.execute(
-                    f'''
+                sql = f"""
                     SELECT
                         p.name as pipeline,
                         RANK() OVER (ORDER BY s.metric_result {order}) as rank
-                    FROM "{db}".summary s
-                    JOIN "{db}".pipeline p ON s.pipeline_id = p.id
-                    JOIN "{db}".metric m ON s.metric_id = m.id
-                    WHERE m.name = $1
-                    ''',  # noqa: S608
-                    [metric_name],
-                ).df()
+                    FROM summary s
+                    JOIN pipeline p ON s.pipeline_id = p.id
+                    JOIN metric m ON s.metric_id = m.id
+                    WHERE m.name = '{escaped_metric}'
+                    """  # noqa: S608
+                df = self._pg_query(db_name, sql)
 
                 if not df.empty:
                     df["dataset"] = db_name
