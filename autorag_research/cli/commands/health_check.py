@@ -126,7 +126,8 @@ def _check_single_model(model_type: str, config_name: str) -> bool:
         elif model_type == "reranker":
             load_reranker(config_name)
             typer.echo(f"  [PASS] {config_name}")
-        return True
     except Exception as e:
         typer.echo(f"  [FAIL] {config_name} -- {e}")
         return False
+    else:
+        return True
