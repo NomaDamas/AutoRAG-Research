@@ -266,6 +266,7 @@ def test_metric_none_fields():
 ```bash
 cd my_metric_plugin
 pip install -e .
+# or: uv pip install -e .
 
 cd ..
 autorag-research plugin sync

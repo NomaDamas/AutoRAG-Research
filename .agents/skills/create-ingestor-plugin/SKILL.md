@@ -218,7 +218,7 @@ def test_detect_primary_key_type():
 ```bash
 cd my_dataset_plugin
 pip install -e .
-# or: uv add --editable ./my_dataset_plugin
+# or: uv pip install -e .
 ```
 
 No `plugin sync` needed for ingestors — they are discovered automatically via entry points.

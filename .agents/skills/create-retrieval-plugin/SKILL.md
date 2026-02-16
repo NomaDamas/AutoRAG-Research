@@ -212,7 +212,7 @@ For integration tests that need a database, use the `db_session` fixture from Au
 cd my_search_plugin
 pip install -e .
 # or with uv:
-# uv add --editable ./my_search_plugin
+# uv pip install -e .
 
 # Sync YAML configs into the project
 cd ..

@@ -236,7 +236,7 @@ For tests with LLM calls, use `langchain_core.language_models.FakeListLLM` to mo
 ```bash
 cd my_rag_plugin
 pip install -e .
-# or: uv add --editable ./my_rag_plugin
+# or: uv pip install -e .
 
 cd ..
 autorag-research plugin sync
