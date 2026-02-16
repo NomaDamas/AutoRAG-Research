@@ -32,6 +32,8 @@ def health_check_command(
     """
     from autorag_research.injection import (
         health_check_embedding,
+        health_check_llm,
+        health_check_reranker,
         load_embedding_model,
         load_llm,
         load_reranker,
@@ -43,10 +45,12 @@ def health_check_command(
             dim = health_check_embedding(model)
             typer.echo(f"[PASS] {name} (dimension: {dim})")
         elif model_type == "llm":
-            load_llm(name)
+            model = load_llm(name)
+            health_check_llm(model)
             typer.echo(f"[PASS] {name}")
         elif model_type == "reranker":
-            load_reranker(name)
+            model = load_reranker(name)
+            health_check_reranker(model)
             typer.echo(f"[PASS] {name}")
     except Exception as e:
         typer.echo(f"[FAIL] {name} -- {e}")
