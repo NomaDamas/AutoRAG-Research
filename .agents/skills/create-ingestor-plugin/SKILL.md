@@ -46,7 +46,38 @@ Parameters named `embedding_model` or `late_interaction_embedding_model` are aut
 
 **`self.service`** is injected after construction via `set_service()`. Read existing ingestors for exact service method signatures.
 
-### 3. Install and verify
+### 3. Database Schema (critical)
+
+Ingestors must populate the correct entity hierarchy:
+
+```
+Document → Page → Chunk (text)
+                → ImageChunk (images)
+```
+
+- **Document** — top-level container (e.g., a Wikipedia article, a PDF)
+- **Page** — subdivision within a document (linked via `document_id`)
+- **Chunk** — text passage with embedding vector (linked to Page via `PageChunkRelation`)
+- **ImageChunk** — image binary with embedding vector (linked to Page via `PageChunkRelation`)
+- **Query** — search query with `generation_gt: list[str] | None` (ground truth answers)
+
+**RetrievalRelation** — links queries to relevant chunks using AND/OR group structure:
+
+```
+RetrievalRelation(query_id, chunk_id, group_index, group_order, score)
+
+group_index = AND group number
+group_order = OR position within the group
+
+Example: query needs (chunk_A OR chunk_B) AND chunk_C
+  → (query, chunk_A, group_index=0, group_order=0)
+  → (query, chunk_B, group_index=0, group_order=1)
+  → (query, chunk_C, group_index=1, group_order=0)
+```
+
+This AND/OR structure is critical for multi-hop queries. See `ai_instructions/db_schema.md` for the full DBML schema.
+
+### 4. Install and verify
 
 ```bash
 cd my_dataset_plugin
@@ -59,6 +90,16 @@ No `plugin sync` needed — ingestors are discovered automatically via entry poi
 autorag-research ingest my_dataset --dataset-name subset_a
 ```
 
+## Testing
+
+Use `ingestor_test_utils` for integration tests against a real PostgreSQL database:
+
+- `IngestorTestConfig` — declare expected counts (queries, chunks, image_chunks), relation checks, primary key type
+- `create_test_database(config)` — context manager that creates/drops an isolated test DB
+- `IngestorTestVerifier` — runs all configured checks: count verification, format validation, retrieval relation checks, generation_gt checks, content hash verification
+
+See `tests/autorag_research/data/ingestor_test_utils.py` for full API and usage examples in the module docstring.
+
 ## Key Files
 
 | Purpose | Path |
@@ -67,6 +108,8 @@ autorag-research ingest my_dataset --dataset-name subset_a
 | Registration decorator | `autorag_research/data/registry.py` → `@register_ingestor` |
 | Text ingestion service | `autorag_research/orm/service/text_ingestion.py` |
 | Multi-modal ingestion service | `autorag_research/orm/service/multi_modal_ingestion.py` |
+| DB schema reference | `ai_instructions/db_schema.md` |
+| Test utilities | `tests/autorag_research/data/ingestor_test_utils.py` |
 
 ## Examples
 
