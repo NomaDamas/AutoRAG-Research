@@ -105,6 +105,12 @@ class MySearchPipeline(BaseRetrievalPipeline):
 
 ### Step 3: Implement the retrieval logic
 
+> **DO NOT add your own `asyncio.gather`, `asyncio.Semaphore`, or any concurrency control inside
+> `_retrieve_by_id` or `_retrieve_by_text`.** The base pipeline's `run()` method already handles
+> parallel execution of all queries via `run_with_concurrency_limit()` (semaphore + gather),
+> controlled by the `max_concurrency` config parameter. Your method is called once per query —
+> just implement the retrieval logic for that single query and return the results.
+
 Each retrieval method must return a list of dicts with `doc_id` (chunk ID) and `score`:
 
 ```python
@@ -114,7 +120,7 @@ async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[st
 
     # Example: get query embedding from DB, then search
     query = self._service.find_query_by_id(query_id)
-    # ... your custom retrieval logic ...
+    # ... your custom retrieval logic for THIS SINGLE QUERY ...
     return [{"doc_id": chunk_id, "score": relevance_score}, ...]
 
 async def _retrieve_by_text(self, query_text: str, top_k: int) -> list[dict[str, Any]]:

@@ -108,6 +108,12 @@ class MyRagPipeline(BaseGenerationPipeline):
 
 ### Step 3: Implement the generation logic
 
+> **DO NOT add your own `asyncio.gather`, `asyncio.Semaphore`, or any concurrency control inside
+> `_generate`.** The base pipeline's `run()` method already handles parallel execution of all
+> queries via `run_with_concurrency_limit()` (semaphore + gather), controlled by the
+> `max_concurrency` config parameter. Your `_generate` method is called once per query —
+> just implement the retrieve-and-generate logic for that single query and return the result.
+
 The `_generate` method is where your RAG strategy lives. Here's the typical pattern:
 
 ```python
