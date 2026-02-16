@@ -1,8 +1,20 @@
+---
+name: create-metric-plugin
+description: |
+  Guide developers through creating a custom evaluation metric plugin for AutoRAG-Research.
+  Covers both retrieval metrics (recall, precision, etc.) and generation metrics (BLEU, ROUGE, etc.).
+  Walks through scaffolding, implementing metric functions with @metric decorators, writing configs,
+  testing, and installing. Use when building a new evaluation metric.
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+---
+
 # Create Metric Plugin
 
-## Description
-
-Guide the developer through creating a custom evaluation metric plugin for AutoRAG-Research. Metrics evaluate the quality of retrieval or generation pipeline outputs. This skill covers both retrieval metrics and generation metrics.
+Create a custom evaluation metric plugin for AutoRAG-Research. Metrics evaluate the quality of retrieval or generation pipeline outputs. This skill covers both retrieval metrics and generation metrics.
 
 ## Architecture Overview
 

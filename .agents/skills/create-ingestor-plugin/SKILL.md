@@ -1,8 +1,20 @@
+---
+name: create-ingestor-plugin
+description: |
+  Guide developers through creating a custom data ingestor plugin for AutoRAG-Research.
+  Ingestors load external datasets (HuggingFace, local files, APIs) into the database.
+  Uses @register_ingestor decorator for automatic CLI parameter extraction. Use when
+  ingesting a new dataset format into AutoRAG-Research.
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+---
+
 # Create Ingestor Plugin
 
-## Description
-
-Guide the developer through creating a custom data ingestor for AutoRAG-Research. Ingestors load external datasets (e.g., from HuggingFace, local files, APIs) into the AutoRAG-Research database. Unlike pipeline/metric plugins, ingestors use a decorator-based registration pattern.
+Create a custom data ingestor for AutoRAG-Research. Ingestors load external datasets (e.g., from HuggingFace, local files, APIs) into the AutoRAG-Research database. Unlike pipeline/metric plugins, ingestors use a decorator-based registration pattern.
 
 ## Architecture Overview
 
@@ -31,7 +43,7 @@ DataIngestor (data/base.py)
 
 The `@register_ingestor` decorator:
 1. Registers the class in a global registry at import time
-2. Auto-extracts CLI parameters from `__init__` type hints (`Literal` → choices, defaults → optional)
+2. Auto-extracts CLI parameters from `__init__` type hints (`Literal` -> choices, defaults -> optional)
 3. Makes the ingestor available via `autorag-research ingest <name>`
 
 External plugins are discovered via the `autorag_research.ingestors` entry point group.
@@ -234,7 +246,6 @@ autorag-research ingest my_dataset --dataset-name subset_a
 - `autorag_research/data/bright.py` — BRIGHT dataset
 - `autorag_research/data/mrtydi.py` — Mr. TyDi multilingual dataset
 - `autorag_research/data/ragbench.py` — RAGBench dataset
-- `autorag_research/data/hotpotqa.py` — HotpotQA (if exists) or similar multi-hop datasets
 
 ### Parameters Skipped by Registry
 The following `__init__` parameters are automatically excluded from CLI generation (they are injected by the framework):

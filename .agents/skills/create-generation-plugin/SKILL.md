@@ -1,8 +1,20 @@
+---
+name: create-generation-plugin
+description: |
+  Guide developers through creating a custom generation pipeline plugin for AutoRAG-Research.
+  Walks through scaffolding, implementing BaseGenerationPipeline methods, composing with
+  retrieval pipelines, writing YAML configs, testing, and installing. Use when building a
+  new RAG generation strategy (e.g., chain-of-thought RAG, multi-hop RAG).
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+---
+
 # Create Generation Plugin
 
-## Description
-
-Guide the developer through creating a custom generation pipeline plugin for AutoRAG-Research. Generation pipelines compose with a retrieval pipeline to implement RAG strategies — they retrieve relevant context and generate answers using an LLM.
+Create a custom generation pipeline plugin for AutoRAG-Research. Generation pipelines compose with a retrieval pipeline to implement RAG strategies — they retrieve relevant context and generate answers using an LLM.
 
 ## Architecture Overview
 

@@ -1,8 +1,20 @@
+---
+name: create-retrieval-plugin
+description: |
+  Guide developers through creating a custom retrieval pipeline plugin for AutoRAG-Research.
+  Walks through scaffolding, implementing BaseRetrievalPipeline methods, writing YAML configs,
+  testing, and installing. Use when building a new search/retrieval strategy (e.g., Elasticsearch,
+  ColBERT, custom vector search).
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+---
+
 # Create Retrieval Plugin
 
-## Description
-
-Guide the developer through creating a custom retrieval pipeline plugin for AutoRAG-Research. Retrieval pipelines search a corpus of chunks and return the most relevant results for a given query.
+Create a custom retrieval pipeline plugin for AutoRAG-Research. Retrieval pipelines search a corpus of chunks and return the most relevant results for a given query.
 
 ## Architecture Overview
 
