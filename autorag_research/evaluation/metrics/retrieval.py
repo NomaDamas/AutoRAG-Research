@@ -145,6 +145,32 @@ def retrieval_ndcg(metric_input: MetricInput) -> float:  # noqa: C901
 
 
 @metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
+def retrieval_full_recall(metric_input: MetricInput) -> float:
+    """Compute full recall (binary) for retrieval.
+
+    Returns 1.0 if ALL ground truth groups are satisfied (at least one item
+    from each OR-group is retrieved), 0.0 otherwise.
+
+    Args:
+        metric_input: The MetricInput schema for AutoRAG metric.
+
+    Returns:
+        1.0 if all GT groups are satisfied, 0.0 otherwise.
+    """
+    gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
+    if pred is None or gt is None:
+        return 0.0
+
+    gt_sets = [frozenset(g) for g in gt]
+    pred_set = set(pred)
+
+    for gt_set in gt_sets:
+        if not any(pred_id in gt_set for pred_id in pred_set):
+            return 0.0
+    return 1.0
+
+
+@metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_mrr(metric_input: MetricInput) -> float:
     """Compute MRR (Mean Reciprocal Rank) score for retrieval.
 
@@ -209,6 +235,15 @@ class RecallConfig(BaseRetrievalMetricConfig):
     def get_metric_func(self) -> Callable:
         """Return the metric function."""
         return retrieval_recall
+
+
+@dataclass
+class FullRecallConfig(BaseRetrievalMetricConfig):
+    """Configuration for retrieval full recall metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return retrieval_full_recall
 
 
 @dataclass

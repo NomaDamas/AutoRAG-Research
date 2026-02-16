@@ -3,6 +3,7 @@ import pytest
 
 from autorag_research.evaluation.metrics.retrieval import (
     retrieval_f1,
+    retrieval_full_recall,
     retrieval_map,
     retrieval_mrr,
     retrieval_ndcg,
@@ -72,6 +73,30 @@ def test_retrieval_recall():
 def test_retrieval_precision():
     solution = [0.5, 0.25, 0.25, 0.5, 0.5, None, None, 1 / 3]
     result = retrieval_precision(metric_inputs=metric_inputs)
+    for gt, res in zip(solution, result, strict=True):
+        assert gt == pytest.approx(res, rel=1e-4)
+
+
+def test_retrieval_full_recall():
+    """Test full recall (binary) for retrieval.
+
+    Full recall returns 1.0 only if ALL ground truth groups are satisfied,
+    0.0 otherwise. This is an all-or-nothing measure.
+
+    Case 0: GT=[[test-1,test-2],[test-3]], pred=[test-1,pred-1,test-2,pred-3]
+            G0 hit (test-1), G1 miss (test-3 not in pred) -> 0.0
+    Case 1: GT=[[test-4,test-5],[test-6,test-7],[test-8]], pred=[test-6,...]
+            G1 hit, G0/G2 miss -> 0.0
+    Case 2: GT=[[test-9,test-10]], pred=[test-9,...] -> G0 hit -> 1.0
+    Case 3: GT=[[test-11],[test-12],[test-13]], pred=[test-13,test-12,...]
+            G0 miss (test-11 not in pred), G1 hit, G2 hit -> 0.0
+    Case 4: GT=[[test-14]], pred=[test-14,...] -> 1.0
+    Case 5: GT=[[]] -> empty GT -> None (decorator returns None)
+    Case 6: GT=[[""]] -> empty GT -> None (decorator returns None)
+    Case 7: GT=[[test-15]], pred=[pred-15,pred-16,test-15] -> 1.0
+    """
+    solution = [0.0, 0.0, 1.0, 0.0, 1.0, None, None, 1.0]
+    result = retrieval_full_recall(metric_inputs=metric_inputs)
     for gt, res in zip(solution, result, strict=True):
         assert gt == pytest.approx(res, rel=1e-4)
 
