@@ -68,6 +68,8 @@
 | `discover_pipelines(pipeline_type)` | Discover pipeline configs |
 | `discover_metrics(pipeline_type)` | Discover metric configs |
 | `discover_embedding_configs()` | Discover embedding configs |
+| `discover_llm_configs()` | Discover LLM configs |
+| `discover_reranker_configs()` | Discover reranker configs |
 | `get_config_dir()` | Get configs directory path |
 | `setup_logging(verbose)` | Configure CLI logging |
 
