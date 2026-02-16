@@ -63,6 +63,7 @@ nav:
       - Retrieval:
           - metrics/retrieval/index.md
           - metrics/retrieval/recall.md
+          - metrics/retrieval/full-recall.md
           - metrics/retrieval/precision.md
           - metrics/retrieval/f1.md
           - metrics/retrieval/ndcg.md
