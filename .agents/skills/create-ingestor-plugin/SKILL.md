@@ -14,34 +14,19 @@ allowed-tools:
 
 # Create Ingestor Plugin
 
-Unlike pipeline/metric plugins, ingestors don't use `plugin create`. They use the `@register_ingestor` decorator for automatic CLI integration.
-
 ## Workflow
 
-### 1. Create the project manually
+### 1. Scaffold
 
-```
-my_dataset_plugin/
-├── pyproject.toml
-├── src/my_dataset_plugin/
-│   ├── __init__.py
-│   └── ingestor.py
-└── tests/
-    └── test_ingestor.py
+```bash
+autorag-research plugin create my_dataset --type=ingestor
 ```
 
-The `pyproject.toml` must register the entry point:
+Read the generated `ingestor.py`, `pyproject.toml`, and test file to understand the structure.
 
-```toml
-[project.entry-points."autorag_research.ingestors"]
-my_dataset = "my_dataset_plugin.ingestor"
-```
-
-See any existing plugin's `pyproject.toml` for the full template (build-system, hatch config, etc.).
+The generated `pyproject.toml` registers the `autorag_research.ingestors` entry point. The `@register_ingestor` decorator handles automatic CLI parameter extraction from `__init__` type hints.
 
 ### 2. Implement the ingestor
-
-Extend `TextEmbeddingDataIngestor` (or `MultiModalEmbeddingDataIngestor` for images) and decorate with `@register_ingestor`.
 
 **Required methods:**
 - `__init__(embedding_model, ...)` — accept embedding model + dataset-specific params
