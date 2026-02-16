@@ -108,21 +108,3 @@ def discover_embedding_configs() -> dict[str, str]:
         Dictionary mapping config name to _target_ class path.
     """
     return discover_configs(get_config_dir() / "embedding")
-
-
-def discover_llm_configs() -> dict[str, str]:
-    """Discover available LLM configs from configs/llm/.
-
-    Returns:
-        Dictionary mapping config name to _target_ class path.
-    """
-    return discover_configs(get_config_dir() / "llm")
-
-
-def discover_reranker_configs() -> dict[str, str]:
-    """Discover available reranker configs from configs/reranker/.
-
-    Returns:
-        Dictionary mapping config name to _target_ class path.
-    """
-    return discover_configs(get_config_dir() / "reranker")
