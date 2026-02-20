@@ -254,6 +254,21 @@ After `plugin sync`, your plugin appears in `configs/pipelines/` or `configs/met
 For the full implementation guide, see the [Plugin Documentation](https://nomadamas.github.io/AutoRAG-Research/plugins/).
 
 
+## Agent Skill: Query Results with Natural Language
+
+AutoRAG-Research ships with an [agent skill](https://vercel.com/changelog/introducing-skills-the-open-agent-skills-ecosystem) that lets AI coding agents (Claude Code, Codex, Kiro, Cursor, etc.) query your pipeline results directly from PostgreSQL using natural language.
+
+```bash
+# Install globally
+npx skills add NomaDamas/AutoRAG-Research --skill autorag-query
+```
+
+> **You**: "Which pipeline has the best BLEU score?"
+>
+> **Agent**: "**hybrid_search_v2** achieved the highest BLEU score of **0.85**."
+
+For detailed usage, script options, and query templates, see the [Agent Skill documentation](https://nomadamas.github.io/AutoRAG-Research/agent-skill/).
+
 ## Contributing
 
 We are open source project and always welcome contributions who love RAG! Feel free to open issues or submit pull requests on GitHub.
