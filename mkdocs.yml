@@ -76,6 +76,7 @@ nav:
           - metrics/generation/rouge.md
           - metrics/generation/bert-score.md
           - metrics/generation/sem-score.md
+          - metrics/generation/response-relevancy.md
   - Plugins:
       - plugins/index.md
       - CLI Reference: plugins/cli.md

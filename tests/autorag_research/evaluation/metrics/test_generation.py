@@ -2,6 +2,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from langchain_core.embeddings import Embeddings
+from langchain_core.language_models.fake import FakeListLLM
 from langchain_openai import OpenAIEmbeddings
 
 from autorag_research import cli
@@ -9,6 +11,7 @@ from autorag_research.evaluation.metrics.generation import (
     bert_score,
     bleu,
     meteor,
+    response_relevancy,
     rouge,
     sem_score,
 )
@@ -255,3 +258,76 @@ def test_bert_score_ja():
         ja_similarity_generation_metric_inputs,
         lang="ja",
     )
+
+
+class KeywordEmbeddings(Embeddings):
+    """Deterministic embeddings for response relevancy tests."""
+
+    @staticmethod
+    def _encode(text: str) -> list[float]:
+        lowered = text.lower()
+        return [
+            float("france" in lowered),
+            float("capital" in lowered),
+            float("einstein" in lowered),
+        ]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._encode(text)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self._encode(text) for text in texts]
+
+
+def test_response_relevancy_ragas_scoring_logic():
+    metric_inputs = [
+        MetricInput(
+            query="Where is France and what is its capital?",
+            generated_texts="France is in western Europe and Paris is its capital.",
+        )
+    ]
+    llm = FakeListLLM(
+        responses=[
+            '{"question":"Where is France and what is its capital?","noncommittal":0}',
+            '{"question":"What is the capital of France?","noncommittal":0}',
+            "{\"question\":\"What is France's capital?\",\"noncommittal\":0}",
+        ]
+    )
+
+    scores = response_relevancy(metric_inputs, llm=llm, embedding_model=KeywordEmbeddings(), strictness=3)
+
+    assert scores[0] == pytest.approx(1.0)
+
+
+def test_response_relevancy_noncommittal_zeroes_score():
+    metric_inputs = [
+        MetricInput(
+            query="Where is France and what is its capital?",
+            generated_texts="I don't know.",
+        )
+    ]
+    llm = FakeListLLM(
+        responses=[
+            "{\"question\":\"What is France's capital?\",\"noncommittal\":1}",
+            '{"question":"Where is France located?","noncommittal":1}',
+            '{"question":"What is the capital of France?","noncommittal":1}',
+        ]
+    )
+
+    scores = response_relevancy(metric_inputs, llm=llm, embedding_model=KeywordEmbeddings(), strictness=3)
+
+    assert scores == [0.0]
+
+
+def test_response_relevancy_invalid_json_returns_nan():
+    metric_inputs = [
+        MetricInput(
+            query="Where was Albert Einstein born?",
+            generated_texts="Albert Einstein was born in Germany.",
+        )
+    ]
+    llm = FakeListLLM(responses=["{}", "not-json", "```json\n{\"foo\":1}\n```"])
+
+    scores = response_relevancy(metric_inputs, llm=llm, embedding_model=KeywordEmbeddings(), strictness=3)
+
+    assert scores[0] != scores[0]  # NaN check
