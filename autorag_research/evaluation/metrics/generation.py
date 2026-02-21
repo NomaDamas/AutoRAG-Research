@@ -1,13 +1,18 @@
+import json
+import logging
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langchain_core.embeddings import Embeddings
+    from langchain_core.language_models import BaseLanguageModel
 
 import evaluate
 import nltk
+import numpy as np
 import pandas as pd
 from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
@@ -16,9 +21,107 @@ from sacrebleu.metrics.bleu import BLEU
 from autorag_research.config import BaseGenerationMetricConfig
 from autorag_research.evaluation.metrics.util import calculate_cosine_similarity, metric_loop
 from autorag_research.exceptions import EmbeddingError
-from autorag_research.injection import with_embedding
+from autorag_research.injection import with_embedding, with_llm
 from autorag_research.schema import MetricInput
 from autorag_research.util import convert_inputs_to_list, truncate_texts, unpack_and_run
+
+logger = logging.getLogger("AutoRAG-Research")
+
+RAGAS_RESPONSE_RELEVANCE_INSTRUCTION = """Generate a question for the given answer and Identify if answer is noncommittal. Give noncommittal as 1 if the answer is noncommittal and 0 if the answer is committal. A noncommittal answer is one that is evasive, vague, or ambiguous. For example, "I don't know" or "I'm not sure" are noncommittal answers"""
+
+DEFAULT_RESPONSE_RELEVANCY_PROMPT = """Generate a question for the given answer and identify if the answer is noncommittal.
+
+Use this exact instruction:
+{instruction}
+
+Return a JSON object:
+{{
+  "question": "<generated question>",
+  "noncommittal": 0 or 1
+}}
+
+Example input:
+Albert Einstein was born in Germany.
+Example output:
+{{"question":"Where was Albert Einstein born?","noncommittal":0}}
+
+Example input:
+I don't know about the  groundbreaking feature of the smartphone invented in 2023 as am unaware of information beyond 2022.
+Example output:
+{{"question":"What was the groundbreaking feature of the smartphone invented in 2023?","noncommittal":1}}
+
+Input:
+{response}
+"""
+
+_JSON_BLOCK_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _extract_llm_text(response: Any) -> str:
+    """Extract text from LLM response object."""
+    if hasattr(response, "content"):
+        return str(response.content)
+    return str(response)
+
+
+def _parse_noncommittal(value: Any) -> int:
+    """Convert noncommittal value to 0/1."""
+    if isinstance(value, str):
+        return int(value.strip().lower() in {"1", "true", "yes"})
+    return int(bool(value))
+
+
+def _parse_response_relevancy_output(text: str) -> tuple[str, int]:
+    """Parse question/noncommittal JSON from LLM output."""
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate).strip()
+        candidate = re.sub(r"\s*```$", "", candidate).strip()
+
+    payload: dict[str, Any] = {}
+    for raw in [candidate]:
+        try:
+            loaded = json.loads(raw)
+            if isinstance(loaded, dict):
+                payload = loaded
+                break
+        except json.JSONDecodeError:
+            continue
+
+    if not payload:
+        match = _JSON_BLOCK_PATTERN.search(candidate)
+        if match:
+            try:
+                loaded = json.loads(match.group(0))
+                if isinstance(loaded, dict):
+                    payload = loaded
+            except json.JSONDecodeError:
+                pass
+
+    question = str(payload.get("question", "")).strip()
+    noncommittal = _parse_noncommittal(payload.get("noncommittal", 0))
+    return question, noncommittal
+
+
+def _calculate_response_relevancy_score(
+    query: str,
+    generated_questions: list[str],
+    noncommittal_flags: list[int],
+    embedding_model: "Embeddings",
+) -> float:
+    """RAGAS response relevancy core logic."""
+    if all(question == "" for question in generated_questions):
+        logger.warning("Invalid JSON response. Expected dictionary with key 'question'")
+        return float("nan")
+
+    query_vector = np.asarray(embedding_model.embed_query(query)).reshape(1, -1)
+    generated_vectors = np.asarray(embedding_model.embed_documents(generated_questions)).reshape(
+        len(generated_questions), -1
+    )
+    norm = np.linalg.norm(generated_vectors, axis=1) * np.linalg.norm(query_vector, axis=1)
+    cosine_sim = np.dot(generated_vectors, query_vector.T).reshape(-1) / norm
+    all_noncommittal = np.all(noncommittal_flags)
+    return float(cosine_sim.mean() * int(not all_noncommittal))
 
 
 @convert_inputs_to_list
@@ -245,6 +348,51 @@ def bert_score(
     return df.groupby(level=0)["bert_score"].max().tolist()
 
 
+@metric_loop(fields_to_check=["query", "generated_texts"])
+@with_embedding()
+@with_llm()
+def response_relevancy(
+    metric_inputs: list[MetricInput],
+    llm: "BaseLanguageModel | str",
+    embedding_model: "Embeddings | str",
+    strictness: int = 3,
+    prompt_template: str = DEFAULT_RESPONSE_RELEVANCY_PROMPT,
+) -> list[float]:
+    """RAGAS-style response relevancy metric without ragas dependency."""
+    from langchain_core.embeddings import Embeddings
+
+    if strictness < 1:
+        msg = "strictness must be >= 1"
+        raise ValueError(msg)
+
+    if not isinstance(embedding_model, Embeddings):
+        raise EmbeddingError
+
+    scores = []
+    for metric_input in metric_inputs:
+        prompt = prompt_template.format(
+            instruction=RAGAS_RESPONSE_RELEVANCE_INSTRUCTION,
+            response=metric_input.generated_texts,
+        )
+        questions: list[str] = []
+        noncommittal_flags: list[int] = []
+        for _ in range(strictness):
+            response = llm.invoke(prompt)
+            question, noncommittal = _parse_response_relevancy_output(_extract_llm_text(response))
+            questions.append(question)
+            noncommittal_flags.append(noncommittal)
+
+        scores.append(
+            _calculate_response_relevancy_score(
+                query=metric_input.query,
+                generated_questions=questions,
+                noncommittal_flags=noncommittal_flags,
+                embedding_model=embedding_model,
+            )
+        )
+    return scores
+
+
 # Metric Configurations
 @dataclass
 class BleuConfig(BaseGenerationMetricConfig):
@@ -358,6 +506,29 @@ class SemScoreConfig(BaseGenerationMetricConfig):
         return {
             "embedding_model": self.embedding_model,
             "truncate_length": self.truncate_length,
+        }
+
+
+@dataclass
+class ResponseRelevancyConfig(BaseGenerationMetricConfig):
+    """Configuration for RAGAS-style response relevancy metric."""
+
+    strictness: int = 3
+    llm: "BaseLanguageModel | str" = "openai-gpt5-mini"
+    embedding_model: "Embeddings | str" = "openai-large"
+    prompt_template: str = DEFAULT_RESPONSE_RELEVANCY_PROMPT
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return response_relevancy
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "strictness": self.strictness,
+            "llm": self.llm,
+            "embedding_model": self.embedding_model,
+            "prompt_template": self.prompt_template,
         }
 
 
