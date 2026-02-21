@@ -125,9 +125,9 @@ DO NOT duplicate — reuse existing helpers. Run `/check-duplication` to verify.
 
 ## AI Instructions
 
-Detailed patterns and examples are in `/ai_instructions/`:
+Detailed patterns and examples are in `/ai_instructions/` (and schema DDL in `postgresql/db/init/`):
 - `db_pattern.md` - Repository, UoW, Service patterns with code examples
-- `db_schema.md` - Complete DBML schema
+- `postgresql/db/init/001-schema.sql` - Canonical DB schema DDL (single source of truth)
 - `test_code_generation_instructions.md` - Testing conventions
 - `utility_reference.md` - **MANDATORY** utility & service method catalog (read before implementing)
 
