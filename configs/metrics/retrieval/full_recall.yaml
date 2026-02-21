@@ -1,0 +1,2 @@
+_target_: autorag_research.evaluation.metrics.retrieval.FullRecallConfig
+description: "Full Recall@k - Rate of queries with all gold evidences retrieved"
