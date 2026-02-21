@@ -147,7 +147,7 @@ class RetrievalPipelineService(BaseService):
                 })
         return batch_results
 
-    def run_pipeline(
+    def run_pipeline(  # noqa: C901
         self,
         retrieval_func: RetrievalFunc,
         pipeline_id: int | str,
@@ -156,6 +156,7 @@ class RetrievalPipelineService(BaseService):
         max_concurrency: int = 16,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        query_limit: int | None = None,
     ) -> dict[str, Any]:
         """Run retrieval pipeline for all queries with parallel execution and retry.
 
@@ -169,6 +170,7 @@ class RetrievalPipelineService(BaseService):
             max_concurrency: Maximum number of concurrent async operations.
             max_retries: Maximum number of retry attempts for failed queries.
             retry_delay: Base delay in seconds for exponential backoff between retries.
+            query_limit: Maximum number of queries to process. None means no limit.
 
         Returns:
             Dictionary with pipeline execution statistics:
@@ -212,8 +214,15 @@ class RetrievalPipelineService(BaseService):
         offset = 0
 
         while True:
+            if query_limit is not None and total_queries >= query_limit:
+                break
+
+            effective_batch_size = (
+                min(batch_size, query_limit - total_queries) if query_limit is not None else batch_size
+            )
+
             with self._create_uow() as uow:
-                queries = uow.queries.get_all(limit=batch_size, offset=offset)
+                queries = uow.queries.get_all(limit=effective_batch_size, offset=offset)
                 if not queries:
                     break
 
@@ -227,7 +236,7 @@ class RetrievalPipelineService(BaseService):
                     total_results += len(batch_results)
 
                 total_queries += len([r for r in results if r is not None])
-                offset += batch_size
+                offset += len(queries)
                 uow.commit()
 
                 logger.info(f"Processed {total_queries} queries, stored {total_results} results")
