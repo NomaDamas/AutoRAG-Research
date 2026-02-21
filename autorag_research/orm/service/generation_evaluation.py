@@ -8,6 +8,7 @@ Provides service layer for evaluating generation pipelines:
 """
 
 import logging
+from collections import defaultdict
 from typing import Any
 
 from autorag_research.orm.service.base_evaluation import BaseEvaluationService
@@ -69,14 +70,20 @@ class GenerationEvaluationService(BaseEvaluationService):
                 "Metric": self._schema.Metric,
                 "ExecutorResult": self._schema.ExecutorResult,
                 "EvaluationResult": self._schema.EvaluationResult,
+                "RetrievalRelation": self._schema.RetrievalRelation,
+                "Chunk": self._schema.Chunk,
+                "ImageChunk": self._schema.ImageChunk,
             }
 
         from autorag_research.orm.schema import (
+            Chunk,
             EvaluationResult,
             ExecutorResult,
+            ImageChunk,
             Metric,
             Pipeline,
             Query,
+            RetrievalRelation,
         )
 
         return {
@@ -85,6 +92,9 @@ class GenerationEvaluationService(BaseEvaluationService):
             "Metric": Metric,
             "ExecutorResult": ExecutorResult,
             "EvaluationResult": EvaluationResult,
+            "RetrievalRelation": RetrievalRelation,
+            "Chunk": Chunk,
+            "ImageChunk": ImageChunk,
         }
 
     def _get_execution_results(
@@ -102,7 +112,9 @@ class GenerationEvaluationService(BaseEvaluationService):
         Returns:
             Dictionary mapping query_id to dict with:
                 - 'generated_text': generated text from ExecutorResult
-                - 'generation_gt': list of ground truth texts from Query
+                - 'generation_gt': list of ground truth texts from Query (None means unanswerable)
+                - 'query': query text for evaluator prompts
+                - 'retrieval_gt_contents': grouped retrieval-grounding contents (optional)
         """
         with self._create_uow() as uow:
             result: dict[int | str, dict[str, Any]] = {}
@@ -110,16 +122,42 @@ class GenerationEvaluationService(BaseEvaluationService):
             chunk_results = uow.executor_results.get_by_queries_and_pipeline(query_ids, pipeline_id)
             generated_texts: dict[int | str, str] = {elem.query_id: elem.generation_result for elem in chunk_results}
 
+            relations_by_query: dict[int | str, list[Any]] = {}
+            text_chunk_ids: set[int | str] = set()
+            for query_id in query_ids:
+                relations = uow.retrieval_relations.get_by_query_id(query_id)
+                relations_by_query[query_id] = relations
+                for rel in relations:
+                    if rel.chunk_id is not None:
+                        text_chunk_ids.add(rel.chunk_id)
+
+            chunk_map: dict[int | str, str] = {}
+            if text_chunk_ids:
+                chunk_entities = uow.chunks.get_by_ids(list(text_chunk_ids))
+                chunk_map = {chunk.id: chunk.contents for chunk in chunk_entities}
+
             for query_id in query_ids:
                 query = uow.queries.get_by_id(query_id)
                 generation_gt = query.generation_gt if query else None
                 generated_text = generated_texts.get(query_id)
-                if generated_text is None or generation_gt is None:
+                if generated_text is None:
                     continue
+
+                grouped_contents: dict[int, list[str]] = defaultdict(list)
+                for rel in relations_by_query.get(query_id, []):
+                    if rel.chunk_id is None:
+                        continue
+                    chunk_content = chunk_map.get(rel.chunk_id)
+                    if chunk_content:
+                        grouped_contents[rel.group_index].append(chunk_content)
+
+                retrieval_gt_contents = [grouped_contents[group_idx] for group_idx in sorted(grouped_contents)]
 
                 result[query_id] = {
                     "generated_text": generated_text,
                     "generation_gt": generation_gt,
+                    "query": query.contents if query else None,
+                    "retrieval_gt_contents": retrieval_gt_contents if retrieval_gt_contents else None,
                 }
 
             return result
@@ -159,8 +197,10 @@ class GenerationEvaluationService(BaseEvaluationService):
             MetricInput instance ready for metric function.
         """
         return MetricInput(
+            query=execution_result.get("query"),
             generated_texts=execution_result.get("generated_text"),
             generation_gt=execution_result.get("generation_gt"),
+            retrieval_gt_contents=execution_result.get("retrieval_gt_contents"),
         )
 
     def _has_results_for_queries(self, pipeline_id: int | str, query_ids: list[int | str]) -> bool:
