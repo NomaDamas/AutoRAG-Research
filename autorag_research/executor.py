@@ -376,6 +376,7 @@ class Executor:
             service.set_metric(
                 metric_id=metric_id,
                 metric_func=lambda metric_inputs: metric_func(metric_inputs, **metric_kwargs),
+                compute_granularity=config.get_compute_granularity(),
             )
 
             # Evaluate

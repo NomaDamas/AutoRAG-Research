@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pytest
 
 from autorag_research.orm.service.generation_evaluation import GenerationEvaluationService
@@ -176,4 +178,40 @@ class TestGenerationEvaluationService:
             uow.executor_results.delete_by_composite_key(query_id=3, pipeline_id=1)
             uow.executor_results.delete_by_composite_key(query_id=4, pipeline_id=1)
             uow.executor_results.delete_by_composite_key(query_id=5, pipeline_id=1)
+            uow.commit()
+
+    def test_evaluate_dataset_level_metric_persists_same_score_for_all_queries(self, service):
+        score = 0.777
+
+        def dataset_metric(metric_inputs):
+            return [score] * len(metric_inputs)
+
+        metric_name = f"test_dataset_metric_{uuid4().hex[:8]}"
+        metric_id = service.get_or_create_metric(metric_name, "generation")
+
+        service.set_metric(
+            metric_id=metric_id,
+            metric_func=dataset_metric,
+            compute_granularity="dataset",
+        )
+
+        all_query_ids = service._fetch_query_ids_batch(limit=100, offset=0)
+        expected_count = len(service._get_execution_results(pipeline_id=1, query_ids=all_query_ids))
+
+        evaluated_count, average = service.evaluate(pipeline_id=1, batch_size=2)
+        assert evaluated_count == expected_count
+        assert average == pytest.approx(score)
+
+        with service._create_uow() as uow:
+            rows = uow.evaluation_results.get_by_pipeline_and_metric(pipeline_id=1, metric_id=metric_id)
+            assert len(rows) == expected_count
+            assert all(row.metric_result == pytest.approx(score) for row in rows)
+
+            for row in rows:
+                uow.evaluation_results.delete_by_composite_key(
+                    query_id=row.query_id,
+                    pipeline_id=row.pipeline_id,
+                    metric_id=row.metric_id,
+                )
+            uow.metrics.delete_by_id(metric_id)
             uow.commit()

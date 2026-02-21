@@ -6,8 +6,12 @@ from langchain_openai import OpenAIEmbeddings
 
 from autorag_research import cli
 from autorag_research.evaluation.metrics.generation import (
+    AnswerCorrectnessF1Config,
+    GroundedRefusalF1Config,
+    answer_correctness_f1,
     bert_score,
     bleu,
+    grounded_refusal_f1,
     meteor,
     rouge,
     sem_score,
@@ -255,3 +259,95 @@ def test_bert_score_ja():
         ja_similarity_generation_metric_inputs,
         lang="ja",
     )
+
+
+def test_dataset_level_metric_config_granularity():
+    grounded_refusal_cfg = GroundedRefusalF1Config()
+    answer_correctness_cfg = AnswerCorrectnessF1Config()
+
+    assert grounded_refusal_cfg.get_compute_granularity() == "dataset"
+    assert answer_correctness_cfg.get_compute_granularity() == "dataset"
+
+
+def test_grounded_refusal_f1_dataset_level():
+    metric_inputs = [
+        MetricInput(
+            query="q1",
+            generated_texts="I apologize, but I couldn't find an answer to your question in the search results.",
+            generation_gt=None,
+        ),
+        MetricInput(
+            query="q2",
+            generated_texts="Paris is the capital of France.",
+            generation_gt=["Paris is the capital of France."],
+        ),
+        MetricInput(
+            query="q3",
+            generated_texts="I apologize, but I couldn't find an answer to your question in the search results.",
+            generation_gt=["The sun rises in the east."],
+        ),
+        MetricInput(
+            query="q4",
+            generated_texts="Here is a non-refusal answer.",
+            generation_gt=None,
+        ),
+    ]
+
+    scores = grounded_refusal_f1(
+        metric_inputs=metric_inputs,
+        judge_mode="phrase",
+    )
+
+    assert len(scores) == len(metric_inputs)
+    assert all(score == pytest.approx(0.5) for score in scores)
+
+
+def test_answer_correctness_f1_dataset_level():
+    metric_inputs = [
+        MetricInput(
+            query="q1",
+            generated_texts="alpha claim is true.",
+            generation_gt=["alpha claim", "beta claim"],
+            retrieval_gt_contents=[["Document evidence: alpha claim is supported."]],
+        ),
+        MetricInput(
+            query="q2",
+            generated_texts="This misses the expected claim.",
+            generation_gt=["gamma claim"],
+            retrieval_gt_contents=[["Document evidence: gamma claim is supported."]],
+        ),
+        MetricInput(
+            query="q3",
+            generated_texts="Here is an over-responsive answer.",
+            generation_gt=None,
+            retrieval_gt_contents=None,
+        ),
+    ]
+
+    scores = answer_correctness_f1(
+        metric_inputs=metric_inputs,
+        judge_mode="phrase",
+    )
+
+    assert len(scores) == len(metric_inputs)
+    assert all(score == pytest.approx(0.4) for score in scores)
+
+
+def test_grounded_refusal_f1_with_llm_string_config():
+    metric_inputs = [
+        MetricInput(
+            query="q1",
+            generated_texts="This is a normal answer.",
+            generation_gt=["normal answer"],
+        )
+    ]
+
+    scores = grounded_refusal_f1(
+        metric_inputs=metric_inputs,
+        judge_llm="mock",
+        judge_mode="llm",
+    )
+
+    assert len(scores) == 1
+    assert isinstance(scores[0], float)
+    assert 0.0 <= scores[0] <= 1.0

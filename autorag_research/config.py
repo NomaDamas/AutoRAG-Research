@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseLanguageModel
@@ -231,6 +231,17 @@ class BaseMetricConfig(ABC):
             Dictionary of keyword arguments for the metric function.
         """
         return {}
+
+    def get_compute_granularity(self) -> Literal["query", "dataset"]:
+        """Return metric compute granularity.
+
+        Query-level metrics return one score per query and are computed batch-by-batch.
+        Dataset-level metrics require all samples together to produce paper-aligned scores.
+
+        Returns:
+            "query" for per-query metrics (default), "dataset" for whole-dataset metrics.
+        """
+        return "query"
 
 
 @dataclass

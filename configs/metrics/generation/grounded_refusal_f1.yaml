@@ -1,0 +1,6 @@
+_target_: autorag_research.evaluation.metrics.generation.GroundedRefusalF1Config
+description: "Grounded Refusal F1 (F1GR) - paper-aligned dataset-level refusal correctness"
+judge_llm: openai-gpt5-mini
+judge_mode: llm
+rejection_flag: "I apologize, but I couldn't find an answer to your question in the search results."
+rejection_threshold: 85

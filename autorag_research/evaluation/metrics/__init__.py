@@ -4,13 +4,17 @@ This module provides evaluation metrics for generation and retrieval tasks.
 """
 
 from autorag_research.evaluation.metrics.generation import (
+    AnswerCorrectnessF1Config,
     BertScoreConfig,
     BleuConfig,
+    GroundedRefusalF1Config,
     MeteorConfig,
     RougeConfig,
     SemScoreConfig,
+    answer_correctness_f1,
     bert_score,
     bleu,
+    grounded_refusal_f1,
     huggingface_evaluate,
     meteor,
     rouge,
@@ -41,10 +45,12 @@ from autorag_research.evaluation.metrics.util import (
 )
 
 __all__ = [
+    "AnswerCorrectnessF1Config",
     "BertScoreConfig",
     "BleuConfig",
     "F1Config",
     "FullRecallConfig",
+    "GroundedRefusalF1Config",
     "MAPConfig",
     "MRRConfig",
     "MeteorConfig",
@@ -53,11 +59,13 @@ __all__ = [
     "RecallConfig",
     "RougeConfig",
     "SemScoreConfig",
+    "answer_correctness_f1",
     "bert_score",
     "bleu",
     "calculate_cosine_similarity",
     "calculate_inner_product",
     "calculate_l2_distance",
+    "grounded_refusal_f1",
     "huggingface_evaluate",
     "meteor",
     "metric",
