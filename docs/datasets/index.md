@@ -11,7 +11,7 @@ Available benchmarks for RAG evaluation.
 | RAGBench | Text | varies | varies | Yes | RAG |
 | MrTyDi | Text | varies | varies | No | Multilingual |
 | BRIGHT | Text | varies | varies | No | Retrieval |
-| Open-RAGBench | Text | varies | varies | Yes | RAG |
+| Open-RAGBench | Multimodal | varies | varies | Yes | RAG |
 | ViDoRe | Multimodal | varies | varies | No | Visual |
 | ViDoRe v2 | Multimodal | varies | varies | No | Visual |
 | ViDoRe v3 | Multimodal | varies | varies | No | Visual |

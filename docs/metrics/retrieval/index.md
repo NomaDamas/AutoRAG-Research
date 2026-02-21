@@ -7,6 +7,7 @@ Metrics for evaluating document retrieval quality.
 | Metric | Measures | When to Use |
 |--------|----------|-------------|
 | [Recall@k](recall.md) | Coverage | Ensure all relevant docs found |
+| [Full Recall@k](full-recall.md) | Complete coverage | All evidence groups must be retrieved |
 | [Precision@k](precision.md) | Relevance | Minimize irrelevant results |
 | [F1@k](f1.md) | Balance | Trade-off recall and precision |
 | [NDCG@k](ndcg.md) | Ranking | Order matters |
