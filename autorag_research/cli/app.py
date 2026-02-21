@@ -10,6 +10,7 @@ import typer
 import autorag_research.cli as cli
 from autorag_research.cli.commands.data import data_app
 from autorag_research.cli.commands.drop import drop_app
+from autorag_research.cli.commands.health_check import health_check_command
 from autorag_research.cli.commands.ingest import ingest_app
 from autorag_research.cli.commands.init import init
 from autorag_research.cli.commands.plugin import plugin_app
@@ -76,6 +77,7 @@ app.add_typer(ingest_app, name="ingest")
 app.add_typer(plugin_app, name="plugin")
 
 # Add simple commands
+app.command(name="health-check")(health_check_command)
 app.command(name="show")(show_resources)
 app.command(name="init")(init)
 app.command(name="run")(run_command)
