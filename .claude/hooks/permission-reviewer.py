@@ -18,16 +18,15 @@ def load_api_key():
     key = os.environ.get("ANTHROPIC_API_KEY")
     if key:
         return key
+    # Fallback: parse ~/.zshrc directly (avoids slow shell init)
     try:
-        result = subprocess.run(
-            ["zsh", "-lc", "echo $ANTHROPIC_API_KEY"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-        key = result.stdout.strip()
-        if key:
-            return key
+        import re as _re
+
+        with open(os.path.expanduser("~/.zshrc")) as f:
+            for line in f:
+                m = _re.search(r'export\s+ANTHROPIC_API_KEY="([^"]+)"', line)
+                if m:
+                    return m.group(1)
     except Exception:
         pass
     return None
