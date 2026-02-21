@@ -41,7 +41,7 @@ The `run_migrations()` function executes this SQL block. It is called from three
 
 2. **Update `001-schema.sql`** and **`schema_factory.py`** to include the column in new schemas (so fresh databases have it from the start).
 
-3. **Update `ai_instructions/db_schema.md`** DBML to document the new column.
+3. **Do not duplicate schema docs**: keep `ai_instructions/db_schema.md` as a redirect-only file that points to `001-schema.sql`.
 
 4. **Keep Python-level fallbacks** as belt-and-suspenders safety (e.g., `value if value is not None else default`).
 
