@@ -11,9 +11,7 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any, Literal
 
-from sqlalchemy.orm import Session, sessionmaker
-
-from autorag_research.orm.service.base import BaseService
+from autorag_research.orm.service.base_pipeline import BasePipelineService
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
 
 __all__ = ["RetrievalFunc", "RetrievalPipelineService"]
@@ -26,7 +24,7 @@ logger = logging.getLogger("AutoRAG-Research")
 RetrievalFunc = Callable[[int | str, int], Coroutine[Any, Any, list[dict[str, Any]]]]
 
 
-class RetrievalPipelineService(BaseService):
+class RetrievalPipelineService(BasePipelineService):
     """Service for running retrieval pipelines.
 
     This service handles the common workflow for all retrieval pipelines:
@@ -50,7 +48,7 @@ class RetrievalPipelineService(BaseService):
         results = service.vector_search(query_ids=[1, 2, 3], top_k=10)
 
         # Or use run_pipeline for batch processing with result persistence
-        pipeline_id = service.save_pipeline(
+        pipeline_id, is_new = service.get_or_create_pipeline(
             name="bm25",
             config={"type": "bm25", "tokenizer": "bert"},
         )
@@ -61,19 +59,6 @@ class RetrievalPipelineService(BaseService):
         )
         ```
     """
-
-    def __init__(
-        self,
-        session_factory: sessionmaker[Session],
-        schema: Any | None = None,
-    ):
-        """Initialize retrieval pipeline service.
-
-        Args:
-            session_factory: SQLAlchemy sessionmaker for database connections.
-            schema: Schema namespace from create_schema(). If None, uses default schema.
-        """
-        super().__init__(session_factory, schema)
 
     def _get_schema_classes(self) -> dict[str, Any]:
         """Get schema classes from the schema namespace.
@@ -96,24 +81,6 @@ class RetrievalPipelineService(BaseService):
     def _create_uow(self) -> RetrievalUnitOfWork:
         """Create a new RetrievalUnitOfWork instance."""
         return RetrievalUnitOfWork(self.session_factory, self._schema)
-
-    def save_pipeline(self, name: str, config: dict) -> int | str:
-        """Create a new pipeline in the database.
-
-        Args:
-            name: Name for this pipeline.
-            config: Configuration dictionary for the pipeline.
-
-        Returns:
-            The pipeline ID.
-        """
-        with self._create_uow() as uow:
-            pipeline = self._get_schema_classes()["Pipeline"](name=name, config=config)
-            uow.pipelines.add(pipeline)
-            uow.flush()
-            pipeline_id = pipeline.id
-            uow.commit()
-            return pipeline_id
 
     def _collect_retrieval_results(
         self,
@@ -227,6 +194,16 @@ class RetrievalPipelineService(BaseService):
                     break
 
                 query_ids = [q.id for q in queries]
+
+                # Skip queries that already have results (resume support)
+                existing_results = uow.chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
+                completed_ids = {r.query_id for r in existing_results}
+                query_ids = [qid for qid in query_ids if qid not in completed_ids]
+
+                if not query_ids:
+                    offset += batch_size
+                    continue
+
                 results = asyncio.run(process_batch(query_ids))
 
                 batch_results = self._collect_retrieval_results(query_ids, results, pipeline_id, failed_queries)
@@ -250,19 +227,6 @@ class RetrievalPipelineService(BaseService):
             "total_results": total_results,
             "failed_queries": failed_queries,
         }
-
-    def get_pipeline_config(self, pipeline_id: int | str) -> dict | None:
-        """Get pipeline configuration by ID.
-
-        Args:
-            pipeline_id: ID of the pipeline.
-
-        Returns:
-            Pipeline config dict if found, None otherwise.
-        """
-        with self._create_uow() as uow:
-            pipeline = uow.pipelines.get_by_id(pipeline_id)
-            return pipeline.config if pipeline else None
 
     def delete_pipeline_results(self, pipeline_id: int | str) -> int:
         """Delete all retrieval results for a specific pipeline.
