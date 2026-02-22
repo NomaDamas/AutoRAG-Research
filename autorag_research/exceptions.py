@@ -168,6 +168,15 @@ class EvaluationError(ExecutorError):
         self.reason = reason
 
 
+class HealthCheckError(ExecutorError):
+    """Raised when a health check fails before the full pipeline run."""
+
+    def __init__(self, pipeline_name: str, reason: str):
+        super().__init__(f"Health check failed for pipeline '{pipeline_name}': {reason}")
+        self.pipeline_name = pipeline_name
+        self.reason = reason
+
+
 # MTEB exceptions
 class UnsupportedMTEBTaskTypeError(Exception):
     """Raised when an unsupported MTEB task type is provided."""

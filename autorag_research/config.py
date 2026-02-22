@@ -282,3 +282,4 @@ class ExecutorConfig:
     metrics: list[BaseMetricConfig]
     max_retries: int = 3
     eval_batch_size: int = 100
+    health_check_queries: int = 2

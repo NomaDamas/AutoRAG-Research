@@ -127,6 +127,7 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
         max_concurrency: int = 16,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        query_limit: int | None = None,
     ) -> dict[str, Any]:
         """Run the retrieval pipeline.
 
@@ -136,6 +137,7 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
             max_concurrency: Maximum number of concurrent async operations.
             max_retries: Maximum number of retry attempts for failed queries.
             retry_delay: Base delay in seconds for exponential backoff between retries.
+            query_limit: Maximum number of queries to process. None means no limit.
 
         Returns:
             Dictionary with pipeline execution statistics:
@@ -152,4 +154,5 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
             max_concurrency=max_concurrency,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            query_limit=query_limit,
         )

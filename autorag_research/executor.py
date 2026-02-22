@@ -177,13 +177,17 @@ class Executor:
         """Run all configured pipelines and evaluate metrics.
 
         For each pipeline:
-        1. Run the pipeline with retry logic
-        2. Verify completion
-        3. Evaluate applicable metrics (before moving to next pipeline)
+        1. Resolve dependencies (generation only)
+        2. Run health check (if enabled)
+        3. Run the pipeline with retry logic
+        4. Verify completion
+        5. Evaluate applicable metrics (before moving to next pipeline)
 
         Returns:
             ExecutorResult with comprehensive execution statistics.
         """
+        from autorag_research.exceptions import HealthCheckError
+
         result = ExecutorResult()
 
         for pipeline_config in self.config.pipelines:
@@ -193,7 +197,28 @@ class Executor:
             if pipeline_config.pipeline_type == PipelineType.GENERATION:
                 self._resolve_dependencies(pipeline_config)
 
-            # Step 1: Run pipeline with retry
+            # Step 1: Run health check (if enabled)
+            if self.config.health_check_queries > 0:
+                try:
+                    self._health_check_pipeline(pipeline_config)
+                    logger.info(f"Health check passed for pipeline: {pipeline_config.name}")
+                except HealthCheckError as e:
+                    logger.exception(f"Health check failed for pipeline '{pipeline_config.name}': {e.reason}")
+                    result.pipeline_results.append(
+                        PipelineResult(
+                            pipeline_id=-1,
+                            pipeline_name=pipeline_config.name,
+                            pipeline_type=pipeline_config.pipeline_type,
+                            total_queries=0,
+                            retries_used=0,
+                            success=False,
+                            error_message=str(e),
+                        )
+                    )
+                    result.total_pipelines_run += 1
+                    continue
+
+            # Step 2: Run pipeline with retry
             pipeline_result = self._run_pipeline_with_retry(pipeline_config)
             result.pipeline_results.append(pipeline_result)
             result.total_pipelines_run += 1
@@ -201,7 +226,7 @@ class Executor:
             if pipeline_result.success:
                 result.total_pipelines_succeeded += 1
 
-                # Step 2: Evaluate metrics for this pipeline (before next pipeline)
+                # Step 3: Evaluate metrics for this pipeline (before next pipeline)
                 metric_results = self._evaluate_metrics_for_pipeline(
                     pipeline_result.pipeline_id,
                     pipeline_config.pipeline_type,
@@ -219,6 +244,91 @@ class Executor:
         )
 
         return result
+
+    def _validate_health_check_results(
+        self,
+        config: BasePipelineConfig,
+        run_result: dict[str, Any],
+    ) -> None:
+        """Validate health check pipeline results.
+
+        Args:
+            config: Pipeline configuration that was health checked.
+            run_result: Results from pipeline.run().
+
+        Raises:
+            HealthCheckError: If validation fails.
+        """
+        from autorag_research.exceptions import HealthCheckError
+
+        total_queries = run_result["total_queries"]
+        if total_queries == 0:
+            raise HealthCheckError(config.name, "No queries were processed")
+
+        failed_queries = run_result.get("failed_queries", [])
+        if failed_queries:
+            raise HealthCheckError(
+                config.name,
+                f"{len(failed_queries)} queries failed during health check",
+            )
+
+        pipeline_id = run_result["pipeline_id"]
+        metric_results = self._evaluate_metrics_for_pipeline(pipeline_id, config.pipeline_type)
+        failed_metrics = [m for m in metric_results if not m.success]
+        if failed_metrics:
+            failed_names = [m.metric_name for m in failed_metrics]
+            raise HealthCheckError(
+                config.name,
+                f"Metrics failed during health check: {', '.join(failed_names)}",
+            )
+
+        logger.info(
+            f"Health check passed for '{config.name}': "
+            f"{total_queries} queries processed, {len(metric_results)} metrics evaluated"
+        )
+
+    def _health_check_pipeline(self, config: BasePipelineConfig) -> None:
+        """Run a health check by executing N queries through the full pipeline flow.
+
+        Creates a temporary pipeline with a '_health_check' suffix, runs a limited
+        number of queries, validates results, and evaluates metrics.
+
+        Args:
+            config: Pipeline configuration to health check.
+
+        Raises:
+            HealthCheckError: If the health check fails for any reason.
+        """
+        from autorag_research.exceptions import HealthCheckError
+
+        health_check_name = f"{config.name}_health_check"
+        query_limit = self.config.health_check_queries
+
+        logger.info(f"Running health check for '{config.name}' with {query_limit} queries")
+
+        pipeline = None
+        try:
+            pipeline_class = config.get_pipeline_class()
+            pipeline = pipeline_class(
+                session_factory=self.session_factory,
+                name=health_check_name,
+                schema=self._schema,
+                **config.get_pipeline_kwargs(),
+            )
+
+            run_kwargs = config.get_run_kwargs()
+            run_kwargs["query_limit"] = query_limit
+            run_result = pipeline.run(**run_kwargs)
+
+            self._validate_health_check_results(config, run_result)
+
+        except HealthCheckError:
+            raise
+        except Exception as e:
+            raise HealthCheckError(config.name, str(e)) from e
+        finally:
+            if pipeline is not None and hasattr(pipeline, "close"):
+                pipeline.close()
 
     def _run_pipeline_with_retry(self, config: BasePipelineConfig) -> PipelineResult:
         """Run a single pipeline with retry logic.
