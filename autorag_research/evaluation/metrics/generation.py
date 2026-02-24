@@ -360,16 +360,26 @@ def response_relevancy(
 ) -> list[float]:
     """RAGAS-style response relevancy metric without ragas dependency."""
     from langchain_core.embeddings import Embeddings
+    from langchain_core.language_models import BaseLanguageModel
 
     if strictness < 1:
         msg = "strictness must be >= 1"
         raise ValueError(msg)
+
+    if not isinstance(llm, BaseLanguageModel):
+        msg = "llm must be a BaseLanguageModel instance after with_llm injection"
+        raise TypeError(msg)
 
     if not isinstance(embedding_model, Embeddings):
         raise EmbeddingError
 
     scores = []
     for metric_input in metric_inputs:
+        query = metric_input.query
+        if query is None:
+            msg = "query is required for response_relevancy"
+            raise ValueError(msg)
+
         prompt = prompt_template.format(
             instruction=RAGAS_RESPONSE_RELEVANCE_INSTRUCTION,
             response=metric_input.generated_texts,
@@ -384,7 +394,7 @@ def response_relevancy(
 
         scores.append(
             _calculate_response_relevancy_score(
-                query=metric_input.query,
+                query=query,
                 generated_questions=questions,
                 noncommittal_flags=noncommittal_flags,
                 embedding_model=embedding_model,
