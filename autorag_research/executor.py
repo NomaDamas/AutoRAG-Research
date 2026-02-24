@@ -327,8 +327,13 @@ class Executor:
         except Exception as e:
             raise HealthCheckError(config.name, str(e)) from e
         finally:
-            if pipeline is not None and hasattr(pipeline, "close"):
-                pipeline.close()
+            if pipeline is not None:
+                try:
+                    pipeline._service.delete_pipeline_results(pipeline.pipeline_id)
+                except Exception:
+                    logger.warning("Failed to clean up health check data")
+                if hasattr(pipeline, "close"):
+                    pipeline.close()
 
     def _run_pipeline_with_retry(self, config: BasePipelineConfig) -> PipelineResult:
         """Run a single pipeline with retry logic.
