@@ -1,5 +1,6 @@
 """End-to-end CLI integration test for ingest -> run -> drop workflow."""
 
+import logging
 from pathlib import Path
 from textwrap import dedent
 from uuid import uuid4
@@ -97,7 +98,7 @@ def _force_drop_database(config_dir: Path, db_name: str) -> None:
         db_conn.terminate_connections()
         db_conn.drop_database()
     except Exception:
-        # Cleanup failure should not hide the original assertion failure.
+        logging.warning(f"Failed to clean up test database {db_name}", exc_info=True)
         return
 
 
@@ -138,10 +139,10 @@ def test_cli_end_to_end_ingest_run_and_drop(cli_runner, tmp_path: Path) -> None:
 
         ingest_output = _combined_output(ingest_result)
         assert ingest_result.exit_code == 0, ingest_output
+        db_created = True  # DB was created by the CLI command
         assert "Ingesting dataset: beir" in ingest_output
         assert "Ingestion complete" in ingest_output
         assert "Embedding complete" in ingest_output
-        db_created = True
 
         db_conn = DBConnection.from_config(config_dir)
         db_conn.database = db_name
