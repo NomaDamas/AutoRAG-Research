@@ -97,7 +97,7 @@ class GenerationEvaluationService(BaseEvaluationService):
             "ImageChunk": ImageChunk,
         }
 
-    def _get_execution_results(
+    def _get_execution_results(  # noqa: C901
         self, pipeline_id: int | str, query_ids: list[int | str]
     ) -> dict[int | str, dict[str, Any]]:
         """Fetch execution results for given query IDs.
@@ -114,6 +114,7 @@ class GenerationEvaluationService(BaseEvaluationService):
                 - 'generated_text': generated text from ExecutorResult
                 - 'generation_gt': list of ground truth texts from Query (None means unanswerable)
                 - 'query': query text for evaluator prompts
+                - 'retrieved_contents': retrieved text chunks from pipeline output (optional)
                 - 'retrieval_gt_contents': grouped retrieval-grounding contents (optional)
         """
         with self._create_uow() as uow:
@@ -122,8 +123,16 @@ class GenerationEvaluationService(BaseEvaluationService):
             chunk_results = uow.executor_results.get_by_queries_and_pipeline(query_ids, pipeline_id)
             generated_texts: dict[int | str, str] = {elem.query_id: elem.generation_result for elem in chunk_results}
 
+            retrieved_by_query: dict[int | str, list[Any]] = defaultdict(list)
+            retrieved_chunk_ids: set[int | str] = set()
+            for retrieved_result in uow.chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id):
+                if retrieved_result.chunk_id is None:
+                    continue
+                retrieved_by_query[retrieved_result.query_id].append(retrieved_result)
+                retrieved_chunk_ids.add(retrieved_result.chunk_id)
+
             relations_by_query: dict[int | str, list[Any]] = {}
-            text_chunk_ids: set[int | str] = set()
+            text_chunk_ids: set[int | str] = set(retrieved_chunk_ids)
             for query_id in query_ids:
                 relations = uow.retrieval_relations.get_by_query_id(query_id)
                 relations_by_query[query_id] = relations
@@ -152,11 +161,22 @@ class GenerationEvaluationService(BaseEvaluationService):
                         grouped_contents[rel.group_index].append(chunk_content)
 
                 retrieval_gt_contents = [grouped_contents[group_idx] for group_idx in sorted(grouped_contents)]
+                retrieved_contents: list[str] = []
+                seen_chunk_ids: set[int | str] = set()
+                for retrieved_result in retrieved_by_query.get(query_id, []):
+                    chunk_id = retrieved_result.chunk_id
+                    if chunk_id is None or chunk_id in seen_chunk_ids:
+                        continue
+                    seen_chunk_ids.add(chunk_id)
+                    chunk_content = chunk_map.get(chunk_id)
+                    if chunk_content:
+                        retrieved_contents.append(chunk_content)
 
                 result[query_id] = {
                     "generated_text": generated_text,
                     "generation_gt": generation_gt,
                     "query": query.contents if query else None,
+                    "retrieved_contents": retrieved_contents if retrieved_contents else None,
                     "retrieval_gt_contents": retrieval_gt_contents if retrieval_gt_contents else None,
                 }
 
@@ -200,6 +220,7 @@ class GenerationEvaluationService(BaseEvaluationService):
             query=execution_result.get("query"),
             generated_texts=execution_result.get("generated_text"),
             generation_gt=execution_result.get("generation_gt"),
+            retrieved_contents=execution_result.get("retrieved_contents"),
             retrieval_gt_contents=execution_result.get("retrieval_gt_contents"),
         )
 

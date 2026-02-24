@@ -11,8 +11,9 @@ Metrics for evaluating text generation quality.
 | [ROUGE](rouge.md) | N-gram recall | Summarization |
 | [BERTScore](bert-score.md) | Semantic similarity | Meaning preservation |
 | [SemScore](sem-score.md) | Embedding similarity | Semantic correctness |
-| [Grounded Refusal F1](grounded-refusal-f1.md) | Refusal calibration on answerable/unanswerable split | Refusal behavior quality |
-| [Answer Correctness F1](answer-correctness-f1.md) | Calibrated claim correctness over dataset | Paper-aligned answer correctness |
+
+Trust-Align exact refusal/correctness metrics are available as a plugin:
+[Trust-Align Metrics Plugin](../../plugins/trust-align-metrics.md).
 
 ## Base Class
 

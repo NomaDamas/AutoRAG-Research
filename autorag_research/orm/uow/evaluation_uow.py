@@ -284,6 +284,7 @@ class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
         self._retrieval_relation_repo: RetrievalRelationRepository | None = None
         self._chunk_repo: ChunkRepository | None = None
         self._image_chunk_repo: ImageChunkRepository | None = None
+        self._chunk_result_repo: ChunkRetrievedResultRepository | None = None
 
     def _get_schema_classes(self) -> dict[str, type]:
         """Get all model classes from schema.
@@ -301,10 +302,12 @@ class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
                 "RetrievalRelation": self._schema.RetrievalRelation,
                 "Chunk": self._schema.Chunk,
                 "ImageChunk": self._schema.ImageChunk,
+                "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
             }
 
         from autorag_research.orm.schema import (
             Chunk,
+            ChunkRetrievedResult,
             EvaluationResult,
             ExecutorResult,
             ImageChunk,
@@ -323,6 +326,7 @@ class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
             "RetrievalRelation": RetrievalRelation,
             "Chunk": Chunk,
             "ImageChunk": ImageChunk,
+            "ChunkRetrievedResult": ChunkRetrievedResult,
         }
 
     def _reset_repositories(self) -> None:
@@ -335,6 +339,7 @@ class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
         self._retrieval_relation_repo = None
         self._chunk_repo = None
         self._image_chunk_repo = None
+        self._chunk_result_repo = None
 
     @property
     def queries(self) -> QueryRepository:
@@ -441,4 +446,13 @@ class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
             "_image_chunk_repo",
             ImageChunkRepository,
             lambda: self._get_schema_classes()["ImageChunk"],
+        )
+
+    @property
+    def chunk_results(self) -> ChunkRetrievedResultRepository:
+        """Get the ChunkRetrievedResult repository."""
+        return self._get_repository(
+            "_chunk_result_repo",
+            ChunkRetrievedResultRepository,
+            lambda: self._get_schema_classes()["ChunkRetrievedResult"],
         )

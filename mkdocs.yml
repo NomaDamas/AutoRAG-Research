@@ -76,14 +76,13 @@ nav:
           - metrics/generation/rouge.md
           - metrics/generation/bert-score.md
           - metrics/generation/sem-score.md
-          - metrics/generation/grounded-refusal-f1.md
-          - metrics/generation/answer-correctness-f1.md
   - Plugins:
       - plugins/index.md
       - CLI Reference: plugins/cli.md
       - Retrieval Pipeline: plugins/retrieval-pipeline.md
       - Generation Pipeline: plugins/generation-pipeline.md
       - Metrics: plugins/metrics.md
+      - Trust-Align Metrics: plugins/trust-align-metrics.md
       - Best Practices: plugins/best-practices.md
   - Agent Skill: agent-skill/index.md
   - CLI Reference: cli/index.md

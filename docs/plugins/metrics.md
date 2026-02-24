@@ -26,6 +26,12 @@ autorag-research plugin create my_bleu --type=metric_generation
 This creates a project directory with the config class, metric function stub, YAML config,
 `pyproject.toml`, and a basic test file.
 
+## First-Party Trust-Align Plugin
+
+For Trust-Align exact refusal/correctness metrics, use the dedicated plugin package:
+
+- [Trust-Align Metrics Plugin](trust-align-metrics.md)
+
 ## Retrieval Metric
 
 A retrieval metric is a plain function that computes a score. The config class wraps it via
