@@ -35,6 +35,9 @@ def _prepare_test_configs(tmp_path: Path) -> Path:
     (config_dir / "pipelines" / "retrieval" / "bm25.yaml").write_text(
         (source_configs / "pipelines" / "retrieval" / "bm25.yaml").read_text()
     )
+    (config_dir / "pipelines" / "retrieval" / "vector_search.yaml").write_text(
+        (source_configs / "pipelines" / "retrieval" / "vector_search.yaml").read_text()
+    )
     (config_dir / "metrics" / "retrieval" / "recall.yaml").write_text(
         (source_configs / "metrics" / "retrieval" / "recall.yaml").read_text()
     )
@@ -77,7 +80,7 @@ def _prepare_test_configs(tmp_path: Path) -> Path:
             max_retries: 1
             eval_batch_size: 16
             pipelines:
-              retrieval: [bm25]
+              retrieval: [bm25, vector_search]
               generation: [basic_rag]
             metrics:
               retrieval: [recall]
@@ -157,7 +160,7 @@ def test_cli_end_to_end_ingest_run_and_drop(cli_runner, tmp_path: Path) -> None:
 
         assert query_count == 10
         assert chunk_count >= 100
-        assert retrieval_gt_count > 0
+        assert retrieval_gt_count >= 10
 
         run_result = cli_runner.invoke(
             app,
@@ -185,7 +188,7 @@ def test_cli_end_to_end_ingest_run_and_drop(cli_runner, tmp_path: Path) -> None:
         finally:
             run_engine.dispose()
 
-        assert pipeline_count >= 2
+        assert pipeline_count >= 3
         assert metric_count >= 2
         assert executor_result_count > 0
         assert evaluation_result_count > 0
