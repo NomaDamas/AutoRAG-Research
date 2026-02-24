@@ -319,6 +319,26 @@ def test_response_relevancy_noncommittal_zeroes_score():
     assert scores == [0.0]
 
 
+def test_response_relevancy_mixed_noncommittal_keeps_score():
+    metric_inputs = [
+        MetricInput(
+            query="Where is France and what is its capital?",
+            generated_texts="France is in western Europe and Paris is its capital.",
+        )
+    ]
+    llm = FakeListLLM(
+        responses=[
+            '{"question":"Where is France and what is its capital?","noncommittal":0}',
+            '{"question":"What is the capital of France?","noncommittal":1}',
+            '{"question":"What is France\'s capital?","noncommittal":0}',
+        ]
+    )
+
+    scores = response_relevancy(metric_inputs, llm=llm, embedding_model=KeywordEmbeddings(), strictness=3)
+
+    assert scores[0] == pytest.approx(1.0)
+
+
 def test_response_relevancy_invalid_json_returns_nan():
     metric_inputs = [
         MetricInput(
