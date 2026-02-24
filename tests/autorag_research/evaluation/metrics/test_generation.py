@@ -290,7 +290,7 @@ def test_response_relevancy_ragas_scoring_logic():
         responses=[
             '{"question":"Where is France and what is its capital?","noncommittal":0}',
             '{"question":"What is the capital of France?","noncommittal":0}',
-            "{\"question\":\"What is France's capital?\",\"noncommittal\":0}",
+            '{"question":"What is France\'s capital?","noncommittal":0}',
         ]
     )
 
@@ -308,7 +308,7 @@ def test_response_relevancy_noncommittal_zeroes_score():
     ]
     llm = FakeListLLM(
         responses=[
-            "{\"question\":\"What is France's capital?\",\"noncommittal\":1}",
+            '{"question":"What is France\'s capital?","noncommittal":1}',
             '{"question":"Where is France located?","noncommittal":1}',
             '{"question":"What is the capital of France?","noncommittal":1}',
         ]
@@ -326,7 +326,7 @@ def test_response_relevancy_invalid_json_returns_nan():
             generated_texts="Albert Einstein was born in Germany.",
         )
     ]
-    llm = FakeListLLM(responses=["{}", "not-json", "```json\n{\"foo\":1}\n```"])
+    llm = FakeListLLM(responses=["{}", "not-json", '```json\n{"foo":1}\n```'])
 
     scores = response_relevancy(metric_inputs, llm=llm, embedding_model=KeywordEmbeddings(), strictness=3)
 
