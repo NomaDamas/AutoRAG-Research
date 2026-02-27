@@ -81,6 +81,7 @@ class TestExecutorWithRealDB:
             ],
             metrics=[RecallConfig(), NDCGConfig()],
             max_retries=2,
+            health_check_queries=0,
         )
 
         executor = Executor(session_factory, config)
@@ -123,6 +124,7 @@ class TestExecutorWithRealDB:
             ],
             metrics=[RecallConfig()],
             max_retries=2,
+            health_check_queries=0,
         )
 
         executor = Executor(session_factory, config)
@@ -154,6 +156,7 @@ class TestExecutorWithRealDB:
             ],
             metrics=[RecallConfig()],
             max_retries=2,
+            health_check_queries=0,
         )
 
         executor = Executor(session_factory, config)
@@ -238,6 +241,7 @@ class TestMetricEvaluationRules:
             pipelines=[MockRetrievalPipeline(name="test_retrieval")],
             metrics=[mock_retrieval_metric_config, mock_generation_metric_config],
             max_retries=1,
+            health_check_queries=0,
         )
 
         executor = Executor(session_factory, config)
@@ -304,6 +308,7 @@ class TestMetricEvaluationRules:
             pipelines=[MockGenerationPipeline(name="test_generation", llm="mock", retrieval_pipeline_name="mock")],
             metrics=[mock_retrieval_metric_config, mock_generation_metric_config],
             max_retries=1,
+            health_check_queries=0,
         )
 
         executor = Executor(session_factory, config)
@@ -341,6 +346,211 @@ class TestMetricEvaluationRules:
         assert "mock_retrieval" in evaluated_metrics
         assert "mock_generation" in evaluated_metrics
         assert result.total_metrics_evaluated == 2
+
+
+class TestHealthCheck:
+    """Test suite for health check functionality."""
+
+    def test_health_check_default_value(self):
+        """Test that ExecutorConfig defaults to health_check_queries=2."""
+        config = ExecutorConfig(pipelines=[], metrics=[])
+        assert config.health_check_queries == 2
+
+    def test_health_check_disabled(self, session_factory):
+        """Test that health_check_queries=0 skips health check entirely."""
+
+        @dataclass
+        class MockRetrievalPipeline(BaseRetrievalPipelineConfig):
+            def get_pipeline_class(self) -> type:
+                return MagicMock
+
+            def get_pipeline_kwargs(self) -> dict[str, Any]:
+                return {}
+
+            def get_run_kwargs(self) -> dict[str, Any]:
+                return {}
+
+        config = ExecutorConfig(
+            pipelines=[MockRetrievalPipeline(name="test_no_health_check")],
+            metrics=[],
+            health_check_queries=0,
+        )
+
+        executor = Executor(session_factory, config)
+
+        # Mock successful pipeline run
+        mock_pipeline = MagicMock()
+        mock_pipeline.run.return_value = {
+            "pipeline_id": 999,
+            "total_queries": 10,
+        }
+        config.pipelines[0].get_pipeline_class = lambda: lambda **kw: mock_pipeline
+        executor._verify_pipeline_completion = MagicMock(return_value=True)
+
+        # Mock _health_check_pipeline to track if it's called
+        executor._health_check_pipeline = MagicMock()
+
+        result = executor.run()
+
+        # Health check should NOT be called
+        executor._health_check_pipeline.assert_not_called()
+        assert result.total_pipelines_run == 1
+        assert result.total_pipelines_succeeded == 1
+
+    def test_health_check_enabled_success(self, session_factory):
+        """Test that health check passes and full run proceeds."""
+
+        @dataclass
+        class MockRetrievalPipeline(BaseRetrievalPipelineConfig):
+            def get_pipeline_class(self) -> type:
+                return MagicMock
+
+            def get_pipeline_kwargs(self) -> dict[str, Any]:
+                return {}
+
+            def get_run_kwargs(self) -> dict[str, Any]:
+                return {}
+
+        config = ExecutorConfig(
+            pipelines=[MockRetrievalPipeline(name="test_health_check_success")],
+            metrics=[],
+            health_check_queries=2,
+        )
+
+        executor = Executor(session_factory, config)
+
+        # Mock successful pipeline run (both health check and full run use this)
+        mock_pipeline = MagicMock()
+        mock_pipeline.run.return_value = {
+            "pipeline_id": 999,
+            "total_queries": 10,
+            "failed_queries": [],
+        }
+        config.pipelines[0].get_pipeline_class = lambda: lambda **kw: mock_pipeline
+        executor._verify_pipeline_completion = MagicMock(return_value=True)
+
+        result = executor.run()
+
+        # Pipeline should succeed (health check passes, full run succeeds)
+        assert result.total_pipelines_run == 1
+        assert result.total_pipelines_succeeded == 1
+        assert result.pipeline_results[0].success is True
+
+        # Pipeline's run() should be called at least twice (health check + full run)
+        assert mock_pipeline.run.call_count >= 2
+
+    def test_health_check_failure_skips_pipeline(self, session_factory):
+        """Test that health check failure causes pipeline to be skipped."""
+
+        @dataclass
+        class MockRetrievalPipeline(BaseRetrievalPipelineConfig):
+            def get_pipeline_class(self) -> type:
+                return MagicMock
+
+            def get_pipeline_kwargs(self) -> dict[str, Any]:
+                return {}
+
+            def get_run_kwargs(self) -> dict[str, Any]:
+                return {}
+
+        config = ExecutorConfig(
+            pipelines=[MockRetrievalPipeline(name="test_health_check_failure")],
+            metrics=[],
+            health_check_queries=2,
+        )
+
+        executor = Executor(session_factory, config)
+
+        # Mock pipeline that raises an error
+        mock_pipeline = MagicMock()
+        mock_pipeline.run.side_effect = RuntimeError("Connection refused")
+        config.pipelines[0].get_pipeline_class = lambda: lambda **kw: mock_pipeline
+
+        result = executor.run()
+
+        # Pipeline should be marked as failed due to health check failure
+        assert result.total_pipelines_run == 1
+        assert result.total_pipelines_succeeded == 0
+        assert result.pipeline_results[0].success is False
+        assert "Health check failed" in result.pipeline_results[0].error_message
+
+    def test_health_check_zero_queries_fails(self, session_factory):
+        """Test that health check fails when no queries are processed."""
+
+        @dataclass
+        class MockRetrievalPipeline(BaseRetrievalPipelineConfig):
+            def get_pipeline_class(self) -> type:
+                return MagicMock
+
+            def get_pipeline_kwargs(self) -> dict[str, Any]:
+                return {}
+
+            def get_run_kwargs(self) -> dict[str, Any]:
+                return {}
+
+        config = ExecutorConfig(
+            pipelines=[MockRetrievalPipeline(name="test_health_check_zero")],
+            metrics=[],
+            health_check_queries=2,
+        )
+
+        executor = Executor(session_factory, config)
+
+        # Mock pipeline that returns 0 queries
+        mock_pipeline = MagicMock()
+        mock_pipeline.run.return_value = {
+            "pipeline_id": 999,
+            "total_queries": 0,
+            "failed_queries": [],
+        }
+        config.pipelines[0].get_pipeline_class = lambda: lambda **kw: mock_pipeline
+
+        result = executor.run()
+
+        # Pipeline should fail because health check found 0 queries
+        assert result.total_pipelines_run == 1
+        assert result.total_pipelines_succeeded == 0
+        assert result.pipeline_results[0].success is False
+        assert "No queries were processed" in result.pipeline_results[0].error_message
+
+    def test_health_check_failed_queries_fails(self, session_factory):
+        """Test that health check fails when queries fail during processing."""
+
+        @dataclass
+        class MockRetrievalPipeline(BaseRetrievalPipelineConfig):
+            def get_pipeline_class(self) -> type:
+                return MagicMock
+
+            def get_pipeline_kwargs(self) -> dict[str, Any]:
+                return {}
+
+            def get_run_kwargs(self) -> dict[str, Any]:
+                return {}
+
+        config = ExecutorConfig(
+            pipelines=[MockRetrievalPipeline(name="test_health_check_failed_queries")],
+            metrics=[],
+            health_check_queries=2,
+        )
+
+        executor = Executor(session_factory, config)
+
+        # Mock pipeline that returns some failed queries
+        mock_pipeline = MagicMock()
+        mock_pipeline.run.return_value = {
+            "pipeline_id": 999,
+            "total_queries": 1,
+            "failed_queries": [42],
+        }
+        config.pipelines[0].get_pipeline_class = lambda: lambda **kw: mock_pipeline
+
+        result = executor.run()
+
+        # Pipeline should fail because health check had failed queries
+        assert result.total_pipelines_run == 1
+        assert result.total_pipelines_succeeded == 0
+        assert result.pipeline_results[0].success is False
+        assert "queries failed during health check" in result.pipeline_results[0].error_message
 
 
 class TestExecutorResumePartialPipeline:
@@ -403,6 +613,7 @@ class TestExecutorResumePartialPipeline:
             ],
             metrics=[RecallConfig()],
             max_retries=1,
+            health_check_queries=0,
         )
 
         # First run
