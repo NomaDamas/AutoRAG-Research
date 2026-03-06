@@ -8,6 +8,10 @@ from autorag_research.pipelines.generation.et2rag import (
 )
 from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline, IRCoTGenerationPipelineConfig
 from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
+from autorag_research.pipelines.generation.question_decomposition import (
+    QuestionDecompositionPipeline,
+    QuestionDecompositionPipelineConfig,
+)
 from autorag_research.pipelines.generation.visrag_gen import (
     DEFAULT_VISRAG_PROMPT,
     VisRAGGenerationPipeline,
@@ -26,6 +30,8 @@ __all__ = [
     "IRCoTGenerationPipelineConfig",
     "MAINRAGPipeline",
     "OrganizationStrategy",
+    "QuestionDecompositionPipeline",
+    "QuestionDecompositionPipelineConfig",
     "VisRAGGenerationPipeline",
     "VisRAGGenerationPipelineConfig",
 ]
