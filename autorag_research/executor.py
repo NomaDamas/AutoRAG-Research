@@ -177,7 +177,7 @@ class Executor:
         """Run all configured pipelines and evaluate metrics.
 
         For each pipeline:
-        1. Resolve dependencies (generation only)
+        1. Resolve retrieval-pipeline dependencies
         2. Run health check (if enabled)
         3. Run the pipeline with retry logic
         4. Verify completion
@@ -193,9 +193,8 @@ class Executor:
         for pipeline_config in self.config.pipelines:
             logger.info(f"=== Starting pipeline: {pipeline_config.name} ===")
 
-            # Step 0: Resolve dependencies for generation pipelines
-            if pipeline_config.pipeline_type == PipelineType.GENERATION:
-                self._resolve_dependencies(pipeline_config)
+            # Step 0: Resolve retrieval-pipeline dependencies
+            self._resolve_dependencies(pipeline_config)
 
             # Step 1: Run health check (if enabled)
             if self.config.health_check_queries > 0:
@@ -527,33 +526,32 @@ class Executor:
             )
 
     def _resolve_dependencies(self, config: BasePipelineConfig) -> None:
-        """Resolve dependencies for a generation pipeline config.
+        """Resolve retrieval-pipeline dependencies for pipeline configs.
 
-        Checks for `retrieval_pipeline_name` attribute and loads/instantiates
-        the referenced retrieval pipeline, then injects it into the config.
-
-        Uses Hydra's compose API when available to leverage configured search paths,
-        with fallback to direct YAML loading from config_dir.
-
-        Args:
-            config: Pipeline configuration (processes any BaseGenerationPipelineConfig
-                with a non-empty retrieval_pipeline_name).
+        Supports both generation pipelines that depend on a retrieval pipeline and
+        retrieval pipelines that compose another retrieval pipeline.
         """
         from hydra.utils import instantiate
 
         from autorag_research.config import BaseGenerationPipelineConfig
 
-        # Only process generation pipeline configs
-        if not isinstance(config, BaseGenerationPipelineConfig):
+        dependency_name: str | None = None
+        injected_pipeline = None
+
+        if isinstance(config, BaseGenerationPipelineConfig):
+            injected_pipeline = config._retrieval_pipeline
+            dependency_name = config.retrieval_pipeline_name
+        elif hasattr(config, "inject_retrieval_pipeline") and hasattr(config, "inner_retrieval_pipeline_name"):
+            injected_pipeline = getattr(config, "_inner_retrieval_pipeline", None)
+            dependency_name = config.inner_retrieval_pipeline_name
+        else:
             return
 
-        # Skip if retrieval pipeline already injected (programmatic usage)
-        if config._retrieval_pipeline is not None:
+        if injected_pipeline is not None:
             logger.debug(f"Retrieval pipeline already injected for {config.name}")
             return
 
-        # Skip if no retrieval pipeline dependency
-        name: str = config.retrieval_pipeline_name
+        name = dependency_name
         if not name:
             return
 
