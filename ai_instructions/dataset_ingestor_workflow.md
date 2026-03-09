@@ -28,7 +28,7 @@ This document defines the workflow for implementing a new Dataset Ingestor in **
 ### Phase 2: Design (with Human Review)
 
 * **Skill:** `/design-ingestor` (MANDATORY - do not call schema-architect directly)
-* **Input:** `Source_Data_Profile.json`, `ai_instructions/db_schema.md`.
+* **Input:** `Source_Data_Profile.json`, `postgresql/db/init/001-schema.sql` (canonical schema), and `autorag_research/orm/schema_factory.py` if implementation mapping details are needed.
 * **Output:** `Mapping_Strategy.md` (Local only. Do not commit).
 
 **Human-in-the-Loop:** The `/design-ingestor` skill enforces a mandatory review cycle:

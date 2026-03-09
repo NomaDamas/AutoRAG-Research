@@ -262,6 +262,8 @@ class ExecutorConfig:
         metrics: List of metric configurations to evaluate.
         max_retries: Maximum number of retry attempts for failed pipelines.
         eval_batch_size: Batch size for metric evaluation.
+        health_check_queries: Number of queries to run during health check before full execution.
+            Set to 0 to disable. Defaults to 2.
 
     Example:
         ```python
@@ -282,3 +284,4 @@ class ExecutorConfig:
     metrics: list[BaseMetricConfig]
     max_retries: int = 3
     eval_batch_size: int = 100
+    health_check_queries: int = 2
