@@ -32,8 +32,10 @@ Evaluation measures for retrieval and generation.
 | Find relevant quickly | MRR |
 | Text similarity | ROUGE, BLEU |
 | Semantic correctness | BERTScore |
+| Trust-Align refusal/correctness | Trust-Align Metrics Plugin |
 
 ## Browse
 
 - [Retrieval Metrics](retrieval/index.md)
 - [Generation Metrics](generation/index.md)
+- [Trust-Align Metrics Plugin](../plugins/trust-align-metrics.md)

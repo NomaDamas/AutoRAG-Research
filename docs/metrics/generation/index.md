@@ -6,11 +6,14 @@ Metrics for evaluating text generation quality.
 
 | Metric | Measures | When to Use |
 |--------|----------|-------------|
-| [BLEU](bleu.md) | N-gram precision | Translation-style tasks |
+| [BLEU](bleu.md) | N-gram overlap | Translation-style tasks |
 | [METEOR](meteor.md) | Alignment | Better for paraphrases |
 | [ROUGE](rouge.md) | N-gram recall | Summarization |
 | [BERTScore](bert-score.md) | Semantic similarity | Meaning preservation |
 | [SemScore](sem-score.md) | Embedding similarity | Semantic correctness |
+
+Trust-Align exact refusal/correctness metrics are available as a plugin:
+[Trust-Align Metrics Plugin](../../plugins/trust-align-metrics.md).
 
 ## Base Class
 

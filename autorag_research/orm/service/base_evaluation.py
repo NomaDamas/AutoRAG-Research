@@ -10,7 +10,7 @@ Provides abstract base class for evaluation services with:
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -70,6 +70,7 @@ class BaseEvaluationService(BaseService, ABC):
         super().__init__(session_factory, schema)
         self._metric_id: int | str | None = None
         self._metric_func: MetricFunc | None = None
+        self._compute_granularity: Literal["query", "dataset"] = "query"
 
     @property
     def metric_id(self) -> int | str | None:
@@ -81,15 +82,25 @@ class BaseEvaluationService(BaseService, ABC):
         """Get current metric function."""
         return self._metric_func
 
-    def set_metric(self, metric_id: int | str, metric_func: MetricFunc) -> None:
+    def set_metric(
+        self,
+        metric_id: int | str,
+        metric_func: MetricFunc,
+        compute_granularity: Literal["query", "dataset"] = "query",
+    ) -> None:
         """Set the metric ID and function for evaluation.
 
         Args:
             metric_id: The ID of the metric in the database.
             metric_func: Function that takes list[MetricInput] and returns list[float | None].
+            compute_granularity: Metric compute granularity ("query" or "dataset").
         """
+        if compute_granularity not in ("query", "dataset"):
+            msg = f"Invalid compute_granularity: {compute_granularity}"
+            raise ValueError(msg)
         self._metric_id = metric_id
         self._metric_func = metric_func
+        self._compute_granularity = compute_granularity
 
     def get_metric(self, metric_name: str, metric_type: str | None = None) -> Any | None:
         """Get metric by name and optionally type.
@@ -314,21 +325,68 @@ class BaseEvaluationService(BaseService, ABC):
             f"metric_id={self._metric_id}, total_queries={total_count}"
         )
 
-        total_evaluated = 0
-        all_scores: list[float] = []
+        if self._compute_granularity == "dataset":
+            total_evaluated, all_scores = self._evaluate_dataset_level(pipeline_id, batch_size)
+        else:
+            total_evaluated, all_scores = self._evaluate_query_level(pipeline_id, batch_size)
+
+        # Calculate average
+        average = sum(all_scores) / len(all_scores) if all_scores else None
+
+        logger.info(
+            f"Evaluation complete: {total_evaluated} queries evaluated for "
+            f"pipeline_id={pipeline_id}, metric_id={self._metric_id}, average={average}"
+        )
+        return total_evaluated, average
+
+    def _collect_missing_metric_inputs(
+        self,
+        pipeline_id: int | str,
+        batch_size: int,
+    ) -> tuple[list[int | str], list[MetricInput]]:
+        """Collect metric inputs for queries missing evaluation results."""
+        if self._metric_id is None:
+            return [], []
+
+        query_ids: list[int | str] = []
+        metric_inputs: list[MetricInput] = []
 
         for batch_num, batch_query_ids in enumerate(self._iter_query_id_batches(batch_size)):
-            # Filter to missing query IDs for this batch
             missing_query_ids = self._filter_missing_query_ids(pipeline_id, self._metric_id, batch_query_ids)
-
             if not missing_query_ids:
                 logger.debug(f"Batch {batch_num}: All queries already evaluated, skipping")
                 continue
 
-            # Fetch execution results for missing queries
             execution_results = self._get_execution_results(pipeline_id, missing_query_ids)
 
-            # Prepare metric inputs
+            for query_id in missing_query_ids:
+                if query_id in execution_results:
+                    metric_input = self._prepare_metric_input(pipeline_id, query_id, execution_results[query_id])
+                    query_ids.append(query_id)
+                    metric_inputs.append(metric_input)
+
+        return query_ids, metric_inputs
+
+    def _evaluate_query_level(
+        self,
+        pipeline_id: int | str,
+        batch_size: int,
+    ) -> tuple[int, list[float]]:
+        """Evaluate query-level metrics batch-by-batch."""
+        total_evaluated = 0
+        all_scores: list[float] = []
+
+        for batch_num, batch_query_ids in enumerate(self._iter_query_id_batches(batch_size)):
+            if self._metric_id is None:
+                continue
+
+            missing_query_ids = self._filter_missing_query_ids(pipeline_id, self._metric_id, batch_query_ids)
+            if not missing_query_ids:
+                logger.debug(f"Batch {batch_num}: All queries already evaluated, skipping")
+                continue
+
+            execution_results = self._get_execution_results(pipeline_id, missing_query_ids)
+
             query_ids: list[int | str] = []
             metric_inputs: list[MetricInput] = []
             for query_id in missing_query_ids:
@@ -340,13 +398,9 @@ class BaseEvaluationService(BaseService, ABC):
             if not metric_inputs:
                 continue
 
-            # Compute metrics in batch
             results = self._compute_metrics_batch(query_ids, metric_inputs)
-
-            # Filter successful results
             valid_results = [(query_id, score) for query_id, score in results if score is not None]
 
-            # Save results and collect scores for average
             if valid_results:
                 self._save_evaluation_results(pipeline_id, self._metric_id, valid_results)
                 total_evaluated += len(valid_results)
@@ -354,14 +408,33 @@ class BaseEvaluationService(BaseService, ABC):
 
             logger.info(f"Batch {batch_num}: Evaluated {len(valid_results)}/{len(metric_inputs)} queries")
 
-        # Calculate average
-        average = sum(all_scores) / len(all_scores) if all_scores else None
+        return total_evaluated, all_scores
+
+    def _evaluate_dataset_level(
+        self,
+        pipeline_id: int | str,
+        batch_size: int,
+    ) -> tuple[int, list[float]]:
+        """Evaluate dataset-level metrics with one full-dataset metric call."""
+        if self._metric_id is None:
+            return 0, []
+
+        query_ids, metric_inputs = self._collect_missing_metric_inputs(pipeline_id, batch_size)
+        if not metric_inputs:
+            logger.info("Dataset-level metric: no missing queries to evaluate")
+            return 0, []
+
+        results = self._compute_metrics_batch(query_ids, metric_inputs)
+        valid_results = [(query_id, score) for query_id, score in results if score is not None]
+        if valid_results:
+            self._save_evaluation_results(pipeline_id, self._metric_id, valid_results)
 
         logger.info(
-            f"Evaluation complete: {total_evaluated} queries evaluated for "
-            f"pipeline_id={pipeline_id}, metric_id={self._metric_id}, average={average}"
+            "Dataset-level metric evaluated: %s/%s queries",
+            len(valid_results),
+            len(metric_inputs),
         )
-        return total_evaluated, average
+        return len(valid_results), [score for _, score in valid_results]
 
     def is_evaluation_complete(
         self,

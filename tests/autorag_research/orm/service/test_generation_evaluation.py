@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pytest
 
 from autorag_research.orm.service.generation_evaluation import GenerationEvaluationService
@@ -80,6 +82,44 @@ class TestGenerationEvaluationService:
         results = service._get_execution_results(pipeline_id=1, query_ids=[3])
         assert 3 not in results
 
+    def test_get_execution_results_includes_retrieved_contents_from_pipeline_results(self, service, monkeypatch):
+        class Obj:
+            def __init__(self, **kwargs):
+                self.__dict__.update(kwargs)
+
+        class FakeUow:
+            def __init__(self):
+                self.executor_results = Obj(
+                    get_by_queries_and_pipeline=lambda query_ids, pipeline_id: [
+                        Obj(query_id=1, generation_result="Generated answer")
+                    ]
+                )
+                self.chunk_results = Obj(
+                    get_by_query_and_pipeline=lambda query_ids, pipeline_id: [
+                        Obj(query_id=1, chunk_id=2, rel_score=0.9),
+                        Obj(query_id=1, chunk_id=1, rel_score=0.8),
+                    ]
+                )
+                self.retrieval_relations = Obj(get_by_query_id=lambda query_id: [])
+                self.chunks = Obj(
+                    get_by_ids=lambda chunk_ids: [
+                        Obj(id=1, contents="chunk one"),
+                        Obj(id=2, contents="chunk two"),
+                    ]
+                )
+                self.queries = Obj(get_by_id=lambda query_id: Obj(contents="q1", generation_gt=["gt"]))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        monkeypatch.setattr(service, "_create_uow", lambda: FakeUow())
+
+        results = service._get_execution_results(pipeline_id=1, query_ids=[1])
+        assert results[1]["retrieved_contents"] == ["chunk two", "chunk one"]
+
     def test_filter_missing_query_ids(self, service):
         missing = service._filter_missing_query_ids(pipeline_id=1, metric_id=2, query_ids=[1, 2, 3])
 
@@ -91,6 +131,7 @@ class TestGenerationEvaluationService:
         execution_result = {
             "generated_text": "This is generated",
             "generation_gt": ["ground", "truth"],
+            "retrieved_contents": ["Retrieved chunk A", "Retrieved chunk B"],
         }
 
         metric_input = service._prepare_metric_input(pipeline_id=1, query_id=1, execution_result=execution_result)
@@ -98,6 +139,7 @@ class TestGenerationEvaluationService:
         assert isinstance(metric_input, MetricInput)
         assert metric_input.generated_texts == "This is generated"
         assert metric_input.generation_gt == ["ground", "truth"]
+        assert metric_input.retrieved_contents == ["Retrieved chunk A", "Retrieved chunk B"]
 
     def test_save_evaluation_results(self, service):
         results = [(3, 0.65), (4, 0.70)]
@@ -176,4 +218,40 @@ class TestGenerationEvaluationService:
             uow.executor_results.delete_by_composite_key(query_id=3, pipeline_id=1)
             uow.executor_results.delete_by_composite_key(query_id=4, pipeline_id=1)
             uow.executor_results.delete_by_composite_key(query_id=5, pipeline_id=1)
+            uow.commit()
+
+    def test_evaluate_dataset_level_metric_persists_same_score_for_all_queries(self, service):
+        score = 0.777
+
+        def dataset_metric(metric_inputs):
+            return [score] * len(metric_inputs)
+
+        metric_name = f"test_dataset_metric_{uuid4().hex[:8]}"
+        metric_id = service.get_or_create_metric(metric_name, "generation")
+
+        service.set_metric(
+            metric_id=metric_id,
+            metric_func=dataset_metric,
+            compute_granularity="dataset",
+        )
+
+        all_query_ids = service._fetch_query_ids_batch(limit=100, offset=0)
+        expected_count = len(service._get_execution_results(pipeline_id=1, query_ids=all_query_ids))
+
+        evaluated_count, average = service.evaluate(pipeline_id=1, batch_size=2)
+        assert evaluated_count == expected_count
+        assert average == pytest.approx(score)
+
+        with service._create_uow() as uow:
+            rows = uow.evaluation_results.get_by_pipeline_and_metric(pipeline_id=1, metric_id=metric_id)
+            assert len(rows) == expected_count
+            assert all(row.metric_result == pytest.approx(score) for row in rows)
+
+            for row in rows:
+                uow.evaluation_results.delete_by_composite_key(
+                    query_id=row.query_id,
+                    pipeline_id=row.pipeline_id,
+                    metric_id=row.metric_id,
+                )
+            uow.metrics.delete_by_id(metric_id)
             uow.commit()

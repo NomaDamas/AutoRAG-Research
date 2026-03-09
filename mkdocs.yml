@@ -82,6 +82,7 @@ nav:
       - Retrieval Pipeline: plugins/retrieval-pipeline.md
       - Generation Pipeline: plugins/generation-pipeline.md
       - Metrics: plugins/metrics.md
+      - Trust-Align Metrics: plugins/trust-align-metrics.md
       - Best Practices: plugins/best-practices.md
   - Agent Skill: agent-skill/index.md
   - CLI Reference: cli/index.md

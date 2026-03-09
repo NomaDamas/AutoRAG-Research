@@ -35,6 +35,7 @@ def test_retrieval_evaluation_uow_repository_returns_correct_type(session_factor
         ("pipelines", PipelineRepository),
         ("metrics", MetricRepository),
         ("executor_results", ExecutorResultRepository),
+        ("chunk_results", ChunkRetrievedResultRepository),
         ("evaluation_results", EvaluatorResultRepository),
     ],
 )
