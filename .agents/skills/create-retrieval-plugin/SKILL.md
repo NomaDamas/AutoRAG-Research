@@ -26,6 +26,11 @@ Read the generated `pipeline.py`, `pyproject.toml`, YAML config, and test file t
 
 ### 2. Implement
 
+For the shared pipeline implementation and testing rules, read:
+- `ai_instructions/pipeline_implementer.md`
+- `ai_instructions/pipeline_test_writer.md`
+- `ai_instructions/pipeline_architecture_mapper.md`
+
 Implement the two abstract methods in the pipeline class:
 
 - `_retrieve_by_id(query_id, top_k)` — retrieve using query ID (query exists in DB with stored embedding)

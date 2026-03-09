@@ -26,6 +26,11 @@ Read the generated `pipeline.py`, `pyproject.toml`, YAML config, and test file t
 
 ### 2. Implement
 
+For the shared pipeline implementation and testing rules, read:
+- `ai_instructions/pipeline_implementer.md`
+- `ai_instructions/pipeline_test_writer.md`
+- `ai_instructions/pipeline_architecture_mapper.md`
+
 Implement the `_generate(query_id, top_k)` method. This is where your RAG strategy lives.
 
 **Available attributes inside the pipeline:**
