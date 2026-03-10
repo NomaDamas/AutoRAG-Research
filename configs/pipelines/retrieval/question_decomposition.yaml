@@ -1,0 +1,10 @@
+_target_: autorag_research.pipelines.retrieval.question_decomposition.QuestionDecompositionRetrievalPipelineConfig
+description: "Question Decomposition retrieval with optional cross-encoder reranking"
+name: question_decomposition
+inner_retrieval_pipeline_name: bm25
+llm: gpt-4o-mini
+reranker: sentence_transformer
+max_subquestions: 3
+fetch_k_multiplier: 2
+top_k: 10
+batch_size: 128

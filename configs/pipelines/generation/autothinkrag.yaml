@@ -1,0 +1,14 @@
+_target_: autorag_research.pipelines.generation.autothinkrag.AutoThinkRAGPipelineConfig
+description: "AutoThinkRAG: Complexity-aware RAG with adaptive reasoning paths and optional VLM visual interpretation"
+name: autothinkrag
+retrieval_pipeline_name: bm25
+llm: gpt-4o-mini
+vlm: null
+max_reasoning_steps: 3
+temperature: 0.0
+max_tokens: null
+top_k: 10
+batch_size: 128
+max_concurrency: 8
+max_retries: 3
+retry_delay: 1.0
