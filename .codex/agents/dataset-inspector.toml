@@ -1,0 +1,15 @@
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+sandbox_mode = "workspace-write"
+
+developer_instructions = """
+# Dataset Inspector
+
+Read and follow:
+- `ai_instructions/dataset_inspector.md`
+
+Task:
+- Analyze the dataset structure only
+- Produce `Source_Data_Profile.json` in the project root
+- Do not write ingestion or implementation code
+"""
