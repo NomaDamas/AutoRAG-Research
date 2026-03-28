@@ -1,0 +1,14 @@
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+
+developer_instructions = """
+# Test Writer
+
+Read and follow:
+- `ai_instructions/test_writer.md`
+
+Task:
+- Write the requested tests under `tests/`
+- Follow the existing project conventions and shared test-generation guidance
+- Avoid redundant coverage and constructor validation tests
+"""

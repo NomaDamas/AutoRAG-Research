@@ -1,0 +1,38 @@
+# AutoRAG-Research Codex Agent Configuration
+# Maps Claude Code agents (.claude/agents/) to Codex roles
+
+[agents.pipeline-paper-analyst]
+description = "Analyze research papers to extract pipeline algorithm details. Use when implementing a new pipeline from a paper."
+config_file = "agents/pipeline-paper-analyst.toml"
+
+[agents.pipeline-architecture-mapper]
+description = "Design pipeline architecture by mapping algorithms to existing base classes and patterns."
+config_file = "agents/pipeline-architecture-mapper.toml"
+
+[agents.pipeline-test-writer]
+description = "Write tests BEFORE implementation (TDD) for new pipelines based on design documents."
+config_file = "agents/pipeline-test-writer.toml"
+
+[agents.pipeline-implementer]
+description = "Implement pipeline code to pass pre-written tests, following the design document."
+config_file = "agents/pipeline-implementer.toml"
+
+[agents.pipeline-validator]
+description = "Validate pipeline implementation by running tests and make check."
+config_file = "agents/pipeline-validator.toml"
+
+[agents.dataset-inspector]
+description = "Analyze external datasets (HuggingFace) to understand structure before writing ingestion code."
+config_file = "agents/dataset-inspector.toml"
+
+[agents.schema-architect]
+description = "Design database mapping strategies for ingesting external data into AutoRAG-Research schema."
+config_file = "agents/schema-architect.toml"
+
+[agents.test-writer]
+description = "Write tests for data ingestors following TDD approach with IngestorTestConfig/Verifier."
+config_file = "agents/test-writer.toml"
+
+[agents.implementation-specialist]
+description = "Implement data ingestor classes from design documents using service layer patterns."
+config_file = "agents/implementation-specialist.toml"
