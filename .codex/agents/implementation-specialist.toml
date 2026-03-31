@@ -1,0 +1,14 @@
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+
+developer_instructions = """
+# Implementation Specialist
+
+Read and follow:
+- `ai_instructions/implementation_specialist.md`
+
+Task:
+- Implement the ingestor described in `Mapping_Strategy.md`
+- Write code in `autorag_research/data/`
+- Follow service-layer patterns only
+"""

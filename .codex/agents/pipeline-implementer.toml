@@ -1,0 +1,14 @@
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+
+developer_instructions = """
+# Pipeline Implementer
+
+Read and follow:
+- `ai_instructions/pipeline_implementer.md`
+
+Task:
+- Implement the approved pipeline from `Pipeline_Design.md`
+- Update the pipeline module, config wiring, and exports
+- Do not redesign the algorithm or rewrite the tests
+"""

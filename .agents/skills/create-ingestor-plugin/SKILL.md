@@ -28,6 +28,11 @@ The generated `pyproject.toml` registers the `autorag_research.ingestors` entry 
 
 ### 2. Implement the ingestor
 
+For the code-level implementation rules that are shared with the agent workflows, read:
+- `ai_instructions/implementation_specialist.md`
+- `ai_instructions/schema_architect.md`
+- `ai_instructions/test_writer.md`
+
 **Required methods:**
 - `__init__(embedding_model, ...)` — accept embedding model + dataset-specific params
 - `detect_primary_key_type()` → `"bigint"` or `"string"`

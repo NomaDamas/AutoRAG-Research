@@ -13,6 +13,7 @@ from autorag_research.config import (
     BaseRetrievalPipelineConfig,
     ExecutorConfig,
     MetricType,
+    PipelineType,
 )
 from autorag_research.evaluation.metrics.retrieval import NDCGConfig, RecallConfig
 from autorag_research.executor import Executor, ExecutorResult, MetricResult
@@ -551,6 +552,28 @@ class TestHealthCheck:
         assert result.total_pipelines_succeeded == 0
         assert result.pipeline_results[0].success is False
         assert "queries failed during health check" in result.pipeline_results[0].error_message
+
+    def test_health_check_cleanup_removes_pipeline_and_evaluation_artifacts(self, session_factory):
+        """Health-check cleanup should remove temp execution, evaluation, and pipeline rows."""
+        executor = Executor(session_factory, ExecutorConfig(pipelines=[], metrics=[], health_check_queries=2))
+
+        mock_pipeline_service = MagicMock()
+        mock_uow = MagicMock()
+        mock_context = MagicMock()
+        mock_context.__enter__.return_value = mock_uow
+        mock_context.__exit__.return_value = None
+        executor._retrieval_eval_service._create_uow = MagicMock(return_value=mock_context)
+
+        executor._cleanup_health_check_artifacts(
+            pipeline_id=321,
+            pipeline_type=PipelineType.RETRIEVAL,
+            pipeline_service=mock_pipeline_service,
+        )
+
+        mock_pipeline_service.delete_pipeline_results.assert_called_once_with(321)
+        mock_uow.evaluation_results.delete_by_pipeline.assert_called_once_with(321)
+        mock_uow.pipelines.delete_by_id.assert_called_once_with(321)
+        mock_uow.commit.assert_called_once()
 
 
 class TestExecutorResumePartialPipeline:

@@ -6,7 +6,7 @@ for managing query-pipeline-metric evaluation results.
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
 
 from autorag_research.orm.repository.base import GenericRepository
@@ -200,6 +200,19 @@ class EvaluatorResultRepository(GenericRepository[Any]):
             self.model_cls.query_id.in_(query_ids),
         )
         return list(self.session.execute(stmt).scalars().all())
+
+    def delete_by_pipeline(self, pipeline_id: int | str) -> int:
+        """Delete all evaluation results for a specific pipeline.
+
+        Args:
+            pipeline_id: The pipeline ID.
+
+        Returns:
+            Number of deleted records.
+        """
+        stmt = delete(self.model_cls).where(self.model_cls.pipeline_id == pipeline_id)
+        result = self.session.execute(stmt)
+        return result.rowcount  # ty: ignore
 
     def delete_by_composite_key(self, query_id: int | str, pipeline_id: int | str, metric_id: int | str) -> bool:
         """Delete an evaluation result by its composite primary key.

@@ -328,11 +328,38 @@ class Executor:
         finally:
             if pipeline is not None:
                 try:
-                    pipeline._service.delete_pipeline_results(pipeline.pipeline_id)
+                    self._cleanup_health_check_artifacts(pipeline.pipeline_id, config.pipeline_type, pipeline._service)
                 except Exception:
                     logger.warning("Failed to clean up health check data")
                 if hasattr(pipeline, "close"):
                     pipeline.close()
+
+    def _cleanup_health_check_artifacts(
+        self,
+        pipeline_id: int | str,
+        pipeline_type: PipelineType,
+        pipeline_service: Any,
+    ) -> None:
+        """Delete temporary health-check artifacts for a pipeline run.
+
+        Health checks should not leave behind persisted execution or evaluation data
+        because the next health check reuses the same temporary pipeline name.
+
+        Args:
+            pipeline_id: Temporary health-check pipeline ID.
+            pipeline_type: Type of pipeline used to select the evaluation service.
+            pipeline_service: Concrete pipeline service used to clean execution results.
+        """
+        pipeline_service.delete_pipeline_results(pipeline_id)
+
+        evaluation_service = (
+            self._retrieval_eval_service if pipeline_type == PipelineType.RETRIEVAL else self._generation_eval_service
+        )
+
+        with evaluation_service._create_uow() as uow:
+            uow.evaluation_results.delete_by_pipeline(pipeline_id)
+            uow.pipelines.delete_by_id(pipeline_id)
+            uow.commit()
 
     def _run_pipeline_with_retry(self, config: BasePipelineConfig) -> PipelineResult:
         """Run a single pipeline with retry logic.

@@ -1,0 +1,5 @@
+_target_: autorag_research.evaluation.metrics.generation.ResponseRelevancyConfig
+description: "Response Relevancy (RAGAS-style): reverse question generation + cosine similarity"
+llm: openai-gpt5-mini
+embedding_model: openai-large
+strictness: 3
