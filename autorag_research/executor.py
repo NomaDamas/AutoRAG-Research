@@ -570,7 +570,7 @@ class Executor:
             dependency_name = config.retrieval_pipeline_name
         elif hasattr(config, "inject_retrieval_pipeline") and hasattr(config, "inner_retrieval_pipeline_name"):
             injected_pipeline = getattr(config, "_inner_retrieval_pipeline", None)
-            dependency_name = config.inner_retrieval_pipeline_name
+            dependency_name = getattr(config, "inner_retrieval_pipeline_name", None)
         else:
             return
 
@@ -587,7 +587,7 @@ class Executor:
         # Return cached pipeline if already loaded
         if name in self._dependency_pipelines:
             logger.debug(f"Using cached retrieval pipeline: {name}")
-            config.inject_retrieval_pipeline(self._dependency_pipelines[name])
+            config.inject_retrieval_pipeline(self._dependency_pipelines[name])  # ty: ignore[unresolved-attribute]
             return
 
         # Load pipeline config from pipelines/retrieval/ directory
@@ -605,5 +605,5 @@ class Executor:
 
         # Cache and inject
         self._dependency_pipelines[name] = retrieval_pipeline
-        config.inject_retrieval_pipeline(retrieval_pipeline)
+        config.inject_retrieval_pipeline(retrieval_pipeline)  # ty: ignore[unresolved-attribute]
         logger.info(f"Loaded and injected retrieval pipeline: {name}")

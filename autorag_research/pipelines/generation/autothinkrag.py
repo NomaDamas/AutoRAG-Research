@@ -126,7 +126,12 @@ class AutoThinkRAGPipeline(BaseGenerationPipeline):
         self._simple_prompt_template = simple_prompt_template
         self._complex_prompt_template = complex_prompt_template
         self._visual_interpretation_prompt_template = visual_interpretation_prompt_template
-        self._vlm = vlm
+        if isinstance(vlm, str):
+            from autorag_research.injection import load_llm
+
+            self._vlm: BaseChatModel | None = load_llm(vlm)
+        else:
+            self._vlm = vlm
         self._complexity_tiers = complexity_tiers or ["simple", "moderate", "complex"]
         self._max_reasoning_steps = max_reasoning_steps
         self._temperature = temperature
