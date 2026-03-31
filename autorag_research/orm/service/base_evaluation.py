@@ -339,12 +339,14 @@ class BaseEvaluationService(BaseService, ABC):
         )
         return total_evaluated, average
 
-    def _collect_missing_metric_inputs(
+    def _collect_metric_inputs(
         self,
         pipeline_id: int | str,
         batch_size: int,
+        *,
+        only_missing: bool,
     ) -> tuple[list[int | str], list[MetricInput]]:
-        """Collect metric inputs for queries missing evaluation results."""
+        """Collect metric inputs for either missing or all executable queries."""
         if self._metric_id is None:
             return [], []
 
@@ -352,14 +354,17 @@ class BaseEvaluationService(BaseService, ABC):
         metric_inputs: list[MetricInput] = []
 
         for batch_num, batch_query_ids in enumerate(self._iter_query_id_batches(batch_size)):
-            missing_query_ids = self._filter_missing_query_ids(pipeline_id, self._metric_id, batch_query_ids)
-            if not missing_query_ids:
-                logger.debug(f"Batch {batch_num}: All queries already evaluated, skipping")
+            target_query_ids = batch_query_ids
+            if only_missing:
+                target_query_ids = self._filter_missing_query_ids(pipeline_id, self._metric_id, batch_query_ids)
+
+            if not target_query_ids:
+                logger.debug(f"Batch {batch_num}: No queries selected for metric input collection, skipping")
                 continue
 
-            execution_results = self._get_execution_results(pipeline_id, missing_query_ids)
+            execution_results = self._get_execution_results(pipeline_id, target_query_ids)
 
-            for query_id in missing_query_ids:
+            for query_id in target_query_ids:
                 if query_id in execution_results:
                     metric_input = self._prepare_metric_input(pipeline_id, query_id, execution_results[query_id])
                     query_ids.append(query_id)
@@ -419,9 +424,23 @@ class BaseEvaluationService(BaseService, ABC):
         if self._metric_id is None:
             return 0, []
 
-        query_ids, metric_inputs = self._collect_missing_metric_inputs(pipeline_id, batch_size)
+        with self._create_uow() as uow:
+            deleted_count = uow.evaluation_results.delete_by_pipeline_and_metric(pipeline_id, self._metric_id)
+            uow.commit()
+
+        if deleted_count:
+            logger.info(
+                "Dataset-level metric: deleted %s existing evaluation rows before full recomputation",
+                deleted_count,
+            )
+
+        query_ids, metric_inputs = self._collect_metric_inputs(
+            pipeline_id,
+            batch_size,
+            only_missing=False,
+        )
         if not metric_inputs:
-            logger.info("Dataset-level metric: no missing queries to evaluate")
+            logger.info("Dataset-level metric: no executable queries to evaluate")
             return 0, []
 
         results = self._compute_metrics_batch(query_ids, metric_inputs)

@@ -231,6 +231,22 @@ class EvaluatorResultRepository(GenericRepository[Any]):
             return True
         return False
 
+    def delete_by_pipeline_and_metric(self, pipeline_id: int | str, metric_id: int | str) -> int:
+        """Delete all evaluation results for a specific pipeline-metric pair.
+
+        Args:
+            pipeline_id: The pipeline ID.
+            metric_id: The metric ID.
+
+        Returns:
+            Number of deleted rows.
+        """
+        results = self.get_by_pipeline_and_metric(pipeline_id, metric_id)
+        count = len(results)
+        for result in results:
+            self.delete(result)
+        return count
+
     def exists_by_composite_key(self, query_id: int | str, pipeline_id: int | str, metric_id: int | str) -> bool:
         """Check if an evaluation result exists with the given composite key.
 
