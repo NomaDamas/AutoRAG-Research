@@ -1,0 +1,14 @@
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+
+developer_instructions = """
+# Pipeline Test Writer
+
+Read and follow:
+- `ai_instructions/pipeline_test_writer.md`
+
+Task:
+- Write the pipeline tests from `Pipeline_Design.md`
+- Use the shared verifier/test utilities
+- Do not implement the pipeline itself
+"""

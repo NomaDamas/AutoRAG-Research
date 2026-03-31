@@ -1,0 +1,15 @@
+model = "gpt-5.3-codex"
+model_reasoning_effort = "high"
+sandbox_mode = "workspace-write"
+
+developer_instructions = """
+# Pipeline Paper Analyst
+
+Read and follow:
+- `ai_instructions/pipeline_paper_analyst.md`
+
+Task:
+- Analyze the source paper only
+- Produce `Pipeline_Analysis.json`
+- Do not design or implement the pipeline
+"""
