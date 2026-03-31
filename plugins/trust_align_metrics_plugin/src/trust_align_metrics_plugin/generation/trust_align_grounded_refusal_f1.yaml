@@ -1,0 +1,5 @@
+_target_: trust_align_metrics_plugin.metric.TrustAlignGroundedRefusalF1Config
+description: "Trust-Align exact grounded refusal macro F1"
+autoais_model: google/t5_xxl_true_nli_mixture
+refusal_flag: "I apologize, but I couldn't find an answer"
+refusal_threshold: 85

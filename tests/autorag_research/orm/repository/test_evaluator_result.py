@@ -136,3 +136,22 @@ def test_delete_by_composite_key_returns_false_for_nonexistent(evaluator_result_
     deleted = evaluator_result_repository.delete_by_composite_key(999, 999, 999)
 
     assert deleted is False
+
+
+def test_delete_by_pipeline_and_metric(evaluator_result_repository: EvaluatorResultRepository, db_session: Session):
+    new_results = [
+        EvaluationResult(query_id=4, pipeline_id=2, metric_id=2, metric_result=0.95),
+        EvaluationResult(query_id=5, pipeline_id=2, metric_id=2, metric_result=0.96),
+        EvaluationResult(query_id=5, pipeline_id=2, metric_id=1, metric_result=0.5),
+    ]
+    for result in new_results:
+        evaluator_result_repository.add(result)
+    db_session.flush()
+
+    deleted_count = evaluator_result_repository.delete_by_pipeline_and_metric(2, 2)
+    db_session.flush()
+
+    assert deleted_count == 2
+    assert evaluator_result_repository.get_by_composite_key(4, 2, 2) is None
+    assert evaluator_result_repository.get_by_composite_key(5, 2, 2) is None
+    assert evaluator_result_repository.get_by_composite_key(5, 2, 1) is not None
