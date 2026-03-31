@@ -22,10 +22,12 @@ from typing import Any
 from sqlalchemy.orm import sessionmaker
 
 from autorag_research.orm.repository import ExecutorResultRepository
+from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.chunk_retrieved_result import (
     ChunkRetrievedResultRepository,
 )
 from autorag_research.orm.repository.evaluator_result import EvaluatorResultRepository
+from autorag_research.orm.repository.image_chunk import ImageChunkRepository
 from autorag_research.orm.repository.image_chunk_retrieved_result import (
     ImageChunkRetrievedResultRepository,
 )
@@ -279,6 +281,10 @@ class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
         self._executor_result_repo: ExecutorResultRepository | None = None
         self._evaluator_result_repo: EvaluatorResultRepository | None = None
         self._metric_repo: MetricRepository | None = None
+        self._retrieval_relation_repo: RetrievalRelationRepository | None = None
+        self._chunk_repo: ChunkRepository | None = None
+        self._image_chunk_repo: ImageChunkRepository | None = None
+        self._chunk_result_repo: ChunkRetrievedResultRepository | None = None
 
     def _get_schema_classes(self) -> dict[str, type]:
         """Get all model classes from schema.
@@ -293,14 +299,22 @@ class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
                 "ExecutorResult": self._schema.ExecutorResult,
                 "EvaluationResult": self._schema.EvaluationResult,
                 "Metric": self._schema.Metric,
+                "RetrievalRelation": self._schema.RetrievalRelation,
+                "Chunk": self._schema.Chunk,
+                "ImageChunk": self._schema.ImageChunk,
+                "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
             }
 
         from autorag_research.orm.schema import (
+            Chunk,
+            ChunkRetrievedResult,
             EvaluationResult,
             ExecutorResult,
+            ImageChunk,
             Metric,
             Pipeline,
             Query,
+            RetrievalRelation,
         )
 
         return {
@@ -309,6 +323,10 @@ class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
             "ExecutorResult": ExecutorResult,
             "EvaluationResult": EvaluationResult,
             "Metric": Metric,
+            "RetrievalRelation": RetrievalRelation,
+            "Chunk": Chunk,
+            "ImageChunk": ImageChunk,
+            "ChunkRetrievedResult": ChunkRetrievedResult,
         }
 
     def _reset_repositories(self) -> None:
@@ -318,6 +336,10 @@ class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
         self._executor_result_repo = None
         self._evaluator_result_repo = None
         self._metric_repo = None
+        self._retrieval_relation_repo = None
+        self._chunk_repo = None
+        self._image_chunk_repo = None
+        self._chunk_result_repo = None
 
     @property
     def queries(self) -> QueryRepository:
@@ -397,4 +419,40 @@ class GenerationEvaluationUnitOfWork(BaseUnitOfWork):
             "_metric_repo",
             MetricRepository,
             lambda: self._get_schema_classes()["Metric"],
+        )
+
+    @property
+    def retrieval_relations(self) -> RetrievalRelationRepository:
+        """Get the RetrievalRelation repository."""
+        return self._get_repository(
+            "_retrieval_relation_repo",
+            RetrievalRelationRepository,
+            lambda: self._get_schema_classes()["RetrievalRelation"],
+        )
+
+    @property
+    def chunks(self) -> ChunkRepository:
+        """Get the Chunk repository."""
+        return self._get_repository(
+            "_chunk_repo",
+            ChunkRepository,
+            lambda: self._get_schema_classes()["Chunk"],
+        )
+
+    @property
+    def image_chunks(self) -> ImageChunkRepository:
+        """Get the ImageChunk repository."""
+        return self._get_repository(
+            "_image_chunk_repo",
+            ImageChunkRepository,
+            lambda: self._get_schema_classes()["ImageChunk"],
+        )
+
+    @property
+    def chunk_results(self) -> ChunkRetrievedResultRepository:
+        """Get the ChunkRetrievedResult repository."""
+        return self._get_repository(
+            "_chunk_result_repo",
+            ChunkRetrievedResultRepository,
+            lambda: self._get_schema_classes()["ChunkRetrievedResult"],
         )
