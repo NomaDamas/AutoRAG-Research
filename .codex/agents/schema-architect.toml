@@ -1,0 +1,15 @@
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+sandbox_mode = "workspace-write"
+
+developer_instructions = """
+# Schema Architect
+
+Read and follow:
+- `ai_instructions/schema_architect.md`
+
+Task:
+- Convert `Source_Data_Profile.json` into `Mapping_Strategy.md`
+- Choose the parent ingestor class and service layer
+- State assumptions clearly when the source profile is ambiguous
+"""
