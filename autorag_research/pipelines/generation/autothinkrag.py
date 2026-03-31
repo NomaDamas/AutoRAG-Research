@@ -1,5 +1,11 @@
-"""AutoThinkRAG generation pipeline for complexity-aware multimodal RAG."""
+"""AutoThinkRAG generation pipeline for complexity-aware multimodal RAG.
 
+Implements the core QCR (Query Complexity Router) and DPR (Decomposition of
+Perception and Reasoning) ideas from the AutoThinkRAG paper (arxiv:2603.05551),
+adapted to use the retrieval and reranking infrastructure available in AutoRAG-Research.
+"""
+
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -12,6 +18,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.rerankers.base import BaseReranker
 from autorag_research.util import TokenUsageTracker, image_chunk_to_pil_images, pil_image_to_data_uri
 
 DEFAULT_COMPLEXITY_PROMPT_TEMPLATE = """Analyze the complexity of the following query and classify it as exactly one of: simple, moderate, complex.
@@ -33,6 +40,17 @@ Question: {query}
 
 Answer:"""
 
+DEFAULT_MODERATE_PROMPT_TEMPLATE = """Answer the following question by synthesizing information from the provided context. Show your reasoning process.
+
+Context:
+{context}
+
+{visual_context}
+
+Question: {query}
+
+Answer (explain your reasoning):"""
+
 DEFAULT_COMPLEX_PROMPT_TEMPLATE = """You are solving a complex question that requires multi-step reasoning. Use the provided context, visual interpretation, and reasoning chain to synthesize a final answer.
 
 Context:
@@ -53,6 +71,17 @@ Question: {query}
 
 Describe the visual content relevant to answering this question:"""
 
+DEFAULT_DECOMPOSITION_PROMPT_TEMPLATE = """Break down this question into up to {max_subquestions} simpler sub-questions that would help retrieve relevant evidence. Return one sub-question per line.
+
+Question: {query}
+
+Sub-questions:"""
+
+_SUBQUESTION_PREFIX_RE = re.compile(
+    r"^\s*(?:sub-?question\s*\d*\s*:|question\s*\d*\s*:|[-*•]|\d+[.)]|[A-Za-z][.)])\s*",
+    re.IGNORECASE,
+)
+
 
 @dataclass(kw_only=True)
 class AutoThinkRAGPipelineConfig(BaseGenerationPipelineConfig):
@@ -60,20 +89,29 @@ class AutoThinkRAGPipelineConfig(BaseGenerationPipelineConfig):
 
     complexity_prompt_template: str = field(default=DEFAULT_COMPLEXITY_PROMPT_TEMPLATE)
     simple_prompt_template: str = field(default=DEFAULT_SIMPLE_PROMPT_TEMPLATE)
+    moderate_prompt_template: str = field(default=DEFAULT_MODERATE_PROMPT_TEMPLATE)
     complex_prompt_template: str = field(default=DEFAULT_COMPLEX_PROMPT_TEMPLATE)
     visual_interpretation_prompt_template: str = field(default=DEFAULT_VISUAL_INTERPRETATION_PROMPT_TEMPLATE)
+    decomposition_prompt_template: str = field(default=DEFAULT_DECOMPOSITION_PROMPT_TEMPLATE)
     vlm: str | BaseChatModel | None = None
+    reranker: str | BaseReranker | None = None
     complexity_tiers: list[str] = field(default_factory=lambda: ["simple", "moderate", "complex"])
     max_reasoning_steps: int = 3
+    max_subquestions: int = 3
+    fetch_k_multiplier: int = 2
     temperature: float = 0.0
     max_tokens: int | None = None
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Auto-convert VLM string configs into instantiated chat models."""
+        """Auto-convert string configs into instantiated models."""
         if name == "vlm" and isinstance(value, str):
             from autorag_research.injection import load_llm
 
             value = load_llm(value)
+        if name == "reranker" and isinstance(value, str):
+            from autorag_research.injection import load_reranker
+
+            value = load_reranker(value)
         super().__setattr__(name, value)
 
     def get_pipeline_class(self) -> type["AutoThinkRAGPipeline"]:
@@ -90,19 +128,31 @@ class AutoThinkRAGPipelineConfig(BaseGenerationPipelineConfig):
             "llm": self.llm,
             "retrieval_pipeline": self._retrieval_pipeline,
             "vlm": self.vlm,
+            "reranker": self.reranker,
             "complexity_prompt_template": self.complexity_prompt_template,
             "simple_prompt_template": self.simple_prompt_template,
+            "moderate_prompt_template": self.moderate_prompt_template,
             "complex_prompt_template": self.complex_prompt_template,
             "visual_interpretation_prompt_template": self.visual_interpretation_prompt_template,
+            "decomposition_prompt_template": self.decomposition_prompt_template,
             "complexity_tiers": self.complexity_tiers,
             "max_reasoning_steps": self.max_reasoning_steps,
+            "max_subquestions": self.max_subquestions,
+            "fetch_k_multiplier": self.fetch_k_multiplier,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
 
 
 class AutoThinkRAGPipeline(BaseGenerationPipeline):
-    """Complexity-aware generation pipeline with optional visual interpretation."""
+    """Complexity-aware generation pipeline with adaptive retrieval and reasoning.
+
+    Implements three differentiated paths based on query complexity:
+    - **Simple**: Single retrieval pass, direct answer generation.
+    - **Moderate**: Single retrieval with reranking, synthesis-oriented prompt.
+    - **Complex**: Sub-query decomposition, multi-source retrieval, reranking,
+      and iterative multi-step reasoning.
+    """
 
     def __init__(
         self,
@@ -112,11 +162,16 @@ class AutoThinkRAGPipeline(BaseGenerationPipeline):
         retrieval_pipeline: BaseRetrievalPipeline,
         complexity_prompt_template: str = DEFAULT_COMPLEXITY_PROMPT_TEMPLATE,
         simple_prompt_template: str = DEFAULT_SIMPLE_PROMPT_TEMPLATE,
+        moderate_prompt_template: str = DEFAULT_MODERATE_PROMPT_TEMPLATE,
         complex_prompt_template: str = DEFAULT_COMPLEX_PROMPT_TEMPLATE,
         visual_interpretation_prompt_template: str = DEFAULT_VISUAL_INTERPRETATION_PROMPT_TEMPLATE,
-        vlm: str | BaseChatModel | None = None,
+        decomposition_prompt_template: str = DEFAULT_DECOMPOSITION_PROMPT_TEMPLATE,
+        vlm: BaseChatModel | None = None,
+        reranker: BaseReranker | None = None,
         complexity_tiers: list[str] | None = None,
         max_reasoning_steps: int = 3,
+        max_subquestions: int = 3,
+        fetch_k_multiplier: int = 2,
         temperature: float = 0.0,
         max_tokens: int | None = None,
         schema: Any | None = None,
@@ -124,16 +179,16 @@ class AutoThinkRAGPipeline(BaseGenerationPipeline):
         """Initialize the AutoThinkRAG pipeline."""
         self._complexity_prompt_template = complexity_prompt_template
         self._simple_prompt_template = simple_prompt_template
+        self._moderate_prompt_template = moderate_prompt_template
         self._complex_prompt_template = complex_prompt_template
         self._visual_interpretation_prompt_template = visual_interpretation_prompt_template
-        if isinstance(vlm, str):
-            from autorag_research.injection import load_llm
-
-            self._vlm: BaseChatModel | None = load_llm(vlm)
-        else:
-            self._vlm = vlm
+        self._decomposition_prompt_template = decomposition_prompt_template
+        self._vlm = vlm
+        self._reranker = reranker
         self._complexity_tiers = complexity_tiers or ["simple", "moderate", "complex"]
         self._max_reasoning_steps = max_reasoning_steps
+        self._max_subquestions = max_subquestions
+        self._fetch_k_multiplier = fetch_k_multiplier
         self._temperature = temperature
         self._max_tokens = max_tokens
 
@@ -150,11 +205,16 @@ class AutoThinkRAGPipeline(BaseGenerationPipeline):
             "type": "autothinkrag",
             "complexity_prompt_template": self._complexity_prompt_template,
             "simple_prompt_template": self._simple_prompt_template,
+            "moderate_prompt_template": self._moderate_prompt_template,
             "complex_prompt_template": self._complex_prompt_template,
             "visual_interpretation_prompt_template": self._visual_interpretation_prompt_template,
+            "decomposition_prompt_template": self._decomposition_prompt_template,
             "vlm": vlm_name,
+            "reranker": self._reranker.model_name if self._reranker else None,
             "complexity_tiers": self._complexity_tiers,
             "max_reasoning_steps": self._max_reasoning_steps,
+            "max_subquestions": self._max_subquestions,
+            "fetch_k_multiplier": self._fetch_k_multiplier,
             "temperature": self._temperature,
             "max_tokens": self._max_tokens,
             "retrieval_pipeline_id": self._retrieval_pipeline.pipeline_id,
@@ -203,6 +263,63 @@ class AutoThinkRAGPipeline(BaseGenerationPipeline):
         chunk_contents = self._service.get_chunk_contents(chunk_ids)
         return "\n\n".join(content for content in chunk_contents if content)
 
+    # ── Sub-query decomposition ──────────────────────────────────────────
+
+    async def _decompose_query(self, query: str, tracker: TokenUsageTracker) -> list[str]:
+        """Decompose a complex query into simpler sub-questions."""
+        prompt = self._decomposition_prompt_template.format(
+            query=query,
+            max_subquestions=self._max_subquestions,
+        )
+        response = await self._ainvoke_model(self._llm, prompt)
+        tracker.record(response)
+        text = self._extract_text(response).strip()
+
+        if not text:
+            return []
+
+        candidates = [line.strip() for line in text.splitlines() if line.strip()]
+        subquestions: list[str] = []
+        seen = {query.lower().strip()}
+
+        for candidate in candidates:
+            cleaned = _SUBQUESTION_PREFIX_RE.sub("", candidate).strip().rstrip(" ;")
+            if not cleaned or cleaned.lower().strip() in seen:
+                continue
+            seen.add(cleaned.lower().strip())
+            subquestions.append(cleaned)
+            if len(subquestions) >= self._max_subquestions:
+                break
+
+        return subquestions
+
+    # ── Reranking ────────────────────────────────────────────────────────
+
+    async def _rerank_results(
+        self,
+        query: str,
+        chunk_ids: list[int | str],
+        scores: list[float],
+        top_k: int,
+    ) -> tuple[list[int | str], list[float]]:
+        """Rerank retrieved chunks and return the top-k by relevance."""
+        if not self._reranker or not chunk_ids:
+            return chunk_ids[:top_k], scores[:top_k]
+
+        contents = self._service.get_chunk_contents(chunk_ids)
+        indexed_docs = [(i, c) for i, c in enumerate(contents) if c]
+        if not indexed_docs:
+            return chunk_ids[:top_k], scores[:top_k]
+
+        indices, documents = zip(*indexed_docs, strict=False)
+        reranked = await self._reranker.arerank(query, list(documents), top_k=top_k)
+
+        result_ids = [chunk_ids[indices[r.index]] for r in reranked]
+        result_scores = [r.score for r in reranked]
+        return result_ids, result_scores
+
+    # ── Visual interpretation (DPR) ──────────────────────────────────────
+
     async def _generate_visual_interpretation(
         self,
         query: str,
@@ -234,6 +351,8 @@ class AutoThinkRAGPipeline(BaseGenerationPipeline):
         tracker.record(response)
         return self._extract_text(response)
 
+    # ── Retrieval merge ──────────────────────────────────────────────────
+
     @staticmethod
     def _merge_retrieval_metadata(
         existing_ids: list[int | str],
@@ -255,20 +374,115 @@ class AutoThinkRAGPipeline(BaseGenerationPipeline):
 
         return ordered_ids, [score_by_id[doc_id] for doc_id in ordered_ids]
 
+    # ── Adaptive retrieval ──────────────────────────────────────────────
+
+    async def _retrieve_adaptive(
+        self,
+        query_id: int | str,
+        query: str,
+        top_k: int,
+        complexity_tier: str,
+        tracker: TokenUsageTracker,
+    ) -> tuple[list[int | str], list[float], list[str]]:
+        """Retrieve with strategy adapted to query complexity.
+
+        Returns (chunk_ids, scores, sub_queries).
+        """
+        fetch_k = top_k * self._fetch_k_multiplier if self._reranker else top_k
+        sub_queries: list[str] = []
+
+        if complexity_tier == "complex":
+            sub_queries = await self._decompose_query(query, tracker)
+            chunk_ids: list[int | str] = []
+            scores: list[float] = []
+
+            original = await self._retrieval_pipeline._retrieve_by_id(query_id, fetch_k)
+            chunk_ids, scores = self._merge_retrieval_metadata(chunk_ids, scores, original)
+
+            for sq in sub_queries:
+                sq_results = await self._retrieval_pipeline.retrieve(sq, fetch_k)
+                chunk_ids, scores = self._merge_retrieval_metadata(chunk_ids, scores, sq_results)
+        elif complexity_tier == "moderate":
+            retrieved = await self._retrieval_pipeline._retrieve_by_id(query_id, fetch_k)
+            chunk_ids, scores = self._merge_retrieval_metadata([], [], retrieved)
+        else:
+            retrieved = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
+            chunk_ids, scores = self._merge_retrieval_metadata([], [], retrieved)
+
+        if complexity_tier in ("moderate", "complex") and self._reranker:
+            chunk_ids, scores = await self._rerank_results(query, chunk_ids, scores, top_k)
+
+        return chunk_ids, scores, sub_queries
+
+    # ── Multi-step reasoning ─────────────────────────────────────────────
+
+    async def _reason_iteratively(
+        self,
+        query: str,
+        chunk_ids: list[int | str],
+        retrieved_scores: list[float],
+        visual_block: str,
+        top_k: int,
+        tracker: TokenUsageTracker,
+    ) -> tuple[str, list[str], list[int | str], list[float]]:
+        """Run iterative reasoning with follow-up retrieval per step.
+
+        Returns (final_answer_text, reasoning_steps, updated_chunk_ids, updated_scores).
+        """
+        reasoning_steps: list[str] = []
+        accumulated_context = self._format_context(chunk_ids)
+
+        for _step in range(self._max_reasoning_steps):
+            reasoning_prompt = self._complex_prompt_template.format(
+                context=accumulated_context,
+                visual_context=visual_block,
+                reasoning_chain="\n".join(reasoning_steps) if reasoning_steps else "(No prior reasoning yet)",
+                query=query,
+            )
+            reasoning_prompt = (
+                f"{reasoning_prompt}\n\nProvide the next concise reasoning step only, not the final answer."
+            )
+            reasoning_response = await self._ainvoke_model(self._llm, reasoning_prompt)
+            tracker.record(reasoning_response)
+            reasoning_text = self._extract_text(reasoning_response).strip()
+            reasoning_steps.append(reasoning_text)
+
+            follow_up = await self._retrieval_pipeline.retrieve(reasoning_text, top_k)
+            chunk_ids, retrieved_scores = self._merge_retrieval_metadata(chunk_ids, retrieved_scores, follow_up)
+            accumulated_context = self._format_context(chunk_ids)
+
+        final_prompt = self._complex_prompt_template.format(
+            context=accumulated_context,
+            visual_context=visual_block,
+            reasoning_chain="\n".join(reasoning_steps),
+            query=query,
+        )
+        final_response = await self._ainvoke_model(self._llm, final_prompt)
+        tracker.record(final_response)
+
+        return self._extract_text(final_response), reasoning_steps, chunk_ids, retrieved_scores
+
+    # ── Main generation ──────────────────────────────────────────────────
+
     async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate an answer with adaptive routing based on query complexity."""
         tracker = TokenUsageTracker()
         query = self._service.get_query_text(query_id)
 
+        # Step 1: QCR — Query Complexity Router
         complexity_prompt = self._complexity_prompt_template.format(query=query)
         complexity_response = await self._ainvoke_model(self._llm, complexity_prompt)
         tracker.record(complexity_response)
         complexity_tier = self._parse_complexity_tier(self._extract_text(complexity_response))
 
-        retrieved = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
-        chunk_ids, retrieved_scores = self._merge_retrieval_metadata([], [], retrieved)
-        context = self._format_context(chunk_ids)
+        # Step 2-3: Adaptive retrieval + reranking
+        chunk_ids, retrieved_scores, sub_queries = await self._retrieve_adaptive(
+            query_id, query, top_k, complexity_tier, tracker
+        )
+
+        # Step 4: DPR — Visual interpretation
         visual_interpretation = await self._generate_visual_interpretation(query, chunk_ids, tracker)
+        visual_block = f"Visual Interpretation:\n{visual_interpretation}" if visual_interpretation else ""
 
         metadata: dict[str, Any] = {
             "complexity_tier": complexity_tier,
@@ -278,64 +492,30 @@ class AutoThinkRAGPipeline(BaseGenerationPipeline):
         if visual_interpretation is not None:
             metadata["visual_interpretation"] = visual_interpretation
 
+        # Step 5: Adaptive reasoning
         if complexity_tier == "complex":
-            reasoning_steps: list[str] = []
-            accumulated_context = context
-
-            for _step in range(self._max_reasoning_steps):
-                reasoning_prompt = self._complex_prompt_template.format(
-                    context=accumulated_context,
-                    visual_context=(
-                        f"Visual Interpretation:\n{visual_interpretation}" if visual_interpretation else ""
-                    ),
-                    reasoning_chain="\n".join(reasoning_steps) if reasoning_steps else "(No prior reasoning yet)",
-                    query=query,
-                )
-                reasoning_prompt = (
-                    f"{reasoning_prompt}\n\nProvide the next concise reasoning step only, not the final answer."
-                )
-                reasoning_response = await self._ainvoke_model(self._llm, reasoning_prompt)
-                tracker.record(reasoning_response)
-                reasoning_text = self._extract_text(reasoning_response).strip()
-                reasoning_steps.append(reasoning_text)
-
-                follow_up_results = await self._retrieval_pipeline.retrieve(reasoning_text, top_k)
-                chunk_ids, retrieved_scores = self._merge_retrieval_metadata(
-                    chunk_ids,
-                    retrieved_scores,
-                    follow_up_results,
-                )
-                accumulated_context = self._format_context(chunk_ids)
-
-            final_prompt = self._complex_prompt_template.format(
-                context=accumulated_context,
-                visual_context=f"Visual Interpretation:\n{visual_interpretation}" if visual_interpretation else "",
-                reasoning_chain="\n".join(reasoning_steps),
-                query=query,
+            if sub_queries:
+                metadata["sub_queries"] = sub_queries
+            answer_text, reasoning_steps, chunk_ids, retrieved_scores = await self._reason_iteratively(
+                query, chunk_ids, retrieved_scores, visual_block, top_k, tracker
             )
-            final_response = await self._ainvoke_model(self._llm, final_prompt)
-            tracker.record(final_response)
             metadata["reasoning_steps"] = reasoning_steps
             metadata["retrieved_chunk_ids"] = chunk_ids
             metadata["retrieved_scores"] = retrieved_scores
+            return GenerationResult(text=answer_text, token_usage=tracker.total, metadata=metadata)
 
-            return GenerationResult(
-                text=self._extract_text(final_response),
-                token_usage=tracker.total,
-                metadata=metadata,
+        context = self._format_context(chunk_ids)
+        if complexity_tier == "moderate":
+            answer_prompt = self._moderate_prompt_template.format(
+                context=context, visual_context=visual_block, query=query
             )
+        else:
+            answer_context = context
+            if visual_interpretation:
+                answer_context = f"{context}\n\n{visual_block}" if context else visual_block
+            answer_prompt = self._simple_prompt_template.format(context=answer_context, query=query)
 
-        answer_context = context
-        if visual_interpretation:
-            visual_block = f"Visual Interpretation:\n{visual_interpretation}"
-            answer_context = f"{context}\n\n{visual_block}" if context else visual_block
-
-        answer_prompt = self._simple_prompt_template.format(context=answer_context, query=query)
         answer_response = await self._ainvoke_model(self._llm, answer_prompt)
         tracker.record(answer_response)
 
-        return GenerationResult(
-            text=self._extract_text(answer_response),
-            token_usage=tracker.total,
-            metadata=metadata,
-        )
+        return GenerationResult(text=self._extract_text(answer_response), token_usage=tracker.total, metadata=metadata)
