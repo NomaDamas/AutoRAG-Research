@@ -1,0 +1,43 @@
+# Question Decomposition Generation Pipeline Configuration
+#
+# Decomposes a complex question into sub-questions, retrieves for the original
+# question and each sub-question, merges and deduplicates the results by doc_id,
+# then answers using the final top-k paragraphs.
+#
+# Reference: ACL 2025 SRW - Question Decomposition for RAG
+#
+# Parameters:
+#   retrieval_pipeline_name: Name of retrieval pipeline to use
+#   llm: LLM model identifier (default: gpt-4o-mini)
+#   max_subquestions: Maximum number of unique sub-questions to retrieve for
+#   top_k: Retrieved documents per query and final merged top-k budget
+#
+_target_: autorag_research.pipelines.generation.question_decomposition.QuestionDecompositionPipelineConfig
+description: "Question Decomposition for RAG"
+name: question_decomposition
+retrieval_pipeline_name: bm25
+llm: gpt-4o-mini
+max_subquestions: 3
+top_k: 5
+batch_size: 10
+decomposition_prompt_template: |
+  You are decomposing a question for retrieval-augmented generation.
+
+  Question: {query}
+
+  Write up to {max_subquestions} short, standalone sub-questions that would help retrieve evidence.
+  Return one sub-question per line and no other text.
+  If decomposition is unnecessary, repeat the original question once.
+
+  Sub-questions:
+qa_prompt_template: |
+  Answer the following question using the provided paragraphs.
+
+  Question: {query}
+
+  Paragraphs:
+  {paragraphs}
+
+  Provide a concise, direct answer to the question based on the information in the paragraphs.
+
+  Answer:
