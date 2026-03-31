@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trust-align-metrics-plugin"
+version = "0.1.0"
+description = "Trust-Align exact generation metrics plugin for AutoRAG-Research"
+requires-python = ">=3.10"
+dependencies = [
+    "autorag-research",
+    "fuzzywuzzy>=0.18.0",
+    "torch>=2.0.0",
+    "transformers>=4.40.0",
+]
+
+[project.entry-points."autorag_research.metrics"]
+trust_align_metrics = "trust_align_metrics_plugin"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trust_align_metrics_plugin"]
