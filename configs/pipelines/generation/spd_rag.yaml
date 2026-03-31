@@ -1,0 +1,25 @@
+# SPD-RAG: Sub-Agent Per Document RAG Pipeline Configuration
+#
+# Hierarchical multi-agent RAG framework for exhaustive cross-document QA.
+# Each document gets a dedicated agent for focused retrieval/reasoning,
+# a coordinator dispatches and filters, and a synthesis layer merges answers.
+#
+# Paper: "SPD-RAG: Sub-Agent Per Document Retrieval-Augmented Generation"
+#        EMNLP 2024/2026 (arxiv:2603.08329)
+#
+# Algorithm:
+#   1. Sub-Agents: Generate focused partial answers per document
+#   2. Coordinator: Evaluate relevance of each partial answer
+#   3. Synthesis: Recursive map-reduce merging of relevant partial answers
+#
+_target_: autorag_research.pipelines.generation.spd_rag.SPDRAGPipelineConfig
+description: "Sub-Agent Per Document RAG with hierarchical multi-agent synthesis"
+name: spd_rag
+retrieval_pipeline_name: bm25
+llm: gpt-5.2
+top_k: 10
+batch_size: 10
+
+# Map-reduce synthesis parameters
+max_synthesis_tokens: 4000
+synthesis_batch_size: 3
