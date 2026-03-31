@@ -8,6 +8,7 @@ from difflib import SequenceMatcher
 try:
     from fuzzywuzzy import fuzz
 except ModuleNotFoundError:
+
     class _FallbackFuzz:
         """Fallback implementation when fuzzywuzzy isn't installed."""
 
