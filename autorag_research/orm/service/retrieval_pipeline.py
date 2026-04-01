@@ -301,6 +301,7 @@ class RetrievalPipelineService(BasePipelineService):
         """
         with self._create_uow() as uow:
             deleted_count = uow.chunk_results.delete_by_pipeline(pipeline_id)
+            deleted_count += uow.image_chunk_results.delete_by_pipeline(pipeline_id)
             uow.commit()
             return deleted_count
 

@@ -82,6 +82,36 @@ class TestRetrievalPipelineService:
             results_after = uow.chunk_results.get_by_pipeline(pipeline_id)
             assert len(results_after) == 0
 
+    def test_delete_pipeline_results_deletes_image_chunk_results(self, service, mock_retrieval_func, session_factory):
+        # Count actual queries in database
+        with session_factory() as session:
+            query_repo = QueryRepository(session)
+            query_count = query_repo.count()
+
+        pipeline_id, _ = service.get_or_create_pipeline(
+            name="test_delete_image_pipeline_results",
+            config={"type": "heaven", "retrieval_unit": "image_chunk"},
+        )
+
+        service.run_image_pipeline(
+            retrieval_func=mock_retrieval_func,
+            pipeline_id=pipeline_id,
+            top_k=2,
+        )
+
+        with service._create_uow() as uow:
+            results_before = uow.image_chunk_results.get_by_pipeline(pipeline_id)
+            assert len(results_before) > 0
+
+        deleted_count = service.delete_pipeline_results(pipeline_id)
+
+        expected_results = query_count * 2
+        assert deleted_count == expected_results
+
+        with service._create_uow() as uow:
+            results_after = uow.image_chunk_results.get_by_pipeline(pipeline_id)
+            assert len(results_after) == 0
+
 
 class TestVectorSearchByEmbedding:
     """Tests for RetrievalPipelineService.vector_search_by_embedding method."""

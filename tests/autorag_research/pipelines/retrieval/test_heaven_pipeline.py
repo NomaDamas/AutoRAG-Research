@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.repository.image_chunk_retrieved_result import ImageChunkRetrievedResultRepository
 from autorag_research.orm.repository.query import QueryRepository
+from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
 from autorag_research.pipelines.retrieval.heaven import (
     HEAVENPipelineConfig,
     HEAVENRetrievalPipeline,
@@ -62,19 +63,14 @@ class TestHEAVENPipeline:
 
     @pytest.fixture
     def cleanup_pipeline_results(self, session_factory: sessionmaker[Session]):
-        """Cleanup fixture that deletes image chunk pipeline results after test."""
+        """Cleanup fixture that deletes HEAVEN pipeline results through the service API."""
         created_pipeline_ids: list[int] = []
 
         yield created_pipeline_ids
 
-        session = session_factory()
-        try:
-            result_repo = ImageChunkRetrievedResultRepository(session)
-            for pipeline_id in created_pipeline_ids:
-                result_repo.delete_by_pipeline(pipeline_id)
-            session.commit()
-        finally:
-            session.close()
+        service = RetrievalPipelineService(session_factory)
+        for pipeline_id in created_pipeline_ids:
+            service.delete_pipeline_results(pipeline_id)
 
     def test_pipeline_config_getters(self):
         """Config should resolve to the HEAVEN pipeline and preserve stage parameters."""
