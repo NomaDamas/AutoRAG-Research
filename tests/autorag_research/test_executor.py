@@ -268,6 +268,91 @@ class TestDependencyResolution:
         assert len(created_pipelines) == 1
         assert isinstance(created_pipelines[0].kwargs["retrieval_pipeline"], DummyWrappedPipeline)
 
+    def test_resolve_dependencies_rejects_self_referential_wrapper_cycle(self, session_factory):
+        from autorag_research.pipelines.retrieval.query_rewrite import QueryRewritePipelineConfig
+
+        config = ExecutorConfig(pipelines=[], metrics=[], health_check_queries=0)
+        executor = Executor(session_factory, config)
+
+        query_rewrite_config = QueryRewritePipelineConfig(
+            name="self_ref",
+            llm=create_mock_llm(),
+            retrieval_pipeline_name="self_ref",
+        )
+
+        with pytest.raises(ValueError, match=r"Cyclic retrieval pipeline dependency detected: self_ref -> self_ref"):
+            executor._resolve_dependencies(query_rewrite_config)
+
+    def test_resolve_dependencies_rejects_two_node_wrapper_cycle(self, session_factory):
+        from autorag_research.pipelines.retrieval.query_rewrite import QueryRewritePipelineConfig
+
+        config = ExecutorConfig(pipelines=[], metrics=[], health_check_queries=0)
+        executor = Executor(session_factory, config)
+
+        pipeline_a = QueryRewritePipelineConfig(
+            name="pipeline_a",
+            llm=create_mock_llm(),
+            retrieval_pipeline_name="pipeline_b",
+        )
+        pipeline_b = QueryRewritePipelineConfig(
+            name="pipeline_b",
+            llm=create_mock_llm(),
+            retrieval_pipeline_name="pipeline_a",
+        )
+
+        dependency_configs = {
+            "pipeline_a": pipeline_a,
+            "pipeline_b": pipeline_b,
+        }
+
+        def resolve_config(_config_type: list[str], name: str):
+            return dependency_configs[name]
+
+        with (
+            patch.object(executor._config_resolver, "resolve_config", side_effect=resolve_config),
+            patch("hydra.utils.instantiate", side_effect=lambda cfg: cfg),
+            pytest.raises(
+                ValueError,
+                match=r"Cyclic retrieval pipeline dependency detected: pipeline_a -> pipeline_b -> pipeline_a",
+            ),
+        ):
+            executor._resolve_dependencies(pipeline_a)
+
+    def test_resolve_dependencies_rejects_cycle_when_runtime_names_differ_from_lookup_names(self, session_factory):
+        from autorag_research.pipelines.retrieval.query_rewrite import QueryRewritePipelineConfig
+
+        config = ExecutorConfig(pipelines=[], metrics=[], health_check_queries=0)
+        executor = Executor(session_factory, config)
+
+        pipeline_a = QueryRewritePipelineConfig(
+            name="wrapped_a",
+            llm=create_mock_llm(),
+            retrieval_pipeline_name="pipeline_b",
+        )
+        pipeline_b = QueryRewritePipelineConfig(
+            name="wrapped_b",
+            llm=create_mock_llm(),
+            retrieval_pipeline_name="pipeline_a",
+        )
+
+        dependency_configs = {
+            "pipeline_a": pipeline_a,
+            "pipeline_b": pipeline_b,
+        }
+
+        def resolve_config(_config_type: list[str], name: str):
+            return dependency_configs[name]
+
+        with (
+            patch.object(executor._config_resolver, "resolve_config", side_effect=resolve_config),
+            patch("hydra.utils.instantiate", side_effect=lambda cfg: cfg),
+            pytest.raises(
+                ValueError,
+                match=r"Cyclic retrieval pipeline dependency detected: wrapped_a -> pipeline_b -> wrapped_b -> pipeline_a",
+            ),
+        ):
+            executor._resolve_dependencies(pipeline_a)
+
 
 class TestMetricEvaluationRules:
     """Test suite for metric evaluation rules."""

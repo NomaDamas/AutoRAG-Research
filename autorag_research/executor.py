@@ -553,7 +553,12 @@ class Executor:
                 error_message=error_msg,
             )
 
-    def _resolve_dependencies(self, config: BasePipelineConfig) -> None:
+    def _resolve_dependencies(
+        self,
+        config: BasePipelineConfig,
+        resolving_stack: tuple[str, ...] = (),
+        resolution_key: str | None = None,
+    ) -> None:
         """Resolve retrieval-pipeline dependencies for configs that declare them.
 
         Checks for `retrieval_pipeline_name` plus `inject_retrieval_pipeline()`,
@@ -564,9 +569,18 @@ class Executor:
 
         Args:
             config: Pipeline configuration that may depend on another retrieval pipeline.
+            resolving_stack: Pipeline names currently being resolved in the active
+                dependency chain. Used to detect cycles before recursing.
+            resolution_key: Config lookup name used to load `config`. When present,
+                it is tracked alongside `config.name` to catch cycles even when a
+                YAML config's lookup key and runtime pipeline name differ.
+
+        Raises:
+            ValueError: If retrieval wrapper configs reference each other cyclically.
         """
         from hydra.utils import instantiate
 
+        current_name = getattr(config, "name", "")
         name = getattr(config, "retrieval_pipeline_name", "")
         inject_retrieval_pipeline = getattr(config, "inject_retrieval_pipeline", None)
         existing_pipeline = getattr(config, "_retrieval_pipeline", None)
@@ -577,6 +591,19 @@ class Executor:
         if existing_pipeline is not None:
             logger.debug(f"Retrieval pipeline already injected for {config.name}")
             return
+
+        current_identifiers = []
+        for identifier in (resolution_key, current_name):
+            if identifier and identifier not in current_identifiers:
+                current_identifiers.append(identifier)
+
+        current_stack = resolving_stack + tuple(
+            identifier for identifier in current_identifiers if identifier not in resolving_stack
+        )
+        if name in current_stack:
+            cycle_path = " -> ".join([*current_stack, name])
+            msg = f"Cyclic retrieval pipeline dependency detected: {cycle_path}"
+            raise ValueError(msg)
 
         logger.info(f"Resolving retrieval pipeline dependency: {name}")
 
@@ -589,7 +616,13 @@ class Executor:
         # Load pipeline config from pipelines/retrieval/ directory
         pipeline_cfg = self._config_resolver.resolve_config(PIPELINE_TYPES, name)
         pipeline_config = instantiate(pipeline_cfg)
-        self._resolve_dependencies(pipeline_config)
+        resolved_name = getattr(pipeline_config, "name", "")
+        if resolved_name and resolved_name in current_stack:
+            cycle_path = " -> ".join([*current_stack, name])
+            msg = f"Cyclic retrieval pipeline dependency detected: {cycle_path}"
+            raise ValueError(msg)
+
+        self._resolve_dependencies(pipeline_config, current_stack, name)
 
         # Instantiate the retrieval pipeline
         pipeline_class = pipeline_config.get_pipeline_class()
