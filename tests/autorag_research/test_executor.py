@@ -209,7 +209,7 @@ class TestDependencyResolution:
 
         with (
             patch.object(executor._config_resolver, "resolve_config", return_value=wrapped_config),
-            patch("hydra.utils.instantiate", side_effect=lambda cfg: cfg),
+            patch("autorag_research.pipelines.retrieval.loader.instantiate", side_effect=lambda cfg: cfg),
         ):
             executor._resolve_dependencies(query_rewrite_config)
 
@@ -259,7 +259,7 @@ class TestDependencyResolution:
 
         with (
             patch.object(executor._config_resolver, "resolve_config", return_value=wrapped_config),
-            patch("hydra.utils.instantiate", side_effect=lambda cfg: cfg),
+            patch("autorag_research.pipelines.retrieval.loader.instantiate", side_effect=lambda cfg: cfg),
         ):
             result = executor.run()
 
@@ -310,7 +310,7 @@ class TestDependencyResolution:
 
         with (
             patch.object(executor._config_resolver, "resolve_config", side_effect=resolve_config),
-            patch("hydra.utils.instantiate", side_effect=lambda cfg: cfg),
+            patch("autorag_research.pipelines.retrieval.loader.instantiate", side_effect=lambda cfg: cfg),
             pytest.raises(
                 ValueError,
                 match=r"Cyclic retrieval pipeline dependency detected: pipeline_a -> pipeline_b -> pipeline_a",
@@ -345,7 +345,7 @@ class TestDependencyResolution:
 
         with (
             patch.object(executor._config_resolver, "resolve_config", side_effect=resolve_config),
-            patch("hydra.utils.instantiate", side_effect=lambda cfg: cfg),
+            patch("autorag_research.pipelines.retrieval.loader.instantiate", side_effect=lambda cfg: cfg),
             pytest.raises(
                 ValueError,
                 match=r"Cyclic retrieval pipeline dependency detected: wrapped_a -> pipeline_b -> wrapped_b -> pipeline_a",
