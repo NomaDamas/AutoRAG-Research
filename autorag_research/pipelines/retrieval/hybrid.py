@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.loader import RetrievalPipelineLoader
 from autorag_research.util import (
     normalize_dbsf,
     normalize_minmax,
@@ -344,22 +345,17 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
         Returns:
             Instantiated retrieval pipeline.
         """
-        from hydra.utils import instantiate
-
         from autorag_research.cli.config_resolver import ConfigResolver
         from autorag_research.cli.utils import get_config_dir
 
         config_dir = config_dir or get_config_dir()
-        resolver = ConfigResolver(config_dir)
-        pipeline_cfg = resolver.resolve_config(["pipelines", "retrieval"], name)
-        pipeline_config: BaseRetrievalPipelineConfig = instantiate(pipeline_cfg)
-
-        pipeline_class = pipeline_config.get_pipeline_class()
-        return pipeline_class(
+        return RetrievalPipelineLoader(
             session_factory=session_factory,
-            name=pipeline_config.name,
             schema=schema,
-            **pipeline_config.get_pipeline_kwargs(),
+            config_dir=config_dir,
+            config_resolver=ConfigResolver(config_dir),
+        ).load_pipeline(
+            name,
         )
 
     @abstractmethod
