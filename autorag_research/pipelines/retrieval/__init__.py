@@ -10,6 +10,10 @@ from autorag_research.pipelines.retrieval.hyde import (
     HyDEPipelineConfig,
     HyDERetrievalPipeline,
 )
+from autorag_research.pipelines.retrieval.query_rewrite import (
+    QueryRewritePipelineConfig,
+    QueryRewriteRetrievalPipeline,
+)
 from autorag_research.pipelines.retrieval.vector_search import (
     VectorSearchPipelineConfig,
     VectorSearchRetrievalPipeline,
@@ -25,6 +29,8 @@ __all__ = [
     "HybridCCRetrievalPipelineConfig",
     "HybridRRFRetrievalPipeline",
     "HybridRRFRetrievalPipelineConfig",
+    "QueryRewritePipelineConfig",
+    "QueryRewriteRetrievalPipeline",
     "VectorSearchPipelineConfig",
     "VectorSearchRetrievalPipeline",
 ]

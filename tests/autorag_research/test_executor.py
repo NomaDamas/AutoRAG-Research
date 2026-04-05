@@ -18,6 +18,7 @@ from autorag_research.config import (
 from autorag_research.evaluation.metrics.retrieval import NDCGConfig, RecallConfig
 from autorag_research.executor import Executor, ExecutorResult, MetricResult
 from autorag_research.pipelines.retrieval.bm25 import BM25PipelineConfig
+from tests.autorag_research.pipelines.pipeline_test_utils import create_mock_llm
 
 
 class TestExecutorWithRealDB:
@@ -181,6 +182,91 @@ class TestExecutorWithRealDB:
         assert result.total_pipelines_succeeded == 0
         assert result.pipeline_results[0].success is False
         assert result.pipeline_results[0].retries_used == config.max_retries
+
+
+class TestDependencyResolution:
+    """Tests for recursive retrieval dependency resolution."""
+
+    def test_resolve_dependencies_injects_wrapped_retrieval_pipeline(self, session_factory):
+        from autorag_research.pipelines.retrieval.query_rewrite import QueryRewritePipelineConfig
+
+        config = ExecutorConfig(pipelines=[], metrics=[], health_check_queries=0)
+        executor = Executor(session_factory, config)
+
+        query_rewrite_config = QueryRewritePipelineConfig(
+            name="query_rewrite",
+            llm=create_mock_llm(),
+            retrieval_pipeline_name="bm25",
+        )
+        wrapped_config = BM25PipelineConfig(name="bm25", tokenizer="bert")
+
+        class DummyRetrievalPipeline:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.pipeline_id = 321
+
+        wrapped_config.get_pipeline_class = lambda: DummyRetrievalPipeline
+
+        with (
+            patch.object(executor._config_resolver, "resolve_config", return_value=wrapped_config),
+            patch("hydra.utils.instantiate", side_effect=lambda cfg: cfg),
+        ):
+            executor._resolve_dependencies(query_rewrite_config)
+
+        assert query_rewrite_config._retrieval_pipeline is not None
+        assert isinstance(query_rewrite_config._retrieval_pipeline, DummyRetrievalPipeline)
+        assert query_rewrite_config._retrieval_pipeline.kwargs["name"] == "bm25"
+
+    def test_run_resolves_top_level_query_rewrite_dependencies(self, session_factory):
+        from autorag_research.pipelines.retrieval.query_rewrite import QueryRewritePipelineConfig
+
+        query_rewrite_config = QueryRewritePipelineConfig(
+            name="query_rewrite",
+            llm=create_mock_llm(),
+            retrieval_pipeline_name="bm25",
+        )
+        config = ExecutorConfig(
+            pipelines=[query_rewrite_config],
+            metrics=[],
+            health_check_queries=0,
+        )
+        executor = Executor(session_factory, config)
+        wrapped_config = BM25PipelineConfig(name="bm25", tokenizer="bert")
+
+        class DummyWrappedPipeline:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.pipeline_id = 321
+
+        created_pipelines: list[Any] = []
+
+        class DummyQueryRewritePipeline:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.pipeline_id = 999
+                created_pipelines.append(self)
+
+            def run(self, **kwargs):
+                return {
+                    "pipeline_id": self.pipeline_id,
+                    "total_queries": 1,
+                    "failed_queries": [],
+                }
+
+        wrapped_config.get_pipeline_class = lambda: DummyWrappedPipeline
+        query_rewrite_config.get_pipeline_class = lambda: DummyQueryRewritePipeline
+        executor._verify_pipeline_completion = MagicMock(return_value=True)
+
+        with (
+            patch.object(executor._config_resolver, "resolve_config", return_value=wrapped_config),
+            patch("hydra.utils.instantiate", side_effect=lambda cfg: cfg),
+        ):
+            result = executor.run()
+
+        assert result.total_pipelines_run == 1
+        assert result.total_pipelines_succeeded == 1
+        assert len(created_pipelines) == 1
+        assert isinstance(created_pipelines[0].kwargs["retrieval_pipeline"], DummyWrappedPipeline)
 
 
 class TestMetricEvaluationRules:

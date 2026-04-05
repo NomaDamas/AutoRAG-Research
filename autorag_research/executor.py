@@ -177,7 +177,7 @@ class Executor:
         """Run all configured pipelines and evaluate metrics.
 
         For each pipeline:
-        1. Resolve dependencies (generation only)
+        1. Resolve retrieval-pipeline dependencies when declared
         2. Run health check (if enabled)
         3. Run the pipeline with retry logic
         4. Verify completion
@@ -193,9 +193,8 @@ class Executor:
         for pipeline_config in self.config.pipelines:
             logger.info(f"=== Starting pipeline: {pipeline_config.name} ===")
 
-            # Step 0: Resolve dependencies for generation pipelines
-            if pipeline_config.pipeline_type == PipelineType.GENERATION:
-                self._resolve_dependencies(pipeline_config)
+            # Step 0: Resolve retrieval-pipeline dependencies when declared
+            self._resolve_dependencies(pipeline_config)
 
             # Step 1: Run health check (if enabled)
             if self.config.health_check_queries > 0:
@@ -555,34 +554,28 @@ class Executor:
             )
 
     def _resolve_dependencies(self, config: BasePipelineConfig) -> None:
-        """Resolve dependencies for a generation pipeline config.
+        """Resolve retrieval-pipeline dependencies for configs that declare them.
 
-        Checks for `retrieval_pipeline_name` attribute and loads/instantiates
-        the referenced retrieval pipeline, then injects it into the config.
+        Checks for `retrieval_pipeline_name` plus `inject_retrieval_pipeline()`,
+        loads/instantiates the referenced retrieval pipeline, then injects it.
 
         Uses Hydra's compose API when available to leverage configured search paths,
         with fallback to direct YAML loading from config_dir.
 
         Args:
-            config: Pipeline configuration (processes any BaseGenerationPipelineConfig
-                with a non-empty retrieval_pipeline_name).
+            config: Pipeline configuration that may depend on another retrieval pipeline.
         """
         from hydra.utils import instantiate
 
-        from autorag_research.config import BaseGenerationPipelineConfig
+        name = getattr(config, "retrieval_pipeline_name", "")
+        inject_retrieval_pipeline = getattr(config, "inject_retrieval_pipeline", None)
+        existing_pipeline = getattr(config, "_retrieval_pipeline", None)
 
-        # Only process generation pipeline configs
-        if not isinstance(config, BaseGenerationPipelineConfig):
+        if not name or not callable(inject_retrieval_pipeline):
             return
 
-        # Skip if retrieval pipeline already injected (programmatic usage)
-        if config._retrieval_pipeline is not None:
+        if existing_pipeline is not None:
             logger.debug(f"Retrieval pipeline already injected for {config.name}")
-            return
-
-        # Skip if no retrieval pipeline dependency
-        name: str = config.retrieval_pipeline_name
-        if not name:
             return
 
         logger.info(f"Resolving retrieval pipeline dependency: {name}")
@@ -590,12 +583,13 @@ class Executor:
         # Return cached pipeline if already loaded
         if name in self._dependency_pipelines:
             logger.debug(f"Using cached retrieval pipeline: {name}")
-            config.inject_retrieval_pipeline(self._dependency_pipelines[name])
+            inject_retrieval_pipeline(self._dependency_pipelines[name])
             return
 
         # Load pipeline config from pipelines/retrieval/ directory
         pipeline_cfg = self._config_resolver.resolve_config(PIPELINE_TYPES, name)
         pipeline_config = instantiate(pipeline_cfg)
+        self._resolve_dependencies(pipeline_config)
 
         # Instantiate the retrieval pipeline
         pipeline_class = pipeline_config.get_pipeline_class()
@@ -608,5 +602,5 @@ class Executor:
 
         # Cache and inject
         self._dependency_pipelines[name] = retrieval_pipeline
-        config.inject_retrieval_pipeline(retrieval_pipeline)
+        inject_retrieval_pipeline(retrieval_pipeline)
         logger.info(f"Loaded and injected retrieval pipeline: {name}")
