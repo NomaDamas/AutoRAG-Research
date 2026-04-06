@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
@@ -24,7 +25,7 @@ from autorag_research.evaluation.metrics.util import calculate_cosine_similarity
 from autorag_research.exceptions import EmbeddingError
 from autorag_research.injection import with_embedding, with_llm
 from autorag_research.schema import MetricInput
-from autorag_research.util import convert_inputs_to_list, truncate_texts, unpack_and_run
+from autorag_research.util import convert_inputs_to_list, normalize_string, truncate_texts, unpack_and_run
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -58,6 +59,55 @@ Input:
 _JSON_BLOCK_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 UNIEVAL_MODEL_NAME = "MingZhong/unieval-sum"
 UNIEVAL_DIMENSIONS = ("coherence", "consistency", "fluency", "relevance")
+
+
+def _get_normalized_tokens(text: str) -> list[str]:
+    """Normalize text with SQuAD rules and split into tokens."""
+    return normalize_string(text).split()
+
+
+def _score_generation_against_references(
+    prediction: str,
+    references: list[str],
+    scorer: Callable[[str, str], float],
+) -> float:
+    """Return the best score for a prediction across all references."""
+    return max(scorer(prediction, reference) for reference in references)
+
+
+def _compute_generation_reference_scores(
+    metric_inputs: list[MetricInput],
+    scorer: Callable[[str, str], float],
+) -> list[float]:
+    """Compute best-reference scores for generation metric inputs."""
+    scores = []
+    for metric_input in metric_inputs:
+        generated_text = cast(str, metric_input.generated_texts)
+        generation_gt = cast(list[str], metric_input.generation_gt)
+        scores.append(_score_generation_against_references(generated_text, generation_gt, scorer))
+    return scores
+
+
+def _exact_match_score(prediction: str, reference: str) -> float:
+    """Return binary exact match after SQuAD-style normalization."""
+    return float(normalize_string(prediction) == normalize_string(reference))
+
+
+def _token_f1_score(prediction: str, reference: str) -> float:
+    """Compute SQuAD-style token F1 for one prediction/reference pair."""
+    prediction_tokens = _get_normalized_tokens(prediction)
+    reference_tokens = _get_normalized_tokens(reference)
+
+    if not prediction_tokens or not reference_tokens:
+        return float(prediction_tokens == reference_tokens)
+
+    overlap = sum((Counter(prediction_tokens) & Counter(reference_tokens)).values())
+    if overlap == 0:
+        return 0.0
+
+    precision = overlap / len(prediction_tokens)
+    recall = overlap / len(reference_tokens)
+    return float((2 * precision * recall) / (precision + recall))
 
 
 def _extract_llm_text(response: Any) -> str:
@@ -242,11 +292,10 @@ def huggingface_evaluate(instance: Any, key: str, metric_inputs: list[MetricInpu
         The list of scores.
     """
 
-    def compute_score(gt: list[str], pred: str) -> float:
-        return max([instance.compute(predictions=[pred], references=[x], **kwargs)[key] for x in gt])
+    def compute_score(prediction: str, reference: str) -> float:
+        return instance.compute(predictions=[prediction], references=[reference], **kwargs)[key]
 
-    result = [compute_score(x.generation_gt, x.generated_texts) for x in metric_inputs]  # ty: ignore
-    return result
+    return _compute_generation_reference_scores(metric_inputs, compute_score)
 
 
 @metric_loop(fields_to_check=["generation_gt", "generated_texts"])
@@ -363,6 +412,18 @@ def rouge(
     ]
     del rouge_instance
     return result
+
+
+@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+def exact_match(metric_inputs: list[MetricInput]) -> list[float]:
+    """Compute SQuAD-style exact match for generation."""
+    return _compute_generation_reference_scores(metric_inputs, _exact_match_score)
+
+
+@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+def token_f1(metric_inputs: list[MetricInput]) -> list[float]:
+    """Compute SQuAD-style token F1 for generation."""
+    return _compute_generation_reference_scores(metric_inputs, _token_f1_score)
 
 
 @metric_loop(fields_to_check=["generation_gt", "generated_texts"])
@@ -672,6 +733,32 @@ class RougeConfig(BaseGenerationMetricConfig):
             "use_stemmer": self.use_stemmer,
             "split_summaries": self.split_summaries,
         }
+
+
+@dataclass
+class ExactMatchConfig(BaseGenerationMetricConfig):
+    """Configuration for SQuAD-style exact match metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return exact_match
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {}
+
+
+@dataclass
+class TokenF1Config(BaseGenerationMetricConfig):
+    """Configuration for SQuAD-style token F1 metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return token_f1
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {}
 
 
 @dataclass

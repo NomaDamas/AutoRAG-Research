@@ -1,0 +1,2 @@
+_target_: autorag_research.evaluation.metrics.generation.ExactMatchConfig
+description: "Exact Match (EM) - SQuAD-style normalized exact answer match"
