@@ -155,6 +155,10 @@ class TestDiscoverMetrics:
         result = discover_metrics("generation")
 
         assert "rouge" in result
+        assert "unieval_coherence" in result
+        assert "unieval_consistency" in result
+        assert "unieval_fluency" in result
+        assert "unieval_relevance" in result
 
 
 class TestDiscoverEmbeddingConfigs:
