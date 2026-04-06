@@ -8,12 +8,16 @@ from langchain_openai import OpenAIEmbeddings
 
 from autorag_research import cli
 from autorag_research.evaluation.metrics.generation import (
+    ExactMatchConfig,
+    TokenF1Config,
     bert_score,
     bleu,
+    exact_match,
     meteor,
     response_relevancy,
     rouge,
     sem_score,
+    token_f1,
 )
 from autorag_research.schema import MetricInput
 from tests.mock import mock_embed_documents
@@ -351,3 +355,62 @@ def test_response_relevancy_invalid_json_returns_nan():
     scores = response_relevancy(metric_inputs, llm=llm, embedding_model=KeywordEmbeddings(), strictness=3)
 
     assert scores[0] != scores[0]  # NaN check
+
+
+def test_exact_match_uses_squad_normalization():
+    metric_inputs = [
+        MetricInput(generated_texts="The Eiffel Tower!", generation_gt=["eiffel tower"]),
+        MetricInput(generated_texts="Paris, France", generation_gt=["France Paris"]),
+    ]
+
+    scores = exact_match(metric_inputs)
+
+    assert scores == [1.0, 0.0]
+
+
+def test_exact_match_returns_best_score_across_references():
+    metric_inputs = [
+        MetricInput(
+            generated_texts="Pacific Ocean",
+            generation_gt=["atlantic ocean", "the pacific ocean"],
+        )
+    ]
+
+    assert exact_match(metric_inputs) == [1.0]
+
+
+def test_token_f1_uses_best_reference_overlap():
+    metric_inputs = [
+        MetricInput(
+            generated_texts="red blue",
+            generation_gt=["red green", "red blue yellow"],
+        )
+    ]
+
+    scores = token_f1(metric_inputs)
+
+    assert scores == [pytest.approx(0.8)]
+
+
+def test_token_f1_handles_empty_normalized_answers():
+    metric_inputs = [
+        MetricInput(generated_texts="the", generation_gt=["an"]),
+        MetricInput(generated_texts="the", generation_gt=["cat"]),
+    ]
+
+    scores = token_f1(metric_inputs)
+
+    assert scores == [1.0, 0.0]
+
+
+def test_new_metric_configs_expose_metric_functions_and_names():
+    exact_match_config = ExactMatchConfig()
+    token_f1_config = TokenF1Config()
+
+    assert exact_match_config.get_metric_name() == "exact_match"
+    assert exact_match_config.get_metric_func() is exact_match
+    assert exact_match_config.get_metric_kwargs() == {}
+
+    assert token_f1_config.get_metric_name() == "token_f1"
+    assert token_f1_config.get_metric_func() is token_f1
+    assert token_f1_config.get_metric_kwargs() == {}
