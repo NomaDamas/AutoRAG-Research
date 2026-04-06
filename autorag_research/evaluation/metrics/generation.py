@@ -60,10 +60,7 @@ _JSON_BLOCK_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 
 def _get_normalized_tokens(text: str) -> list[str]:
     """Normalize text with SQuAD rules and split into tokens."""
-    normalized = normalize_string(text)
-    if not normalized:
-        return []
-    return normalized.split()
+    return normalize_string(text).split()
 
 
 def _score_generation_against_references(
@@ -191,11 +188,10 @@ def huggingface_evaluate(instance: Any, key: str, metric_inputs: list[MetricInpu
         The list of scores.
     """
 
-    def compute_score(gt: list[str], pred: str) -> float:
-        return max([instance.compute(predictions=[pred], references=[x], **kwargs)[key] for x in gt])
+    def compute_score(prediction: str, reference: str) -> float:
+        return instance.compute(predictions=[prediction], references=[reference], **kwargs)[key]
 
-    result = [compute_score(x.generation_gt, x.generated_texts) for x in metric_inputs]  # ty: ignore
-    return result
+    return _compute_generation_reference_scores(metric_inputs, compute_score)
 
 
 @metric_loop(fields_to_check=["generation_gt", "generated_texts"])

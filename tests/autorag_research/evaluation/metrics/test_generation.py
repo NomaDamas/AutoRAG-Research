@@ -379,6 +379,30 @@ def test_exact_match_returns_best_score_across_references():
     assert exact_match(metric_inputs) == [1.0]
 
 
+def test_exact_match_handles_empty_normalized_answers():
+    metric_inputs = [
+        MetricInput(generated_texts="the", generation_gt=["an"]),
+        MetricInput(generated_texts="the", generation_gt=["cat"]),
+    ]
+
+    scores = exact_match(metric_inputs)
+
+    assert scores == [1.0, 0.0]
+
+
+def test_token_f1_counts_repeated_tokens_with_bag_of_words_overlap():
+    metric_inputs = [
+        MetricInput(
+            generated_texts="red red blue",
+            generation_gt=["red blue blue"],
+        )
+    ]
+
+    scores = token_f1(metric_inputs)
+
+    assert scores == [pytest.approx(2 / 3)]
+
+
 def test_token_f1_uses_best_reference_overlap():
     metric_inputs = [
         MetricInput(
