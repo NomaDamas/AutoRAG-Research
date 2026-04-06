@@ -130,6 +130,51 @@ def test_unieval_relevance_requires_generation_gt_and_uses_reference_prompt():
     ]
 
 
+def test_unieval_relevance_checks_all_references_without_order_dependence():
+    first_scorer = DummyUniEvalScorer(responses=[0.14, 0.86])
+    second_scorer = DummyUniEvalScorer(responses=[0.86, 0.14])
+
+    first_scores = unieval(
+        metric_inputs=[
+            MetricInput(
+                generation_gt=["Wrong first reference", "Paris is France's capital."],
+                generated_texts="Paris is the capital of France.",
+            )
+        ],
+        dimension="relevance",
+        scorer=first_scorer,
+    )
+    second_scores = unieval(
+        metric_inputs=[
+            MetricInput(
+                generation_gt=["Paris is France's capital.", "Wrong second reference"],
+                generated_texts="Paris is the capital of France.",
+            )
+        ],
+        dimension="relevance",
+        scorer=second_scorer,
+    )
+
+    assert first_scores == [pytest.approx(0.86)]
+    assert second_scores == [pytest.approx(0.86)]
+    assert first_scorer.calls == [
+        [
+            "question: Is this summary relevant to the reference? </s> summary: Paris is the capital of France. "
+            "</s> reference: Wrong first reference",
+            "question: Is this summary relevant to the reference? </s> summary: Paris is the capital of France. "
+            "</s> reference: Paris is France's capital.",
+        ]
+    ]
+    assert second_scorer.calls == [
+        [
+            "question: Is this summary relevant to the reference? </s> summary: Paris is the capital of France. "
+            "</s> reference: Paris is France's capital.",
+            "question: Is this summary relevant to the reference? </s> summary: Paris is the capital of France. "
+            "</s> reference: Wrong second reference",
+        ]
+    ]
+
+
 def test_unieval_relevance_returns_none_without_generation_gt():
     scores = unieval(
         metric_inputs=[MetricInput(generated_texts="Paris is the capital of France.")],

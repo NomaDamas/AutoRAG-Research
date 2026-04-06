@@ -176,9 +176,52 @@ def _build_unieval_document(retrieved_contents: list[str]) -> str:
     return " ".join(content.strip() for content in retrieved_contents)
 
 
-def _select_unieval_reference(references: list[str]) -> str:
-    """Select the primary reference expected by the summarization UniEval scorer."""
-    return references[0].strip()
+def _prepare_unieval_references(references: list[str]) -> list[str]:
+    """Normalize available references for UniEval relevance scoring."""
+    return [reference.strip() for reference in references if reference.strip()]
+
+
+def _prepare_unieval_prompts(
+    metric_input: MetricInput,
+    dimension: str,
+    sentence_level_dimensions: set[str],
+) -> list[str]:
+    """Build UniEval prompts for a single metric input."""
+    generated_text = cast(str, metric_input.generated_texts).strip()
+    if dimension == "relevance":
+        return [
+            _build_unieval_prompt(
+                dimension=dimension,
+                generated_text=generated_text,
+                reference=reference,
+            )
+            for reference in _prepare_unieval_references(cast(list[str], metric_input.generation_gt))
+        ]
+
+    document = None
+    if dimension in {"coherence", "consistency"}:
+        document = _build_unieval_document(cast(list[str], metric_input.retrieved_contents))
+
+    text_units = (
+        _split_unieval_sentences(generated_text) if dimension in sentence_level_dimensions else [generated_text]
+    )
+    return [
+        _build_unieval_prompt(
+            dimension=dimension,
+            generated_text=text_unit,
+            document=document,
+        )
+        for text_unit in text_units
+    ]
+
+
+def _aggregate_unieval_scores(dimension: str, scores: list[float]) -> float:
+    """Aggregate prompt-level UniEval scores back to one sample-level score."""
+    if dimension in {"fluency", "consistency"}:
+        return float(sum(scores) / len(scores))
+    if dimension == "relevance":
+        return max(scores)
+    return scores[0]
 
 
 @convert_inputs_to_list
@@ -481,9 +524,9 @@ def unieval(
 
     Consistency intentionally skips samples with missing retrieved context instead of
     silently falling back to hidden ground truth, keeping the metric faithful to the
-    actual evidence available to the generation pipeline. Relevance uses the first
-    available reference because the upstream summarization evaluator expects a single
-    reference string per sample.
+    actual evidence available to the generation pipeline. Relevance keeps the official
+    single-reference prompt contract, but evaluates every available reference and keeps
+    the best score so multi-reference inputs stay order-independent.
     """
     normalized_dimension = _validate_unieval_dimension(dimension)
     field_map = {
@@ -501,29 +544,13 @@ def unieval(
         if not metric_input.is_fields_notnone(field_map[normalized_dimension]):
             continue
 
-        generated_text = cast(str, metric_input.generated_texts).strip()
-        document = None
-        if normalized_dimension in {"coherence", "consistency"}:
-            document = _build_unieval_document(cast(list[str], metric_input.retrieved_contents))
-        reference = None
-        if normalized_dimension == "relevance":
-            reference = _select_unieval_reference(cast(list[str], metric_input.generation_gt))
+        prompts = _prepare_unieval_prompts(metric_input, normalized_dimension, sentence_level_dimensions)
+        if not prompts:
+            continue
 
-        text_units = (
-            _split_unieval_sentences(generated_text)
-            if normalized_dimension in sentence_level_dimensions
-            else [generated_text.strip()]
-        )
-        prompt_counts.append((index, len(text_units)))
-        for text_unit in text_units:
-            prepared_inputs.append(
-                _build_unieval_prompt(
-                    dimension=normalized_dimension,
-                    generated_text=text_unit,
-                    document=document,
-                    reference=reference,
-                )
-            )
+        prompt_count = len(prompts)
+        prepared_inputs.extend(prompts)
+        prompt_counts.append((index, prompt_count))
 
     if not prepared_inputs:
         return results
@@ -545,7 +572,7 @@ def unieval(
     prompt_offset = 0
     for index, count in prompt_counts:
         current_scores = prompt_scores[prompt_offset : prompt_offset + count]
-        results[index] = float(sum(current_scores) / count)
+        results[index] = _aggregate_unieval_scores(normalized_dimension, current_scores)
         prompt_offset += count
 
     return results
