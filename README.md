@@ -61,6 +61,7 @@ Standalone retrieval pipelines. Use them on their own for retrieval-only evaluat
 | [BM25](https://www.staff.city.ac.uk/~sbrp622/papers/foundations_bm25_review.pdf) | Sparse full-text retrieval                                             | -         |
 | [HyDE](https://arxiv.org/abs/2212.10496)                                         | Hypothetical Document Embeddings                                       | ACL 23    |
 | [Query Rewrite](https://aclanthology.org/2023.emnlp-main.322/)                   | Rewrite query text before delegating retrieval                         | EMNLP 23  |
+| [RETRO*](https://openreview.net/pdf?id=0WGl8PNMSA)                               | Rubric-based LLM reranking over retrieved candidates                   | ICLR 26   |
 | [Hybrid RRF](https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf)                | Reciprocal Rank Fusion of two retrieval pipelines                      | -         |
 | [Hybrid CC](https://arxiv.org/pdf/2210.11934)                                    | Convex Combination fusion of two retrieval pipelines                   | -         |
 
@@ -186,7 +187,7 @@ metrics:
   generation: [rouge]
 ```
 
-Generation pipelines (and some retrieval pipelines like HyDE and Query Rewrite) require an LLM. The `llm` field in each pipeline config references a file in `configs/llm/` by name (without `.yaml`):
+Generation pipelines (and some retrieval pipelines like HyDE, Query Rewrite, and RETRO*) require an LLM. The `llm` field in each pipeline config references a file in `configs/llm/` by name (without `.yaml`):
 
 ```yaml
 # configs/pipelines/generation/basic_rag.yaml

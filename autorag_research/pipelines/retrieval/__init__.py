@@ -18,6 +18,10 @@ from autorag_research.pipelines.retrieval.query_rewrite import (
     QueryRewritePipelineConfig,
     QueryRewriteRetrievalPipeline,
 )
+from autorag_research.pipelines.retrieval.retro_star import (
+    RetroStarPipelineConfig,
+    RetroStarRetrievalPipeline,
+)
 from autorag_research.pipelines.retrieval.vector_search import (
     VectorSearchPipelineConfig,
     VectorSearchRetrievalPipeline,
@@ -37,6 +41,8 @@ __all__ = [
     "HybridRRFRetrievalPipelineConfig",
     "QueryRewritePipelineConfig",
     "QueryRewriteRetrievalPipeline",
+    "RetroStarPipelineConfig",
+    "RetroStarRetrievalPipeline",
     "VectorSearchPipelineConfig",
     "VectorSearchRetrievalPipeline",
 ]
