@@ -12,6 +12,7 @@ Scope note:
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -23,7 +24,7 @@ from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.injection import health_check_llm
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.util import run_with_concurrency_limit, truncate_texts
+from autorag_research.util import truncate_texts
 
 DEFAULT_RETRO_STAR_RELEVANCE_DEFINITION = (
     "A document is relevant when it helps answer the query, including evidence that is indirect "
@@ -81,9 +82,7 @@ def _integrate_retro_scores(scores: list[int | float], weights: list[float] | No
     if weights is None:
         return float(sum(scores) / len(scores))
 
-    if len(weights) != len(scores):
-        msg = "weights must have the same length as scores"
-        raise ValueError(msg)
+    _validate_sample_weights(weights, len(scores))
 
     total_weight = sum(weights)
     if total_weight <= 0:
@@ -92,6 +91,22 @@ def _integrate_retro_scores(scores: list[int | float], weights: list[float] | No
 
     weighted_sum = sum(score * weight for score, weight in zip(scores, weights, strict=True))
     return float(weighted_sum / total_weight)
+
+
+def _validate_sample_weights(
+    weights: list[float],
+    expected_length: int,
+    *,
+    length_error_message: str = "weights must have the same length as scores",
+    negative_error_message: str = "weights must not contain negative values",
+) -> None:
+    """Validate optional RETRO* sample weights before integration."""
+    if len(weights) != expected_length:
+        msg = length_error_message
+        raise ValueError(msg)
+    if any(weight < 0 for weight in weights):
+        msg = negative_error_message
+        raise ValueError(msg)
 
 
 @dataclass(kw_only=True)
@@ -188,9 +203,13 @@ class RetroStarRetrievalPipeline(BaseRetrievalPipeline):
         if max_rerank_concurrency < 1:
             msg = "max_rerank_concurrency must be >= 1"
             raise ValueError(msg)
-        if sample_weights is not None and len(sample_weights) != num_samples:
-            msg = "sample_weights must match num_samples when provided"
-            raise ValueError(msg)
+        if sample_weights is not None:
+            _validate_sample_weights(
+                sample_weights,
+                num_samples,
+                length_error_message="sample_weights must match num_samples when provided",
+                negative_error_message="sample_weights must not contain negative values",
+            )
 
         self.llm = llm
         self._retrieval_pipeline = retrieval_pipeline
@@ -295,15 +314,14 @@ class RetroStarRetrievalPipeline(BaseRetrievalPipeline):
         top_k: int,
     ) -> list[dict[str, Any]]:
         """Rerank candidates with RETRO* scoring."""
-        scored_candidates = await run_with_concurrency_limit(
-            items=candidates,
-            async_func=lambda candidate: self._score_candidate(query_text, candidate),
-            max_concurrency=self.max_rerank_concurrency,
-            error_message="RETRO* candidate scoring failed",
-        )
+        semaphore = asyncio.Semaphore(self.max_rerank_concurrency)
 
-        valid_candidates = [candidate for candidate in scored_candidates if candidate is not None]
-        valid_candidates.sort(
+        async def score_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+            async with semaphore:
+                return await self._score_candidate(query_text, candidate)
+
+        scored_candidates = await asyncio.gather(*(score_candidate(candidate) for candidate in candidates))
+        scored_candidates.sort(
             key=lambda candidate: (candidate["score"], candidate["_wrapped_score"]),
             reverse=True,
         )
@@ -314,7 +332,7 @@ class RetroStarRetrievalPipeline(BaseRetrievalPipeline):
                 "score": candidate["score"],
                 "content": candidate["content"],
             }
-            for candidate in valid_candidates[:top_k]
+            for candidate in scored_candidates[:top_k]
         ]
 
     async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:

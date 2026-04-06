@@ -68,6 +68,10 @@ class TestRetroStarHelpers:
     def test_integrate_retro_scores_supports_explicit_weights(self):
         assert _integrate_retro_scores([20, 80], weights=[1.0, 3.0]) == pytest.approx(65.0)
 
+    def test_integrate_retro_scores_rejects_negative_weights(self):
+        with pytest.raises(ValueError, match="weights must not contain negative values"):
+            _integrate_retro_scores([0, 100], weights=[-1.0, 2.0])
+
 
 class TestRetroStarPipelineConfig:
     """Tests for RetroStarPipelineConfig."""
@@ -152,6 +156,20 @@ class TestRetroStarRetrievalPipeline:
                 llm=FakeListLLM(responses=["<score>80</score>"]),
                 retrieval_pipeline=create_mock_retrieval_pipeline(),
                 prompt_template="Missing placeholders altogether",
+            )
+
+    def test_creation_rejects_negative_sample_weights(self, session_factory):
+        with (
+            patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None),
+            pytest.raises(ValueError, match="sample_weights must not contain negative values"),
+        ):
+            RetroStarRetrievalPipeline(
+                session_factory=session_factory,
+                name="retro_star_invalid_weights",
+                llm=FakeListLLM(responses=["<score>80</score>"]),
+                retrieval_pipeline=create_mock_retrieval_pipeline(),
+                num_samples=2,
+                sample_weights=[-0.1, 1.1],
             )
 
     def test_pipeline_config(self, session_factory, cleanup_pipeline_results: list[int]):
@@ -276,6 +294,28 @@ class TestRetroStarRetrievalPipeline:
 
         assert results[0]["score"] == pytest.approx(50.0)
         assert llm.ainvoke.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retrieve_by_text_raises_on_malformed_score_output(
+        self,
+        session_factory,
+    ):
+        wrapped_retrieval = create_mock_retrieval_pipeline(
+            default_results=[{"doc_id": 1, "score": 0.9, "content": "doc"}]
+        )
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(side_effect=[_mock_llm_response("reasoning without score tags")])
+
+        with patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None):
+            pipeline = RetroStarRetrievalPipeline(
+                session_factory=session_factory,
+                name="retro_star_invalid_score_output",
+                llm=llm,
+                retrieval_pipeline=wrapped_retrieval,
+            )
+
+        with pytest.raises(ValueError, match="RETRO\\* response must contain"):
+            await pipeline._retrieve_by_text("query text", top_k=1)
 
     @pytest.mark.asyncio
     async def test_retrieve_by_id_fetches_query_text_then_reranks(
