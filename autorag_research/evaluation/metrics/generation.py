@@ -152,7 +152,11 @@ def _build_unieval_prompt(
     document: str | None = None,
     reference: str | None = None,
 ) -> str:
-    """Build the Bool-QA prompt for a UniEval dimension."""
+    """Build the Bool-QA prompt for a UniEval dimension.
+
+    These strings intentionally mirror UniEval's published `add_question`
+    summarization prompts, including the `</s>` separators.
+    """
     if dimension == "fluency":
         return f"question: Is this a fluent paragraph? </s> paragraph: {generated_text}"
     if dimension == "coherence":
