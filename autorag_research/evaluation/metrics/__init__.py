@@ -12,6 +12,7 @@ from autorag_research.evaluation.metrics.generation import (
     RougeConfig,
     SemScoreConfig,
     TokenF1Config,
+    UniEvalConfig,
     bert_score,
     bleu,
     exact_match,
@@ -21,6 +22,7 @@ from autorag_research.evaluation.metrics.generation import (
     rouge,
     sem_score,
     token_f1,
+    unieval,
 )
 from autorag_research.evaluation.metrics.retrieval import (
     F1Config,
@@ -62,6 +64,7 @@ __all__ = [
     "RougeConfig",
     "SemScoreConfig",
     "TokenF1Config",
+    "UniEvalConfig",
     "bert_score",
     "bleu",
     "calculate_cosine_similarity",
@@ -83,4 +86,5 @@ __all__ = [
     "rouge",
     "sem_score",
     "token_f1",
+    "unieval",
 ]

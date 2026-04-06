@@ -20,6 +20,7 @@ from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
 
 from autorag_research.config import BaseGenerationMetricConfig
+from autorag_research.evaluation.metrics.unieval import UniEvalScorer, get_unieval_scorer
 from autorag_research.evaluation.metrics.util import calculate_cosine_similarity, metric_loop
 from autorag_research.exceptions import EmbeddingError
 from autorag_research.injection import with_embedding, with_llm
@@ -56,6 +57,8 @@ Input:
 """
 
 _JSON_BLOCK_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
+UNIEVAL_MODEL_NAME = "MingZhong/unieval-sum"
+UNIEVAL_DIMENSIONS = ("coherence", "consistency", "fluency", "relevance")
 
 
 def _get_normalized_tokens(text: str) -> list[str]:
@@ -172,6 +175,107 @@ def _calculate_response_relevancy_score(
     cosine_sim = np.dot(generated_vectors, query_vector.T).reshape(-1) / norm
     all_noncommittal = np.all(noncommittal_flags)
     return float(cosine_sim.mean() * int(not all_noncommittal))
+
+
+def _validate_unieval_dimension(dimension: str) -> str:
+    """Validate and normalize UniEval dimension name."""
+    normalized = dimension.strip().lower()
+    if normalized not in UNIEVAL_DIMENSIONS:
+        msg = f"Unsupported UniEval dimension: {dimension}"
+        raise ValueError(msg)
+    return normalized
+
+
+def _split_unieval_sentences(text: str) -> list[str]:
+    """Split text into sentences with a regex fallback when punkt data is unavailable."""
+    try:
+        sentences = [sentence.strip() for sentence in nltk.sent_tokenize(text) if sentence.strip()]
+    except LookupError:
+        sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", text) if sentence.strip()]
+    return sentences or [text.strip()]
+
+
+def _build_unieval_prompt(
+    *,
+    dimension: str,
+    generated_text: str,
+    document: str | None = None,
+    reference: str | None = None,
+) -> str:
+    """Build the Bool-QA prompt for a UniEval dimension.
+
+    These strings intentionally mirror UniEval's published `add_question`
+    summarization prompts, including the `</s>` separators.
+    """
+    if dimension == "fluency":
+        return f"question: Is this a fluent paragraph? </s> paragraph: {generated_text}"
+    if dimension == "coherence":
+        return (
+            "question: Is this a coherent summary to the document? "
+            f"</s> summary: {generated_text} </s> document: {document}"
+        )
+    if dimension == "consistency":
+        return (
+            "question: Is this claim consistent with the document? "
+            f"</s> claim: {generated_text} </s> document: {document}"
+        )
+    return (
+        "question: Is this summary relevant to the reference? "
+        f"</s> summary: {generated_text} </s> reference: {reference}"
+    )
+
+
+def _build_unieval_document(retrieved_contents: list[str]) -> str:
+    """Join retrieved passages into the document field used by UniEval summarization prompts."""
+    return " ".join(content.strip() for content in retrieved_contents)
+
+
+def _prepare_unieval_references(references: list[str]) -> list[str]:
+    """Normalize available references for UniEval relevance scoring."""
+    return [reference.strip() for reference in references if reference.strip()]
+
+
+def _prepare_unieval_prompts(
+    metric_input: MetricInput,
+    dimension: str,
+    sentence_level_dimensions: set[str],
+) -> list[str]:
+    """Build UniEval prompts for a single metric input."""
+    generated_text = cast(str, metric_input.generated_texts).strip()
+    if dimension == "relevance":
+        return [
+            _build_unieval_prompt(
+                dimension=dimension,
+                generated_text=generated_text,
+                reference=reference,
+            )
+            for reference in _prepare_unieval_references(cast(list[str], metric_input.generation_gt))
+        ]
+
+    document = None
+    if dimension in {"coherence", "consistency"}:
+        document = _build_unieval_document(cast(list[str], metric_input.retrieved_contents))
+
+    text_units = (
+        _split_unieval_sentences(generated_text) if dimension in sentence_level_dimensions else [generated_text]
+    )
+    return [
+        _build_unieval_prompt(
+            dimension=dimension,
+            generated_text=text_unit,
+            document=document,
+        )
+        for text_unit in text_units
+    ]
+
+
+def _aggregate_unieval_scores(dimension: str, scores: list[float]) -> float:
+    """Aggregate prompt-level UniEval scores back to one sample-level score."""
+    if dimension in {"fluency", "consistency"}:
+        return float(sum(scores) / len(scores))
+    if dimension == "relevance":
+        return max(scores)
+    return scores[0]
 
 
 @convert_inputs_to_list
@@ -464,6 +568,81 @@ def response_relevancy(
     return scores
 
 
+@convert_inputs_to_list
+def unieval(
+    metric_inputs: list[MetricInput],
+    dimension: str,
+    model_name_or_path: str = UNIEVAL_MODEL_NAME,
+    batch_size: int = 8,
+    max_length: int = 1024,
+    device: str = "cpu",
+    cache_dir: str | None = None,
+    scorer: UniEvalScorer | None = None,
+) -> list[float | None]:
+    """Compute one UniEval dimension using the shared summarization checkpoint.
+
+    The implementation follows the official UniEval summarization Bool-QA contract:
+    - fluency: generated text only, averaged per sentence
+    - coherence: retrieved source context + generated text, scored per sample
+    - consistency: retrieved source context + generated text, averaged per sentence
+    - relevance: reference + generated text, scored per sample
+
+    Consistency intentionally skips samples with missing retrieved context instead of
+    silently falling back to hidden ground truth, keeping the metric faithful to the
+    actual evidence available to the generation pipeline. Relevance keeps the official
+    single-reference prompt contract, but evaluates every available reference and keeps
+    the best score so multi-reference inputs stay order-independent.
+    """
+    normalized_dimension = _validate_unieval_dimension(dimension)
+    field_map = {
+        "fluency": ["generated_texts"],
+        "coherence": ["generated_texts", "retrieved_contents"],
+        "consistency": ["generated_texts", "retrieved_contents"],
+        "relevance": ["generated_texts", "generation_gt"],
+    }
+    sentence_level_dimensions = {"fluency", "consistency"}
+
+    prepared_inputs: list[str] = []
+    prompt_counts: list[tuple[int, int]] = []
+    results: list[float | None] = [None] * len(metric_inputs)
+    for index, metric_input in enumerate(metric_inputs):
+        if not metric_input.is_fields_notnone(field_map[normalized_dimension]):
+            continue
+
+        prompts = _prepare_unieval_prompts(metric_input, normalized_dimension, sentence_level_dimensions)
+        if not prompts:
+            continue
+
+        prompt_count = len(prompts)
+        prepared_inputs.extend(prompts)
+        prompt_counts.append((index, prompt_count))
+
+    if not prepared_inputs:
+        return results
+
+    effective_scorer = scorer or get_unieval_scorer(
+        model_name_or_path=model_name_or_path,
+        max_length=max_length,
+        device=device,
+        cache_dir=cache_dir,
+    )
+
+    prompt_scores = effective_scorer.score(prepared_inputs, batch_size=batch_size)
+    if len(prompt_scores) != len(prepared_inputs):
+        msg = (
+            f"UniEval scorer returned {len(prompt_scores)} scores for {len(prepared_inputs)} prompts "
+            f"for dimension '{normalized_dimension}'"
+        )
+        raise ValueError(msg)
+    prompt_offset = 0
+    for index, count in prompt_counts:
+        current_scores = prompt_scores[prompt_offset : prompt_offset + count]
+        results[index] = _aggregate_unieval_scores(normalized_dimension, current_scores)
+        prompt_offset += count
+
+    return results
+
+
 # Metric Configurations
 @dataclass
 class BleuConfig(BaseGenerationMetricConfig):
@@ -626,6 +805,41 @@ class ResponseRelevancyConfig(BaseGenerationMetricConfig):
             "llm": self.llm,
             "embedding_model": self.embedding_model,
             "prompt_template": self.prompt_template,
+        }
+
+
+@dataclass
+class UniEvalConfig(BaseGenerationMetricConfig):
+    """Configuration for one UniEval dimension."""
+
+    dimension: str = "consistency"
+    model_name_or_path: str = UNIEVAL_MODEL_NAME
+    batch_size: int = 8
+    max_length: int = 1024
+    device: str = "cpu"
+    cache_dir: str | None = None
+
+    def __post_init__(self) -> None:
+        """Validate UniEval configuration."""
+        self.dimension = _validate_unieval_dimension(self.dimension)
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return f"unieval_{self.dimension}"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return unieval
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "dimension": self.dimension,
+            "model_name_or_path": self.model_name_or_path,
+            "batch_size": self.batch_size,
+            "max_length": self.max_length,
+            "device": self.device,
+            "cache_dir": self.cache_dir,
         }
 
 
