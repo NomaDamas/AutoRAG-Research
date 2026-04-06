@@ -54,9 +54,13 @@ class TestRetroStarHelpers:
     def test_parse_retro_score_extracts_integer(self):
         assert _parse_retro_score("analysis\n<score>84</score>") == 84
 
-    def test_parse_retro_score_clamps_out_of_range_values(self):
-        assert _parse_retro_score("<score>124</score>") == 100
-        assert _parse_retro_score("<score>-8</score>") == 0
+    def test_parse_retro_score_uses_final_score_tag(self):
+        assert _parse_retro_score("draft <score>10</score> revised <score>90</score>") == 90
+
+    @pytest.mark.parametrize("response_text", ["<score>124</score>", "<score>-8</score>"])
+    def test_parse_retro_score_rejects_out_of_range_values(self, response_text: str):
+        with pytest.raises(ValueError, match="RETRO\\* score must be an integer between 0 and 100"):
+            _parse_retro_score(response_text)
 
     def test_parse_retro_score_rejects_missing_score_tag(self):
         with pytest.raises(ValueError, match="RETRO\\* response must contain"):
@@ -315,6 +319,28 @@ class TestRetroStarRetrievalPipeline:
             )
 
         with pytest.raises(ValueError, match="RETRO\\* response must contain"):
+            await pipeline._retrieve_by_text("query text", top_k=1)
+
+    @pytest.mark.asyncio
+    async def test_retrieve_by_text_raises_on_out_of_range_score_output(
+        self,
+        session_factory,
+    ):
+        wrapped_retrieval = create_mock_retrieval_pipeline(
+            default_results=[{"doc_id": 1, "score": 0.9, "content": "doc"}]
+        )
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(side_effect=[_mock_llm_response("analysis\n<score>124</score>")])
+
+        with patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None):
+            pipeline = RetroStarRetrievalPipeline(
+                session_factory=session_factory,
+                name="retro_star_out_of_range_score_output",
+                llm=llm,
+                retrieval_pipeline=wrapped_retrieval,
+            )
+
+        with pytest.raises(ValueError, match="RETRO\\* score must be an integer between 0 and 100"):
             await pipeline._retrieve_by_text("query text", top_k=1)
 
     @pytest.mark.asyncio

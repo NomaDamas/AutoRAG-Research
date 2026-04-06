@@ -65,12 +65,17 @@ _SCORE_PATTERN = re.compile(r"<score>\s*(-?\d{1,3})\s*</score>", re.IGNORECASE |
 
 def _parse_retro_score(response_text: str) -> int:
     """Parse the final RETRO* relevance score from LLM output."""
-    match = _SCORE_PATTERN.search(response_text)
-    if match is None:
+    matches = list(_SCORE_PATTERN.finditer(response_text))
+    if not matches:
         msg = "RETRO* response must contain a final integer score inside <score> tags"
         raise ValueError(msg)
 
-    return max(0, min(100, int(match.group(1))))
+    score = int(matches[-1].group(1))
+    if not 0 <= score <= 100:
+        msg = "RETRO* score must be an integer between 0 and 100"
+        raise ValueError(msg)
+
+    return score
 
 
 def _integrate_retro_scores(scores: list[int | float], weights: list[float] | None = None) -> float:
