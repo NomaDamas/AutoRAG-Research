@@ -153,6 +153,48 @@ class TestRAGCriticPipelineUnit:
         ]
 
     @pytest.mark.asyncio
+    async def test_run_critic_normalizes_string_recommended_actions(self):
+        """Critic metadata should coerce singleton recommended actions into a list."""
+        from autorag_research.util import TokenUsageTracker
+
+        pipeline = create_lightweight_rag_critic_pipeline()
+
+        pipeline._invoke_and_record = AsyncMock(  # type: ignore[method-assign]
+            return_value='{"verdict": "revise", "feedback": "Need retrieval", "recommended_actions": "retrieval"}'
+        )
+
+        critique = await pipeline._run_critic(
+            "What is RAG-Critic?",
+            "doc context",
+            "draft answer",
+            TokenUsageTracker(),
+        )
+
+        assert critique == {
+            "verdict": "revise",
+            "feedback": "Need retrieval",
+            "recommended_actions": ["retrieval"],
+        }
+
+    @pytest.mark.asyncio
+    async def test_plan_actions_fallback_normalizes_string_recommended_actions(self):
+        """Fallback planner actions should treat a singleton action string as one action."""
+        from autorag_research.util import TokenUsageTracker
+
+        pipeline = create_lightweight_rag_critic_pipeline()
+
+        pipeline._invoke_and_record = AsyncMock(return_value="not json")  # type: ignore[method-assign]
+
+        actions = await pipeline._plan_actions(
+            "What is RAG-Critic?",
+            "Initial answer",
+            {"feedback": "Need better grounding", "recommended_actions": "generate_answer"},
+            TokenUsageTracker(),
+        )
+
+        assert actions == [{"action": "generate_answer"}]
+
+    @pytest.mark.asyncio
     async def test_generate_executes_critic_plan_actions(self):
         """A revise verdict should trigger planner actions before approval."""
         prompt_log: list[str] = []

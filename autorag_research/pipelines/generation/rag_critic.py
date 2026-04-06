@@ -222,6 +222,16 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         return []
 
     @staticmethod
+    def _normalize_string_list(value: Any) -> list[str]:
+        """Normalize a string-or-list payload into a list of non-empty strings."""
+        if isinstance(value, str):
+            normalized = value.strip()
+            return [normalized] if normalized else []
+        if isinstance(value, list):
+            return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+        return []
+
+    @staticmethod
     def _normalize_action_name(action: str) -> str:
         """Normalize action names from planner output."""
         normalized = action.strip().lower().replace("-", "_").replace(" ", "_")
@@ -327,7 +337,7 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             logger.warning("Critic output must be a JSON object; falling back to revise verdict")
             critique = {"verdict": "revise", "feedback": critique_text, "recommended_actions": ["generate_answer"]}
         critique.setdefault("feedback", "")
-        critique.setdefault("recommended_actions", [])
+        critique["recommended_actions"] = self._normalize_string_list(critique.get("recommended_actions", []))
         return critique
 
     async def _plan_actions(
@@ -347,7 +357,7 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         try:
             payload = self._parse_json_payload(plan_text)
         except json.JSONDecodeError:
-            payload = {"actions": critique.get("recommended_actions", [])}
+            payload = {"actions": self._normalize_string_list(critique.get("recommended_actions", []))}
         raw_actions = self._extract_payload_list(payload, "actions")
         actions: list[dict[str, Any]] = []
         for item in raw_actions:
@@ -356,7 +366,9 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             elif isinstance(item, dict):
                 actions.append(item)
         if not actions:
-            actions = [{"action": action} for action in critique.get("recommended_actions", [])]
+            actions = [
+                {"action": action} for action in self._normalize_string_list(critique.get("recommended_actions", []))
+            ]
         return actions[: self._max_actions_per_iteration]
 
     async def _rewrite_query(
