@@ -1,5 +1,5 @@
 _target_: autorag_research.evaluation.metrics.generation.UniEvalConfig
-description: "UniEval relevance - answer relevance scoring against the query"
+description: "UniEval relevance - summary relevance scoring against the generation reference"
 dimension: relevance
 model_name_or_path: MingZhong/unieval-sum
 batch_size: 8

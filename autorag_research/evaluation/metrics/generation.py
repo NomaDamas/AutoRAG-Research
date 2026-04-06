@@ -4,7 +4,7 @@ import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from langchain_core.embeddings import Embeddings
@@ -149,17 +149,36 @@ def _build_unieval_prompt(
     *,
     dimension: str,
     generated_text: str,
-    query: str | None = None,
-    context: str | None = None,
+    document: str | None = None,
+    reference: str | None = None,
 ) -> str:
     """Build the Bool-QA prompt for a UniEval dimension."""
     if dimension == "fluency":
-        return f"question: Is this a fluent answer? </s> answer: {generated_text}"
+        return f"question: Is this a fluent paragraph? </s> paragraph: {generated_text}"
     if dimension == "coherence":
-        return f"question: Is this a coherent answer? </s> answer: {generated_text}"
+        return (
+            "question: Is this a coherent summary to the document? "
+            f"</s> summary: {generated_text} </s> document: {document}"
+        )
     if dimension == "consistency":
-        return f"question: Is this answer consistent with the context? </s> answer: {generated_text} </s> context: {context}"
-    return f"question: Is this answer relevant to the question? </s> answer: {generated_text} </s> question: {query}"
+        return (
+            "question: Is this claim consistent with the document? "
+            f"</s> claim: {generated_text} </s> document: {document}"
+        )
+    return (
+        "question: Is this summary relevant to the reference? "
+        f"</s> summary: {generated_text} </s> reference: {reference}"
+    )
+
+
+def _build_unieval_document(retrieved_contents: list[str]) -> str:
+    """Join retrieved passages into the document field used by UniEval summarization prompts."""
+    return " ".join(content.strip() for content in retrieved_contents)
+
+
+def _select_unieval_reference(references: list[str]) -> str:
+    """Select the primary reference expected by the summarization UniEval scorer."""
+    return references[0].strip()
 
 
 @convert_inputs_to_list
@@ -454,31 +473,26 @@ def unieval(
 ) -> list[float | None]:
     """Compute one UniEval dimension using the shared summarization checkpoint.
 
-    The implementation follows the official Bool-QA scoring path while adapting prompts
-    to AutoRAG generation inputs:
-    - fluency/coherence: generated text only
-    - relevance: query + generated text
-    - consistency: retrieved source context + generated text
+    The implementation follows the official UniEval summarization Bool-QA contract:
+    - fluency: generated text only, averaged per sentence
+    - coherence: retrieved source context + generated text, scored per sample
+    - consistency: retrieved source context + generated text, averaged per sentence
+    - relevance: reference + generated text, scored per sample
 
     Consistency intentionally skips samples with missing retrieved context instead of
     silently falling back to hidden ground truth, keeping the metric faithful to the
-    actual evidence available to the generation pipeline.
+    actual evidence available to the generation pipeline. Relevance uses the first
+    available reference because the upstream summarization evaluator expects a single
+    reference string per sample.
     """
     normalized_dimension = _validate_unieval_dimension(dimension)
     field_map = {
         "fluency": ["generated_texts"],
-        "coherence": ["generated_texts"],
+        "coherence": ["generated_texts", "retrieved_contents"],
         "consistency": ["generated_texts", "retrieved_contents"],
-        "relevance": ["generated_texts", "query"],
+        "relevance": ["generated_texts", "generation_gt"],
     }
     sentence_level_dimensions = {"fluency", "consistency"}
-
-    effective_scorer = scorer or get_unieval_scorer(
-        model_name_or_path=model_name_or_path,
-        max_length=max_length,
-        device=device,
-        cache_dir=cache_dir,
-    )
 
     prepared_inputs: list[str] = []
     prompt_counts: list[tuple[int, int]] = []
@@ -487,10 +501,13 @@ def unieval(
         if not metric_input.is_fields_notnone(field_map[normalized_dimension]):
             continue
 
-        generated_text = metric_input.generated_texts or ""
-        context = None
-        if normalized_dimension == "consistency" and metric_input.retrieved_contents is not None:
-            context = " ".join(metric_input.retrieved_contents)
+        generated_text = cast(str, metric_input.generated_texts).strip()
+        document = None
+        if normalized_dimension in {"coherence", "consistency"}:
+            document = _build_unieval_document(cast(list[str], metric_input.retrieved_contents))
+        reference = None
+        if normalized_dimension == "relevance":
+            reference = _select_unieval_reference(cast(list[str], metric_input.generation_gt))
 
         text_units = (
             _split_unieval_sentences(generated_text)
@@ -503,13 +520,20 @@ def unieval(
                 _build_unieval_prompt(
                     dimension=normalized_dimension,
                     generated_text=text_unit,
-                    query=metric_input.query,
-                    context=context,
+                    document=document,
+                    reference=reference,
                 )
             )
 
     if not prepared_inputs:
         return results
+
+    effective_scorer = scorer or get_unieval_scorer(
+        model_name_or_path=model_name_or_path,
+        max_length=max_length,
+        device=device,
+        cache_dir=cache_dir,
+    )
 
     prompt_scores = effective_scorer.score(prepared_inputs, batch_size=batch_size)
     if len(prompt_scores) != len(prepared_inputs):

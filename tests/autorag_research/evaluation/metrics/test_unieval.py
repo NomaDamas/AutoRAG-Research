@@ -30,19 +30,90 @@ def test_unieval_fluency_averages_sentence_scores():
     assert scores == [pytest.approx(0.5)]
     assert scorer.calls == [
         [
-            "question: Is this a fluent answer? </s> answer: First sentence.",
-            "question: Is this a fluent answer? </s> answer: Second sentence.",
+            "question: Is this a fluent paragraph? </s> paragraph: First sentence.",
+            "question: Is this a fluent paragraph? </s> paragraph: Second sentence.",
         ]
     ]
 
 
-def test_unieval_relevance_uses_query_prompt():
+def test_unieval_coherence_requires_retrieved_context_and_uses_document_prompt():
+    scorer = DummyUniEvalScorer(responses=[0.61])
+
+    scores = unieval(
+        metric_inputs=[
+            MetricInput(
+                generated_texts="Paris is the capital of France. It is in Europe.",
+                retrieved_contents=["France is a country in Europe.", "Paris is its capital city."],
+            )
+        ],
+        dimension="coherence",
+        scorer=scorer,
+    )
+
+    assert scores == [pytest.approx(0.61)]
+    assert scorer.calls == [
+        [
+            "question: Is this a coherent summary to the document? </s> summary: Paris is the capital of France. "
+            "It is in Europe. </s> document: France is a country in Europe. Paris is its capital city."
+        ]
+    ]
+
+
+def test_unieval_coherence_returns_none_without_retrieved_context():
+    scores = unieval(
+        metric_inputs=[MetricInput(generated_texts="Paris is the capital of France.")],
+        dimension="coherence",
+        scorer=DummyUniEvalScorer(responses=[0.9]),
+    )
+
+    assert scores == [None]
+
+
+def test_unieval_consistency_requires_retrieved_context():
+    scorer = DummyUniEvalScorer(responses=[0.9])
+
+    scores = unieval(
+        metric_inputs=[MetricInput(generated_texts="Paris is the capital of France.")],
+        dimension="consistency",
+        scorer=scorer,
+    )
+
+    assert scores == [None]
+    assert scorer.calls == []
+
+
+def test_unieval_consistency_averages_sentence_scores_against_document():
+    scorer = DummyUniEvalScorer(responses=[0.25, 0.75])
+
+    scores = unieval(
+        metric_inputs=[
+            MetricInput(
+                generated_texts="Paris is the capital of France. It is in Europe.",
+                retrieved_contents=["France is a country in Europe.", "Paris is its capital city."],
+            )
+        ],
+        dimension="consistency",
+        scorer=scorer,
+    )
+
+    assert scores == [pytest.approx(0.5)]
+    assert scorer.calls == [
+        [
+            "question: Is this claim consistent with the document? </s> claim: Paris is the capital of France. "
+            "</s> document: France is a country in Europe. Paris is its capital city.",
+            "question: Is this claim consistent with the document? </s> claim: It is in Europe. "
+            "</s> document: France is a country in Europe. Paris is its capital city.",
+        ]
+    ]
+
+
+def test_unieval_relevance_requires_generation_gt_and_uses_reference_prompt():
     scorer = DummyUniEvalScorer(responses=[0.73])
 
     scores = unieval(
         metric_inputs=[
             MetricInput(
-                query="What is the capital of France?",
+                generation_gt=["Paris is France's capital."],
                 generated_texts="Paris is the capital of France.",
             )
         ],
@@ -53,27 +124,36 @@ def test_unieval_relevance_uses_query_prompt():
     assert scores == [pytest.approx(0.73)]
     assert scorer.calls == [
         [
-            "question: Is this answer relevant to the question? </s> answer: Paris is the capital of France. "
-            "</s> question: What is the capital of France?"
+            "question: Is this summary relevant to the reference? </s> summary: Paris is the capital of France. "
+            "</s> reference: Paris is France's capital."
         ]
     ]
 
 
-def test_unieval_consistency_requires_retrieved_context():
+def test_unieval_relevance_returns_none_without_generation_gt():
     scores = unieval(
         metric_inputs=[MetricInput(generated_texts="Paris is the capital of France.")],
-        dimension="consistency",
+        dimension="relevance",
         scorer=DummyUniEvalScorer(responses=[0.9]),
     )
 
     assert scores == [None]
 
 
-def test_unieval_config_uses_dimension_specific_metric_name():
-    config = UniEvalConfig(dimension="consistency", batch_size=4, device="cpu")
+@pytest.mark.parametrize(
+    ("dimension", "metric_name"),
+    [
+        ("coherence", "unieval_coherence"),
+        ("consistency", "unieval_consistency"),
+        ("fluency", "unieval_fluency"),
+        ("relevance", "unieval_relevance"),
+    ],
+)
+def test_unieval_config_uses_dimension_specific_metric_name(dimension: str, metric_name: str):
+    config = UniEvalConfig(dimension=dimension, batch_size=4, device="cpu")
 
-    assert config.get_metric_name() == "unieval_consistency"
-    assert config.get_metric_kwargs()["dimension"] == "consistency"
+    assert config.get_metric_name() == metric_name
+    assert config.get_metric_kwargs()["dimension"] == dimension
     assert config.get_metric_kwargs()["batch_size"] == 4
 
 
@@ -96,9 +176,28 @@ def test_unieval_model_loading_failure_surfaces_helpful_error(monkeypatch: pytes
 
     with pytest.raises(ImportError, match="transformers_missing_for_unieval_test"):
         unieval(
-            metric_inputs=[MetricInput(generated_texts="A coherent answer.")],
+            metric_inputs=[
+                MetricInput(generated_texts="A coherent answer.", retrieved_contents=["supporting document"])
+            ],
             dimension="coherence",
         )
+
+
+def test_unieval_skips_scorer_loading_when_all_inputs_are_missing_required_fields(monkeypatch: pytest.MonkeyPatch):
+    def fail_to_load(**_: object) -> object:
+        raise AssertionError
+
+    monkeypatch.setattr(
+        "autorag_research.evaluation.metrics.generation.get_unieval_scorer",
+        fail_to_load,
+    )
+
+    scores = unieval(
+        metric_inputs=[MetricInput(generated_texts="Paris is the capital of France.")],
+        dimension="relevance",
+    )
+
+    assert scores == [None]
 
 
 def test_unieval_raises_when_scorer_returns_wrong_number_of_scores():
