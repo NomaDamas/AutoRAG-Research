@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from autorag_research.orm.repository.query import QueryRepository
@@ -40,8 +42,9 @@ class TestGenerationPipelineService:
             service.delete_pipeline_results(pipeline_id)
 
     def test_get_or_create_pipeline(self, service, cleanup_pipeline_results):
+        pipeline_name = f"test_gen_pipeline_{uuid.uuid4().hex[:8]}"
         pipeline_id, is_new = service.get_or_create_pipeline(
-            name="test_gen_pipeline",
+            name=pipeline_name,
             config={"type": "naive_rag", "model": "test-model"},
         )
         cleanup_pipeline_results.append(pipeline_id)
