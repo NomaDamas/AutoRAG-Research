@@ -59,6 +59,7 @@ def test_bulk_insert(
     image_chunk_retrieved_result_repository: ImageChunkRetrievedResultRepository,
     db_session: Session,
 ):
+    inserted_keys = {(2, 2, 2), (4, 2, 1)}
     results_to_insert = [
         {"query_id": 4, "pipeline_id": 2, "image_chunk_id": 1, "rel_score": 0.75},
         {"query_id": 2, "pipeline_id": 2, "image_chunk_id": 2, "rel_score": 0.65},
@@ -70,9 +71,13 @@ def test_bulk_insert(
     assert inserted_count == 2
 
     results = image_chunk_retrieved_result_repository.get_by_query_and_pipeline([2, 4], 2)
-    assert len(results) == 2
+    assert len(results) == 3
+    assert {(result.query_id, result.pipeline_id, result.image_chunk_id) for result in results} == inserted_keys | {
+        (4, 2, 2)
+    }
 
     # Cleanup
-    image_chunk_retrieved_result_repository.delete_by_query_and_pipeline(4, 2)
-    image_chunk_retrieved_result_repository.delete_by_query_and_pipeline(2, 2)
+    for result in results:
+        if (result.query_id, result.pipeline_id, result.image_chunk_id) in inserted_keys:
+            db_session.delete(result)
     db_session.commit()

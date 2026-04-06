@@ -70,6 +70,23 @@ class TestSelfRAGPipelineConfig:
 
 
 class TestSelfRAGPipelineBehavior:
+    def test_parse_reflection_treats_string_booleans_as_booleans(self):
+        """Self-RAG JSON reflection parsing should honor quoted true/false values."""
+        from autorag_research.pipelines.generation.self_rag import SelfRAGPipeline
+
+        pipeline = SelfRAGPipeline.__new__(SelfRAGPipeline)
+
+        reflection = pipeline._parse_reflection(
+            '{"should_retrieve": "false", "is_supported": "false", "critique": "Need revision"}'
+        )
+
+        assert reflection == {
+            "action": "REVISE",
+            "supported": False,
+            "search_query": "",
+            "critique": "Need revision",
+        }
+
     @pytest.mark.asyncio
     async def test_generate_skips_retrieval_when_initial_answer_is_supported(
         self, session_factory, cleanup, mock_retrieval_pipeline

@@ -155,6 +155,20 @@ class SelfRAGPipeline(BaseGenerationPipeline):
             critique=critique or "Improve grounding and specificity.",
         )
 
+    def _coerce_reflection_flag(self, value: Any, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "yes", "1", "supported"}:
+                return True
+            if normalized in {"false", "no", "0", "unsupported", ""}:
+                return False
+            return default
+        if value is None:
+            return default
+        return bool(value)
+
     def _parse_key_value_reflection(self, response_text: str) -> dict[str, Any]:
         parsed: dict[str, Any] = {
             "action": "FINISH",
@@ -175,7 +189,7 @@ class SelfRAGPipeline(BaseGenerationPipeline):
                 if normalized_action in {"FINISH", "RETRIEVE", "REVISE"}:
                     parsed["action"] = normalized_action
             elif key == "SUPPORTED":
-                parsed["supported"] = value.lower() in {"yes", "true", "supported"}
+                parsed["supported"] = self._coerce_reflection_flag(value)
             elif key in {"SEARCH_QUERY", "FOLLOW_UP_QUERY"}:
                 parsed["search_query"] = value
             elif key == "CRITIQUE" and value:
@@ -188,8 +202,8 @@ class SelfRAGPipeline(BaseGenerationPipeline):
         if stripped.startswith("{"):
             try:
                 payload = json.loads(stripped)
-                should_retrieve = bool(payload.get("should_retrieve", False))
-                supported = bool(payload.get("is_supported", False))
+                should_retrieve = self._coerce_reflection_flag(payload.get("should_retrieve", False))
+                supported = self._coerce_reflection_flag(payload.get("is_supported", False))
                 if should_retrieve:
                     action = "RETRIEVE"
                 elif supported:
