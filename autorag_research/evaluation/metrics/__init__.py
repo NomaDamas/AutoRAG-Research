@@ -10,6 +10,7 @@ from autorag_research.evaluation.metrics.generation import (
     ResponseRelevancyConfig,
     RougeConfig,
     SemScoreConfig,
+    UniEvalConfig,
     bert_score,
     bleu,
     huggingface_evaluate,
@@ -17,6 +18,7 @@ from autorag_research.evaluation.metrics.generation import (
     response_relevancy,
     rouge,
     sem_score,
+    unieval,
 )
 from autorag_research.evaluation.metrics.retrieval import (
     F1Config,
@@ -56,6 +58,7 @@ __all__ = [
     "ResponseRelevancyConfig",
     "RougeConfig",
     "SemScoreConfig",
+    "UniEvalConfig",
     "bert_score",
     "bleu",
     "calculate_cosine_similarity",
@@ -75,4 +78,5 @@ __all__ = [
     "retrieval_recall",
     "rouge",
     "sem_score",
+    "unieval",
 ]

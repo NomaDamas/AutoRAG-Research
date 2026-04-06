@@ -1,0 +1,7 @@
+_target_: autorag_research.evaluation.metrics.generation.UniEvalConfig
+description: "UniEval coherence - Bool-QA coherence scoring with MingZhong/unieval-sum"
+dimension: coherence
+model_name_or_path: MingZhong/unieval-sum
+batch_size: 8
+max_length: 1024
+device: cpu
