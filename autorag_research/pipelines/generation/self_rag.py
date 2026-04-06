@@ -169,6 +169,13 @@ class SelfRAGPipeline(BaseGenerationPipeline):
             return default
         return bool(value)
 
+    def _resolve_reflection_action(self, should_retrieve: bool, supported: bool) -> str:
+        if should_retrieve:
+            return "RETRIEVE"
+        if supported:
+            return "FINISH"
+        return "REVISE"
+
     def _parse_key_value_reflection(self, response_text: str) -> dict[str, Any]:
         parsed: dict[str, Any] = {
             "action": "FINISH",
@@ -176,6 +183,8 @@ class SelfRAGPipeline(BaseGenerationPipeline):
             "search_query": "",
             "critique": response_text.strip(),
         }
+        should_retrieve_flag: bool | None = None
+        supported_flag: bool | None = None
 
         for line in response_text.splitlines():
             if ":" not in line:
@@ -188,12 +197,21 @@ class SelfRAGPipeline(BaseGenerationPipeline):
                 normalized_action = value.upper()
                 if normalized_action in {"FINISH", "RETRIEVE", "REVISE"}:
                     parsed["action"] = normalized_action
-            elif key == "SUPPORTED":
-                parsed["supported"] = self._coerce_reflection_flag(value)
+            elif key == "SHOULD_RETRIEVE":
+                should_retrieve_flag = self._coerce_reflection_flag(value)
+            elif key in {"SUPPORTED", "IS_SUPPORTED"}:
+                supported_flag = self._coerce_reflection_flag(value)
+                parsed["supported"] = supported_flag
             elif key in {"SEARCH_QUERY", "FOLLOW_UP_QUERY"}:
                 parsed["search_query"] = value
             elif key == "CRITIQUE" and value:
                 parsed["critique"] = value
+
+        if should_retrieve_flag is not None or supported_flag is not None:
+            parsed["action"] = self._resolve_reflection_action(
+                should_retrieve=should_retrieve_flag or False,
+                supported=supported_flag or False,
+            )
 
         return parsed
 
@@ -204,14 +222,8 @@ class SelfRAGPipeline(BaseGenerationPipeline):
                 payload = json.loads(stripped)
                 should_retrieve = self._coerce_reflection_flag(payload.get("should_retrieve", False))
                 supported = self._coerce_reflection_flag(payload.get("is_supported", False))
-                if should_retrieve:
-                    action = "RETRIEVE"
-                elif supported:
-                    action = "FINISH"
-                else:
-                    action = "REVISE"
                 return {
-                    "action": action,
+                    "action": self._resolve_reflection_action(should_retrieve, supported),
                     "supported": supported,
                     "search_query": payload.get("follow_up_query", "") or payload.get("search_query", ""),
                     "critique": payload.get("critique", stripped),

@@ -87,6 +87,23 @@ class TestSelfRAGPipelineBehavior:
             "critique": "Need revision",
         }
 
+    def test_parse_reflection_accepts_key_value_aliases(self):
+        """Self-RAG key-value fallback parsing should honor should_retrieve/is_supported aliases."""
+        from autorag_research.pipelines.generation.self_rag import SelfRAGPipeline
+
+        pipeline = SelfRAGPipeline.__new__(SelfRAGPipeline)
+
+        reflection = pipeline._parse_reflection(
+            "should_retrieve: true\nis_supported: false\nfollow_up_query: largest planet\ncritique: need evidence"
+        )
+
+        assert reflection == {
+            "action": "RETRIEVE",
+            "supported": False,
+            "search_query": "largest planet",
+            "critique": "need evidence",
+        }
+
     @pytest.mark.asyncio
     async def test_generate_skips_retrieval_when_initial_answer_is_supported(
         self, session_factory, cleanup, mock_retrieval_pipeline
