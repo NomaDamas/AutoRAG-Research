@@ -29,6 +29,7 @@ nav:
           - datasets/text/beir.md
           - datasets/text/mteb.md
           - datasets/text/ragbench.md
+          - datasets/text/crag.md
           - datasets/text/mrtydi.md
           - datasets/text/bright.md
       - Multimodal:
