@@ -65,6 +65,74 @@ class TestRAGCriticPipelineUnit:
         assert "planner_prompt_template" in config
 
     @pytest.mark.asyncio
+    async def test_plan_actions_accepts_top_level_array_payload(self, session_factory, cleanup):
+        """Planner responses may be a top-level array of action objects."""
+        from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline
+        from autorag_research.util import TokenUsageTracker
+
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock()
+
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        pipeline = RAGCriticPipeline(
+            session_factory=session_factory,
+            name="test_rag_critic_planner_array_payload",
+            llm=llm,
+            retrieval_pipeline=retrieval_pipeline,
+        )
+        cleanup.append(pipeline.pipeline_id)
+
+        pipeline._invoke_and_record = AsyncMock(  # type: ignore[method-assign]
+            return_value='[{"action": "retrieval"}, {"action": "generate_answer"}]'
+        )
+
+        actions = await pipeline._plan_actions(
+            "What is RAG-Critic?",
+            "Initial answer",
+            {"feedback": "Need better grounding", "recommended_actions": ["retrieval"]},
+            TokenUsageTracker(),
+        )
+
+        assert actions == [
+            {"action": "retrieval"},
+            {"action": "generate_answer"},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_decompose_query_accepts_top_level_array_payload(self, session_factory, cleanup):
+        """Decomposition responses may be a top-level array of sub-question strings."""
+        from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline
+        from autorag_research.util import TokenUsageTracker
+
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock()
+
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        pipeline = RAGCriticPipeline(
+            session_factory=session_factory,
+            name="test_rag_critic_decomposition_array_payload",
+            llm=llm,
+            retrieval_pipeline=retrieval_pipeline,
+        )
+        cleanup.append(pipeline.pipeline_id)
+
+        pipeline._invoke_and_record = AsyncMock(  # type: ignore[method-assign]
+            return_value='["What is RAG?", "How does the critic refine it?"]'
+        )
+
+        sub_questions = await pipeline._decompose_query(
+            "Explain RAG-Critic",
+            "Need smaller retrieval queries",
+            "Split the problem",
+            TokenUsageTracker(),
+        )
+
+        assert sub_questions == [
+            "What is RAG?",
+            "How does the critic refine it?",
+        ]
+
+    @pytest.mark.asyncio
     async def test_generate_executes_critic_plan_actions(self, session_factory, cleanup):
         """A revise verdict should trigger planner actions before approval."""
         from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline

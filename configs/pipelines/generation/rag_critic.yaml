@@ -1,0 +1,23 @@
+# RAG-Critic Generation Pipeline Configuration
+#
+# Critic-guided corrective loop for retrieval-augmented generation.
+# Starts with an answer, runs a critic, plans corrective actions, and
+# iterates through rewrite/retrieval/decomposition/refinement/regeneration
+# until the answer is approved or the iteration budget is exhausted.
+#
+# Parameters:
+#   retrieval_pipeline_name: Name of retrieval pipeline to use
+#   llm: LLM model identifier (default: gpt-4o-mini)
+#   max_iterations: Maximum critic/planner refinement loops
+#   max_actions_per_iteration: Maximum corrective actions the planner may emit
+#   top_k: Number of chunks to retrieve for the initial working context
+#
+_target_: autorag_research.pipelines.generation.rag_critic.RAGCriticPipelineConfig
+description: "RAG-Critic with critic/planner corrective refinement"
+name: rag_critic
+retrieval_pipeline_name: bm25
+llm: gpt-4o-mini
+top_k: 5
+batch_size: 10
+max_iterations: 2
+max_actions_per_iteration: 4

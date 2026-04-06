@@ -310,6 +310,9 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         except json.JSONDecodeError:
             logger.warning("Critic output was not valid JSON; falling back to revise verdict")
             critique = {"verdict": "revise", "feedback": critique_text, "recommended_actions": ["generate_answer"]}
+        if not isinstance(critique, dict):
+            logger.warning("Critic output must be a JSON object; falling back to revise verdict")
+            critique = {"verdict": "revise", "feedback": critique_text, "recommended_actions": ["generate_answer"]}
         critique.setdefault("feedback", "")
         critique.setdefault("recommended_actions", [])
         return critique
@@ -332,8 +335,12 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             payload = self._parse_json_payload(plan_text)
         except json.JSONDecodeError:
             payload = {"actions": critique.get("recommended_actions", [])}
-
-        raw_actions = payload.get("actions", [])
+        if isinstance(payload, list):
+            raw_actions = payload
+        elif isinstance(payload, dict):
+            raw_actions = payload.get("actions", [])
+        else:
+            raw_actions = []
         actions: list[dict[str, Any]] = []
         for item in raw_actions:
             if isinstance(item, str):
@@ -370,7 +377,12 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             payload = self._parse_json_payload(decomposition_text)
         except json.JSONDecodeError:
             payload = {"sub_questions": [part.strip() for part in decomposition_text.split("\n") if part.strip()]}
-        sub_questions = payload.get("sub_questions", [])
+        if isinstance(payload, list):
+            sub_questions = payload
+        elif isinstance(payload, dict):
+            sub_questions = payload.get("sub_questions", [])
+        else:
+            sub_questions = []
         return [question.strip() for question in sub_questions if isinstance(question, str) and question.strip()]
 
     async def _refine_context(
