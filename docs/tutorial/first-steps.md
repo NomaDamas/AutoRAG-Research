@@ -8,12 +8,19 @@ Install and verify AutoRAG-Research.
 pip install autorag-research
 ```
 
+Need local transformer-backed metrics such as BARTScore? Install the optional
+runtime dependencies instead:
+
+```bash
+pip install "autorag-research[gpu]"
+```
+
 For development installation:
 
 ```bash
 git clone https://github.com/NomaDamas/AutoRAG-Research.git
 cd AutoRAG-Research
-uv sync --all-extras
+uv sync --all-extras --all-groups
 ```
 
 ## Requirements

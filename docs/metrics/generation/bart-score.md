@@ -24,6 +24,23 @@ direction-sensitive checks in RAG:
 The implementation uses the paper's standard `facebook/bart-large-cnn`
 checkpoint by default and keeps the metric deterministic.
 
+## Installation
+
+BARTScore uses local `torch` + `transformers` runtime dependencies.
+
+```bash
+pip install "autorag-research[gpu]"
+```
+
+In a development checkout, use:
+
+```bash
+uv sync --all-extras --all-groups
+```
+
+You can still run the metric on CPU by setting `device: cpu`; the `gpu` extra
+name reflects the shared optional dependency group, not a hard GPU requirement.
+
 ## Configuration
 
 ```yaml

@@ -34,7 +34,7 @@ Measures pipeline quality against ground truth.
 
 **Retrieval metrics**: Did we find the right documents? (Recall, NDCG, MRR)
 
-**Generation metrics**: Is the answer correct? (ROUGE, BERTScore)
+**Generation metrics**: Is the answer correct? (ROUGE, BERTScore, BARTScore)
 
 ## Executor
 

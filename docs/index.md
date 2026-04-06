@@ -24,6 +24,12 @@ autorag-research data restore beir scifact_openai-small
 autorag-research run --db-name=beir_scifact_test_openai_small
 ```
 
+Need local transformer-backed features such as BARTScore? Install the optional runtime:
+
+```bash
+pip install "autorag-research[gpu]"
+```
+
 ## Choose Your Path
 
 | I want to... | Go to |

@@ -449,3 +449,73 @@ def test_bart_score_configs_expose_metric_functions_and_names():
     assert f1_config.get_metric_name() == "bart_score_f1"
     assert f1_config.get_metric_func() is bart_score_f1
     assert f1_config.get_metric_kwargs() == expected_kwargs
+
+
+@pytest.mark.parametrize(
+    ("cuda_available", "mps_available", "expected_device"),
+    [
+        (True, False, "cuda"),
+        (False, True, "mps"),
+        (False, False, "cpu"),
+    ],
+)
+def test_resolve_bartscore_device_auto_prefers_accelerators(
+    monkeypatch: pytest.MonkeyPatch,
+    cuda_available: bool,
+    mps_available: bool,
+    expected_device: str,
+):
+    import sys
+    from types import SimpleNamespace
+
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: cuda_available),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: mps_available)),
+    )
+
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    assert generation_module._resolve_bartscore_device("auto") == expected_device
+
+
+def test_resolve_bartscore_device_auto_falls_back_to_cpu_without_mps_backend(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import sys
+    from types import SimpleNamespace
+
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        backends=SimpleNamespace(),
+    )
+
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    assert generation_module._resolve_bartscore_device("auto") == "cpu"
+
+
+def test_bart_score_runtime_guard_points_to_optional_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    original_import_module = generation_module.importlib.import_module
+
+    def fake_import_module(name: str):
+        if name == "transformers":
+            msg = "missing transformers"
+            raise ImportError(msg)
+        if name == "torch":
+            return object()
+        return original_import_module(name)
+
+    monkeypatch.setattr(generation_module.importlib, "import_module", fake_import_module)
+
+    with pytest.raises(ImportError, match=r"autorag-research\[gpu\]") as exc_info:
+        generation_module._import_bartscore_runtime()
+
+    assert "uv sync --all-extras --all-groups" in str(exc_info.value)

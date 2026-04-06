@@ -1,3 +1,4 @@
+import importlib
 import json
 import logging
 import os
@@ -60,6 +61,11 @@ DEFAULT_BARTSCORE_CHECKPOINT = "facebook/bart-large-cnn"
 DEFAULT_BARTSCORE_BATCH_SIZE = 4
 DEFAULT_BARTSCORE_DEVICE = "auto"
 DEFAULT_BARTSCORE_MAX_LENGTH = 1024
+BARTSCORE_DEPENDENCY_MESSAGE = (
+    "BARTScore requires the optional `torch` and `transformers` dependencies. "
+    "Install them with `pip install 'autorag-research[gpu]'` or run "
+    "`uv sync --all-extras --all-groups` in a development checkout."
+)
 
 
 def _extract_llm_text(response: Any) -> str:
@@ -155,21 +161,39 @@ def _resolve_bartscore_device(device: str) -> str:
     if device != DEFAULT_BARTSCORE_DEVICE:
         return device
 
-    import torch
+    torch = _import_bartscore_torch()
 
     if torch.cuda.is_available():
         return "cuda"
-    if torch.backends.mps.is_available():
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    if mps_backend is not None and mps_backend.is_available():
         return "mps"
     return "cpu"
+
+
+def _import_bartscore_torch() -> Any:
+    """Import torch with a metric-specific dependency error message."""
+    try:
+        return importlib.import_module("torch")
+    except ImportError as e:
+        raise ImportError(BARTSCORE_DEPENDENCY_MESSAGE) from e
+
+
+def _import_bartscore_runtime() -> tuple[Any, Any, Any]:
+    """Import BARTScore runtime dependencies with a guided error message."""
+    torch = _import_bartscore_torch()
+    try:
+        transformers = importlib.import_module("transformers")
+    except ImportError as e:
+        raise ImportError(BARTSCORE_DEPENDENCY_MESSAGE) from e
+    return torch, transformers.BartForConditionalGeneration, transformers.BartTokenizer
 
 
 class _BartScoreBackend:
     """Thin wrapper around a pretrained BART conditional generation model."""
 
     def __init__(self, checkpoint: str, device: str, max_length: int) -> None:
-        import torch
-        from transformers import BartForConditionalGeneration, BartTokenizer
+        torch, BartForConditionalGeneration, BartTokenizer = _import_bartscore_runtime()
 
         self._torch = torch
         self._device = device
