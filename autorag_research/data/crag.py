@@ -136,7 +136,9 @@ class CRAGIngestor(TextEmbeddingDataIngestor):
         target_split = _resolve_subset(subset)
         if subset == "train":
             logger.warning(
-                "CRAG does not publish a train split in the supported source file; using the dev split instead."
+                "CRAG does not publish a train split in the supported source file; using the dev split instead. "
+                "Ingesting both subset='train' and subset='dev' will duplicate the same upstream examples under "
+                "different IDs."
             )
         if min_corpus_cnt is not None:
             logger.warning(

@@ -152,6 +152,23 @@ class TestIngestUnit:
         service.add_retrieval_gt.assert_not_called()
         service.clean.assert_called_once_with()
 
+    @patch("autorag_research.data.crag.load_dataset")
+    def test_ingest_warns_that_train_alias_duplicates_dev_examples(
+        self,
+        mock_load_dataset,
+        mock_embedding_model,
+        caplog,
+    ):
+        mock_load_dataset.return_value = []
+        service = MagicMock()
+        ingestor = CRAGIngestor(mock_embedding_model, batch_size=10)
+        ingestor.set_service(service)
+
+        with caplog.at_level("WARNING", logger="AutoRAG-Research"):
+            ingestor.ingest(subset="train")
+
+        assert "Ingesting both subset='train' and subset='dev' will duplicate the same upstream examples" in caplog.text
+
 
 CRAG_INTEGRATION_CONFIG = IngestorTestConfig(
     expected_query_count=2,

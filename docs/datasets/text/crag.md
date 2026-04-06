@@ -25,6 +25,7 @@ This ingestor currently supports the Task 1/2 development dataset and stores:
 - `subset=dev` maps to CRAG `split=0`
 - `subset=test` maps to CRAG `split=1`
 - `subset=train` currently aliases the public dev split because the supported source file does not publish a separate train split
+- ingesting both `subset=train` and `subset=dev` into the same database duplicates the same upstream examples under different IDs
 - retrieval relevance labels are **not** created because CRAG search results are candidate context, not authoritative qrels
 - `min_corpus_cnt` is ignored because CRAG examples already carry their own per-query search results
 
