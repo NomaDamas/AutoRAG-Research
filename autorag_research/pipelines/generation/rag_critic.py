@@ -32,6 +32,8 @@ from autorag_research.util import TokenUsageTracker
 
 logger = logging.getLogger("AutoRAG-Research")
 
+JsonPayload = dict[str, Any] | list[Any]
+
 DEFAULT_ANSWER_PROMPT = """You are answering a retrieval-augmented generation question.
 
 Question: {query}
@@ -197,8 +199,8 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         }
 
     @staticmethod
-    def _parse_json_payload(text: str) -> dict[str, Any]:
-        """Parse structured JSON responses, tolerating markdown fences."""
+    def _parse_json_payload(text: str) -> JsonPayload:
+        """Parse structured JSON responses as either objects or arrays."""
         cleaned = text.strip()
         if cleaned.startswith("```"):
             cleaned = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", cleaned)
@@ -207,6 +209,17 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         if json_match:
             cleaned = json_match.group(1)
         return json.loads(cleaned)
+
+    @staticmethod
+    def _extract_payload_list(payload: Any, key: str) -> list[Any]:
+        """Extract a list from either a top-level array or a keyed JSON object."""
+        if isinstance(payload, list):
+            return payload
+        if isinstance(payload, dict):
+            value = payload.get(key, [])
+            if isinstance(value, list):
+                return value
+        return []
 
     @staticmethod
     def _normalize_action_name(action: str) -> str:
@@ -335,12 +348,7 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             payload = self._parse_json_payload(plan_text)
         except json.JSONDecodeError:
             payload = {"actions": critique.get("recommended_actions", [])}
-        if isinstance(payload, list):
-            raw_actions = payload
-        elif isinstance(payload, dict):
-            raw_actions = payload.get("actions", [])
-        else:
-            raw_actions = []
+        raw_actions = self._extract_payload_list(payload, "actions")
         actions: list[dict[str, Any]] = []
         for item in raw_actions:
             if isinstance(item, str):
@@ -377,12 +385,7 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             payload = self._parse_json_payload(decomposition_text)
         except json.JSONDecodeError:
             payload = {"sub_questions": [part.strip() for part in decomposition_text.split("\n") if part.strip()]}
-        if isinstance(payload, list):
-            sub_questions = payload
-        elif isinstance(payload, dict):
-            sub_questions = payload.get("sub_questions", [])
-        else:
-            sub_questions = []
+        sub_questions = self._extract_payload_list(payload, "sub_questions")
         return [question.strip() for question in sub_questions if isinstance(question, str) and question.strip()]
 
     async def _refine_context(

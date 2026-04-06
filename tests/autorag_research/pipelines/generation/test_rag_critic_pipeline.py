@@ -18,6 +18,42 @@ def cleanup(session_factory):
     yield from cleanup_pipeline_results_factory(session_factory)
 
 
+def create_lightweight_rag_critic_pipeline(
+    *,
+    llm: MagicMock | None = None,
+    retrieval_pipeline: MagicMock | None = None,
+    max_iterations: int = 2,
+    max_actions_per_iteration: int = 4,
+):
+    """Create a RAG-Critic pipeline instance without DB-backed persistence."""
+    from autorag_research.pipelines.generation.rag_critic import (
+        DEFAULT_ANSWER_PROMPT,
+        DEFAULT_CRITIC_PROMPT,
+        DEFAULT_DECOMPOSITION_PROMPT,
+        DEFAULT_PLANNER_PROMPT,
+        DEFAULT_REFINE_PROMPT,
+        DEFAULT_REWRITE_PROMPT,
+        RAGCriticPipeline,
+    )
+
+    pipeline = object.__new__(RAGCriticPipeline)
+    pipeline._answer_prompt_template = DEFAULT_ANSWER_PROMPT
+    pipeline._critic_prompt_template = DEFAULT_CRITIC_PROMPT
+    pipeline._planner_prompt_template = DEFAULT_PLANNER_PROMPT
+    pipeline._rewrite_prompt_template = DEFAULT_REWRITE_PROMPT
+    pipeline._decomposition_prompt_template = DEFAULT_DECOMPOSITION_PROMPT
+    pipeline._refine_prompt_template = DEFAULT_REFINE_PROMPT
+    pipeline._max_iterations = max_iterations
+    pipeline._max_actions_per_iteration = max_actions_per_iteration
+    pipeline._llm = llm or MagicMock()
+    pipeline._retrieval_pipeline = retrieval_pipeline or create_mock_retrieval_pipeline()
+    pipeline._service = MagicMock()
+    pipeline._service.get_query_text.return_value = "What is RAG-Critic?"
+    pipeline._service.get_chunk_contents.side_effect = lambda chunk_ids: [f"chunk {chunk_id}" for chunk_id in chunk_ids]
+    pipeline.pipeline_id = 999
+    return pipeline
+
+
 class TestRAGCriticPipelineUnit:
     """Unit tests for RAG-Critic pipeline helpers and configuration."""
 
@@ -36,23 +72,29 @@ class TestRAGCriticPipelineUnit:
             "recommended_actions": ["retrieval"],
         }
 
-    def test_pipeline_config_contains_required_fields(self, session_factory, cleanup):
-        """Pipeline config should persist the critic-specific knobs."""
+    def test_parse_json_payload_handles_top_level_array(self):
+        """Structured outputs may also be top-level arrays."""
         from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline
 
-        retrieval_pipeline = create_mock_retrieval_pipeline()
-        llm = MagicMock()
-        llm.ainvoke = AsyncMock()
+        payload = RAGCriticPipeline._parse_json_payload(
+            """```json
+            [{"action": "retrieval"}, {"action": "generate_answer"}]
+            ```"""
+        )
 
-        pipeline = RAGCriticPipeline(
-            session_factory=session_factory,
-            name="test_rag_critic_config",
-            llm=llm,
+        assert payload == [
+            {"action": "retrieval"},
+            {"action": "generate_answer"},
+        ]
+
+    def test_pipeline_config_contains_required_fields(self):
+        """Pipeline config should expose the critic-specific knobs without DB setup."""
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        pipeline = create_lightweight_rag_critic_pipeline(
             retrieval_pipeline=retrieval_pipeline,
             max_iterations=3,
             max_actions_per_iteration=4,
         )
-        cleanup.append(pipeline.pipeline_id)
 
         config = pipeline._get_pipeline_config()
 
@@ -65,22 +107,11 @@ class TestRAGCriticPipelineUnit:
         assert "planner_prompt_template" in config
 
     @pytest.mark.asyncio
-    async def test_plan_actions_accepts_top_level_array_payload(self, session_factory, cleanup):
+    async def test_plan_actions_accepts_top_level_array_payload(self):
         """Planner responses may be a top-level array of action objects."""
-        from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline
         from autorag_research.util import TokenUsageTracker
 
-        llm = MagicMock()
-        llm.ainvoke = AsyncMock()
-
-        retrieval_pipeline = create_mock_retrieval_pipeline()
-        pipeline = RAGCriticPipeline(
-            session_factory=session_factory,
-            name="test_rag_critic_planner_array_payload",
-            llm=llm,
-            retrieval_pipeline=retrieval_pipeline,
-        )
-        cleanup.append(pipeline.pipeline_id)
+        pipeline = create_lightweight_rag_critic_pipeline()
 
         pipeline._invoke_and_record = AsyncMock(  # type: ignore[method-assign]
             return_value='[{"action": "retrieval"}, {"action": "generate_answer"}]'
@@ -99,22 +130,11 @@ class TestRAGCriticPipelineUnit:
         ]
 
     @pytest.mark.asyncio
-    async def test_decompose_query_accepts_top_level_array_payload(self, session_factory, cleanup):
+    async def test_decompose_query_accepts_top_level_array_payload(self):
         """Decomposition responses may be a top-level array of sub-question strings."""
-        from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline
         from autorag_research.util import TokenUsageTracker
 
-        llm = MagicMock()
-        llm.ainvoke = AsyncMock()
-
-        retrieval_pipeline = create_mock_retrieval_pipeline()
-        pipeline = RAGCriticPipeline(
-            session_factory=session_factory,
-            name="test_rag_critic_decomposition_array_payload",
-            llm=llm,
-            retrieval_pipeline=retrieval_pipeline,
-        )
-        cleanup.append(pipeline.pipeline_id)
+        pipeline = create_lightweight_rag_critic_pipeline()
 
         pipeline._invoke_and_record = AsyncMock(  # type: ignore[method-assign]
             return_value='["What is RAG?", "How does the critic refine it?"]'
@@ -133,10 +153,8 @@ class TestRAGCriticPipelineUnit:
         ]
 
     @pytest.mark.asyncio
-    async def test_generate_executes_critic_plan_actions(self, session_factory, cleanup):
+    async def test_generate_executes_critic_plan_actions(self):
         """A revise verdict should trigger planner actions before approval."""
-        from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline
-
         prompt_log: list[str] = []
 
         async def mock_ainvoke(prompt: str):
@@ -194,15 +212,12 @@ class TestRAGCriticPipelineUnit:
             ]
         )
 
-        pipeline = RAGCriticPipeline(
-            session_factory=session_factory,
-            name="test_rag_critic_actions",
+        pipeline = create_lightweight_rag_critic_pipeline(
             llm=llm,
             retrieval_pipeline=retrieval_pipeline,
             max_iterations=2,
             max_actions_per_iteration=6,
         )
-        cleanup.append(pipeline.pipeline_id)
 
         result = await pipeline._generate(1, top_k=2)
 
@@ -227,9 +242,8 @@ class TestRAGCriticPipelineUnit:
         assert any("critic-guided planner" in prompt for prompt in prompt_log)
 
     @pytest.mark.asyncio
-    async def test_retrieval_without_query_source_uses_working_query(self, session_factory, cleanup):
+    async def test_retrieval_without_query_source_uses_working_query(self):
         """Planner retrieval should use the rewritten working query when query_source is omitted."""
-        from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline
 
         async def mock_ainvoke(prompt: str):
             response = MagicMock()
@@ -267,15 +281,12 @@ class TestRAGCriticPipelineUnit:
         retrieval_pipeline._retrieve_by_id = AsyncMock(return_value=[{"doc_id": 1, "score": 0.4}])
         retrieval_pipeline.retrieve = AsyncMock(return_value=[{"doc_id": 3, "score": 0.91}])
 
-        pipeline = RAGCriticPipeline(
-            session_factory=session_factory,
-            name="test_rag_critic_working_query_default",
+        pipeline = create_lightweight_rag_critic_pipeline(
             llm=llm,
             retrieval_pipeline=retrieval_pipeline,
             max_iterations=2,
             max_actions_per_iteration=3,
         )
-        cleanup.append(pipeline.pipeline_id)
 
         result = await pipeline._generate(1, top_k=1)
 
