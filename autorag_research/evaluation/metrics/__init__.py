@@ -4,12 +4,20 @@ This module provides evaluation metrics for generation and retrieval tasks.
 """
 
 from autorag_research.evaluation.metrics.generation import (
+    BartScoreF1Config,
+    BartScoreFaithfulnessConfig,
+    BartScorePrecisionConfig,
+    BartScoreRecallConfig,
     BertScoreConfig,
     BleuConfig,
     MeteorConfig,
     ResponseRelevancyConfig,
     RougeConfig,
     SemScoreConfig,
+    bart_score_f1,
+    bart_score_faithfulness,
+    bart_score_precision,
+    bart_score_recall,
     bert_score,
     bleu,
     huggingface_evaluate,
@@ -43,6 +51,10 @@ from autorag_research.evaluation.metrics.util import (
 )
 
 __all__ = [
+    "BartScoreF1Config",
+    "BartScoreFaithfulnessConfig",
+    "BartScorePrecisionConfig",
+    "BartScoreRecallConfig",
     "BertScoreConfig",
     "BleuConfig",
     "F1Config",
@@ -56,6 +68,10 @@ __all__ = [
     "ResponseRelevancyConfig",
     "RougeConfig",
     "SemScoreConfig",
+    "bart_score_f1",
+    "bart_score_faithfulness",
+    "bart_score_precision",
+    "bart_score_recall",
     "bert_score",
     "bleu",
     "calculate_cosine_similarity",

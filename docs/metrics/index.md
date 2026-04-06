@@ -21,6 +21,7 @@ Evaluation measures for retrieval and generation.
 | [METEOR](generation/meteor.md) | Alignment | [0, 1] |
 | [ROUGE](generation/rouge.md) | Recall overlap | [0, 1] |
 | [BERTScore](generation/bert-score.md) | Semantic similarity | [-1, 1] |
+| [BARTScore](generation/bart-score.md) | Directional conditional likelihood | (-∞, 0] |
 | [SemScore](generation/sem-score.md) | Embedding similarity | [-1, 1] |
 
 ## Choosing Metrics
@@ -31,7 +32,7 @@ Evaluation measures for retrieval and generation.
 | Rank correctly | NDCG |
 | Find relevant quickly | MRR |
 | Text similarity | ROUGE, BLEU |
-| Semantic correctness | BERTScore |
+| Semantic correctness | BERTScore, BARTScore |
 | Trust-Align refusal/correctness | Trust-Align Metrics Plugin |
 
 ## Browse

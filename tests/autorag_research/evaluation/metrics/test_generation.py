@@ -8,6 +8,14 @@ from langchain_openai import OpenAIEmbeddings
 
 from autorag_research import cli
 from autorag_research.evaluation.metrics.generation import (
+    BartScoreF1Config,
+    BartScoreFaithfulnessConfig,
+    BartScorePrecisionConfig,
+    BartScoreRecallConfig,
+    bart_score_f1,
+    bart_score_faithfulness,
+    bart_score_precision,
+    bart_score_recall,
     bert_score,
     bleu,
     meteor,
@@ -351,3 +359,93 @@ def test_response_relevancy_invalid_json_returns_nan():
     scores = response_relevancy(metric_inputs, llm=llm, embedding_model=KeywordEmbeddings(), strictness=3)
 
     assert scores[0] != scores[0]  # NaN check
+
+
+def test_bart_score_variants_use_expected_text_directions(monkeypatch: pytest.MonkeyPatch):
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    calls: list[tuple[list[str], list[str], dict[str, object]]] = []
+    score_map = {
+        ("ctx 1\n\nctx 2", "candidate answer"): -0.11,
+        ("reference one", "candidate answer"): -0.42,
+        ("reference two", "candidate answer"): -0.21,
+        ("candidate answer", "reference one"): -0.17,
+        ("candidate answer", "reference two"): -0.31,
+    }
+
+    def fake_score_bartscore_pairs(
+        src_texts: list[str],
+        tgt_texts: list[str],
+        **kwargs: object,
+    ) -> list[float]:
+        calls.append((src_texts, tgt_texts, kwargs))
+        return [score_map[(src_text, tgt_text)] for src_text, tgt_text in zip(src_texts, tgt_texts, strict=True)]
+
+    monkeypatch.setattr(generation_module, "_score_bartscore_pairs", fake_score_bartscore_pairs)
+
+    metric_inputs = [
+        MetricInput(
+            retrieved_contents=["ctx 1", "ctx 2"],
+            generated_texts="candidate answer",
+            generation_gt=["reference one", "reference two"],
+        )
+    ]
+
+    assert bart_score_faithfulness(
+        metric_inputs, checkpoint="checkpoint", batch_size=8, max_length=128, device="cpu"
+    ) == [-0.11]
+    assert bart_score_precision(metric_inputs, checkpoint="checkpoint", batch_size=8, max_length=128, device="cpu") == [
+        -0.21
+    ]
+    assert bart_score_recall(metric_inputs, checkpoint="checkpoint", batch_size=8, max_length=128, device="cpu") == [
+        -0.17
+    ]
+    assert bart_score_f1(metric_inputs, checkpoint="checkpoint", batch_size=8, max_length=128, device="cpu") == [
+        pytest.approx((-0.21 + -0.17) / 2)
+    ]
+
+    assert calls[0] == (
+        ["ctx 1\n\nctx 2"],
+        ["candidate answer"],
+        {"checkpoint": "checkpoint", "batch_size": 8, "max_length": 128, "device": "cpu"},
+    )
+    assert calls[1] == (
+        ["reference one", "reference two"],
+        ["candidate answer", "candidate answer"],
+        {"checkpoint": "checkpoint", "batch_size": 8, "max_length": 128, "device": "cpu"},
+    )
+    assert calls[2] == (
+        ["candidate answer", "candidate answer"],
+        ["reference one", "reference two"],
+        {"checkpoint": "checkpoint", "batch_size": 8, "max_length": 128, "device": "cpu"},
+    )
+
+
+def test_bart_score_configs_expose_metric_functions_and_names():
+    faithfulness_config = BartScoreFaithfulnessConfig()
+    precision_config = BartScorePrecisionConfig()
+    recall_config = BartScoreRecallConfig()
+    f1_config = BartScoreF1Config()
+
+    expected_kwargs = {
+        "checkpoint": "facebook/bart-large-cnn",
+        "batch_size": 4,
+        "device": "auto",
+        "max_length": 1024,
+    }
+
+    assert faithfulness_config.get_metric_name() == "bart_score_faithfulness"
+    assert faithfulness_config.get_metric_func() is bart_score_faithfulness
+    assert faithfulness_config.get_metric_kwargs() == expected_kwargs
+
+    assert precision_config.get_metric_name() == "bart_score_precision"
+    assert precision_config.get_metric_func() is bart_score_precision
+    assert precision_config.get_metric_kwargs() == expected_kwargs
+
+    assert recall_config.get_metric_name() == "bart_score_recall"
+    assert recall_config.get_metric_func() is bart_score_recall
+    assert recall_config.get_metric_kwargs() == expected_kwargs
+
+    assert f1_config.get_metric_name() == "bart_score_f1"
+    assert f1_config.get_metric_func() is bart_score_f1
+    assert f1_config.get_metric_kwargs() == expected_kwargs

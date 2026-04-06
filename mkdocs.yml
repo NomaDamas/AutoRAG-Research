@@ -78,6 +78,7 @@ nav:
           - metrics/generation/meteor.md
           - metrics/generation/rouge.md
           - metrics/generation/bert-score.md
+          - metrics/generation/bart-score.md
           - metrics/generation/sem-score.md
           - metrics/generation/response-relevancy.md
   - Plugins:
