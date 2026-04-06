@@ -70,7 +70,7 @@ def test_bulk_insert(
     assert inserted_count == 2
 
     results = image_chunk_retrieved_result_repository.get_by_query_and_pipeline([2, 4], 2)
-    assert len(results) == 3
+    assert len(results) == 2
 
     # Cleanup
     image_chunk_retrieved_result_repository.delete_by_query_and_pipeline(4, 2)

@@ -47,6 +47,7 @@ nav:
       - Generation:
           - pipelines/generation/index.md
           - pipelines/generation/basic-rag.md
+          - pipelines/generation/self-rag.md
   - Embeddings:
       - embeddings/index.md
       - embeddings/infinity.md
