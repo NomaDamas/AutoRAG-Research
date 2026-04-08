@@ -13,6 +13,7 @@ from autorag_research.pipelines.generation.question_decomposition import (
     QuestionDecompositionPipelineConfig,
 )
 from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline, RAGCriticPipelineConfig
+from autorag_research.pipelines.generation.self_rag import SelfRAGPipeline, SelfRAGPipelineConfig
 from autorag_research.pipelines.generation.spd_rag import SPDRAGPipeline, SPDRAGPipelineConfig
 from autorag_research.pipelines.generation.visrag_gen import (
     DEFAULT_VISRAG_PROMPT,
@@ -38,6 +39,8 @@ __all__ = [
     "RAGCriticPipelineConfig",
     "SPDRAGPipeline",
     "SPDRAGPipelineConfig",
+    "SelfRAGPipeline",
+    "SelfRAGPipelineConfig",
     "VisRAGGenerationPipeline",
     "VisRAGGenerationPipelineConfig",
 ]

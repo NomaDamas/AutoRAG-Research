@@ -128,8 +128,9 @@ class PipelineRepository(GenericRepository[Any]):
         Returns:
             List of all pipelines ordered alphabetically by name.
         """
-        stmt = select(self.model_cls).order_by(self.model_cls.name)
-        return list(self.session.execute(stmt).scalars().all())
+        stmt = select(self.model_cls)
+        pipelines = list(self.session.execute(stmt).scalars().all())
+        return sorted(pipelines, key=lambda pipeline: pipeline.name)
 
     def exists_by_name(self, name: str) -> bool:
         """Check if a pipeline with the given name exists.

@@ -29,6 +29,7 @@ nav:
           - datasets/text/beir.md
           - datasets/text/mteb.md
           - datasets/text/ragbench.md
+          - datasets/text/crag.md
           - datasets/text/mrtydi.md
           - datasets/text/bright.md
       - Multimodal:
@@ -43,10 +44,12 @@ nav:
       - Retrieval:
           - pipelines/retrieval/index.md
           - pipelines/retrieval/bm25.md
+          - pipelines/retrieval/retro-star.md
           - pipelines/retrieval/vector-search.md
       - Generation:
           - pipelines/generation/index.md
           - pipelines/generation/basic-rag.md
+          - pipelines/generation/self-rag.md
   - Embeddings:
       - embeddings/index.md
       - embeddings/infinity.md
