@@ -8,6 +8,9 @@
 # Parameters:
 #   retrieval_pipeline_name: Name of retrieval pipeline to use
 #   llm: LLM model identifier (default: gpt-4o-mini)
+#   critic_llm: Optional separate critic model (e.g. rag-critic-3b-vllm)
+#   critic_output_format: "json_actions" (default) or "rag_critic_tags" for the published critic checkpoint
+#   planner_output_format: "json_actions" or "python_agent" (official-code-style planner/executor)
 #   max_iterations: Maximum critic/planner refinement loops
 #   max_actions_per_iteration: Maximum corrective actions the planner may emit
 #   top_k: Number of chunks to retrieve for the initial working context
@@ -17,6 +20,9 @@ description: "RAG-Critic with critic/planner corrective refinement"
 name: rag_critic
 retrieval_pipeline_name: bm25
 llm: gpt-4o-mini
+# critic_llm: rag-critic-3b-vllm
+# critic_output_format: rag_critic_tags
+planner_output_format: python_agent
 top_k: 5
 batch_size: 10
 max_iterations: 2

@@ -15,11 +15,12 @@ generation-pipeline abstraction:
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.language_models import BaseLanguageModel
 from sqlalchemy.orm import Session, sessionmaker
@@ -60,6 +61,68 @@ Return JSON with:
 - feedback: a concise explanation
 - recommended_actions: list chosen from ["retrieval", "rewrite_query", "decompose_query", "refine_documents", "generate_answer"]"""
 
+DEFAULT_TRAINED_CRITIC_PROMPT = """You are the RAG-Critic error-analysis model.
+
+Below are the [Question], the retrieved [Passages], and the [Model's Prediction] for a RAG task.
+
+Question: {query}
+
+Retrieved Passages:
+{context}
+
+Model's Prediction:
+{answer}
+
+Please first determine whether the model's prediction is correct.
+
+If it is correct, output exactly:
+{{"Judgement": "Correct"}}
+
+If it is incorrect, analyze the errors and identify tags at three levels.
+Use the following tag taxonomy where tag1 and tag2 correspond semantically:
+
+tag1 = [
+    "Incomplete Information",
+    "Irrelevant Information",
+    "Erroneous Information",
+    "Incomplete or Missing Response",
+    "Inaccurate or Misunderstood Response",
+    "Irrelevant or Off-Topic Response",
+    "Overly Verbose Response"
+]
+
+tag2 = [
+    "Insufficient or Incomplete Information Retrieval",
+    "Data Insufficiency in Retrieval",
+    "Relevance Gaps in Retrieval",
+    "Irrelevant Information Retrieval",
+    "Erroneous Information Retrieval",
+    "Omission of Key Information",
+    "Lack of Specificity",
+    "Specificity and Precision Errors",
+    "Partial Coverage and Temporal Issues",
+    "Lack of Practicality",
+    "Contextual Understanding Errors",
+    "Factual Inaccuracies",
+    "Incorrect and Incomplete Answers",
+    "Golden Answer Misalignment",
+    "Misinterpretation of Queries and Information",
+    "Entity and Concept Confusion",
+    "Irrelevant Content and Topic Drift",
+    "Off-Topic and Redundant Responses",
+    "Content and Context Misalignment",
+    "Overly Complex and Redundant Response"
+]
+
+Adhere strictly to this JSON format:
+{{
+    "Judgement": "Error",
+    "Error_analysis": "",
+    "tag1": [],
+    "tag2": [],
+    "tag3": []
+}}"""
+
 DEFAULT_PLANNER_PROMPT = """You are a critic-guided planner for a retrieval-augmented generation workflow.
 
 Question: {query}
@@ -77,7 +140,13 @@ Optional fields:
 - instruction: short text instruction
 - query_source: one of ["original", "rewritten_query", "sub_questions"] for retrieval. If omitted, retrieval uses the current working query.
 - top_k: integer for retrieval
-- strategy: "replace" or "append" for retrieval"""
+- strategy: "replace" or "append" for retrieval
+
+Strict output rules:
+- Return valid JSON only. No markdown fences.
+- If you include top_k, emit a JSON integer literal such as 1, 3, or 5.
+- Do not emit top_k as a string, float, null, boolean, or word.
+- Omit top_k entirely if you are unsure."""
 
 DEFAULT_REWRITE_PROMPT = """You are rewriting a query for better retrieval.
 
@@ -106,6 +175,86 @@ Retrieved context:
 
 Return only the refined document."""
 
+DEFAULT_AGENT_SYSTEM_PROMPT = """
+You are an agent tasked with optimizing a Retrieval-Augmented Generation process. The goal is to improve the model's
+predictions by addressing issues flagged in the error_type. You are given the results from an initial RAG process,
+including a query, a list of retrieved documents, a prediction, and the identified error type. Your task is to
+optimize the current RAG process by selecting the appropriate functions and generating the corresponding Python code to
+fix the problem.
+
+### Available Functions
+
+1. `Retrieval(query: str, topk: int) -> List[str]`
+2. `RewriteQuery(query: str, instruction: str) -> List[str]`
+3. `DecomposeQuery(query: str) -> List[str]`
+4. `RefineDoc(query: str, doc: str, instruction: str) -> str`
+5. `GenerateAnswer(query: str, docs: List[str], additional_instruction: str = None) -> str`
+
+You can directly use the variables I provide as the input of the functions. You can freely combine the functions to
+improve the performance. Ensure that each function execution is necessary and can improve the result. Only give code.
+You must use `final_answer = GenerateAnswer(...)` in the end.
+"""
+
+DEFAULT_AGENT_USER_PROMPT = """Given the following information:
+
+question = "{question}"
+doc_list = {doc_list}
+previous_pred = "{previous_pred}"
+
+Error type of previous pred: {error_type}
+
+Please carefully read the provided question, doc list, previous answer, and the error type of the previous prediction
+given by a teacher model. Your task is to generate Python code that calls the relevant functions to optimize the
+current RAG process and solve the previous error. The generated code should only include function calls and variable
+assignments. Do not write function implementations or any explanation.
+"""
+
+DEFAULT_AGENT_GENERATE_ANSWER_PROMPT = """Find the useful content from the provided documents, then answer the
+question directly. Your response should be very concise. Please use 'So the final answer is:' as a prefix for the
+final answer.
+
+Additional instruction:
+{instruction}
+
+Question: {query}
+
+Documents:
+{context}
+
+Response:"""
+
+DEFAULT_AGENT_REWRITE_CLARIFY_PROMPT = """Please rewrite the given query to make it more specific, clear, and focused.
+Output only valid JSON with the query under the "query" key.
+
+Original query: {query}"""
+
+DEFAULT_AGENT_REWRITE_EXPAND_PROMPT = """Please rewrite the given query by expanding it with additional relevant
+questions or variations that address the same topic. Output only a valid JSON array of query strings.
+
+Original query: {query}"""
+
+DEFAULT_AGENT_REWRITE_CUSTOM_PROMPT = """Please rewrite the given query based on the following instruction:
+{instruction}. Output only valid JSON with the query under the "query" key.
+
+Original query: {query}"""
+
+DEFAULT_AGENT_DECOMPOSE_PROMPT = """Please split the given query into multiple smaller, more specific subqueries.
+Output only a valid JSON array of subquery strings.
+
+Original query: {query}"""
+
+DEFAULT_AGENT_REFINE_SUMMARIZE_PROMPT = """Please refine the given document to retain only the information helpful for
+answering the provided question. Output only valid JSON with the refined content under the "refined_document" key.
+
+Document: {document}
+Question: {question}"""
+
+DEFAULT_AGENT_REFINE_EXPLAIN_PROMPT = """Please read the given document carefully and provide a detailed explanation
+that answers the question. Output only valid JSON with the explanation under the "explanation" key.
+
+Original document: {document}
+Question: {question}"""
+
 SUPPORTED_ACTIONS = {
     "retrieval",
     "rewrite_query",
@@ -113,20 +262,66 @@ SUPPORTED_ACTIONS = {
     "refine_documents",
     "generate_answer",
 }
+SUPPORTED_PLANNER_OUTPUT_FORMATS = {"json_actions", "python_agent"}
+SUPPORTED_CRITIC_OUTPUT_FORMATS = {"json_actions", "rag_critic_tags"}
+
+RAG_CRITIC_3B_TAG2_ACTIONS = {
+    "insufficient or incomplete information retrieval": ["retrieval"],
+    "data insufficiency in retrieval": ["retrieval"],
+    "relevance gaps in retrieval": ["retrieval"],
+    "irrelevant information retrieval": ["retrieval", "refine_documents"],
+    "erroneous information retrieval": ["retrieval", "refine_documents"],
+    "omission of key information": ["generate_answer"],
+    "lack of specificity": ["generate_answer"],
+    "specificity and precision errors": ["generate_answer"],
+    "partial coverage and temporal issues": ["retrieval", "generate_answer"],
+    "lack of practicality": ["generate_answer"],
+    "contextual understanding errors": ["rewrite_query", "generate_answer"],
+    "factual inaccuracies": ["generate_answer"],
+    "incorrect and incomplete answers": ["generate_answer"],
+    "golden answer misalignment": ["generate_answer"],
+    "misinterpretation of queries and information": ["rewrite_query", "decompose_query"],
+    "entity and concept confusion": ["rewrite_query", "decompose_query"],
+    "irrelevant content and topic drift": ["refine_documents", "generate_answer"],
+    "off-topic and redundant responses": ["refine_documents", "generate_answer"],
+    "content and context misalignment": ["refine_documents", "generate_answer"],
+    "overly complex and redundant response": ["refine_documents", "generate_answer"],
+}
 
 
 @dataclass(kw_only=True)
 class RAGCriticPipelineConfig(BaseGenerationPipelineConfig):
     """Configuration for the RAG-Critic pipeline."""
 
+    critic_llm: str | BaseLanguageModel | None = None
     answer_prompt_template: str = field(default=DEFAULT_ANSWER_PROMPT)
     critic_prompt_template: str = field(default=DEFAULT_CRITIC_PROMPT)
+    trained_critic_prompt_template: str = field(default=DEFAULT_TRAINED_CRITIC_PROMPT)
     planner_prompt_template: str = field(default=DEFAULT_PLANNER_PROMPT)
+    agent_system_prompt_template: str = field(default=DEFAULT_AGENT_SYSTEM_PROMPT)
+    agent_user_prompt_template: str = field(default=DEFAULT_AGENT_USER_PROMPT)
     rewrite_prompt_template: str = field(default=DEFAULT_REWRITE_PROMPT)
     decomposition_prompt_template: str = field(default=DEFAULT_DECOMPOSITION_PROMPT)
     refine_prompt_template: str = field(default=DEFAULT_REFINE_PROMPT)
+    agent_generate_answer_prompt_template: str = field(default=DEFAULT_AGENT_GENERATE_ANSWER_PROMPT)
+    agent_rewrite_clarify_prompt_template: str = field(default=DEFAULT_AGENT_REWRITE_CLARIFY_PROMPT)
+    agent_rewrite_expand_prompt_template: str = field(default=DEFAULT_AGENT_REWRITE_EXPAND_PROMPT)
+    agent_rewrite_custom_prompt_template: str = field(default=DEFAULT_AGENT_REWRITE_CUSTOM_PROMPT)
+    agent_decompose_prompt_template: str = field(default=DEFAULT_AGENT_DECOMPOSE_PROMPT)
+    agent_refine_summarize_prompt_template: str = field(default=DEFAULT_AGENT_REFINE_SUMMARIZE_PROMPT)
+    agent_refine_explain_prompt_template: str = field(default=DEFAULT_AGENT_REFINE_EXPLAIN_PROMPT)
+    critic_output_format: str = "json_actions"
+    planner_output_format: str = "json_actions"
     max_iterations: int = 2
     max_actions_per_iteration: int = 4
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Auto-convert optional critic LLM config names to model instances."""
+        if name == "critic_llm" and isinstance(value, str):
+            from autorag_research.injection import load_llm
+
+            value = load_llm(value)
+        super().__setattr__(name, value)
 
     def get_pipeline_class(self) -> type[RAGCriticPipeline]:
         """Return the RAG-Critic pipeline class."""
@@ -141,12 +336,25 @@ class RAGCriticPipelineConfig(BaseGenerationPipelineConfig):
         return {
             "llm": self.llm,
             "retrieval_pipeline": self._retrieval_pipeline,
+            "critic_llm": self.critic_llm,
             "answer_prompt_template": self.answer_prompt_template,
             "critic_prompt_template": self.critic_prompt_template,
+            "trained_critic_prompt_template": self.trained_critic_prompt_template,
             "planner_prompt_template": self.planner_prompt_template,
+            "agent_system_prompt_template": self.agent_system_prompt_template,
+            "agent_user_prompt_template": self.agent_user_prompt_template,
             "rewrite_prompt_template": self.rewrite_prompt_template,
             "decomposition_prompt_template": self.decomposition_prompt_template,
             "refine_prompt_template": self.refine_prompt_template,
+            "agent_generate_answer_prompt_template": self.agent_generate_answer_prompt_template,
+            "agent_rewrite_clarify_prompt_template": self.agent_rewrite_clarify_prompt_template,
+            "agent_rewrite_expand_prompt_template": self.agent_rewrite_expand_prompt_template,
+            "agent_rewrite_custom_prompt_template": self.agent_rewrite_custom_prompt_template,
+            "agent_decompose_prompt_template": self.agent_decompose_prompt_template,
+            "agent_refine_summarize_prompt_template": self.agent_refine_summarize_prompt_template,
+            "agent_refine_explain_prompt_template": self.agent_refine_explain_prompt_template,
+            "critic_output_format": self.critic_output_format,
+            "planner_output_format": self.planner_output_format,
             "max_iterations": self.max_iterations,
             "max_actions_per_iteration": self.max_actions_per_iteration,
         }
@@ -161,25 +369,58 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         name: str,
         llm: BaseLanguageModel,
         retrieval_pipeline: BaseRetrievalPipeline,
+        critic_llm: BaseLanguageModel | None = None,
         answer_prompt_template: str = DEFAULT_ANSWER_PROMPT,
         critic_prompt_template: str = DEFAULT_CRITIC_PROMPT,
+        trained_critic_prompt_template: str = DEFAULT_TRAINED_CRITIC_PROMPT,
         planner_prompt_template: str = DEFAULT_PLANNER_PROMPT,
+        agent_system_prompt_template: str = DEFAULT_AGENT_SYSTEM_PROMPT,
+        agent_user_prompt_template: str = DEFAULT_AGENT_USER_PROMPT,
         rewrite_prompt_template: str = DEFAULT_REWRITE_PROMPT,
         decomposition_prompt_template: str = DEFAULT_DECOMPOSITION_PROMPT,
         refine_prompt_template: str = DEFAULT_REFINE_PROMPT,
+        agent_generate_answer_prompt_template: str = DEFAULT_AGENT_GENERATE_ANSWER_PROMPT,
+        agent_rewrite_clarify_prompt_template: str = DEFAULT_AGENT_REWRITE_CLARIFY_PROMPT,
+        agent_rewrite_expand_prompt_template: str = DEFAULT_AGENT_REWRITE_EXPAND_PROMPT,
+        agent_rewrite_custom_prompt_template: str = DEFAULT_AGENT_REWRITE_CUSTOM_PROMPT,
+        agent_decompose_prompt_template: str = DEFAULT_AGENT_DECOMPOSE_PROMPT,
+        agent_refine_summarize_prompt_template: str = DEFAULT_AGENT_REFINE_SUMMARIZE_PROMPT,
+        agent_refine_explain_prompt_template: str = DEFAULT_AGENT_REFINE_EXPLAIN_PROMPT,
+        critic_output_format: str = "json_actions",
+        planner_output_format: str = "json_actions",
         max_iterations: int = 2,
         max_actions_per_iteration: int = 4,
         schema: Any | None = None,
     ) -> None:
         """Initialize the RAG-Critic pipeline."""
+        self._critic_llm = critic_llm or llm
         self._answer_prompt_template = answer_prompt_template
         self._critic_prompt_template = critic_prompt_template
+        self._trained_critic_prompt_template = trained_critic_prompt_template
         self._planner_prompt_template = planner_prompt_template
+        self._agent_system_prompt_template = agent_system_prompt_template
+        self._agent_user_prompt_template = agent_user_prompt_template
         self._rewrite_prompt_template = rewrite_prompt_template
         self._decomposition_prompt_template = decomposition_prompt_template
         self._refine_prompt_template = refine_prompt_template
+        self._agent_generate_answer_prompt_template = agent_generate_answer_prompt_template
+        self._agent_rewrite_clarify_prompt_template = agent_rewrite_clarify_prompt_template
+        self._agent_rewrite_expand_prompt_template = agent_rewrite_expand_prompt_template
+        self._agent_rewrite_custom_prompt_template = agent_rewrite_custom_prompt_template
+        self._agent_decompose_prompt_template = agent_decompose_prompt_template
+        self._agent_refine_summarize_prompt_template = agent_refine_summarize_prompt_template
+        self._agent_refine_explain_prompt_template = agent_refine_explain_prompt_template
+        self._critic_output_format = critic_output_format
+        self._planner_output_format = planner_output_format
         self._max_iterations = max_iterations
         self._max_actions_per_iteration = max_actions_per_iteration
+
+        if self._critic_output_format not in SUPPORTED_CRITIC_OUTPUT_FORMATS:
+            msg = f"Unsupported critic_output_format: {self._critic_output_format}"
+            raise ValueError(msg)
+        if self._planner_output_format not in SUPPORTED_PLANNER_OUTPUT_FORMATS:
+            msg = f"Unsupported planner_output_format: {self._planner_output_format}"
+            raise ValueError(msg)
 
         super().__init__(session_factory, name, llm, retrieval_pipeline, schema)
 
@@ -189,10 +430,22 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             "type": "rag_critic",
             "answer_prompt_template": self._answer_prompt_template,
             "critic_prompt_template": self._critic_prompt_template,
+            "trained_critic_prompt_template": self._trained_critic_prompt_template,
             "planner_prompt_template": self._planner_prompt_template,
+            "agent_system_prompt_template": self._agent_system_prompt_template,
+            "agent_user_prompt_template": self._agent_user_prompt_template,
             "rewrite_prompt_template": self._rewrite_prompt_template,
             "decomposition_prompt_template": self._decomposition_prompt_template,
             "refine_prompt_template": self._refine_prompt_template,
+            "agent_generate_answer_prompt_template": self._agent_generate_answer_prompt_template,
+            "agent_rewrite_clarify_prompt_template": self._agent_rewrite_clarify_prompt_template,
+            "agent_rewrite_expand_prompt_template": self._agent_rewrite_expand_prompt_template,
+            "agent_rewrite_custom_prompt_template": self._agent_rewrite_custom_prompt_template,
+            "agent_decompose_prompt_template": self._agent_decompose_prompt_template,
+            "agent_refine_summarize_prompt_template": self._agent_refine_summarize_prompt_template,
+            "agent_refine_explain_prompt_template": self._agent_refine_explain_prompt_template,
+            "critic_output_format": self._critic_output_format,
+            "planner_output_format": self._planner_output_format,
             "max_iterations": self._max_iterations,
             "max_actions_per_iteration": self._max_actions_per_iteration,
             "retrieval_pipeline_id": self._retrieval_pipeline.pipeline_id,
@@ -208,7 +461,13 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         json_match = re.search(r"(\{.*\}|\[.*\])", cleaned, flags=re.DOTALL)
         if json_match:
             cleaned = json_match.group(1)
-        return json.loads(cleaned)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            payload = ast.literal_eval(cleaned)
+            if isinstance(payload, dict | list):
+                return payload
+            raise
 
     @staticmethod
     def _extract_payload_list(payload: Any, key: str) -> list[Any]:
@@ -232,6 +491,28 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         return []
 
     @staticmethod
+    def _deduplicate_actions(actions: list[str]) -> list[str]:
+        """Deduplicate actions while preserving order."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for action in actions:
+            if action in seen or action not in SUPPORTED_ACTIONS:
+                continue
+            seen.add(action)
+            result.append(action)
+        return result
+
+    @classmethod
+    def _map_trained_critic_tags_to_actions(cls, tag2_values: list[str]) -> list[str]:
+        """Map published RAG-Critic error tags to local corrective actions."""
+        actions: list[str] = []
+        for value in tag2_values:
+            actions.extend(RAG_CRITIC_3B_TAG2_ACTIONS.get(value.strip().lower(), []))
+        if not actions:
+            actions = ["generate_answer"]
+        return cls._deduplicate_actions(actions)
+
+    @staticmethod
     def _normalize_action_name(action: str) -> str:
         """Normalize action names from planner output."""
         normalized = action.strip().lower().replace("-", "_").replace(" ", "_")
@@ -242,6 +523,17 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             "generate": "generate_answer",
         }
         return aliases.get(normalized, normalized)
+
+    @staticmethod
+    def _coerce_positive_int(value: Any, default: int) -> int:
+        """Coerce planner-provided values to a positive integer."""
+        if isinstance(value, bool):
+            return default
+        try:
+            coerced = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(coerced, 1)
 
     @staticmethod
     def _is_approved(critique: dict[str, Any]) -> bool:
@@ -258,6 +550,13 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             (f"[Document {index} | doc_id={document['doc_id']} | score={document['score']}]\n{document['content']}")
             for index, document in enumerate(documents, start=1)
         )
+
+    @staticmethod
+    def _format_passage_list(passages: list[str]) -> str:
+        """Format plain passage strings for prompting."""
+        if not passages:
+            return "(No documents available)"
+        return "\n".join(f"Passage: {passage}" for passage in passages)
 
     def _hydrate_documents(self, retrieved: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Attach chunk contents to retrieval results."""
@@ -303,6 +602,17 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         tracker.record(response)
         return response.content if hasattr(response, "content") else str(response)
 
+    async def _invoke_model_and_record(
+        self,
+        model: BaseLanguageModel,
+        prompt: str,
+        tracker: TokenUsageTracker,
+    ) -> str:
+        """Invoke the provided model and record token usage."""
+        response = await model.ainvoke(prompt)
+        tracker.record(response)
+        return response.content if hasattr(response, "content") else str(response)
+
     async def _generate_answer(
         self,
         query: str,
@@ -326,11 +636,14 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         tracker: TokenUsageTracker,
     ) -> dict[str, Any]:
         """Run the critic and parse its JSON output."""
+        if self._critic_output_format == "rag_critic_tags":
+            return await self._run_trained_critic(query, context, answer, tracker)
+
         prompt = self._critic_prompt_template.format(query=query, context=context, answer=answer)
         critique_text = await self._invoke_and_record(prompt, tracker)
         try:
             critique = self._parse_json_payload(critique_text)
-        except json.JSONDecodeError:
+        except (SyntaxError, ValueError, json.JSONDecodeError):
             logger.warning("Critic output was not valid JSON; falling back to revise verdict")
             critique = {"verdict": "revise", "feedback": critique_text, "recommended_actions": ["generate_answer"]}
         if not isinstance(critique, dict):
@@ -340,14 +653,365 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         critique["recommended_actions"] = self._normalize_string_list(critique.get("recommended_actions", []))
         return critique
 
+    async def _run_trained_critic(
+        self,
+        query: str,
+        context: str,
+        answer: str,
+        tracker: TokenUsageTracker,
+    ) -> dict[str, Any]:
+        """Run the published RAG-Critic model and adapt its tags to local actions."""
+        prompt = self._trained_critic_prompt_template.format(query=query, context=context, answer=answer)
+        response = await self._critic_llm.ainvoke(prompt)
+        tracker.record(response)
+        critique_text = response.content if hasattr(response, "content") else str(response)
+        try:
+            payload = self._parse_json_payload(critique_text)
+        except (SyntaxError, ValueError, json.JSONDecodeError):
+            logger.warning("Trained critic output was not parseable; falling back to revise verdict")
+            return {"verdict": "revise", "feedback": critique_text, "recommended_actions": ["generate_answer"]}
+
+        if not isinstance(payload, dict):
+            logger.warning("Trained critic output must be a JSON object; falling back to revise verdict")
+            return {"verdict": "revise", "feedback": critique_text, "recommended_actions": ["generate_answer"]}
+
+        judgement = str(payload.get("Judgement", payload.get("judgement", ""))).strip().lower()
+        if judgement == "correct":
+            return {
+                "verdict": "approved",
+                "feedback": str(payload.get("Error_analysis", payload.get("error_analysis", ""))).strip(),
+                "recommended_actions": [],
+                "tag1": self._normalize_string_list(payload.get("tag1", [])),
+                "tag2": self._normalize_string_list(payload.get("tag2", [])),
+                "tag3": self._normalize_string_list(payload.get("tag3", [])),
+            }
+
+        tag1 = self._normalize_string_list(payload.get("tag1", []))
+        tag2 = self._normalize_string_list(payload.get("tag2", []))
+        tag3 = self._normalize_string_list(payload.get("tag3", []))
+        feedback = str(payload.get("Error_analysis", payload.get("error_analysis", critique_text))).strip()
+        return {
+            "verdict": "revise",
+            "feedback": feedback,
+            "recommended_actions": self._map_trained_critic_tags_to_actions(tag2),
+            "tag1": tag1,
+            "tag2": tag2,
+            "tag3": tag3,
+        }
+
+    @staticmethod
+    def _extract_python_code_block(text: str) -> str:
+        """Extract Python code from fenced or unfenced planner output."""
+        cleaned = text.strip()
+        if "```python" in cleaned:
+            return cleaned.split("```python", maxsplit=1)[1].split("```", maxsplit=1)[0].strip()
+        if "```" in cleaned:
+            return cleaned.split("```", maxsplit=1)[1].split("```", maxsplit=1)[0].strip()
+        return cleaned
+
+    async def _agent_rewrite_query(
+        self,
+        query: str,
+        instruction: str,
+        tracker: TokenUsageTracker,
+    ) -> list[str]:
+        """Rewrite a query using the official-style agent prompt family."""
+        normalized_instruction = instruction.strip().lower()
+        if normalized_instruction == "clarify":
+            prompt = self._agent_rewrite_clarify_prompt_template.format(query=query)
+        elif normalized_instruction == "expand":
+            prompt = self._agent_rewrite_expand_prompt_template.format(query=query)
+        else:
+            prompt = self._agent_rewrite_custom_prompt_template.format(query=query, instruction=instruction)
+
+        text = await self._invoke_and_record(prompt, tracker)
+        try:
+            payload = self._parse_json_payload(text)
+        except (SyntaxError, ValueError, json.JSONDecodeError):
+            return [query]
+
+        if isinstance(payload, dict):
+            queries = self._normalize_string_list(payload.get("query", []))
+        else:
+            queries = self._normalize_string_list(payload)
+        return queries or [query]
+
+    async def _agent_decompose_query(self, query: str, tracker: TokenUsageTracker) -> list[str]:
+        """Decompose a query using the official-style agent prompt."""
+        text = await self._invoke_and_record(self._agent_decompose_prompt_template.format(query=query), tracker)
+        try:
+            payload = self._parse_json_payload(text)
+        except (SyntaxError, ValueError, json.JSONDecodeError):
+            return [query]
+        return self._normalize_string_list(payload)
+
+    async def _agent_refine_doc(
+        self,
+        query: str,
+        document: str,
+        instruction: str,
+        tracker: TokenUsageTracker,
+    ) -> str:
+        """Refine a document with the official-style summarize/explain prompts."""
+        normalized_instruction = instruction.strip().lower()
+        if normalized_instruction == "explain":
+            prompt = self._agent_refine_explain_prompt_template.format(document=document, question=query)
+        elif normalized_instruction == "summarize":
+            prompt = self._agent_refine_summarize_prompt_template.format(document=document, question=query)
+        else:
+            return document
+
+        text = await self._invoke_and_record(prompt, tracker)
+        try:
+            payload = self._parse_json_payload(text)
+        except (SyntaxError, ValueError, json.JSONDecodeError):
+            return document
+
+        if isinstance(payload, dict):
+            return str(payload.get("refined_document", payload.get("explanation", document))).strip() or document
+        return document
+
+    async def _agent_generate_answer(
+        self,
+        query: str,
+        passages: list[str],
+        additional_instruction: str,
+        tracker: TokenUsageTracker,
+    ) -> str:
+        """Generate an answer with the official execute-agent response style."""
+        prompt = self._agent_generate_answer_prompt_template.format(
+            instruction=additional_instruction or "(none)",
+            query=query,
+            context=self._format_passage_list(passages),
+        )
+        return await self._invoke_and_record(prompt, tracker)
+
+    async def _plan_agent_code(
+        self,
+        query: str,
+        doc_list: list[str],
+        previous_answer: str,
+        critique: dict[str, Any],
+        tracker: TokenUsageTracker,
+    ) -> str:
+        """Generate official-style Python function-call code for corrective execution."""
+        error_type = critique.get("tag2") or critique.get("recommended_actions") or critique.get("feedback", "")
+        if isinstance(error_type, list):
+            formatted_error_type = ", ".join(str(item) for item in error_type)
+        else:
+            formatted_error_type = str(error_type)
+        prompt = (
+            self._agent_system_prompt_template.strip()
+            + "\n\n"
+            + self._agent_user_prompt_template.format(
+                question=query,
+                doc_list=repr(doc_list),
+                previous_pred=previous_answer,
+                error_type=formatted_error_type or "Unknown Error",
+            )
+        )
+        return self._extract_python_code_block(await self._invoke_and_record(prompt, tracker))
+
+    @staticmethod
+    def _validate_agent_code(tree: ast.Module) -> None:
+        """Validate that generated planner code stays within a narrow safe subset."""
+        allowed_calls = {"Retrieval", "RewriteQuery", "DecomposeQuery", "RefineDoc", "GenerateAnswer"}
+        allowed_nodes = (
+            ast.Module,
+            ast.Assign,
+            ast.Expr,
+            ast.Call,
+            ast.Name,
+            ast.Load,
+            ast.Store,
+            ast.Constant,
+            ast.List,
+            ast.Tuple,
+            ast.Subscript,
+        )
+        for node in ast.walk(tree):
+            if not isinstance(node, allowed_nodes):
+                msg = f"Unsupported node in agent plan: {type(node).__name__}"
+                raise TypeError(msg)
+            if isinstance(node, ast.Call) and (
+                not isinstance(node.func, ast.Name) or node.func.id not in allowed_calls
+            ):
+                msg = "Agent plan may only call Retrieval, RewriteQuery, DecomposeQuery, RefineDoc, GenerateAnswer"
+                raise ValueError(msg)
+            if isinstance(node, ast.Assign) and (len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name)):
+                msg = "Agent plan assignments must target a single variable name"
+                raise ValueError(msg)
+
+    async def _eval_agent_expr(  # noqa: C901
+        self,
+        node: ast.AST,
+        namespace: dict[str, Any],
+        execution_state: dict[str, Any],
+        tracker: TokenUsageTracker,
+        default_top_k: int,
+    ) -> Any:
+        """Evaluate a restricted AST expression for official-style agent plans."""
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name):
+            if node.id in namespace:
+                return namespace[node.id]
+            msg = f"Unknown variable in agent plan: {node.id}"
+            raise ValueError(msg)
+        if isinstance(node, ast.List):
+            return [
+                await self._eval_agent_expr(element, namespace, execution_state, tracker, default_top_k)
+                for element in node.elts
+            ]
+        if isinstance(node, ast.Tuple):
+            return tuple([
+                await self._eval_agent_expr(element, namespace, execution_state, tracker, default_top_k)
+                for element in node.elts
+            ])
+        if isinstance(node, ast.Subscript):
+            value = await self._eval_agent_expr(node.value, namespace, execution_state, tracker, default_top_k)
+            index = await self._eval_agent_expr(node.slice, namespace, execution_state, tracker, default_top_k)
+            return value[index]
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            args = [
+                await self._eval_agent_expr(arg, namespace, execution_state, tracker, default_top_k)
+                for arg in node.args
+            ]
+            kwargs = {
+                keyword.arg: await self._eval_agent_expr(
+                    keyword.value, namespace, execution_state, tracker, default_top_k
+                )
+                for keyword in node.keywords
+                if keyword.arg is not None
+            }
+            func_name = node.func.id
+            if func_name == "Retrieval":
+                query = str(args[0])
+                topk = self._coerce_positive_int(
+                    args[1] if len(args) > 1 else kwargs.get("topk", default_top_k), default_top_k
+                )
+                hydrated_documents = self._hydrate_documents(await self._retrieval_pipeline.retrieve(query, topk))
+                execution_state["retrieval_history"].append({
+                    "query": query,
+                    "query_source": "agent_plan",
+                    "strategy": "replace",
+                    "returned_doc_ids": [doc["doc_id"] for doc in hydrated_documents],
+                })
+                execution_state["documents"] = hydrated_documents
+                execution_state["working_context"] = self._format_documents(hydrated_documents)
+                execution_state["executed_actions"].append({"action": "retrieval", "query": query, "top_k": topk})
+                return [doc["content"] for doc in hydrated_documents]
+            if func_name == "RewriteQuery":
+                rewritten_queries = await self._agent_rewrite_query(str(args[0]), str(args[1]), tracker)
+                execution_state["rewritten_queries"].extend([
+                    query for query in rewritten_queries if query not in execution_state["rewritten_queries"]
+                ])
+                execution_state["executed_actions"].append({
+                    "action": "rewrite_query",
+                    "instruction": str(args[1]),
+                    "queries": rewritten_queries,
+                })
+                return rewritten_queries
+            if func_name == "DecomposeQuery":
+                sub_questions = await self._agent_decompose_query(str(args[0]), tracker)
+                execution_state["sub_questions"].extend([
+                    question for question in sub_questions if question not in execution_state["sub_questions"]
+                ])
+                execution_state["executed_actions"].append({
+                    "action": "decompose_query",
+                    "sub_questions": sub_questions,
+                })
+                return sub_questions
+            if func_name == "RefineDoc":
+                refined_document = await self._agent_refine_doc(str(args[0]), str(args[1]), str(args[2]), tracker)
+                execution_state["executed_actions"].append({"action": "refine_documents", "instruction": str(args[2])})
+                return refined_document
+            if func_name == "GenerateAnswer":
+                docs = [str(doc) for doc in args[1]]
+                instruction = str(args[2]) if len(args) > 2 else str(kwargs.get("additional_instruction", ""))
+                answer = await self._agent_generate_answer(str(args[0]), docs, instruction, tracker)
+                execution_state["executed_actions"].append({"action": "generate_answer", "instruction": instruction})
+                execution_state["answer_generated"] = True
+                return answer
+        msg = f"Unsupported expression in agent plan: {ast.dump(node, include_attributes=False)}"
+        raise ValueError(msg)
+
+    async def _execute_agent_code_plan(
+        self,
+        code_snippet: str,
+        *,
+        original_query: str,
+        documents: list[dict[str, Any]],
+        working_context: str,
+        answer: str,
+        rewritten_queries: list[str],
+        sub_questions: list[str],
+        executed_actions: list[dict[str, Any]],
+        retrieval_history: list[dict[str, Any]],
+        top_k: int,
+        tracker: TokenUsageTracker,
+    ) -> tuple[str, list[dict[str, Any]], str, bool]:
+        """Execute official-style planner code via a restricted AST evaluator."""
+        tree = ast.parse(code_snippet, mode="exec")
+        self._validate_agent_code(tree)
+        execution_state = {
+            "documents": documents,
+            "working_context": working_context,
+            "executed_actions": executed_actions,
+            "retrieval_history": retrieval_history,
+            "rewritten_queries": rewritten_queries,
+            "sub_questions": sub_questions,
+            "answer_generated": False,
+        }
+        namespace: dict[str, Any] = {
+            "question": original_query,
+            "doc_list": [document["content"] for document in documents],
+            "previous_pred": answer,
+        }
+
+        for statement in tree.body:
+            if isinstance(statement, ast.Assign):
+                target = cast(ast.Name, statement.targets[0])
+                namespace[target.id] = await self._eval_agent_expr(
+                    statement.value,
+                    namespace,
+                    execution_state,
+                    tracker,
+                    top_k,
+                )
+            elif isinstance(statement, ast.Expr):
+                await self._eval_agent_expr(statement.value, namespace, execution_state, tracker, top_k)
+
+        final_answer = namespace.get("final_answer")
+        final_documents = cast(list[dict[str, Any]], execution_state["documents"])
+        final_working_context = cast(str, execution_state["working_context"])
+        answer_generated = cast(bool, execution_state["answer_generated"])
+        if not isinstance(final_answer, str) or not final_answer.strip():
+            return answer, final_documents, final_working_context, False
+        return (
+            final_answer,
+            final_documents,
+            final_working_context,
+            answer_generated,
+        )
+
     async def _plan_actions(
         self,
         query: str,
+        doc_list: list[str],
         answer: str,
         critique: dict[str, Any],
         tracker: TokenUsageTracker,
     ) -> list[dict[str, Any]]:
         """Plan corrective actions from the critic feedback."""
+        if self._planner_output_format == "python_agent":
+            return [
+                {
+                    "action": "agent_code",
+                    "code": await self._plan_agent_code(query, doc_list, answer, critique, tracker),
+                }
+            ]
+
         prompt = self._planner_prompt_template.format(
             query=query,
             answer=answer,
@@ -356,7 +1020,7 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         plan_text = await self._invoke_and_record(prompt, tracker)
         try:
             payload = self._parse_json_payload(plan_text)
-        except json.JSONDecodeError:
+        except (SyntaxError, ValueError, json.JSONDecodeError):
             payload = {"actions": self._normalize_string_list(critique.get("recommended_actions", []))}
         raw_actions = self._extract_payload_list(payload, "actions")
         actions: list[dict[str, Any]] = []
@@ -381,7 +1045,7 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         """Rewrite the current retrieval query."""
         prompt = self._rewrite_prompt_template.format(query=query, feedback=feedback, instruction=instruction)
         rewritten = await self._invoke_and_record(prompt, tracker)
-        return rewritten.strip()
+        return rewritten.strip() or query
 
     async def _decompose_query(
         self,
@@ -395,7 +1059,7 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         decomposition_text = await self._invoke_and_record(prompt, tracker)
         try:
             payload = self._parse_json_payload(decomposition_text)
-        except json.JSONDecodeError:
+        except (SyntaxError, ValueError, json.JSONDecodeError):
             payload = {"sub_questions": [part.strip() for part in decomposition_text.split("\n") if part.strip()]}
         sub_questions = self._extract_payload_list(payload, "sub_questions")
         return [question.strip() for question in sub_questions if isinstance(question, str) and question.strip()]
@@ -475,7 +1139,7 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         """Execute a retrieval action and return updated documents/context."""
         query_source = str(raw_action.get("query_source", "working")).strip().lower()
         strategy = str(raw_action.get("strategy", "append")).strip().lower()
-        action_top_k = int(raw_action.get("top_k", top_k))
+        action_top_k = self._coerce_positive_int(raw_action.get("top_k", top_k), top_k)
         retrieval_queries = self._select_retrieval_queries(
             query_source=query_source,
             original_query=original_query,
@@ -557,6 +1221,7 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         sub_questions: list[str],
         executed_actions: list[dict[str, Any]],
         retrieval_history: list[dict[str, Any]],
+        answer: str,
         top_k: int,
         tracker: TokenUsageTracker,
     ) -> dict[str, Any]:
@@ -625,6 +1290,28 @@ class RAGCriticPipeline(BaseGenerationPipeline):
                 "answer_updated": True,
             }
 
+        if action_name == "agent_code":
+            executed_actions.append({"action": "agent_code", "code": str(raw_action.get("code", ""))})
+            answer, documents, working_context, answer_updated = await self._execute_agent_code_plan(
+                str(raw_action.get("code", "")),
+                original_query=original_query,
+                documents=documents,
+                working_context=working_context,
+                answer=answer,
+                rewritten_queries=rewritten_queries,
+                sub_questions=sub_questions,
+                executed_actions=executed_actions,
+                retrieval_history=retrieval_history,
+                top_k=top_k,
+                tracker=tracker,
+            )
+            return {
+                "answer": answer,
+                "documents": documents,
+                "working_context": working_context,
+                "answer_updated": answer_updated,
+            }
+
         logger.warning("Skipping unsupported RAG-Critic action: %s", action_name)
         return {}
 
@@ -662,6 +1349,7 @@ class RAGCriticPipeline(BaseGenerationPipeline):
                 sub_questions=sub_questions,
                 executed_actions=executed_actions,
                 retrieval_history=retrieval_history,
+                answer=answer,
                 top_k=top_k,
                 tracker=tracker,
             )
@@ -736,7 +1424,13 @@ class RAGCriticPipeline(BaseGenerationPipeline):
                 break
 
             feedback = critique["feedback"]
-            actions = await self._plan_actions(original_query, answer, critique, tracker)
+            actions = await self._plan_actions(
+                original_query,
+                [document["content"] for document in documents],
+                answer,
+                critique,
+                tracker,
+            )
             answer, documents, working_context, working_query, answer_updated = await self._execute_action_plan(
                 actions,
                 original_query=original_query,
@@ -761,6 +1455,8 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             token_usage=tracker.total,
             metadata={
                 "pipeline_type": "rag_critic",
+                "critic_output_format": self._critic_output_format,
+                "planner_output_format": self._planner_output_format,
                 "iteration_count": len(critique_history),
                 "executed_actions": executed_actions,
                 "critique_history": critique_history,
