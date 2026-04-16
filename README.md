@@ -64,6 +64,7 @@ Standalone retrieval pipelines. Use them on their own for retrieval-only evaluat
 | [RETRO*](https://openreview.net/pdf?id=0WGl8PNMSA)                               | Rubric-based LLM reranking over retrieved candidates                   | ICLR 26   |
 | [Hybrid RRF](https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf)                | Reciprocal Rank Fusion of two retrieval pipelines                      | -         |
 | [Hybrid CC](https://arxiv.org/pdf/2210.11934)                                    | Convex Combination fusion of two retrieval pipelines                   | -         |
+| [Power of Noise](https://arxiv.org/abs/2401.14887)                             | Base retriever + seeded random noise wrapper                          | SIGIR 24  |
 
 ### 2. Generation Pipeline
 
