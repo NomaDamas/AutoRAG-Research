@@ -203,10 +203,23 @@ previous_pred = "{previous_pred}"
 
 Error type of previous pred: {error_type}
 
+### Error-Action Mapping Table (reference guide for selecting appropriate actions)
+
+| Error Type | Recommended Actions |
+|---|---|
+| Incomplete Information | Re-retrieval: Rewrite the query for supplementary retrieval. Refine the input: Refine the retrieved knowledge. |
+| Irrelevant Information | Re-retrieval: Perform replacement retrieval using the same query. Refine the input: Correct the retrieved knowledge. |
+| Erroneous Information | Refine the input: Correct the retrieved knowledge. Rewrite the reasoning answer: Correct the reasoning part. |
+| Incomplete Response | Re-retrieval: Perform supplementary retrieval using the same query. Refine the input: Provide examples for the retrieved knowledge. |
+| Inaccurate Response | Rewrite the reasoning answer: Refine the reasoning part. Refine the input: Explain the retrieved knowledge. |
+| Off-Topic Response | Re-retrieval: Rewrite the query for replacement retrieval. Rewrite the query: Break down the query into sub-questions. |
+| Overly Verbose Response | Refine the input: Refine the retrieved knowledge. Rewrite the reasoning answer: Do not rely on the original reasoning part. |
+
 Please carefully read the provided question, doc list, previous answer, and the error type of the previous prediction
-given by a teacher model. Your task is to generate Python code that calls the relevant functions to optimize the
-current RAG process and solve the previous error. The generated code should only include function calls and variable
-assignments. Do not write function implementations or any explanation.
+given by a teacher model. Use the Error-Action Mapping Table above as a guide for selecting which functions to call.
+Your task is to generate Python code that calls the relevant functions to optimize the current RAG process and solve
+the previous error. The generated code should only include function calls and variable assignments. Do not write
+function implementations or any explanation.
 """
 
 DEFAULT_AGENT_GENERATE_ANSWER_PROMPT = """Find the useful content from the provided documents, then answer the
@@ -602,17 +615,6 @@ class RAGCriticPipeline(BaseGenerationPipeline):
         tracker.record(response)
         return response.content if hasattr(response, "content") else str(response)
 
-    async def _invoke_model_and_record(
-        self,
-        model: BaseLanguageModel,
-        prompt: str,
-        tracker: TokenUsageTracker,
-    ) -> str:
-        """Invoke the provided model and record token usage."""
-        response = await model.ainvoke(prompt)
-        tracker.record(response)
-        return response.content if hasattr(response, "content") else str(response)
-
     async def _generate_answer(
         self,
         query: str,
@@ -640,7 +642,9 @@ class RAGCriticPipeline(BaseGenerationPipeline):
             return await self._run_trained_critic(query, context, answer, tracker)
 
         prompt = self._critic_prompt_template.format(query=query, context=context, answer=answer)
-        critique_text = await self._invoke_and_record(prompt, tracker)
+        response = await self._critic_llm.ainvoke(prompt)
+        tracker.record(response)
+        critique_text = response.content if hasattr(response, "content") else str(response)
         try:
             critique = self._parse_json_payload(critique_text)
         except (SyntaxError, ValueError, json.JSONDecodeError):

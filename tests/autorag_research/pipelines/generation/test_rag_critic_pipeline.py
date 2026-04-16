@@ -211,9 +211,12 @@ class TestRAGCriticPipelineUnit:
 
         pipeline = create_lightweight_rag_critic_pipeline()
 
-        pipeline._invoke_and_record = AsyncMock(  # type: ignore[method-assign]
-            return_value='{"verdict": "revise", "feedback": "Need retrieval", "recommended_actions": "retrieval"}'
+        mock_response = MagicMock()
+        mock_response.content = (
+            '{"verdict": "revise", "feedback": "Need retrieval", "recommended_actions": "retrieval"}'
         )
+        pipeline._critic_llm = MagicMock()  # type: ignore[assignment]
+        pipeline._critic_llm.ainvoke = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
 
         critique = await pipeline._run_critic(
             "What is RAG-Critic?",
