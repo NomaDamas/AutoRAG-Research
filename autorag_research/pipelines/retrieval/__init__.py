@@ -14,6 +14,10 @@ from autorag_research.pipelines.retrieval.hyde import (
     HyDEPipelineConfig,
     HyDERetrievalPipeline,
 )
+from autorag_research.pipelines.retrieval.power_of_noise import (
+    PowerOfNoiseRetrievalPipeline,
+    PowerOfNoiseRetrievalPipelineConfig,
+)
 from autorag_research.pipelines.retrieval.query_rewrite import (
     QueryRewritePipelineConfig,
     QueryRewriteRetrievalPipeline,
@@ -39,6 +43,8 @@ __all__ = [
     "HybridCCRetrievalPipelineConfig",
     "HybridRRFRetrievalPipeline",
     "HybridRRFRetrievalPipelineConfig",
+    "PowerOfNoiseRetrievalPipeline",
+    "PowerOfNoiseRetrievalPipelineConfig",
     "QueryRewritePipelineConfig",
     "QueryRewriteRetrievalPipeline",
     "RetroStarPipelineConfig",

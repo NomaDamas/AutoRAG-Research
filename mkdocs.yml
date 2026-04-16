@@ -46,6 +46,7 @@ nav:
           - pipelines/retrieval/bm25.md
           - pipelines/retrieval/retro-star.md
           - pipelines/retrieval/vector-search.md
+          - pipelines/retrieval/power-of-noise.md
       - Generation:
           - pipelines/generation/index.md
           - pipelines/generation/basic-rag.md
