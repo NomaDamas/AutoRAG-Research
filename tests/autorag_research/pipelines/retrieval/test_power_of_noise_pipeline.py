@@ -362,8 +362,7 @@ class TestPowerOfNoiseRetrievalPipeline:
         results = await pipeline._retrieve_by_text("ad hoc query", top_k=4)
 
         assert len(results) == 2
-        assert [result["doc_id"] for result in results[:1]] == [2]
-        assert results[1]["doc_id"] != 2
+        assert [result["doc_id"] for result in results] == [2, 7]
 
     @pytest.mark.asyncio
     async def test_noise_ratio_controls_noise_budget(
