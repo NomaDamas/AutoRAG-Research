@@ -154,7 +154,9 @@ class TestDiscoverMetrics:
         """discover_metrics finds rouge in real configs/metrics/generation/."""
         result = discover_metrics("generation")
 
+        assert "exact_match" in result
         assert "rouge" in result
+        assert "token_f1" in result
         assert "unieval_coherence" in result
         assert "unieval_consistency" in result
         assert "unieval_fluency" in result
