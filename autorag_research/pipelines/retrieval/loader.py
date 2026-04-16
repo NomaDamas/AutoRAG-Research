@@ -21,6 +21,11 @@ PIPELINE_TYPES = ["pipelines", "retrieval"]
 class RetrievalPipelineLoader:
     """Load retrieval pipelines and inject nested retrieval dependencies."""
 
+    _DEPENDENCY_FIELDS: tuple[tuple[str, str], ...] = (
+        ("retrieval_pipeline_name", "_retrieval_pipeline"),
+        ("inner_retrieval_pipeline_name", "_inner_retrieval_pipeline"),
+    )
+
     def __init__(
         self,
         session_factory: sessionmaker[Session],
@@ -43,11 +48,22 @@ class RetrievalPipelineLoader:
         resolution_key: str | None = None,
     ) -> None:
         """Resolve retrieval-pipeline dependencies for configs that declare them."""
-        dependency_name = getattr(config, "retrieval_pipeline_name", "")
         inject_retrieval_pipeline = getattr(config, "inject_retrieval_pipeline", None)
-        existing_pipeline = getattr(config, "_retrieval_pipeline", None)
 
-        if not dependency_name or not callable(inject_retrieval_pipeline):
+        if not callable(inject_retrieval_pipeline):
+            return
+
+        dependency_name = ""
+        existing_pipeline = None
+        for dependency_attr, existing_attr in self._DEPENDENCY_FIELDS:
+            candidate_name = getattr(config, dependency_attr, "")
+            if not candidate_name:
+                continue
+            dependency_name = candidate_name
+            existing_pipeline = getattr(config, existing_attr, None)
+            break
+
+        if not dependency_name:
             return
 
         if existing_pipeline is not None:

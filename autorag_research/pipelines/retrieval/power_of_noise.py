@@ -180,9 +180,7 @@ class PowerOfNoiseRetrievalPipeline(BaseRetrievalPipeline):
                 query = uow.queries.get_with_retrieval_relations(query_id)
                 if query is not None:
                     excluded_ids.update(
-                        relation.chunk_id
-                        for relation in query.retrieval_relations
-                        if relation.chunk_id is not None
+                        relation.chunk_id for relation in query.retrieval_relations if relation.chunk_id is not None
                     )
 
                     answers = [answer.casefold() for answer in (query.generation_gt or []) if answer]

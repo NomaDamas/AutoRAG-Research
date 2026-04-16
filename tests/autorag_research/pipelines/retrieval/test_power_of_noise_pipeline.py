@@ -1,14 +1,18 @@
 """Tests for PowerOfNoiseRetrievalPipeline."""
 
+from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
+from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.orm.schema import Chunk
+from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 from autorag_research.pipelines.retrieval.power_of_noise import (
     PowerOfNoiseRetrievalPipeline,
     PowerOfNoiseRetrievalPipelineConfig,
@@ -19,8 +23,70 @@ from tests.autorag_research.pipelines.pipeline_test_utils import (
 )
 
 
-@pytest.fixture
+class _FakeLeafRetrievalPipeline(BaseRetrievalPipeline):
+    def _get_pipeline_config(self) -> dict[str, Any]:
+        return {"type": "fake_leaf"}
 
+    async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:
+        return []
+
+    async def _retrieve_by_text(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
+        return []
+
+
+class _FakeWrapperRetrievalPipeline(BaseRetrievalPipeline):
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        name: str,
+        inner_retrieval_pipeline: BaseRetrievalPipeline,
+        schema: Any | None = None,
+    ):
+        self.inner_retrieval_pipeline = inner_retrieval_pipeline
+        super().__init__(session_factory, name, schema)
+
+    def _get_pipeline_config(self) -> dict[str, Any]:
+        return {
+            "type": "fake_wrapper",
+            "inner_pipeline_name": self.inner_retrieval_pipeline.name,
+        }
+
+    async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:
+        return []
+
+    async def _retrieve_by_text(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
+        return []
+
+
+@dataclass(kw_only=True)
+class _FakeLeafPipelineConfig(BaseRetrievalPipelineConfig):
+    def get_pipeline_class(self) -> type[BaseRetrievalPipeline]:
+        return _FakeLeafRetrievalPipeline
+
+    def get_pipeline_kwargs(self) -> dict[str, Any]:
+        return {}
+
+
+@dataclass(kw_only=True)
+class _FakeWrapperPipelineConfig(BaseRetrievalPipelineConfig):
+    inner_retrieval_pipeline_name: str
+    _inner_retrieval_pipeline: BaseRetrievalPipeline | None = None
+
+    def get_pipeline_class(self) -> type[BaseRetrievalPipeline]:
+        return _FakeWrapperRetrievalPipeline
+
+    def get_pipeline_kwargs(self) -> dict[str, Any]:
+        if self._inner_retrieval_pipeline is None:
+            msg = f"Inner retrieval pipeline '{self.inner_retrieval_pipeline_name}' not injected"
+            raise ValueError(msg)
+
+        return {"inner_retrieval_pipeline": self._inner_retrieval_pipeline}
+
+    def inject_retrieval_pipeline(self, pipeline: BaseRetrievalPipeline) -> None:
+        self._inner_retrieval_pipeline = pipeline
+
+
+@pytest.fixture
 def cleanup_pipeline_results(session_factory: sessionmaker[Session]):
     """Delete created retrieval results and temporary chunks after each test."""
     created_pipeline_ids: list[int] = []
@@ -41,19 +107,22 @@ def cleanup_pipeline_results(session_factory: sessionmaker[Session]):
 
 
 @pytest.fixture
-
 def base_pipeline_stub() -> SimpleNamespace:
     """Provide a stub retrieval pipeline for wrapper tests."""
     return SimpleNamespace(
         name="vector_search",
-        _retrieve_by_id=AsyncMock(return_value=[
-            {"doc_id": 2, "score": 0.9, "content": "Chunk 1-2"},
-            {"doc_id": 3, "score": 0.8, "content": "Chunk 2-1"},
-        ]),
-        _retrieve_by_text=AsyncMock(return_value=[
-            {"doc_id": 2, "score": 0.9, "content": "Chunk 1-2"},
-            {"doc_id": 3, "score": 0.8, "content": "Chunk 2-1"},
-        ]),
+        _retrieve_by_id=AsyncMock(
+            return_value=[
+                {"doc_id": 2, "score": 0.9, "content": "Chunk 1-2"},
+                {"doc_id": 3, "score": 0.8, "content": "Chunk 2-1"},
+            ]
+        ),
+        _retrieve_by_text=AsyncMock(
+            return_value=[
+                {"doc_id": 2, "score": 0.9, "content": "Chunk 1-2"},
+                {"doc_id": 3, "score": 0.8, "content": "Chunk 2-1"},
+            ]
+        ),
     )
 
 
@@ -90,6 +159,48 @@ class TestPowerOfNoisePipelineConfig:
 
 class TestPowerOfNoiseRetrievalPipeline:
     """Tests for PowerOfNoiseRetrievalPipeline."""
+
+    def test_named_base_pipeline_loads_nested_retrieval_dependencies(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        session_factory: sessionmaker[Session],
+        cleanup_pipeline_results: tuple[list[int], list[int]],
+    ):
+        created_pipeline_ids, _ = cleanup_pipeline_results
+        config_map = {
+            "fake_wrapper_cfg": _FakeWrapperPipelineConfig(
+                name="fake_wrapper",
+                inner_retrieval_pipeline_name="fake_leaf",
+            ),
+            "fake_leaf_cfg": _FakeLeafPipelineConfig(name="fake_leaf"),
+        }
+
+        def fake_resolve_config(_self, config_groups: list[str], name: str) -> str:
+            assert config_groups == ["pipelines", "retrieval"]
+            return f"{name}_cfg"
+
+        monkeypatch.setattr(
+            "autorag_research.cli.config_resolver.ConfigResolver.resolve_config",
+            fake_resolve_config,
+        )
+        monkeypatch.setattr(
+            "autorag_research.pipelines.retrieval.loader.instantiate",
+            lambda pipeline_cfg: config_map[pipeline_cfg],
+        )
+
+        pipeline = PowerOfNoiseRetrievalPipeline(
+            session_factory=session_factory,
+            name="test_power_of_noise_named_dependency_loader",
+            base_retrieval_pipeline="fake_wrapper",
+        )
+        created_pipeline_ids.extend([
+            pipeline.pipeline_id,
+            pipeline._base_retrieval_pipeline.pipeline_id,
+            pipeline._base_retrieval_pipeline.inner_retrieval_pipeline.pipeline_id,
+        ])
+
+        assert pipeline._base_retrieval_pipeline.name == "fake_wrapper"
+        assert pipeline._base_retrieval_pipeline.inner_retrieval_pipeline.name == "fake_leaf"
 
     @pytest.mark.asyncio
     async def test_retrieved_first_appends_deterministic_noise(
