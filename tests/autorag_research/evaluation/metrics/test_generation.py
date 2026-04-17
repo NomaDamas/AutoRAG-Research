@@ -8,8 +8,16 @@ from langchain_openai import OpenAIEmbeddings
 
 from autorag_research import cli
 from autorag_research.evaluation.metrics.generation import (
+    BartScoreF1Config,
+    BartScoreFaithfulnessConfig,
+    BartScorePrecisionConfig,
+    BartScoreRecallConfig,
     ExactMatchConfig,
     TokenF1Config,
+    bart_score_f1,
+    bart_score_faithfulness,
+    bart_score_precision,
+    bart_score_recall,
     bert_score,
     bleu,
     exact_match,
@@ -438,3 +446,163 @@ def test_new_metric_configs_expose_metric_functions_and_names():
     assert token_f1_config.get_metric_name() == "token_f1"
     assert token_f1_config.get_metric_func() is token_f1
     assert token_f1_config.get_metric_kwargs() == {}
+
+
+def test_bart_score_variants_use_expected_text_directions(monkeypatch: pytest.MonkeyPatch):
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    calls: list[tuple[list[str], list[str], dict[str, object]]] = []
+    score_map = {
+        ("ctx 1\n\nctx 2", "candidate answer"): -0.11,
+        ("reference one", "candidate answer"): -0.42,
+        ("reference two", "candidate answer"): -0.21,
+        ("candidate answer", "reference one"): -0.17,
+        ("candidate answer", "reference two"): -0.31,
+    }
+
+    def fake_score_bartscore_pairs(
+        src_texts: list[str],
+        tgt_texts: list[str],
+        **kwargs: object,
+    ) -> list[float]:
+        calls.append((src_texts, tgt_texts, kwargs))
+        return [score_map[(src_text, tgt_text)] for src_text, tgt_text in zip(src_texts, tgt_texts, strict=True)]
+
+    monkeypatch.setattr(generation_module, "_score_bartscore_pairs", fake_score_bartscore_pairs)
+
+    metric_inputs = [
+        MetricInput(
+            retrieved_contents=["ctx 1", "ctx 2"],
+            generated_texts="candidate answer",
+            generation_gt=["reference one", "reference two"],
+        )
+    ]
+
+    assert bart_score_faithfulness(
+        metric_inputs, checkpoint="checkpoint", batch_size=8, max_length=128, device="cpu"
+    ) == [-0.11]
+    assert bart_score_precision(metric_inputs, checkpoint="checkpoint", batch_size=8, max_length=128, device="cpu") == [
+        -0.21
+    ]
+    assert bart_score_recall(metric_inputs, checkpoint="checkpoint", batch_size=8, max_length=128, device="cpu") == [
+        -0.17
+    ]
+    assert bart_score_f1(metric_inputs, checkpoint="checkpoint", batch_size=8, max_length=128, device="cpu") == [
+        pytest.approx((-0.21 + -0.17) / 2)
+    ]
+
+    assert calls[0] == (
+        ["ctx 1\n\nctx 2"],
+        ["candidate answer"],
+        {"checkpoint": "checkpoint", "batch_size": 8, "max_length": 128, "device": "cpu"},
+    )
+    assert calls[1] == (
+        ["reference one", "reference two"],
+        ["candidate answer", "candidate answer"],
+        {"checkpoint": "checkpoint", "batch_size": 8, "max_length": 128, "device": "cpu"},
+    )
+    assert calls[2] == (
+        ["candidate answer", "candidate answer"],
+        ["reference one", "reference two"],
+        {"checkpoint": "checkpoint", "batch_size": 8, "max_length": 128, "device": "cpu"},
+    )
+
+
+def test_bart_score_configs_expose_metric_functions_and_names():
+    faithfulness_config = BartScoreFaithfulnessConfig()
+    precision_config = BartScorePrecisionConfig()
+    recall_config = BartScoreRecallConfig()
+    f1_config = BartScoreF1Config()
+
+    expected_kwargs = {
+        "checkpoint": "facebook/bart-large-cnn",
+        "batch_size": 4,
+        "device": "auto",
+        "max_length": 1024,
+    }
+
+    assert faithfulness_config.get_metric_name() == "bart_score_faithfulness"
+    assert faithfulness_config.get_metric_func() is bart_score_faithfulness
+    assert faithfulness_config.get_metric_kwargs() == expected_kwargs
+
+    assert precision_config.get_metric_name() == "bart_score_precision"
+    assert precision_config.get_metric_func() is bart_score_precision
+    assert precision_config.get_metric_kwargs() == expected_kwargs
+
+    assert recall_config.get_metric_name() == "bart_score_recall"
+    assert recall_config.get_metric_func() is bart_score_recall
+    assert recall_config.get_metric_kwargs() == expected_kwargs
+
+    assert f1_config.get_metric_name() == "bart_score_f1"
+    assert f1_config.get_metric_func() is bart_score_f1
+    assert f1_config.get_metric_kwargs() == expected_kwargs
+
+
+@pytest.mark.parametrize(
+    ("cuda_available", "mps_available", "expected_device"),
+    [
+        (True, False, "cuda"),
+        (False, True, "mps"),
+        (False, False, "cpu"),
+    ],
+)
+def test_resolve_bartscore_device_auto_prefers_accelerators(
+    monkeypatch: pytest.MonkeyPatch,
+    cuda_available: bool,
+    mps_available: bool,
+    expected_device: str,
+):
+    import sys
+    from types import SimpleNamespace
+
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: cuda_available),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: mps_available)),
+    )
+
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    assert generation_module._resolve_bartscore_device("auto") == expected_device
+
+
+def test_resolve_bartscore_device_auto_falls_back_to_cpu_without_mps_backend(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import sys
+    from types import SimpleNamespace
+
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        backends=SimpleNamespace(),
+    )
+
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    assert generation_module._resolve_bartscore_device("auto") == "cpu"
+
+
+def test_bart_score_runtime_guard_points_to_optional_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    original_import_module = generation_module.importlib.import_module
+
+    def fake_import_module(name: str):
+        if name == "transformers":
+            msg = "missing transformers"
+            raise ImportError(msg)
+        if name == "torch":
+            return object()
+        return original_import_module(name)
+
+    monkeypatch.setattr(generation_module.importlib, "import_module", fake_import_module)
+
+    with pytest.raises(ImportError, match=r"autorag-research\[gpu\]") as exc_info:
+        generation_module._import_bartscore_runtime()
+
+    assert "uv sync --all-extras --all-groups" in str(exc_info.value)

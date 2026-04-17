@@ -1,3 +1,4 @@
+import importlib
 import json
 import logging
 import os
@@ -5,6 +6,7 @@ import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -57,6 +59,15 @@ Input:
 """
 
 _JSON_BLOCK_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
+DEFAULT_BARTSCORE_CHECKPOINT = "facebook/bart-large-cnn"
+DEFAULT_BARTSCORE_BATCH_SIZE = 4
+DEFAULT_BARTSCORE_DEVICE = "auto"
+DEFAULT_BARTSCORE_MAX_LENGTH = 1024
+BARTSCORE_DEPENDENCY_MESSAGE = (
+    "BARTScore requires the optional `torch` and `transformers` dependencies. "
+    "Install them with `pip install 'autorag-research[gpu]'` or run "
+    "`uv sync --all-extras --all-groups` in a development checkout."
+)
 UNIEVAL_MODEL_NAME = "MingZhong/unieval-sum"
 UNIEVAL_DIMENSIONS = ("coherence", "consistency", "fluency", "relevance")
 
@@ -298,6 +309,158 @@ def huggingface_evaluate(instance: Any, key: str, metric_inputs: list[MetricInpu
     return _compute_generation_reference_scores(metric_inputs, compute_score)
 
 
+def _resolve_bartscore_device(device: str) -> str:
+    """Resolve a concrete torch device string for BARTScore."""
+    if device != DEFAULT_BARTSCORE_DEVICE:
+        return device
+
+    torch = _import_bartscore_torch()
+
+    if torch.cuda.is_available():
+        return "cuda"
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    if mps_backend is not None and mps_backend.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _import_bartscore_torch() -> Any:
+    """Import torch with a metric-specific dependency error message."""
+    try:
+        return importlib.import_module("torch")
+    except ImportError as e:
+        raise ImportError(BARTSCORE_DEPENDENCY_MESSAGE) from e
+
+
+def _import_bartscore_runtime() -> tuple[Any, Any, Any]:
+    """Import BARTScore runtime dependencies with a guided error message."""
+    torch = _import_bartscore_torch()
+    try:
+        transformers = importlib.import_module("transformers")
+    except ImportError as e:
+        raise ImportError(BARTSCORE_DEPENDENCY_MESSAGE) from e
+    return torch, transformers.BartForConditionalGeneration, transformers.BartTokenizer
+
+
+class _BartScoreBackend:
+    """Thin wrapper around a pretrained BART conditional generation model."""
+
+    def __init__(self, checkpoint: str, device: str, max_length: int) -> None:
+        torch, BartForConditionalGeneration, BartTokenizer = _import_bartscore_runtime()
+
+        self._torch = torch
+        self._device = device
+        self._max_length = max_length
+        self._tokenizer = BartTokenizer.from_pretrained(checkpoint)
+        self._model = BartForConditionalGeneration.from_pretrained(checkpoint)
+        self._model.eval()
+        self._model.to(device)
+        self._loss_fct = torch.nn.NLLLoss(reduction="none", ignore_index=self._model.config.pad_token_id)
+        self._log_softmax = torch.nn.LogSoftmax(dim=1)
+
+    def score(self, src_texts: list[str], tgt_texts: list[str], batch_size: int) -> list[float]:
+        """Compute average token log-likelihood scores for paired source/target texts."""
+        scores: list[float] = []
+
+        for batch_start in range(0, len(src_texts), batch_size):
+            batch_src = src_texts[batch_start : batch_start + batch_size]
+            batch_tgt = tgt_texts[batch_start : batch_start + batch_size]
+            with self._torch.no_grad():
+                encoded_src = self._tokenizer(
+                    batch_src,
+                    max_length=self._max_length,
+                    truncation=True,
+                    padding=True,
+                    return_tensors="pt",
+                )
+                encoded_tgt = self._tokenizer(
+                    batch_tgt,
+                    max_length=self._max_length,
+                    truncation=True,
+                    padding=True,
+                    return_tensors="pt",
+                )
+                src_tokens = encoded_src["input_ids"].to(self._device)
+                src_mask = encoded_src["attention_mask"].to(self._device)
+                tgt_tokens = encoded_tgt["input_ids"].to(self._device)
+                tgt_mask = encoded_tgt["attention_mask"].to(self._device)
+                tgt_len = tgt_mask.sum(dim=1).clamp_min(1)
+
+                outputs = self._model(input_ids=src_tokens, attention_mask=src_mask, labels=tgt_tokens)
+                logits = outputs.logits.view(-1, self._model.config.vocab_size)
+                loss = self._loss_fct(self._log_softmax(logits), tgt_tokens.view(-1))
+                loss = loss.view(tgt_tokens.shape[0], -1)
+                loss = loss.sum(dim=1) / tgt_len
+                scores.extend((-loss).tolist())
+
+        return scores
+
+
+@lru_cache(maxsize=4)
+def _get_bartscore_backend(checkpoint: str, device: str, max_length: int) -> _BartScoreBackend:
+    """Cache BARTScore model loading by checkpoint/device/length."""
+    resolved_device = _resolve_bartscore_device(device)
+    return _BartScoreBackend(checkpoint=checkpoint, device=resolved_device, max_length=max_length)
+
+
+def _score_bartscore_pairs(
+    src_texts: list[str],
+    tgt_texts: list[str],
+    checkpoint: str,
+    batch_size: int,
+    max_length: int,
+    device: str,
+) -> list[float]:
+    """Score aligned source/target text pairs with the cached BART backend."""
+    backend = _get_bartscore_backend(checkpoint=checkpoint, device=device, max_length=max_length)
+    return backend.score(src_texts=src_texts, tgt_texts=tgt_texts, batch_size=batch_size)
+
+
+def _join_retrieved_contents(retrieved_contents: list[str]) -> str:
+    """Combine retrieved passages into the single conditioning context used by BARTScore."""
+    return "\n\n".join(content.strip() for content in retrieved_contents)
+
+
+def _score_generation_references_with_bartscore(
+    metric_inputs: list[MetricInput],
+    *,
+    source_from_reference: bool,
+    checkpoint: str,
+    batch_size: int,
+    max_length: int,
+    device: str,
+) -> list[float]:
+    """Compute best-reference BARTScore in either reference→answer or answer→reference direction."""
+    owner_indices: list[int] = []
+    src_texts: list[str] = []
+    tgt_texts: list[str] = []
+
+    for index, metric_input in enumerate(metric_inputs):
+        generated_text = cast(str, metric_input.generated_texts)
+        references = cast(list[str], metric_input.generation_gt)
+        for reference in references:
+            owner_indices.append(index)
+            if source_from_reference:
+                src_texts.append(reference)
+                tgt_texts.append(generated_text)
+            else:
+                src_texts.append(generated_text)
+                tgt_texts.append(reference)
+
+    scores = _score_bartscore_pairs(
+        src_texts=src_texts,
+        tgt_texts=tgt_texts,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+    grouped_scores: list[list[float]] = [[] for _ in metric_inputs]
+    for owner_index, score in zip(owner_indices, scores, strict=True):
+        grouped_scores[owner_index].append(score)
+    return [max(example_scores) for example_scores in grouped_scores]
+
+
 @metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def bleu(
     metric_inputs: list[MetricInput],
@@ -511,6 +674,96 @@ def bert_score(
     del evaluator
 
     return df.groupby(level=0)["bert_score"].max().tolist()
+
+
+@metric_loop(fields_to_check=["retrieved_contents", "generated_texts"])
+def bart_score_faithfulness(
+    metric_inputs: list[MetricInput],
+    checkpoint: str = DEFAULT_BARTSCORE_CHECKPOINT,
+    batch_size: int = DEFAULT_BARTSCORE_BATCH_SIZE,
+    max_length: int = DEFAULT_BARTSCORE_MAX_LENGTH,
+    device: str = DEFAULT_BARTSCORE_DEVICE,
+) -> list[float]:
+    """Compute BARTScore faithfulness using retrieved context → generated answer."""
+    src_texts = [
+        _join_retrieved_contents(cast(list[str], metric_input.retrieved_contents)) for metric_input in metric_inputs
+    ]
+    tgt_texts = [cast(str, metric_input.generated_texts) for metric_input in metric_inputs]
+    return _score_bartscore_pairs(
+        src_texts=src_texts,
+        tgt_texts=tgt_texts,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+
+
+@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+def bart_score_precision(
+    metric_inputs: list[MetricInput],
+    checkpoint: str = DEFAULT_BARTSCORE_CHECKPOINT,
+    batch_size: int = DEFAULT_BARTSCORE_BATCH_SIZE,
+    max_length: int = DEFAULT_BARTSCORE_MAX_LENGTH,
+    device: str = DEFAULT_BARTSCORE_DEVICE,
+) -> list[float]:
+    """Compute BARTScore precision using reference → generated answer."""
+    return _score_generation_references_with_bartscore(
+        metric_inputs,
+        source_from_reference=True,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+
+
+@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+def bart_score_recall(
+    metric_inputs: list[MetricInput],
+    checkpoint: str = DEFAULT_BARTSCORE_CHECKPOINT,
+    batch_size: int = DEFAULT_BARTSCORE_BATCH_SIZE,
+    max_length: int = DEFAULT_BARTSCORE_MAX_LENGTH,
+    device: str = DEFAULT_BARTSCORE_DEVICE,
+) -> list[float]:
+    """Compute BARTScore recall using generated answer → reference."""
+    return _score_generation_references_with_bartscore(
+        metric_inputs,
+        source_from_reference=False,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+
+
+@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+def bart_score_f1(
+    metric_inputs: list[MetricInput],
+    checkpoint: str = DEFAULT_BARTSCORE_CHECKPOINT,
+    batch_size: int = DEFAULT_BARTSCORE_BATCH_SIZE,
+    max_length: int = DEFAULT_BARTSCORE_MAX_LENGTH,
+    device: str = DEFAULT_BARTSCORE_DEVICE,
+) -> list[float]:
+    """Compute the arithmetic mean of BARTScore precision and recall."""
+    precision_scores = bart_score_precision(
+        metric_inputs,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+    recall_scores = bart_score_recall(
+        metric_inputs,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+    return [
+        (precision_score + recall_score) / 2
+        for precision_score, recall_score in zip(precision_scores, recall_scores, strict=True)
+    ]
 
 
 @metric_loop(fields_to_check=["query", "generated_texts"])
@@ -873,3 +1126,74 @@ class BertScoreConfig(BaseGenerationMetricConfig):
             "batch": self.batch,
             "n_threads": self.n_threads,
         }
+
+
+@dataclass
+class _BaseBartScoreConfig(BaseGenerationMetricConfig):
+    """Shared configuration for BARTScore variants."""
+
+    checkpoint: str = DEFAULT_BARTSCORE_CHECKPOINT
+    batch_size: int = DEFAULT_BARTSCORE_BATCH_SIZE
+    device: str = DEFAULT_BARTSCORE_DEVICE
+    max_length: int = DEFAULT_BARTSCORE_MAX_LENGTH
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs shared across BARTScore variants."""
+        return {
+            "checkpoint": self.checkpoint,
+            "batch_size": self.batch_size,
+            "device": self.device,
+            "max_length": self.max_length,
+        }
+
+
+@dataclass
+class BartScoreFaithfulnessConfig(_BaseBartScoreConfig):
+    """Configuration for BARTScore faithfulness (context → answer)."""
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "bart_score_faithfulness"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return bart_score_faithfulness
+
+
+@dataclass
+class BartScorePrecisionConfig(_BaseBartScoreConfig):
+    """Configuration for BARTScore precision (reference → answer)."""
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "bart_score_precision"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return bart_score_precision
+
+
+@dataclass
+class BartScoreRecallConfig(_BaseBartScoreConfig):
+    """Configuration for BARTScore recall (answer → reference)."""
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "bart_score_recall"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return bart_score_recall
+
+
+@dataclass
+class BartScoreF1Config(_BaseBartScoreConfig):
+    """Configuration for BARTScore F1 (mean of precision and recall)."""
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "bart_score_f1"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return bart_score_f1

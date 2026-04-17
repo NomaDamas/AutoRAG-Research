@@ -1,0 +1,28 @@
+# Power of Noise Retrieval Pipeline Configuration
+#
+# Wraps an existing retrieval pipeline and injects seeded random noise
+# documents from the corpus. Useful for paper-style ablations comparing
+# retrieval quality against downstream RAG behavior under noisy context.
+#
+# Parameters:
+#   base_retrieval_pipeline_name: Existing retrieval pipeline to wrap
+#   noise_count: Fixed number of noisy documents to inject (takes precedence over noise_ratio)
+#   noise_ratio: Fraction of final top_k budget reserved for noise when noise_count is 0
+#   noise_order: retrieved_first | noise_first | interleave
+#   noise_mode: random | answer_aware_random
+#   seed: Deterministic sampling seed
+#
+_target_: autorag_research.pipelines.retrieval.power_of_noise.PowerOfNoiseRetrievalPipelineConfig
+description: "Seeded noise-injection wrapper for retrieval ablations"
+name: power_of_noise
+base_retrieval_pipeline_name: vector_search
+noise_count: 2
+noise_ratio: null
+noise_order: retrieved_first
+noise_mode: random
+seed: 42
+top_k: 10
+batch_size: 128
+max_concurrency: 16
+max_retries: 3
+retry_delay: 1.0

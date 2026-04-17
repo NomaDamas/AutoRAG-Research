@@ -64,6 +64,7 @@ Standalone retrieval pipelines. Use them on their own for retrieval-only evaluat
 | [RETRO*](https://openreview.net/pdf?id=0WGl8PNMSA)                               | Rubric-based LLM reranking over retrieved candidates                   | ICLR 26   |
 | [Hybrid RRF](https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf)                | Reciprocal Rank Fusion of two retrieval pipelines                      | -         |
 | [Hybrid CC](https://arxiv.org/pdf/2210.11934)                                    | Convex Combination fusion of two retrieval pipelines                   | -         |
+| [Power of Noise](https://arxiv.org/abs/2401.14887)                             | Base retriever + seeded random noise wrapper                          | SIGIR 24  |
 
 ### 2. Generation Pipeline
 
@@ -81,7 +82,7 @@ These pipelines handle retrieval and generation together as a single algorithm. 
 
 **Retrieval** — Set-based: Recall, Precision, F1 / Rank-aware: nDCG, MRR, MAP
 
-**Generation** — N-gram based: BLEU, METEOR, ROUGE / Embedding based: BERTScore, SemScore
+**Generation** — N-gram based: BLEU, METEOR, ROUGE / Semantic: BERTScore, BARTScore, SemScore
 
 > **Missing something?** [Open an issue](https://github.com/vkehfdl1/AutoRAG-Research/issues) and we will implement it. Or check our [Plugin](https://nomadamas.github.io/AutoRAG-Research/plugins/) guide.
 
@@ -123,6 +124,16 @@ uv add autorag-research
 
 # or pip
 pip install autorag-research
+```
+
+For local transformer-backed metrics such as BARTScore, install the optional runtime dependencies:
+
+```bash
+# uv (recommended)
+uv add "autorag-research[gpu]"
+
+# or pip
+pip install "autorag-research[gpu]"
 ```
 
 3. Set up PostgreSQL with VectorChord (Docker recommended):

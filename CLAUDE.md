@@ -131,6 +131,7 @@ Detailed patterns and examples are in `/ai_instructions/` (and schema DDL in `po
 - `test_code_generation_instructions.md` - Testing conventions
 - `utility_reference.md` - **MANDATORY** utility & service method catalog (read before implementing)
 - `pipeline_checklist.md` - **MANDATORY** pipeline completion checklist (verify before merging any pipeline PR)
+- `metric_implementation.md` - **MANDATORY** checklist for adding new evaluation metrics (Config, YAML, exports, tests)
 
 ## Strict Rules to follow
 

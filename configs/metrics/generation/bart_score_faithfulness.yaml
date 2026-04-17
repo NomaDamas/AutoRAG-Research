@@ -1,0 +1,6 @@
+_target_: autorag_research.evaluation.metrics.generation.BartScoreFaithfulnessConfig
+description: "BARTScore faithfulness - retrieved context to generated answer"
+checkpoint: facebook/bart-large-cnn
+batch_size: 4
+max_length: 1024
+device: auto
