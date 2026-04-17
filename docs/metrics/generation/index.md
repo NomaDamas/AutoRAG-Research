@@ -10,6 +10,7 @@ Metrics for evaluating text generation quality.
 | [METEOR](meteor.md) | Alignment | Better for paraphrases |
 | [ROUGE](rouge.md) | N-gram recall | Summarization |
 | [BERTScore](bert-score.md) | Semantic similarity | Meaning preservation |
+| [BARTScore](bart-score.md) | Directional conditional likelihood | Faithfulness / precision / recall |
 | [SemScore](sem-score.md) | Embedding similarity | Semantic correctness |
 | [Response Relevancy](response-relevancy.md) | Question-answer alignment | RAGAS-style relevance checks |
 

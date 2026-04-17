@@ -1,0 +1,6 @@
+_target_: autorag_research.evaluation.metrics.generation.BartScoreRecallConfig
+description: "BARTScore recall - generated answer to reference"
+checkpoint: facebook/bart-large-cnn
+batch_size: 4
+max_length: 1024
+device: auto

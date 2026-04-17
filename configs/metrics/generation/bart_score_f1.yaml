@@ -1,0 +1,6 @@
+_target_: autorag_research.evaluation.metrics.generation.BartScoreF1Config
+description: "BARTScore F1 - mean of precision and recall"
+checkpoint: facebook/bart-large-cnn
+batch_size: 4
+max_length: 1024
+device: auto
