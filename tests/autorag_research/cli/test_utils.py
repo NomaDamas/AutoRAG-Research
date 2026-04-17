@@ -139,6 +139,7 @@ class TestDiscoverPipelines:
         result = discover_pipelines("generation")
 
         assert "basic_rag" in result
+        assert "rag_critic" in result
 
 
 class TestDiscoverMetrics:

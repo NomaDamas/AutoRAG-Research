@@ -12,6 +12,7 @@ from autorag_research.pipelines.generation.question_decomposition import (
     QuestionDecompositionPipeline,
     QuestionDecompositionPipelineConfig,
 )
+from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline, RAGCriticPipelineConfig
 from autorag_research.pipelines.generation.self_rag import SelfRAGPipeline, SelfRAGPipelineConfig
 from autorag_research.pipelines.generation.spd_rag import SPDRAGPipeline, SPDRAGPipelineConfig
 from autorag_research.pipelines.generation.visrag_gen import (
@@ -34,6 +35,8 @@ __all__ = [
     "OrganizationStrategy",
     "QuestionDecompositionPipeline",
     "QuestionDecompositionPipelineConfig",
+    "RAGCriticPipeline",
+    "RAGCriticPipelineConfig",
     "SPDRAGPipeline",
     "SPDRAGPipelineConfig",
     "SelfRAGPipeline",

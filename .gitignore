@@ -212,3 +212,4 @@ __marimo__/
 
 postgresql/pgdata/
 dump_files/
+.omx/

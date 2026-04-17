@@ -1,0 +1,9 @@
+# Public RAG-Critic checkpoint served through a local vLLM OpenAI-compatible endpoint.
+# Weights: https://huggingface.co/dongguanting/RAG-Critic-3B
+# Example:
+#   vllm serve dongguanting/RAG-Critic-3B --port 8000
+_target_: langchain_openai.ChatOpenAI
+model: ${oc.env:RAG_CRITIC_VLLM_MODEL_NAME,dongguanting/RAG-Critic-3B}
+base_url: ${oc.env:RAG_CRITIC_VLLM_API_BASE,${oc.env:VLLM_API_BASE,http://localhost:8000/v1}}
+api_key: ${oc.env:RAG_CRITIC_VLLM_API_KEY,${oc.env:VLLM_API_KEY,token-abc123}}
+temperature: 0
