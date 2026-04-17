@@ -32,7 +32,8 @@ Spawn `pipeline-implementer` agent.
 
 ### Phase 5: Validation (HUMAN CHECKPOINT)
 Spawn `pipeline-validator` agent.
-- **Output:** Validation report (test results + `make check` results)
+- **Verify against:** `ai_instructions/pipeline_checklist.md` (all sections must pass)
+- **Output:** Validation report (test results + `make check` results + checklist status)
 - **Present results to the user. Wait for approval before committing.**
 
 ### Phase 6: Wrap Up
