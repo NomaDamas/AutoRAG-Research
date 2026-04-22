@@ -22,6 +22,10 @@ from autorag_research.pipelines.retrieval.query_rewrite import (
     QueryRewritePipelineConfig,
     QueryRewriteRetrievalPipeline,
 )
+from autorag_research.pipelines.retrieval.question_decomposition import (
+    QuestionDecompositionRetrievalPipeline,
+    QuestionDecompositionRetrievalPipelineConfig,
+)
 from autorag_research.pipelines.retrieval.retro_star import (
     RetroStarPipelineConfig,
     RetroStarRetrievalPipeline,
@@ -47,6 +51,8 @@ __all__ = [
     "PowerOfNoiseRetrievalPipelineConfig",
     "QueryRewritePipelineConfig",
     "QueryRewriteRetrievalPipeline",
+    "QuestionDecompositionRetrievalPipeline",
+    "QuestionDecompositionRetrievalPipelineConfig",
     "RetroStarPipelineConfig",
     "RetroStarRetrievalPipeline",
     "VectorSearchPipelineConfig",
