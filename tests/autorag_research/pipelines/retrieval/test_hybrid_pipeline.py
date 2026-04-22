@@ -581,6 +581,57 @@ class TestHybridRRFRetrievalPipeline:
             assert pipeline._retrieval_pipeline_1 == mock_pipeline_1
             assert pipeline._retrieval_pipeline_2 == mock_pipeline_2
 
+    def test_load_pipeline_resolves_nested_query_rewrite_dependencies(self, session_factory: sessionmaker[Session]):
+        """Test named loading resolves nested QueryRewrite retrieval dependencies."""
+        from pathlib import Path
+
+        from autorag_research.pipelines.retrieval.bm25 import BM25PipelineConfig
+        from autorag_research.pipelines.retrieval.query_rewrite import QueryRewritePipelineConfig
+        from tests.autorag_research.pipelines.pipeline_test_utils import create_mock_llm
+
+        query_rewrite_config = QueryRewritePipelineConfig(
+            name="query_rewrite",
+            llm=create_mock_llm(),
+            retrieval_pipeline_name="bm25",
+        )
+        wrapped_config = BM25PipelineConfig(name="bm25", tokenizer="bert")
+
+        class DummyWrappedPipeline:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.pipeline_id = 321
+
+        class DummyQueryRewritePipeline:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.pipeline_id = 999
+
+        query_rewrite_config.get_pipeline_class = lambda: DummyQueryRewritePipeline
+        wrapped_config.get_pipeline_class = lambda: DummyWrappedPipeline
+
+        dependency_configs = {
+            "query_rewrite": query_rewrite_config,
+            "bm25": wrapped_config,
+        }
+
+        def resolve_config(_dirs: list[str | Path], name: str):
+            return dependency_configs[name]
+
+        with (
+            patch("autorag_research.cli.config_resolver.ConfigResolver.resolve_config", side_effect=resolve_config),
+            patch("autorag_research.pipelines.retrieval.loader.instantiate", side_effect=lambda cfg: cfg),
+        ):
+            pipeline = HybridRRFRetrievalPipeline._load_pipeline(
+                "query_rewrite",
+                session_factory,
+                None,
+                Path("configs"),
+            )
+
+        assert isinstance(pipeline, DummyQueryRewritePipeline)
+        assert isinstance(pipeline.kwargs["retrieval_pipeline"], DummyWrappedPipeline)
+        assert pipeline.kwargs["retrieval_pipeline"].kwargs["name"] == "bm25"
+
 
 class TestHybridCCRetrievalPipeline:
     """Tests for HybridCCRetrievalPipeline."""

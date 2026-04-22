@@ -1,0 +1,35 @@
+# RETRO* Retrieval Pipeline Configuration
+#
+# Wraps an existing retrieval pipeline, then reranks its candidates with
+# rubric-based LLM scoring inspired by Retro* (ICLR 2026).
+#
+# Parameters:
+#   llm: LLM config name from configs/llm/ (e.g., "mock", "openai-gpt5-mini")
+#   retrieval_pipeline_name: Existing retrieval pipeline config name to wrap
+#   candidate_top_k: Number of wrapped candidates to rerank before truncating
+#   relevance_definition: Task-specific relevance definition for the rubric
+#   num_samples: Number of reasoning trajectories per query-document pair
+#   sample_weights: Optional score-integration weights (same length as num_samples)
+#   max_document_tokens: Max candidate document tokens to include in the prompt
+#
+_target_: autorag_research.pipelines.retrieval.retro_star.RetroStarPipelineConfig
+description: "RETRO*-style rubric-based LLM reranking over wrapped retrieval candidates"
+name: retro_star
+llm: mock
+retrieval_pipeline_name: bm25
+candidate_top_k: 100
+relevance_definition: >
+  A document is relevant when it helps answer the query, including evidence
+  that is indirect but still necessary for the required reasoning.
+query_type: query
+document_type: document
+num_samples: 1
+sample_weights: null
+max_document_tokens: 768
+max_query_tokens: 256
+max_rerank_concurrency: 4
+top_k: 10
+batch_size: 128
+max_concurrency: 16
+max_retries: 3
+retry_delay: 1.0

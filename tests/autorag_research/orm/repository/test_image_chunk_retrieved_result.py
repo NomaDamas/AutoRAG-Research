@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from autorag_research.orm.repository.image_chunk_retrieved_result import ImageChunkRetrievedResultRepository
-from autorag_research.orm.schema import ImageChunkRetrievedResult
+from autorag_research.orm.schema import ImageChunk, ImageChunkRetrievedResult, Pipeline, Query
 
 
 @pytest.fixture
@@ -59,9 +59,34 @@ def test_bulk_insert(
     image_chunk_retrieved_result_repository: ImageChunkRetrievedResultRepository,
     db_session: Session,
 ):
+    test_queries = [Query(contents="bulk insert query 1"), Query(contents="bulk insert query 2")]
+    test_pipeline = Pipeline(name="bulk_insert_pipeline", config={"type": "test"})
+    test_image_chunks = [
+        ImageChunk(contents=b"chunk-1", mimetype="image/png"),
+        ImageChunk(contents=b"chunk-2", mimetype="image/png"),
+    ]
+    db_session.add_all([*test_queries, test_pipeline, *test_image_chunks])
+    db_session.flush()
+
+    query_ids = [query.id for query in test_queries]
+    pipeline_id = test_pipeline.id
+    inserted_keys = {
+        (query_ids[0], pipeline_id, test_image_chunks[0].id),
+        (query_ids[1], pipeline_id, test_image_chunks[1].id),
+    }
     results_to_insert = [
-        {"query_id": 4, "pipeline_id": 2, "image_chunk_id": 1, "rel_score": 0.75},
-        {"query_id": 2, "pipeline_id": 2, "image_chunk_id": 2, "rel_score": 0.65},
+        {
+            "query_id": query_ids[0],
+            "pipeline_id": pipeline_id,
+            "image_chunk_id": test_image_chunks[0].id,
+            "rel_score": 0.75,
+        },
+        {
+            "query_id": query_ids[1],
+            "pipeline_id": pipeline_id,
+            "image_chunk_id": test_image_chunks[1].id,
+            "rel_score": 0.65,
+        },
     ]
 
     inserted_count = image_chunk_retrieved_result_repository.bulk_insert(results_to_insert)
@@ -69,10 +94,19 @@ def test_bulk_insert(
 
     assert inserted_count == 2
 
-    results = image_chunk_retrieved_result_repository.get_by_query_and_pipeline([2, 4], 2)
-    assert len(results) == 3
+    results = image_chunk_retrieved_result_repository.get_by_query_and_pipeline(query_ids, pipeline_id)
+    result_keys = {(result.query_id, result.pipeline_id, result.image_chunk_id) for result in results}
+
+    assert len(results) == len(inserted_keys)
+    assert result_keys == inserted_keys
 
     # Cleanup
-    image_chunk_retrieved_result_repository.delete_by_query_and_pipeline(4, 2)
-    image_chunk_retrieved_result_repository.delete_by_query_and_pipeline(2, 2)
+    for result in results:
+        if (result.query_id, result.pipeline_id, result.image_chunk_id) in inserted_keys:
+            db_session.delete(result)
+    for image_chunk in test_image_chunks:
+        db_session.delete(image_chunk)
+    db_session.delete(test_pipeline)
+    for query in test_queries:
+        db_session.delete(query)
     db_session.commit()

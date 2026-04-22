@@ -1,0 +1,61 @@
+# Self-RAG Generation Pipeline Configuration
+#
+# Prompt-based approximation of Self-RAG for AutoRAG-Research.
+# The pipeline drafts an answer, reflects on whether retrieval is needed,
+# retrieves evidence only when required, and revises the answer until it is
+# supported or the reflection budget is exhausted.
+#
+# This is not the original fine-tuned reflection-token model.
+
+_target_: autorag_research.pipelines.generation.self_rag.SelfRAGPipelineConfig
+description: "Self-RAG: prompt-based self-reflective generation"
+name: self_rag
+retrieval_pipeline_name: bm25
+llm: gpt-4o-mini
+max_reflection_steps: 3
+top_k: 4
+batch_size: 10
+initial_prompt_template: |
+  You are answering a question without external evidence.
+
+  Question: {query}
+
+  Provide your best concise answer. If you are uncertain, answer briefly and leave room for later revision.
+
+  Answer:
+reflection_prompt_template: |
+  You are a Self-RAG controller deciding whether an answer needs retrieval or revision.
+
+  Question: {query}
+
+  Current Answer:
+  {answer}
+
+  Retrieved Context:
+  {context}
+
+  Critique History:
+  {critique_history}
+
+  Respond as JSON with this schema:
+  {
+    "should_retrieve": true or false,
+    "is_supported": true or false,
+    "follow_up_query": "optional refined retrieval query",
+    "critique": "short critique of the current answer"
+  }
+revision_prompt_template: |
+  Revise the answer so it is grounded in the retrieved context.
+
+  Question: {query}
+
+  Current Answer:
+  {answer}
+
+  Retrieved Context:
+  {context}
+
+  Critique:
+  {critique}
+
+  Return only the revised answer.

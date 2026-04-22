@@ -37,6 +37,10 @@ The validation report should include:
 - Whether the work is ready for commit
 - Concrete issues to fix if validation fails
 
+## Checklist
+
+Verify every item in `ai_instructions/pipeline_checklist.md` and report the status of each section in the validation report.
+
 ## Rules
 
 - Run real commands rather than inspecting files only.

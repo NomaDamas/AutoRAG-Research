@@ -9,5 +9,6 @@ Text-based benchmarks for retrieval and RAG evaluation.
 | [BEIR](beir.md) | Heterogeneous information retrieval | No |
 | [MTEB](mteb.md) | Massive Text Embedding Benchmark | No |
 | [RAGBench](ragbench.md) | RAG evaluation benchmark | Yes |
+| [CRAG](crag.md) | Comprehensive RAG Benchmark with search-result context | Yes |
 | [MrTyDi](mrtydi.md) | Multilingual retrieval | No |
 | [BRIGHT](bright.md) | Reasoning-intensive retrieval | No |

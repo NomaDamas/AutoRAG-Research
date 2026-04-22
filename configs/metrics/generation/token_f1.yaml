@@ -1,0 +1,2 @@
+_target_: autorag_research.evaluation.metrics.generation.TokenF1Config
+description: "Token F1 - SQuAD-style bag-of-tokens answer overlap"

@@ -1,0 +1,6 @@
+_target_: autorag_research.evaluation.metrics.generation.BartScorePrecisionConfig
+description: "BARTScore precision - reference to generated answer"
+checkpoint: facebook/bart-large-cnn
+batch_size: 4
+max_length: 1024
+device: auto

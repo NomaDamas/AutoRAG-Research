@@ -8,6 +8,7 @@ Algorithms that take a query and retrieved documents to generate an answer.
 |----------|-----------|
 | [BasicRAG](basic-rag.md) | Single retrieve + generate |
 | [IRCoT](ircot.md) | Iterative retrieve + chain-of-thought reasoning |
+| [SelfRAG](self-rag.md) | Draft, critique, retrieve, and revise adaptively |
 
 ## Base Class
 

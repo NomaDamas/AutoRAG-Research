@@ -1,10 +1,13 @@
+import importlib
 import json
 import logging
 import os
 import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from langchain_core.embeddings import Embeddings
@@ -19,11 +22,12 @@ from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
 
 from autorag_research.config import BaseGenerationMetricConfig
+from autorag_research.evaluation.metrics.unieval import UniEvalScorer, get_unieval_scorer
 from autorag_research.evaluation.metrics.util import calculate_cosine_similarity, metric_loop
 from autorag_research.exceptions import EmbeddingError
 from autorag_research.injection import with_embedding, with_llm
 from autorag_research.schema import MetricInput
-from autorag_research.util import convert_inputs_to_list, truncate_texts, unpack_and_run
+from autorag_research.util import convert_inputs_to_list, normalize_string, truncate_texts, unpack_and_run
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -55,6 +59,66 @@ Input:
 """
 
 _JSON_BLOCK_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
+DEFAULT_BARTSCORE_CHECKPOINT = "facebook/bart-large-cnn"
+DEFAULT_BARTSCORE_BATCH_SIZE = 4
+DEFAULT_BARTSCORE_DEVICE = "auto"
+DEFAULT_BARTSCORE_MAX_LENGTH = 1024
+BARTSCORE_DEPENDENCY_MESSAGE = (
+    "BARTScore requires the optional `torch` and `transformers` dependencies. "
+    "Install them with `pip install 'autorag-research[gpu]'` or run "
+    "`uv sync --all-extras --all-groups` in a development checkout."
+)
+UNIEVAL_MODEL_NAME = "MingZhong/unieval-sum"
+UNIEVAL_DIMENSIONS = ("coherence", "consistency", "fluency", "relevance")
+
+
+def _get_normalized_tokens(text: str) -> list[str]:
+    """Normalize text with SQuAD rules and split into tokens."""
+    return normalize_string(text).split()
+
+
+def _score_generation_against_references(
+    prediction: str,
+    references: list[str],
+    scorer: Callable[[str, str], float],
+) -> float:
+    """Return the best score for a prediction across all references."""
+    return max(scorer(prediction, reference) for reference in references)
+
+
+def _compute_generation_reference_scores(
+    metric_inputs: list[MetricInput],
+    scorer: Callable[[str, str], float],
+) -> list[float]:
+    """Compute best-reference scores for generation metric inputs."""
+    scores = []
+    for metric_input in metric_inputs:
+        generated_text = cast(str, metric_input.generated_texts)
+        generation_gt = cast(list[str], metric_input.generation_gt)
+        scores.append(_score_generation_against_references(generated_text, generation_gt, scorer))
+    return scores
+
+
+def _exact_match_score(prediction: str, reference: str) -> float:
+    """Return binary exact match after SQuAD-style normalization."""
+    return float(normalize_string(prediction) == normalize_string(reference))
+
+
+def _token_f1_score(prediction: str, reference: str) -> float:
+    """Compute SQuAD-style token F1 for one prediction/reference pair."""
+    prediction_tokens = _get_normalized_tokens(prediction)
+    reference_tokens = _get_normalized_tokens(reference)
+
+    if not prediction_tokens or not reference_tokens:
+        return float(prediction_tokens == reference_tokens)
+
+    overlap = sum((Counter(prediction_tokens) & Counter(reference_tokens)).values())
+    if overlap == 0:
+        return 0.0
+
+    precision = overlap / len(prediction_tokens)
+    recall = overlap / len(reference_tokens)
+    return float((2 * precision * recall) / (precision + recall))
 
 
 def _extract_llm_text(response: Any) -> str:
@@ -124,6 +188,107 @@ def _calculate_response_relevancy_score(
     return float(cosine_sim.mean() * int(not all_noncommittal))
 
 
+def _validate_unieval_dimension(dimension: str) -> str:
+    """Validate and normalize UniEval dimension name."""
+    normalized = dimension.strip().lower()
+    if normalized not in UNIEVAL_DIMENSIONS:
+        msg = f"Unsupported UniEval dimension: {dimension}"
+        raise ValueError(msg)
+    return normalized
+
+
+def _split_unieval_sentences(text: str) -> list[str]:
+    """Split text into sentences with a regex fallback when punkt data is unavailable."""
+    try:
+        sentences = [sentence.strip() for sentence in nltk.sent_tokenize(text) if sentence.strip()]
+    except LookupError:
+        sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", text) if sentence.strip()]
+    return sentences or [text.strip()]
+
+
+def _build_unieval_prompt(
+    *,
+    dimension: str,
+    generated_text: str,
+    document: str | None = None,
+    reference: str | None = None,
+) -> str:
+    """Build the Bool-QA prompt for a UniEval dimension.
+
+    These strings intentionally mirror UniEval's published `add_question`
+    summarization prompts, including the `</s>` separators.
+    """
+    if dimension == "fluency":
+        return f"question: Is this a fluent paragraph? </s> paragraph: {generated_text}"
+    if dimension == "coherence":
+        return (
+            "question: Is this a coherent summary to the document? "
+            f"</s> summary: {generated_text} </s> document: {document}"
+        )
+    if dimension == "consistency":
+        return (
+            "question: Is this claim consistent with the document? "
+            f"</s> claim: {generated_text} </s> document: {document}"
+        )
+    return (
+        "question: Is this summary relevant to the reference? "
+        f"</s> summary: {generated_text} </s> reference: {reference}"
+    )
+
+
+def _build_unieval_document(retrieved_contents: list[str]) -> str:
+    """Join retrieved passages into the document field used by UniEval summarization prompts."""
+    return " ".join(content.strip() for content in retrieved_contents)
+
+
+def _prepare_unieval_references(references: list[str]) -> list[str]:
+    """Normalize available references for UniEval relevance scoring."""
+    return [reference.strip() for reference in references if reference.strip()]
+
+
+def _prepare_unieval_prompts(
+    metric_input: MetricInput,
+    dimension: str,
+    sentence_level_dimensions: set[str],
+) -> list[str]:
+    """Build UniEval prompts for a single metric input."""
+    generated_text = cast(str, metric_input.generated_texts).strip()
+    if dimension == "relevance":
+        return [
+            _build_unieval_prompt(
+                dimension=dimension,
+                generated_text=generated_text,
+                reference=reference,
+            )
+            for reference in _prepare_unieval_references(cast(list[str], metric_input.generation_gt))
+        ]
+
+    document = None
+    if dimension in {"coherence", "consistency"}:
+        document = _build_unieval_document(cast(list[str], metric_input.retrieved_contents))
+
+    text_units = (
+        _split_unieval_sentences(generated_text) if dimension in sentence_level_dimensions else [generated_text]
+    )
+    return [
+        _build_unieval_prompt(
+            dimension=dimension,
+            generated_text=text_unit,
+            document=document,
+        )
+        for text_unit in text_units
+    ]
+
+
+def _aggregate_unieval_scores(dimension: str, scores: list[float]) -> float:
+    """Aggregate prompt-level UniEval scores back to one sample-level score."""
+    if dimension in {"fluency", "consistency"}:
+        return float(sum(scores) / len(scores))
+    if dimension == "relevance":
+        return max(scores)
+    return scores[0]
+
+
 @convert_inputs_to_list
 def huggingface_evaluate(instance: Any, key: str, metric_inputs: list[MetricInput], **kwargs: Any) -> list[float]:
     """Compute huggingface evaluate metric.
@@ -138,11 +303,162 @@ def huggingface_evaluate(instance: Any, key: str, metric_inputs: list[MetricInpu
         The list of scores.
     """
 
-    def compute_score(gt: list[str], pred: str) -> float:
-        return max([instance.compute(predictions=[pred], references=[x], **kwargs)[key] for x in gt])
+    def compute_score(prediction: str, reference: str) -> float:
+        return instance.compute(predictions=[prediction], references=[reference], **kwargs)[key]
 
-    result = [compute_score(x.generation_gt, x.generated_texts) for x in metric_inputs]  # ty: ignore
-    return result
+    return _compute_generation_reference_scores(metric_inputs, compute_score)
+
+
+def _resolve_bartscore_device(device: str) -> str:
+    """Resolve a concrete torch device string for BARTScore."""
+    if device != DEFAULT_BARTSCORE_DEVICE:
+        return device
+
+    torch = _import_bartscore_torch()
+
+    if torch.cuda.is_available():
+        return "cuda"
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    if mps_backend is not None and mps_backend.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _import_bartscore_torch() -> Any:
+    """Import torch with a metric-specific dependency error message."""
+    try:
+        return importlib.import_module("torch")
+    except ImportError as e:
+        raise ImportError(BARTSCORE_DEPENDENCY_MESSAGE) from e
+
+
+def _import_bartscore_runtime() -> tuple[Any, Any, Any]:
+    """Import BARTScore runtime dependencies with a guided error message."""
+    torch = _import_bartscore_torch()
+    try:
+        transformers = importlib.import_module("transformers")
+    except ImportError as e:
+        raise ImportError(BARTSCORE_DEPENDENCY_MESSAGE) from e
+    return torch, transformers.BartForConditionalGeneration, transformers.BartTokenizer
+
+
+class _BartScoreBackend:
+    """Thin wrapper around a pretrained BART conditional generation model."""
+
+    def __init__(self, checkpoint: str, device: str, max_length: int) -> None:
+        torch, BartForConditionalGeneration, BartTokenizer = _import_bartscore_runtime()
+
+        self._torch = torch
+        self._device = device
+        self._max_length = max_length
+        self._tokenizer = BartTokenizer.from_pretrained(checkpoint)
+        self._model = BartForConditionalGeneration.from_pretrained(checkpoint)
+        self._model.eval()
+        self._model.to(device)
+        self._loss_fct = torch.nn.NLLLoss(reduction="none", ignore_index=self._model.config.pad_token_id)
+        self._log_softmax = torch.nn.LogSoftmax(dim=1)
+
+    def score(self, src_texts: list[str], tgt_texts: list[str], batch_size: int) -> list[float]:
+        """Compute average token log-likelihood scores for paired source/target texts."""
+        scores: list[float] = []
+
+        for batch_start in range(0, len(src_texts), batch_size):
+            batch_src = src_texts[batch_start : batch_start + batch_size]
+            batch_tgt = tgt_texts[batch_start : batch_start + batch_size]
+            with self._torch.no_grad():
+                encoded_src = self._tokenizer(
+                    batch_src,
+                    max_length=self._max_length,
+                    truncation=True,
+                    padding=True,
+                    return_tensors="pt",
+                )
+                encoded_tgt = self._tokenizer(
+                    batch_tgt,
+                    max_length=self._max_length,
+                    truncation=True,
+                    padding=True,
+                    return_tensors="pt",
+                )
+                src_tokens = encoded_src["input_ids"].to(self._device)
+                src_mask = encoded_src["attention_mask"].to(self._device)
+                tgt_tokens = encoded_tgt["input_ids"].to(self._device)
+                tgt_mask = encoded_tgt["attention_mask"].to(self._device)
+                tgt_len = tgt_mask.sum(dim=1).clamp_min(1)
+
+                outputs = self._model(input_ids=src_tokens, attention_mask=src_mask, labels=tgt_tokens)
+                logits = outputs.logits.view(-1, self._model.config.vocab_size)
+                loss = self._loss_fct(self._log_softmax(logits), tgt_tokens.view(-1))
+                loss = loss.view(tgt_tokens.shape[0], -1)
+                loss = loss.sum(dim=1) / tgt_len
+                scores.extend((-loss).tolist())
+
+        return scores
+
+
+@lru_cache(maxsize=4)
+def _get_bartscore_backend(checkpoint: str, device: str, max_length: int) -> _BartScoreBackend:
+    """Cache BARTScore model loading by checkpoint/device/length."""
+    resolved_device = _resolve_bartscore_device(device)
+    return _BartScoreBackend(checkpoint=checkpoint, device=resolved_device, max_length=max_length)
+
+
+def _score_bartscore_pairs(
+    src_texts: list[str],
+    tgt_texts: list[str],
+    checkpoint: str,
+    batch_size: int,
+    max_length: int,
+    device: str,
+) -> list[float]:
+    """Score aligned source/target text pairs with the cached BART backend."""
+    backend = _get_bartscore_backend(checkpoint=checkpoint, device=device, max_length=max_length)
+    return backend.score(src_texts=src_texts, tgt_texts=tgt_texts, batch_size=batch_size)
+
+
+def _join_retrieved_contents(retrieved_contents: list[str]) -> str:
+    """Combine retrieved passages into the single conditioning context used by BARTScore."""
+    return "\n\n".join(content.strip() for content in retrieved_contents)
+
+
+def _score_generation_references_with_bartscore(
+    metric_inputs: list[MetricInput],
+    *,
+    source_from_reference: bool,
+    checkpoint: str,
+    batch_size: int,
+    max_length: int,
+    device: str,
+) -> list[float]:
+    """Compute best-reference BARTScore in either reference→answer or answer→reference direction."""
+    owner_indices: list[int] = []
+    src_texts: list[str] = []
+    tgt_texts: list[str] = []
+
+    for index, metric_input in enumerate(metric_inputs):
+        generated_text = cast(str, metric_input.generated_texts)
+        references = cast(list[str], metric_input.generation_gt)
+        for reference in references:
+            owner_indices.append(index)
+            if source_from_reference:
+                src_texts.append(reference)
+                tgt_texts.append(generated_text)
+            else:
+                src_texts.append(generated_text)
+                tgt_texts.append(reference)
+
+    scores = _score_bartscore_pairs(
+        src_texts=src_texts,
+        tgt_texts=tgt_texts,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+    grouped_scores: list[list[float]] = [[] for _ in metric_inputs]
+    for owner_index, score in zip(owner_indices, scores, strict=True):
+        grouped_scores[owner_index].append(score)
+    return [max(example_scores) for example_scores in grouped_scores]
 
 
 @metric_loop(fields_to_check=["generation_gt", "generated_texts"])
@@ -262,6 +578,18 @@ def rouge(
 
 
 @metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+def exact_match(metric_inputs: list[MetricInput]) -> list[float]:
+    """Compute SQuAD-style exact match for generation."""
+    return _compute_generation_reference_scores(metric_inputs, _exact_match_score)
+
+
+@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+def token_f1(metric_inputs: list[MetricInput]) -> list[float]:
+    """Compute SQuAD-style token F1 for generation."""
+    return _compute_generation_reference_scores(metric_inputs, _token_f1_score)
+
+
+@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 @with_embedding()
 def sem_score(
     metric_inputs: list[MetricInput],
@@ -348,6 +676,96 @@ def bert_score(
     return df.groupby(level=0)["bert_score"].max().tolist()
 
 
+@metric_loop(fields_to_check=["retrieved_contents", "generated_texts"])
+def bart_score_faithfulness(
+    metric_inputs: list[MetricInput],
+    checkpoint: str = DEFAULT_BARTSCORE_CHECKPOINT,
+    batch_size: int = DEFAULT_BARTSCORE_BATCH_SIZE,
+    max_length: int = DEFAULT_BARTSCORE_MAX_LENGTH,
+    device: str = DEFAULT_BARTSCORE_DEVICE,
+) -> list[float]:
+    """Compute BARTScore faithfulness using retrieved context → generated answer."""
+    src_texts = [
+        _join_retrieved_contents(cast(list[str], metric_input.retrieved_contents)) for metric_input in metric_inputs
+    ]
+    tgt_texts = [cast(str, metric_input.generated_texts) for metric_input in metric_inputs]
+    return _score_bartscore_pairs(
+        src_texts=src_texts,
+        tgt_texts=tgt_texts,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+
+
+@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+def bart_score_precision(
+    metric_inputs: list[MetricInput],
+    checkpoint: str = DEFAULT_BARTSCORE_CHECKPOINT,
+    batch_size: int = DEFAULT_BARTSCORE_BATCH_SIZE,
+    max_length: int = DEFAULT_BARTSCORE_MAX_LENGTH,
+    device: str = DEFAULT_BARTSCORE_DEVICE,
+) -> list[float]:
+    """Compute BARTScore precision using reference → generated answer."""
+    return _score_generation_references_with_bartscore(
+        metric_inputs,
+        source_from_reference=True,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+
+
+@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+def bart_score_recall(
+    metric_inputs: list[MetricInput],
+    checkpoint: str = DEFAULT_BARTSCORE_CHECKPOINT,
+    batch_size: int = DEFAULT_BARTSCORE_BATCH_SIZE,
+    max_length: int = DEFAULT_BARTSCORE_MAX_LENGTH,
+    device: str = DEFAULT_BARTSCORE_DEVICE,
+) -> list[float]:
+    """Compute BARTScore recall using generated answer → reference."""
+    return _score_generation_references_with_bartscore(
+        metric_inputs,
+        source_from_reference=False,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+
+
+@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+def bart_score_f1(
+    metric_inputs: list[MetricInput],
+    checkpoint: str = DEFAULT_BARTSCORE_CHECKPOINT,
+    batch_size: int = DEFAULT_BARTSCORE_BATCH_SIZE,
+    max_length: int = DEFAULT_BARTSCORE_MAX_LENGTH,
+    device: str = DEFAULT_BARTSCORE_DEVICE,
+) -> list[float]:
+    """Compute the arithmetic mean of BARTScore precision and recall."""
+    precision_scores = bart_score_precision(
+        metric_inputs,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+    recall_scores = bart_score_recall(
+        metric_inputs,
+        checkpoint=checkpoint,
+        batch_size=batch_size,
+        max_length=max_length,
+        device=device,
+    )
+    return [
+        (precision_score + recall_score) / 2
+        for precision_score, recall_score in zip(precision_scores, recall_scores, strict=True)
+    ]
+
+
 @metric_loop(fields_to_check=["query", "generated_texts"])
 @with_embedding()
 @with_llm()
@@ -401,6 +819,81 @@ def response_relevancy(
             )
         )
     return scores
+
+
+@convert_inputs_to_list
+def unieval(
+    metric_inputs: list[MetricInput],
+    dimension: str,
+    model_name_or_path: str = UNIEVAL_MODEL_NAME,
+    batch_size: int = 8,
+    max_length: int = 1024,
+    device: str = "cpu",
+    cache_dir: str | None = None,
+    scorer: UniEvalScorer | None = None,
+) -> list[float | None]:
+    """Compute one UniEval dimension using the shared summarization checkpoint.
+
+    The implementation follows the official UniEval summarization Bool-QA contract:
+    - fluency: generated text only, averaged per sentence
+    - coherence: retrieved source context + generated text, scored per sample
+    - consistency: retrieved source context + generated text, averaged per sentence
+    - relevance: reference + generated text, scored per sample
+
+    Consistency intentionally skips samples with missing retrieved context instead of
+    silently falling back to hidden ground truth, keeping the metric faithful to the
+    actual evidence available to the generation pipeline. Relevance keeps the official
+    single-reference prompt contract, but evaluates every available reference and keeps
+    the best score so multi-reference inputs stay order-independent.
+    """
+    normalized_dimension = _validate_unieval_dimension(dimension)
+    field_map = {
+        "fluency": ["generated_texts"],
+        "coherence": ["generated_texts", "retrieved_contents"],
+        "consistency": ["generated_texts", "retrieved_contents"],
+        "relevance": ["generated_texts", "generation_gt"],
+    }
+    sentence_level_dimensions = {"fluency", "consistency"}
+
+    prepared_inputs: list[str] = []
+    prompt_counts: list[tuple[int, int]] = []
+    results: list[float | None] = [None] * len(metric_inputs)
+    for index, metric_input in enumerate(metric_inputs):
+        if not metric_input.is_fields_notnone(field_map[normalized_dimension]):
+            continue
+
+        prompts = _prepare_unieval_prompts(metric_input, normalized_dimension, sentence_level_dimensions)
+        if not prompts:
+            continue
+
+        prompt_count = len(prompts)
+        prepared_inputs.extend(prompts)
+        prompt_counts.append((index, prompt_count))
+
+    if not prepared_inputs:
+        return results
+
+    effective_scorer = scorer or get_unieval_scorer(
+        model_name_or_path=model_name_or_path,
+        max_length=max_length,
+        device=device,
+        cache_dir=cache_dir,
+    )
+
+    prompt_scores = effective_scorer.score(prepared_inputs, batch_size=batch_size)
+    if len(prompt_scores) != len(prepared_inputs):
+        msg = (
+            f"UniEval scorer returned {len(prompt_scores)} scores for {len(prepared_inputs)} prompts "
+            f"for dimension '{normalized_dimension}'"
+        )
+        raise ValueError(msg)
+    prompt_offset = 0
+    for index, count in prompt_counts:
+        current_scores = prompt_scores[prompt_offset : prompt_offset + count]
+        results[index] = _aggregate_unieval_scores(normalized_dimension, current_scores)
+        prompt_offset += count
+
+    return results
 
 
 # Metric Configurations
@@ -496,6 +989,32 @@ class RougeConfig(BaseGenerationMetricConfig):
 
 
 @dataclass
+class ExactMatchConfig(BaseGenerationMetricConfig):
+    """Configuration for SQuAD-style exact match metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return exact_match
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {}
+
+
+@dataclass
+class TokenF1Config(BaseGenerationMetricConfig):
+    """Configuration for SQuAD-style token F1 metric."""
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return token_f1
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {}
+
+
+@dataclass
 class SemScoreConfig(BaseGenerationMetricConfig):
     """Configuration for SemScore (semantic similarity) metric.
 
@@ -543,6 +1062,41 @@ class ResponseRelevancyConfig(BaseGenerationMetricConfig):
 
 
 @dataclass
+class UniEvalConfig(BaseGenerationMetricConfig):
+    """Configuration for one UniEval dimension."""
+
+    dimension: str = "consistency"
+    model_name_or_path: str = UNIEVAL_MODEL_NAME
+    batch_size: int = 8
+    max_length: int = 1024
+    device: str = "cpu"
+    cache_dir: str | None = None
+
+    def __post_init__(self) -> None:
+        """Validate UniEval configuration."""
+        self.dimension = _validate_unieval_dimension(self.dimension)
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return f"unieval_{self.dimension}"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return unieval
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "dimension": self.dimension,
+            "model_name_or_path": self.model_name_or_path,
+            "batch_size": self.batch_size,
+            "max_length": self.max_length,
+            "device": self.device,
+            "cache_dir": self.cache_dir,
+        }
+
+
+@dataclass
 class BertScoreConfig(BaseGenerationMetricConfig):
     """Configuration for BERTScore metric.
 
@@ -572,3 +1126,74 @@ class BertScoreConfig(BaseGenerationMetricConfig):
             "batch": self.batch,
             "n_threads": self.n_threads,
         }
+
+
+@dataclass
+class _BaseBartScoreConfig(BaseGenerationMetricConfig):
+    """Shared configuration for BARTScore variants."""
+
+    checkpoint: str = DEFAULT_BARTSCORE_CHECKPOINT
+    batch_size: int = DEFAULT_BARTSCORE_BATCH_SIZE
+    device: str = DEFAULT_BARTSCORE_DEVICE
+    max_length: int = DEFAULT_BARTSCORE_MAX_LENGTH
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs shared across BARTScore variants."""
+        return {
+            "checkpoint": self.checkpoint,
+            "batch_size": self.batch_size,
+            "device": self.device,
+            "max_length": self.max_length,
+        }
+
+
+@dataclass
+class BartScoreFaithfulnessConfig(_BaseBartScoreConfig):
+    """Configuration for BARTScore faithfulness (context → answer)."""
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "bart_score_faithfulness"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return bart_score_faithfulness
+
+
+@dataclass
+class BartScorePrecisionConfig(_BaseBartScoreConfig):
+    """Configuration for BARTScore precision (reference → answer)."""
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "bart_score_precision"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return bart_score_precision
+
+
+@dataclass
+class BartScoreRecallConfig(_BaseBartScoreConfig):
+    """Configuration for BARTScore recall (answer → reference)."""
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "bart_score_recall"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return bart_score_recall
+
+
+@dataclass
+class BartScoreF1Config(_BaseBartScoreConfig):
+    """Configuration for BARTScore F1 (mean of precision and recall)."""
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "bart_score_f1"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return bart_score_f1

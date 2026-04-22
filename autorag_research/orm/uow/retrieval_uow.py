@@ -4,7 +4,7 @@ Provides atomic transaction management for retrieval operations including:
 - Query fetching
 - Chunk/ImageChunk retrieval for content
 - Pipeline configuration
-- Result storage (ChunkRetrievedResult)
+- Result storage (ChunkRetrievedResult, ImageChunkRetrievedResult)
 """
 
 from typing import Any
@@ -14,6 +14,9 @@ from sqlalchemy.orm import sessionmaker
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.chunk_retrieved_result import ChunkRetrievedResultRepository
 from autorag_research.orm.repository.image_chunk import ImageChunkRepository
+from autorag_research.orm.repository.image_chunk_retrieved_result import (
+    ImageChunkRetrievedResultRepository,
+)
 from autorag_research.orm.repository.metric import MetricRepository
 from autorag_research.orm.repository.pipeline import PipelineRepository
 from autorag_research.orm.repository.query import QueryRepository
@@ -29,8 +32,7 @@ class RetrievalUnitOfWork(BaseUnitOfWork):
     - Pipeline: For configuration and tracking
     - Metric: For tracking evaluation metrics
     - ChunkRetrievedResult: For storing text retrieval results
-
-    Note: ImageChunkRetrievedResult can be added later for multi-modal retrieval.
+    - ImageChunkRetrievedResult: For storing image retrieval results
     """
 
     def __init__(self, session_factory: sessionmaker, schema: Any | None = None):
@@ -49,6 +51,7 @@ class RetrievalUnitOfWork(BaseUnitOfWork):
         self._pipeline_repo: PipelineRepository | None = None
         self._metric_repo: MetricRepository | None = None
         self._chunk_result_repo: ChunkRetrievedResultRepository | None = None
+        self._image_chunk_result_repo: ImageChunkRetrievedResultRepository | None = None
 
     def _get_schema_classes(self) -> dict[str, type]:
         """Get all model classes from schema.
@@ -64,12 +67,14 @@ class RetrievalUnitOfWork(BaseUnitOfWork):
                 "Pipeline": self._schema.Pipeline,
                 "Metric": self._schema.Metric,
                 "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
+                "ImageChunkRetrievedResult": self._schema.ImageChunkRetrievedResult,
             }
 
         from autorag_research.orm.schema import (
             Chunk,
             ChunkRetrievedResult,
             ImageChunk,
+            ImageChunkRetrievedResult,
             Metric,
             Pipeline,
             Query,
@@ -82,6 +87,7 @@ class RetrievalUnitOfWork(BaseUnitOfWork):
             "Pipeline": Pipeline,
             "Metric": Metric,
             "ChunkRetrievedResult": ChunkRetrievedResult,
+            "ImageChunkRetrievedResult": ImageChunkRetrievedResult,
         }
 
     def _reset_repositories(self) -> None:
@@ -92,6 +98,7 @@ class RetrievalUnitOfWork(BaseUnitOfWork):
         self._pipeline_repo = None
         self._metric_repo = None
         self._chunk_result_repo = None
+        self._image_chunk_result_repo = None
 
     @property
     def queries(self) -> QueryRepository:
@@ -187,4 +194,20 @@ class RetrievalUnitOfWork(BaseUnitOfWork):
             "_chunk_result_repo",
             ChunkRetrievedResultRepository,
             lambda: self._get_schema_classes()["ChunkRetrievedResult"],
+        )
+
+    @property
+    def image_chunk_results(self) -> ImageChunkRetrievedResultRepository:
+        """Get the ImageChunkRetrievedResult repository.
+
+        Returns:
+            ImageChunkRetrievedResultRepository instance.
+
+        Raises:
+            SessionNotSetError: If session is not initialized.
+        """
+        return self._get_repository(
+            "_image_chunk_result_repo",
+            ImageChunkRetrievedResultRepository,
+            lambda: self._get_schema_classes()["ImageChunkRetrievedResult"],
         )

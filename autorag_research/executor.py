@@ -23,11 +23,9 @@ from autorag_research.config import (
 from autorag_research.orm.service.generation_evaluation import GenerationEvaluationService
 from autorag_research.orm.service.retrieval_evaluation import RetrievalEvaluationService
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.loader import RetrievalPipelineLoader
 
 logger = logging.getLogger("AutoRAG-Research")
-
-
-PIPELINE_TYPES = ["pipelines", "retrieval"]
 
 
 @dataclass
@@ -169,6 +167,13 @@ class Executor:
 
         # Cache for dependency retrieval pipelines (loaded from YAML)
         self._dependency_pipelines: dict[str, BaseRetrievalPipeline] = {}
+        self._retrieval_pipeline_loader = RetrievalPipelineLoader(
+            session_factory=session_factory,
+            schema=schema,
+            config_dir=self._config_dir,
+            config_resolver=self._config_resolver,
+            dependency_pipelines=self._dependency_pipelines,
+        )
 
         logger.info(f"Executor initialized with {len(config.pipelines)} pipelines and {len(config.metrics)} metrics")
         logger.debug(f"Config directory: {self._config_dir}")
@@ -177,7 +182,7 @@ class Executor:
         """Run all configured pipelines and evaluate metrics.
 
         For each pipeline:
-        1. Resolve retrieval-pipeline dependencies
+        1. Resolve retrieval-pipeline dependencies when declared
         2. Run health check (if enabled)
         3. Run the pipeline with retry logic
         4. Verify completion
@@ -193,7 +198,7 @@ class Executor:
         for pipeline_config in self.config.pipelines:
             logger.info(f"=== Starting pipeline: {pipeline_config.name} ===")
 
-            # Step 0: Resolve retrieval-pipeline dependencies
+            # Step 0: Resolve retrieval-pipeline dependencies when declared
             self._resolve_dependencies(pipeline_config)
 
             # Step 1: Run health check (if enabled)
@@ -553,58 +558,29 @@ class Executor:
                 error_message=error_msg,
             )
 
-    def _resolve_dependencies(self, config: BasePipelineConfig) -> None:
-        """Resolve retrieval-pipeline dependencies for pipeline configs.
+    def _resolve_dependencies(
+        self,
+        config: BasePipelineConfig,
+        resolving_stack: tuple[str, ...] = (),
+        resolution_key: str | None = None,
+    ) -> None:
+        """Resolve retrieval-pipeline dependencies for configs that declare them.
 
-        Supports both generation pipelines that depend on a retrieval pipeline and
-        retrieval pipelines that compose another retrieval pipeline.
+        Checks for `retrieval_pipeline_name` plus `inject_retrieval_pipeline()`,
+        loads/instantiates the referenced retrieval pipeline, then injects it.
+
+        Uses Hydra's compose API when available to leverage configured search paths,
+        with fallback to direct YAML loading from config_dir.
+
+        Args:
+            config: Pipeline configuration that may depend on another retrieval pipeline.
+            resolving_stack: Pipeline names currently being resolved in the active
+                dependency chain. Used to detect cycles before recursing.
+            resolution_key: Config lookup name used to load `config`. When present,
+                it is tracked alongside `config.name` to catch cycles even when a
+                YAML config's lookup key and runtime pipeline name differ.
+
+        Raises:
+            ValueError: If retrieval wrapper configs reference each other cyclically.
         """
-        from hydra.utils import instantiate
-
-        from autorag_research.config import BaseGenerationPipelineConfig
-
-        dependency_name: str | None = None
-        injected_pipeline = None
-
-        if isinstance(config, BaseGenerationPipelineConfig):
-            injected_pipeline = config._retrieval_pipeline
-            dependency_name = config.retrieval_pipeline_name
-        elif hasattr(config, "inject_retrieval_pipeline") and hasattr(config, "inner_retrieval_pipeline_name"):
-            injected_pipeline = getattr(config, "_inner_retrieval_pipeline", None)
-            dependency_name = getattr(config, "inner_retrieval_pipeline_name", None)
-        else:
-            return
-
-        if injected_pipeline is not None:
-            logger.debug(f"Retrieval pipeline already injected for {config.name}")
-            return
-
-        name = dependency_name
-        if not name:
-            return
-
-        logger.info(f"Resolving retrieval pipeline dependency: {name}")
-
-        # Return cached pipeline if already loaded
-        if name in self._dependency_pipelines:
-            logger.debug(f"Using cached retrieval pipeline: {name}")
-            config.inject_retrieval_pipeline(self._dependency_pipelines[name])  # ty: ignore[unresolved-attribute]
-            return
-
-        # Load pipeline config from pipelines/retrieval/ directory
-        pipeline_cfg = self._config_resolver.resolve_config(PIPELINE_TYPES, name)
-        pipeline_config = instantiate(pipeline_cfg)
-
-        # Instantiate the retrieval pipeline
-        pipeline_class = pipeline_config.get_pipeline_class()
-        retrieval_pipeline = pipeline_class(
-            session_factory=self.session_factory,
-            name=pipeline_config.name,
-            schema=self._schema,
-            **pipeline_config.get_pipeline_kwargs(),
-        )
-
-        # Cache and inject
-        self._dependency_pipelines[name] = retrieval_pipeline
-        config.inject_retrieval_pipeline(retrieval_pipeline)  # ty: ignore[unresolved-attribute]
-        logger.info(f"Loaded and injected retrieval pipeline: {name}")
+        self._retrieval_pipeline_loader.resolve_dependencies(config, resolving_stack, resolution_key)

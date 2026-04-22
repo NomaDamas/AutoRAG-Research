@@ -120,6 +120,21 @@ class ChunkRepository(BaseVectorRepository[Any], BaseEmbeddingRepository[Any]):
         )
         return self.session.execute(stmt).unique().scalar_one_or_none()
 
+    def get_all_ids(self, limit: int | None = None, offset: int = 0) -> list[int | str]:
+        """Get all chunk IDs ordered by ID.
+
+        Args:
+            limit: Maximum number of chunk IDs to return.
+            offset: Number of chunk IDs to skip.
+
+        Returns:
+            Ordered list of chunk IDs.
+        """
+        stmt = select(self.model_cls.id).order_by(self.model_cls.id).offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(self.session.execute(stmt).scalars().all())
+
     def get_chunks_with_empty_content(self, limit: int | None = None) -> list[Any]:
         """Retrieve chunks that have empty or whitespace-only contents.
 

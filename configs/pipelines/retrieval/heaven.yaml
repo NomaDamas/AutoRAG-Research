@@ -1,0 +1,29 @@
+# HEAVEN Retrieval Pipeline Configuration
+#
+# Retrieval-only adaptation of the HEAVEN paper for AutoRAG's multimodal stack.
+# Uses ImageChunk as the retrieval unit:
+#   1. Stage 1 single-vector candidate generation
+#   2. Stage 2 multi-vector reranking with query-token filtering
+#
+# Parameters:
+#   stage1_candidate_count: Number of image chunks to keep from stage 1
+#   stage2_refine_ratio: Fraction of stage-1 candidates to send to the non-key rerank pass
+#   stage1_weight: Weight for the stage-1 score in final fusion
+#   default_key_token_ratio: Fallback key-token budget when POS tagging finds no nouns
+#   single_vector_embedding_model: Optional embedding config for ad-hoc retrieve()
+#   multi_vector_embedding_model: Optional multi-vector embedding config for ad-hoc retrieve()
+#
+_target_: autorag_research.pipelines.retrieval.heaven.HEAVENPipelineConfig
+description: "Two-stage HEAVEN image retrieval over ImageChunk candidates"
+name: heaven
+stage1_candidate_count: 200
+stage2_refine_ratio: 0.25
+stage1_weight: 0.3
+default_key_token_ratio: 0.5
+single_vector_embedding_model: null
+multi_vector_embedding_model: null
+top_k: 10
+batch_size: 128
+max_concurrency: 16
+max_retries: 3
+retry_delay: 1.0

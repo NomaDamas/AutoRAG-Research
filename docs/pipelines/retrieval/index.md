@@ -10,6 +10,9 @@ Algorithms that take a query and return relevant documents.
 | [Hybrid](hybrid.md) | RRF / Convex Combination | Text |
 | [Vector Search](vector-search.md) | Dense (vector similarity) | Text |
 | [HyDE](hyde.md) | Dense (hypothetical document embeddings) | Text |
+| [Query Rewrite](query-rewrite.md) | Rewrite query text before retrieval | Text |
+| [RETRO*](retro-star.md) | Rubric-based LLM reranking over retrieved candidates | Text |
+| [Power of Noise](power-of-noise.md) | Retrieval wrapper + seeded noise injection | Text |
 
 ## Base Class
 

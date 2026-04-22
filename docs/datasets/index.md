@@ -9,6 +9,7 @@ Available benchmarks for RAG evaluation.
 | BEIR | Text | 300-15k | 3k-5M | No | Retrieval |
 | MTEB | Text | varies | varies | No | Retrieval |
 | RAGBench | Text | varies | varies | Yes | RAG |
+| CRAG | Text | varies | varies | Yes | RAG / Generation |
 | MrTyDi | Text | varies | varies | No | Multilingual |
 | BRIGHT | Text | varies | varies | No | Retrieval |
 | Open-RAGBench | Multimodal | varies | varies | Yes | RAG |

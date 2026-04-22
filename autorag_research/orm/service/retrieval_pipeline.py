@@ -70,12 +70,14 @@ class RetrievalPipelineService(BasePipelineService):
             return {
                 "Pipeline": self._schema.Pipeline,
                 "ChunkRetrievedResult": self._schema.ChunkRetrievedResult,
+                "ImageChunkRetrievedResult": self._schema.ImageChunkRetrievedResult,
             }
-        from autorag_research.orm.schema import ChunkRetrievedResult, Pipeline
+        from autorag_research.orm.schema import ChunkRetrievedResult, ImageChunkRetrievedResult, Pipeline
 
         return {
             "Pipeline": Pipeline,
             "ChunkRetrievedResult": ChunkRetrievedResult,
+            "ImageChunkRetrievedResult": ImageChunkRetrievedResult,
         }
 
     def _create_uow(self) -> RetrievalUnitOfWork:
@@ -88,6 +90,7 @@ class RetrievalPipelineService(BasePipelineService):
         results: list[list[dict] | None],
         pipeline_id: int | str,
         failed_queries: list[int | str],
+        result_id_key: str,
     ) -> list[dict]:
         """Collect valid retrieval results and track failed queries.
 
@@ -109,15 +112,17 @@ class RetrievalPipelineService(BasePipelineService):
                 batch_results.append({
                     "query_id": query_id,
                     "pipeline_id": pipeline_id,
-                    "chunk_id": result["doc_id"],
+                    result_id_key: result["doc_id"],
                     "rel_score": result["score"],
                 })
         return batch_results
 
-    def run_pipeline(  # noqa: C901
+    def _run_pipeline(  # noqa: C901
         self,
         retrieval_func: RetrievalFunc,
         pipeline_id: int | str,
+        result_repo_name: Literal["chunk_results", "image_chunk_results"],
+        result_id_key: Literal["chunk_id", "image_chunk_id"],
         top_k: int = 10,
         batch_size: int = 128,
         max_concurrency: int = 16,
@@ -196,7 +201,8 @@ class RetrievalPipelineService(BasePipelineService):
                 query_ids = [q.id for q in queries]
 
                 # Skip queries that already have results (resume support)
-                existing_results = uow.chunk_results.get_by_query_and_pipeline(query_ids, pipeline_id)
+                result_repo = getattr(uow, result_repo_name)
+                existing_results = result_repo.get_by_query_and_pipeline(query_ids, pipeline_id)
                 completed_ids = {r.query_id for r in existing_results}
                 query_ids = [qid for qid in query_ids if qid not in completed_ids]
 
@@ -206,10 +212,16 @@ class RetrievalPipelineService(BasePipelineService):
 
                 results = asyncio.run(process_batch(query_ids))
 
-                batch_results = self._collect_retrieval_results(query_ids, results, pipeline_id, failed_queries)
+                batch_results = self._collect_retrieval_results(
+                    query_ids,
+                    results,
+                    pipeline_id,
+                    failed_queries,
+                    result_id_key,
+                )
 
                 if batch_results:
-                    uow.chunk_results.bulk_insert(batch_results)
+                    result_repo.bulk_insert(batch_results)
                     total_results += len(batch_results)
 
                 total_queries += len([r for r in results if r is not None])
@@ -228,6 +240,56 @@ class RetrievalPipelineService(BasePipelineService):
             "failed_queries": failed_queries,
         }
 
+    def run_pipeline(
+        self,
+        retrieval_func: RetrievalFunc,
+        pipeline_id: int | str,
+        top_k: int = 10,
+        batch_size: int = 128,
+        max_concurrency: int = 16,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        query_limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Run retrieval pipeline and persist text chunk retrieval results."""
+        return self._run_pipeline(
+            retrieval_func=retrieval_func,
+            pipeline_id=pipeline_id,
+            result_repo_name="chunk_results",
+            result_id_key="chunk_id",
+            top_k=top_k,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            query_limit=query_limit,
+        )
+
+    def run_image_pipeline(
+        self,
+        retrieval_func: RetrievalFunc,
+        pipeline_id: int | str,
+        top_k: int = 10,
+        batch_size: int = 128,
+        max_concurrency: int = 16,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        query_limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Run retrieval pipeline and persist image chunk retrieval results."""
+        return self._run_pipeline(
+            retrieval_func=retrieval_func,
+            pipeline_id=pipeline_id,
+            result_repo_name="image_chunk_results",
+            result_id_key="image_chunk_id",
+            top_k=top_k,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            query_limit=query_limit,
+        )
+
     def delete_pipeline_results(self, pipeline_id: int | str) -> int:
         """Delete all retrieval results for a specific pipeline.
 
@@ -239,6 +301,7 @@ class RetrievalPipelineService(BasePipelineService):
         """
         with self._create_uow() as uow:
             deleted_count = uow.chunk_results.delete_by_pipeline(pipeline_id)
+            deleted_count += uow.image_chunk_results.delete_by_pipeline(pipeline_id)
             uow.commit()
             return deleted_count
 
