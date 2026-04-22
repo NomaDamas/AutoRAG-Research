@@ -412,7 +412,7 @@ class TestExecutorDependencyResolution:
 
         with (
             patch.object(executor._config_resolver, "resolve_config") as mock_resolve,
-            patch("hydra.utils.instantiate") as mock_instantiate,
+            patch("autorag_research.pipelines.retrieval.loader.instantiate") as mock_instantiate,
         ):
             mock_resolve.return_value = {"_target_": "unused"}
             mock_pipeline_config = MagicMock()
