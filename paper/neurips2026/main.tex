@@ -1,0 +1,379 @@
+\documentclass{article}
+
+% NeurIPS 2026 Evaluations & Datasets track submission style.
+% Official starter kit source: https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip
+\usepackage[eandd]{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{makecell}
+\usepackage{float}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\newcommand{\framework}{AutoRAG-Research}
+\newcommand{\qlimit}{\texttt{query\_limit}}
+\newcommand{\climit}{\texttt{min\_corpus\_cnt}}
+\newcommand{\res}[1][XX.X]{\textcolor{gray}{\textbf{#1}}}
+
+\title{\framework{}: Turning RAG Reimplementation into Dataset, Pipeline, Metric, and Artifact Reuse}
+
+\author{%
+  Anonymous Authors\\
+  Anonymous Institution\\
+  \texttt{anonymous@example.com}
+}
+
+\begin{document}
+\raggedbottom
+
+\maketitle
+
+
+\begin{abstract}
+Reproducing retrieval-augmented generation (RAG) papers is difficult because every study tends to rebuild the same four layers: dataset preprocessing, corpus embedding, pipeline implementation, and metric implementation. These layers are rarely reusable across benchmarks because text retrieval, answer-bearing RAG, web-context QA, visual document retrieval, and multimodal PDF tasks expose different raw formats and metadata. We present \framework{}, a reimplementation framework that turns this repeated reconstruction into reuse. First, dataset ingestors normalize heterogeneous RAG benchmark formats into one PostgreSQL/VectorChord schema, so users do not write separate preprocessing code for each dataset family. Second, the framework stores query and corpus embeddings inside the database and distributes pre-ingested, pre-embedded dumps, so expensive embedding jobs can be restored instead of repeated. Third, retrieval, generation, and multimodal RAG pipelines are preimplemented behind config-driven interfaces. Fourth, retrieval and generation metrics are preimplemented and recomputed from persisted per-query artifacts. We use \framework{} to evaluate a broad collection of RAG methods under one protocol and show that shared datasets, stored embeddings, reusable pipelines, reusable metrics, fidelity cards, and manifests provide a practical unit of reproducibility for RAG research.
+\end{abstract}
+
+\section{Introduction}
+
+RAG research~\citep{lewis2020rag} has a reproducibility problem that is larger than missing random seeds or incomplete hyperparameter tables. To reproduce a single RAG paper, a researcher often has to reconstruct four independent software layers before reaching the method being studied. First, benchmark datasets arrive in incompatible shapes: BEIR-style corpora and qrels, MTEB task wrappers, RAGBench per-example contexts, CRAG search-result pages, ViDoRe/VisRAG visual documents, and Open-RAGBench PDF-derived evidence do not share one input format. Second, corpora must be chunked and embedded, which is expensive and sensitive to embedding model, batching, dimensionality, and preprocessing choices. Third, each retrieval or generation method---for example HyDE, IRCoT, Self-RAG, RAG-Critic, or multimodal retrieval---must be reimplemented or adapted. Fourth, metrics such as nDCG, Recall, MRR, ROUGE, Token F1, BERTScore, and judge-based relevancy must be wired to each dataset's outputs.
+
+\framework{} is designed around the claim that RAG reimplementation should be \emph{selection and restoration}, not repeated reconstruction. A user selects an ingestor rather than writing dataset-specific preprocessing, restores or creates an embedded corpus rather than re-embedding from scratch, selects a retrieval or generation pipeline rather than reimplementing the method, and selects metrics rather than rewriting evaluation code. The framework then persists every query-level input, output, and score so that results can be audited and recomputed.
+
+This makes \framework{} closer to successful open research frameworks than to a benchmark script collection. PyTorch~\citep{paszke2019pytorch} exposed a reusable programming substrate; RLlib~\citep{liang2018rllib} organized distributed RL around composable abstractions; DSPy~\citep{khattab2024dspy} made language-model pipelines declarative; Dopamine~\citep{castro2018dopamine} and CleanRL~\citep{huang2022cleanrl} emphasized trustworthy algorithm implementations; Habitat~\citep{savva2019habitat} and MMDetection~\citep{chen2019mmdetection} combined reusable platform layers with coverage evidence. \framework{} brings the same style of contribution to RAG reproducibility: reusable abstractions, reusable artifacts, and experiments enabled by the framework.
+
+The most important artifact is the \emph{embedded corpus}. \framework{} ingests a benchmark into a unified database, embeds all text or visual units with a named embedding model, and exports the resulting database as a PostgreSQL dump. A reproducer restores the dump and immediately runs retrieval, generation, and metrics against the same chunks, qrels, answer fields, embedding vectors, schema version, and stored outputs. This removes a major hidden cost in RAG reproduction: repeated embedding and silent preprocessing drift.
+
+\begin{table}[H]
+\centering
+\caption{The four reimplementation burdens that \framework{} replaces with reusable framework components.}
+\label{tab:burden}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{0.20\linewidth}L{0.35\linewidth}L{0.37\linewidth}@{}}
+\toprule
+Burden in a typical RAG reproduction & What researchers repeatedly rebuild & \framework{} replacement \\
+\midrule
+Dataset preprocessing & Separate loaders for qrels, QA examples, search pages, visual documents, PDFs, answer fields, and metadata & Built-in ingestors normalize all supported datasets into one query/corpus/relevance/answer schema \\
+Corpus embedding & Recompute embeddings for every dataset and every reproducer, often with subtle model or preprocessing drift & Embeddings are stored in the database and shared through pre-embedded PostgreSQL dumps \\
+Pipeline implementation & Reimplement retrieval, generation, and multimodal methods before comparison can even begin & Preimplemented pipelines run from configs over the same persisted query and corpus tables \\
+Metric implementation & Rewire retrieval and generation metrics for every dataset output format & Preimplemented metrics consume stored retrieval/generation artifacts and can be recomputed later \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This paper makes four contributions:
+\begin{enumerate}
+  \item A unified data abstraction for RAG benchmarks: built-in ingestors map heterogeneous text, answer-bearing, web-context, visual-document, and PDF datasets into one database schema.
+  \item A reusable embedding layer: query and corpus embeddings are stored with the normalized data and can be distributed as pre-ingested, pre-embedded PostgreSQL dumps.
+  \item A reusable method layer: retrieval, generation, and multimodal RAG pipelines are preimplemented and configured declaratively, reducing the need for paper-by-paper method reimplementation.
+  \item A reusable evaluation layer: retrieval and generation metrics are preimplemented, persisted per query, and recomputed from stored artifacts together with manifests and fidelity cards.
+\end{enumerate}
+
+\section{Design requirements from framework papers}
+
+We structure \framework{} around five requirements distilled from prior framework and research-platform papers, but phrase them around the concrete work that RAG researchers otherwise repeat.
+
+\paragraph{R1: Dataset heterogeneity should be hidden behind ingestors.}
+A useful RAG framework must let BEIR-style qrels, RAGBench QA examples, CRAG search pages, ViDoRe images, VisRAG chart/document examples, and Open-RAGBench PDFs enter the same execution path. \framework{} therefore makes the ingestor a first-class abstraction: it preserves task metadata while converting raw formats into common query, corpus, relevance, answer, and multimodal chunk tables.
+
+\paragraph{R2: Embeddings should be stored, restored, and shared.}
+RAG reproduction often spends substantial time and money embedding a corpus before any retrieval method is evaluated. \framework{} stores embeddings inside the database, records the embedding model and dimension, and exports the embedded database as a dump. Restoring a dump makes the embedded corpus reusable by other pipelines and other researchers.
+
+\paragraph{R3: Pipelines should be selected, not reimplemented.}
+Framework value is strongest when users can compare methods without rewriting them. \framework{} provides retrieval, generation, and multimodal pipeline implementations behind shared base classes and config files. The same stored queries and corpus can therefore be passed to BM25, dense retrieval, hybrid retrieval, HyDE, IRCoT, Self-RAG, RAG-Critic, AutoThinkRAG, VisRAG-style generation, and other implemented methods.
+
+\paragraph{R4: Metrics should be reusable and recomputable.}
+Evaluation code is another source of reproduction drift. \framework{} implements retrieval metrics and generation metrics once, applies them only when required fields exist, stores per-query metric rows, and allows aggregate tables to be regenerated without repeating retrieval or LLM calls.
+
+\paragraph{R5: Artifacts should make deviations visible.}
+No framework can recover missing prompts, private model snapshots, or undocumented historical preprocessing. \framework{} therefore targets faithful, documented reimplementation: configs, manifests, fidelity cards, cached outputs, and per-query rows record what was run and where assumptions differ from the source paper.
+
+\section{The \framework{} framework}
+
+\subsection{Layered architecture}
+
+\framework{} follows a service-oriented stack from raw data to reproducible outputs. Table~\ref{tab:architecture} summarizes the layers.
+
+\begin{table}[H]
+\centering
+\caption{Layered architecture of \framework{}.}
+\label{tab:architecture}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{0.23\linewidth}L{0.69\linewidth}@{}}
+\toprule
+Layer & Responsibility \\
+\midrule
+CLI/config & Loads YAML/dataclass configs, selects database names, embedding models, pipelines, metrics, and experiment groups. \\
+Ingestor layer & Converts benchmark-specific raw data into normalized query, corpus, relevance, answer, and metadata records. \\
+Embedding layer & Embeds queries, text chunks, image chunks, or late-interaction multimodal vectors with a named model and stored dimension. \\
+Pipeline layer & Runs retrieval and generation methods behind shared base classes and persists per-query outputs. \\
+Service and unit-of-work layer & Provides transactional ingestion, retrieval, generation, metric, and reporting operations. \\
+Schema/artifact layer & Stores documents, chunks, image chunks, qrels, outputs, metrics, embeddings, configs, manifests, and dump metadata. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The executor applies the same lifecycle to all configured methods: instantiate from config, select stored queries, execute the pipeline, persist results, evaluate compatible metrics, and export result artifacts. Generation configs reference retrieval pipeline names, so a generation method can compose with any retrieval source that satisfies the base interface.
+
+\subsection{Dataset ingestors as framework coverage}
+
+\framework{} treats dataset support as an ingestor layer, not as benchmark-specific experiment code. Table~\ref{tab:datasets} lists the built-in dataset families covered by the framework. The table describes framework surface area; experiment sections later select valid dataset--pipeline--metric combinations from this broader coverage.
+
+All ingestors normalize heterogeneous upstream formats into shared schema concepts. Text datasets write documents, pages, chunks, queries, and retrieval relations; answer-bearing RAG datasets additionally populate generation ground truth and per-query context metadata; visual and PDF datasets write image chunks or multimodal page representations with the same query and relevance abstractions. After ingestion and embedding, pipelines and metrics operate on the database rather than on dataset-specific loaders.
+
+\begin{table}[H]
+\centering
+\caption{Built-in dataset ingestors covered by \framework{}.}
+\label{tab:datasets}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.14\linewidth}L{0.25\linewidth}L{0.20\linewidth}L{0.34\linewidth}@{}}
+\toprule
+Ingestor & Benchmark family covered & Upstream form & Normalized schema contribution \\
+\midrule
+BEIR & BEIR retrieval datasets such as SciFact, ArguAna, NFCorpus, and related text IR tasks & text corpus, queries, qrels & documents/pages/chunks, queries, retrieval relations, text embeddings \\
+MTEB & MTEB retrieval tasks supported by the text ingestor & text corpus, queries, qrels & text retrieval schema with MTEB task metadata preserved \\
+MrTyDi & Mr. TyDi multilingual retrieval benchmark & multilingual text corpus, queries, qrels & string or numeric IDs, chunks, queries, qrels, embeddings \\
+BRIGHT & Reasoning-intensive retrieval and answer-bearing RAG tasks & text corpus, queries, relevance labels, answers & retrieval relations plus optional generation ground truth \\
+RAGBench & RAGBench QA configurations such as TechQA and CovidQA & per-example passages, questions, answers & query-local chunks, generation ground truth, RAG metadata \\
+CRAG & Comprehensive RAG benchmark with search-result contexts & query-specific web/search pages and answers & per-query search chunks, queries, answer fields, context metadata \\
+ViDoRe & ViDoRe v1 visual document retrieval/QA datasets & query--image examples & image chunks, multimodal queries, relevance relations \\
+ViDoRe v2 & ViDoRe v2 visual document retrieval datasets & BEIR-like image corpus, queries, qrels & image corpus records, query records, qrels, multimodal embeddings \\
+ViDoRe v3 & ViDoRe v3 visual document retrieval configurations & visual corpus, typed queries, qrels & typed query metadata, image chunks, relevance relations \\
+VisRAG & VisRAG visual/chart QA benchmarks & image corpus, questions, qrels, answers & visual chunks, retrieval relations, generation ground truth \\
+Open-RAGBench & Multimodal PDF RAG benchmark built from arXiv-style documents & PDF pages/sections, questions, evidence, answers & multimodal page/image chunks, evidence links, answer fields \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Pre-embedded corpus dumps}
+
+The ingestion command loads an embedding model, checks its dimension, creates a matching schema, writes normalized records, and embeds all query and corpus representations unless embedding is explicitly skipped. Text ingestors embed queries and text chunks; multimodal ingestors embed queries and image chunks, with single-vector and late-interaction multi-vector variants. The generated database name includes the ingestor, dataset parameters, split, and embedding model.
+
+\begin{center}
+\small
+\begin{tabular}{@{}L{0.94\linewidth}@{}}
+\toprule
+\texttt{autorag-research ingest --name=beir --extra dataset-name=scifact --embedding-model=openai-small} \\
+\texttt{autorag-research data dump --db-name=beir\_scifact\_test\_openai\_small} \\
+\texttt{autorag-research data upload ./beir\_scifact\_test\_openai\_small.dump beir scifact\_openai-small} \\
+\texttt{autorag-research data restore beir scifact\_openai-small} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A dump captures the ingested database state: documents/pages/chunks or image chunks, query records, relevance relations, answer fields, vector columns, configs, and any stored pipeline or metric outputs present at export time. Restoring a dump recreates the database and allows a reviewer to run \texttt{autorag-research run --db-name=<restored-db>} without re-downloading the benchmark or re-embedding the corpus. This is the framework's central reproducibility mechanism.
+
+
+\subsection{Preimplemented pipelines and metrics}
+
+The framework's method layer is intentionally a library of reusable implementations rather than a set of examples. Once a dataset has been normalized and embedded, users run methods by selecting pipeline configs. This is the difference between using \framework{} and conducting a conventional reproduction: the user does not first rebuild HyDE, IRCoT, Self-RAG, hybrid retrieval, multimodal retrieval, or metric code before asking a research question.
+
+\begin{table}[H]
+\centering
+\caption{Reusable method and metric components provided by \framework{}.}
+\label{tab:preimplemented}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.20\linewidth}L{0.45\linewidth}L{0.27\linewidth}@{}}
+\toprule
+Component layer & Built-in coverage & Reimplementation work avoided \\
+\midrule
+Retrieval pipelines & BM25~\citep{robertson2009probabilistic}, dense Vector Search~\citep{karpukhin2020dpr}, Hybrid RRF~\citep{cormack2009rrf}, Hybrid CC, HyDE~\citep{gao2023hyde}, Query Rewrite, RETRO*, Power of Noise, Question Decomposition Retrieval, HEAVEN & Writing separate retrieval scripts, index adapters, result serializers, and rank-output formats \\
+Generation pipelines & BasicRAG, IRCoT~\citep{trivedi2023ircot}, ET2RAG, MAIN-RAG, Question Decomposition, Self-RAG~\citep{asai2024selfrag}, RAG-Critic, SPD-RAG, AutoThinkRAG, VisRAG Generation & Recreating prompting loops, retrieval composition, self-critique logic, decomposition logic, and LLM/VLM output capture \\
+Retrieval metrics & Recall, Full Recall, Precision, F1, nDCG, MRR, MAP & Rewriting qrel joins, rank truncation, aggregation, and per-query score export \\
+Generation metrics & BLEU, METEOR, ROUGE, Exact Match, Token F1, BERTScore, SemScore, BARTScore variants, response relevancy, UniEval dimensions & Rewiring answer fields, reference matching, judge/model calls, and aggregate reporting for each dataset \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All pipelines read from the same query and corpus tables and write standardized retrieval or generation result rows. All metrics consume those stored rows rather than transient Python objects. This design makes evaluation cumulative: adding a new dataset immediately exposes it to existing pipelines and metrics, while adding a new pipeline or metric makes it available to all compatible ingested datasets.
+
+\section{Reimplementation protocol}
+
+\subsection{Fidelity cards and manifests}
+
+Each reimplemented method has a fidelity card recording the source paper, implemented components, assumptions required by underspecified descriptions, deviations from the original implementation, tests or smoke runs, and artifact paths. Fidelity cards make the paper's claim precise: \framework{} supports faithful documented reimplementation, not unverifiable equality to every source paper's historical score.
+
+Each run includes: (i) experiment, pipeline, and metric configs; (ii) a dataset manifest with ingestor name, upstream dataset ID, split, selected query IDs, selected corpus IDs, \qlimit{}, \climit{}, random seed, and dump hash; (iii) an embedding manifest with model config, dimension, provider, revision or endpoint identifier, and vector column type; (iv) an environment manifest with git commit, dependency lock, Python version, PostgreSQL/VectorChord/Docker versions, and hardware notes; (v) an LLM/VLM manifest with model/provider, temperature, max tokens, prompt template, cache key, and output cache path; and (vi) a result manifest linking per-query retrieval, generation, and metric artifacts.
+
+\subsection{Query and corpus controls}
+
+Large datasets are evaluated through deterministic, manifest-backed query selections. A test dataset with roughly 2,000--3,000 queries is sufficient for the paper's reproducibility claim because the claim concerns artifact stability, broad pipeline coverage, and rerunnability rather than leaderboard maximization on every available query. We use \qlimit{}=3000 for large retrieval-only experiments and \qlimit{}=2000 for expensive generation, judge, or multimodal runs. Smaller datasets are kept intact.
+
+The implemented corpus-size control is \climit{}, not a hard \texttt{corpus\_limit}. Its semantics are to include all gold or required corpus items for selected queries first, and then sample non-gold items until the target count is reached. If the gold set already exceeds the target, the final corpus can exceed \climit{}. RAGBench, CRAG, and Open-RAGBench are query-centric datasets where corpus-size limiting is ineffective; query selection is the effective control for those ingestors.
+
+\subsection{Reproduction modes}
+
+Table~\ref{tab:reproduction} defines three reviewer-facing modes. Figure-only reproduction starts from released result tables and plotting scripts. Small rerun reproduction restores one pre-embedded dump and reruns a representative retrieval and generation suite. Full rerun reproduction rebuilds datasets and embeddings from raw sources.
+
+\begin{table}[H]
+\centering
+\caption{Reproduction modes exposed by the artifact.}
+\label{tab:reproduction}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{0.20\linewidth}L{0.46\linewidth}L{0.16\linewidth}L{0.10\linewidth}@{}}
+\toprule
+Mode & Inputs & Time & Agreement \\
+\midrule
+Figure-only & Aggregate CSV/Parquet files and plotting scripts & \res[$<$10 min] & \res[100\%] \\
+Small public rerun & One restored pre-embedded dump, configs, cached model outputs & \res[$<$1 hr] & \res[100\%] \\
+Full rerun & Raw datasets, embedding backends, LLM/VLM backends, full configs & \res[days] & \res[$\geq$99.9\%] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Evaluation}
+
+\subsection{Research questions}
+
+\textbf{RQ1: Abstraction coverage.} How much of the RAG reimplementation surface can be expressed through built-in ingestors, pipelines, metrics, configs, and manifests?
+
+\textbf{RQ2: Embedded-corpus reproducibility.} Does restoring a pre-embedded database reproduce retrieval inputs and metric recomputation exactly while avoiding repeated ingestion and embedding cost?
+
+\textbf{RQ3: Reimplementation breadth.} What retrieval, generation, multimodal, runtime, and cost patterns appear when all implemented, modality-compatible pipelines are evaluated through one protocol?
+
+\textbf{RQ4: Artifact usability.} Can a reviewer regenerate figures, inspect per-query outputs, and rerun a representative subset without reconstructing paper-specific scripts?
+
+\subsection{Experiment tracks}
+
+The benchmark is split by metric compatibility, not by pipeline importance. Track A evaluates text retrieval on qrels-bearing datasets. Track B evaluates text generation/RAG where answer ground truth exists. Track C evaluates visual and multimodal retrieval/generation where input modality and metric assumptions match the pipeline.
+
+\begin{table}[H]
+\centering
+\caption{Full-scale experiment tracks. Every implemented, modality-compatible pipeline is included.}
+\label{tab:tracks}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.15\linewidth}L{0.28\linewidth}L{0.42\linewidth}L{0.08\linewidth}@{}}
+\toprule
+Track & Datasets & Pipelines & Runs \\
+\midrule
+Text retrieval & BEIR, MTEB, MrTyDi, BRIGHT, valid CRAG retrieval portions & BM25, Vector Search, Hybrid RRF/CC, HyDE, Query Rewrite, RETRO*, Power of Noise, Question Decomposition & \res[XXX] \\
+Text generation/RAG & RAGBench, BRIGHT, CRAG, answer-bearing subsets & BasicRAG, IRCoT, ET2RAG, MAIN-RAG, Question Decomposition, Self-RAG, RAG-Critic, SPD-RAG, AutoThinkRAG & \res[XXX] \\
+Multimodal & ViDoRe, ViDoRe v2/v3, VisRAG, Open-RAGBench & HEAVEN, multimodal Vector Search, Hybrid RRF, VisRAG Generation, AutoThinkRAG variants & \res[XXX] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Coverage results}
+
+Table~\ref{tab:coverage} reports the framework surface exercised by the study. Counts describe reusable components, not a single benchmark leaderboard.
+
+\begin{table}[H]
+\centering
+\caption{Framework coverage exercised by the study.}
+\label{tab:coverage}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}L{0.34\linewidth}L{0.17\linewidth}L{0.18\linewidth}L{0.18\linewidth}@{}}
+\toprule
+Component family & Implemented & Fidelity cards & Validated configs \\
+\midrule
+Dataset ingestors & 11 & N/A & \res[XX] \\
+Retrieval pipelines & 10 & \res[10] & \res[XX] \\
+Generation pipelines & 10 & \res[10] & \res[XX] \\
+Retrieval metrics & 7 & N/A & \res[XX] \\
+Generation metrics & 10+ families & N/A & \res[XX] \\
+Pre-embedded dataset dumps & \res[XX] & N/A & \res[XX] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Embedded-corpus artifact results}
+
+Table~\ref{tab:dump-results} isolates the effect of treating embedded corpora as shareable artifacts. Restored dumps reproduce the exact database state used for the corresponding run and remove ingestion and embedding from the reviewer-critical path.
+
+\begin{table}[H]
+\centering
+\caption{Embedded-corpus dump results. Values are reported per representative dataset family.}
+\label{tab:dump-results}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.20\linewidth}L{0.18\linewidth}L{0.19\linewidth}L{0.19\linewidth}L{0.14\linewidth}@{}}
+\toprule
+Dataset family & Dump size & Restore time & Embedding cost avoided & Retrieval agreement \\
+\midrule
+BEIR SciFact & \res[X.X GB] & \res[X min] & \res[X.X h] & \res[100\%] \\
+MrTyDi subset & \res[XX GB] & \res[XX min] & \res[XX h] & \res[100\%] \\
+RAGBench subset & \res[XX GB] & \res[XX min] & \res[XX h] & \res[100\%] \\
+ViDoRe subset & \res[XX GB] & \res[XX min] & \res[XX h] & \res[100\%] \\
+Open-RAGBench subset & \res[XX GB] & \res[XX min] & \res[XX h] & \res[100\%] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reimplementation benchmark results}
+
+Table~\ref{tab:main-results} shows the aggregate result format used throughout the study. The paper reports both effectiveness and operational metadata because reproducibility depends on knowing which artifacts, model calls, and runtime costs produced a score.
+
+\begin{table}[H]
+\centering
+\caption{Aggregate benchmark results. Full per-query rows are released with the artifact.}
+\label{tab:main-results}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.21\linewidth}L{0.23\linewidth}L{0.20\linewidth}L{0.15\linewidth}L{0.11\linewidth}@{}}
+\toprule
+Dataset & Pipeline family & Primary metric & Runtime/cost & Artifact hash \\
+\midrule
+BEIR SciFact & retrieval pipelines & nDCG@10 \res[0.XXX] / Recall@10 \res[0.XXX] & \res[XX min] & \res[abc123] \\
+MrTyDi English & retrieval pipelines & nDCG@10 \res[0.XXX] / Recall@10 \res[0.XXX] & \res[XX min] & \res[abc123] \\
+RAGBench TechQA/CovidQA & RAG generation & Token F1 \res[0.XXX] / BERTScore \res[0.XXX] & \res[\$XX] & \res[abc123] \\
+CRAG dev subset & RAG generation & Token F1 \res[0.XXX] / ROUGE-L \res[0.XXX] & \res[\$XX] & \res[abc123] \\
+ViDoRe / VisRAG & multimodal & Recall@10 \res[0.XXX] / QA \res[0.XXX] & \res[\$XX] & \res[abc123] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Discussion, limitations, and broader impact}
+
+\paragraph{Exact reproduction versus faithful reimplementation.}
+\framework{} makes assumptions auditable, but it cannot recover missing prompts, unavailable proprietary model snapshots, or undocumented preprocessing choices. The paper therefore claims faithful documented reimplementation and rerunnable artifacts, not exact numerical equality to every source paper.
+
+\paragraph{Closed or hosted model drift.}
+LLM-backed retrieval and generation pipelines can depend on hosted model behavior. The artifact mitigates this by recording model identifiers, using deterministic decoding where possible, caching outputs, and making figure reproduction independent of fresh API calls.
+
+\paragraph{Cost and scale.}
+Full-scale coverage across all implemented pipelines is expensive. The study controls cost with deterministic query selections, corpus targets, staged execution, pre-embedded dumps, and output caches rather than by omitting high-cost pipelines. Full reruns remain materially more expensive than figure reproduction or small restored-dump reruns.
+
+\paragraph{Dataset licensing.}
+The framework ingests public datasets and releases derived dumps only when upstream license terms permit redistribution. When redistribution is not permitted, the artifact provides manifests and rebuild scripts rather than a public dump. This distinction is recorded per dataset family.
+
+\paragraph{Positive and negative impacts.}
+The positive impact is lower friction for reproducible RAG research: researchers can audit methods, rerun metrics, and build new pipelines on shared embedded corpora. The main risk is that easier benchmarking can accelerate deployment of RAG systems without sufficient domain validation. We mitigate this by emphasizing artifact transparency, dataset license checks, and explicit separation between benchmark performance and deployment readiness.
+
+\section{Conclusion}
+
+\framework{} reframes RAG reproducibility around reusable experimental substrates. Its unified schema, config-driven pipelines, metric recomputation, fidelity cards, and pre-embedded database dumps let researchers share the exact database state on which retrieval and generation pipelines are evaluated. The resulting study demonstrates that diverse RAG methods can be expressed, inspected, and rerun through one framework while preserving the assumptions and deviations needed for credible scientific comparison.
+
+\newpage
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\appendix
+
+\section{Artifact structure}
+
+The artifact contains the source code, configuration files, dataset manifests, embedding manifests, fidelity cards, database dump manifests, cached model outputs where redistribution is permitted, aggregate result tables, per-query result exports, and plotting scripts. PostgreSQL dumps use the \texttt{autorag-research data dump}, \texttt{data upload}, and \texttt{data restore} commands described in the main text. Each dump is named by ingestor, dataset parameters, split, and embedding model; a manifest records the dump hash and upstream data/license status.
+
+\section{Framework-paper rewrite notes}
+
+The repository includes \texttt{framework-paper-patterns.md}, which records the framework-paper patterns used to restructure this manuscript: field bottleneck framing, explicit design requirements, named abstractions, layered architecture, coverage evidence, enabled experiments, artifact-centered reproduction, and explicit limitations.
+
+\newpage
+\input{checklist.tex}
+
+\end{document}

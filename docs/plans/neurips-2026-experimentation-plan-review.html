@@ -1,0 +1,1006 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AutoRAG-Research 실험 계획 검토본</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --paper: #ffffff;
+      --ink: #172033;
+      --muted: #657086;
+      --line: #dde3ee;
+      --blue: #275efe;
+      --blue-soft: #eaf0ff;
+      --green: #0f8a5f;
+      --green-soft: #e9f8f1;
+      --amber: #a45b00;
+      --amber-soft: #fff4df;
+      --red: #b3261e;
+      --red-soft: #ffebe9;
+      --purple: #6a42c2;
+      --purple-soft: #f1ecff;
+      --shadow: 0 16px 45px rgba(23, 32, 51, 0.10);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(39, 94, 254, 0.12), transparent 34rem),
+        radial-gradient(circle at top right, rgba(15, 138, 95, 0.10), transparent 32rem),
+        var(--bg);
+      color: var(--ink);
+      font: 16px/1.62 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 28px 22px;
+      border-right: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(18px);
+      overflow-y: auto;
+    }
+
+    aside h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+
+    aside p {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    nav {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    nav a {
+      padding: 9px 11px;
+      border-radius: 12px;
+      color: #293449;
+      font-size: 14px;
+    }
+
+    nav a:hover {
+      background: var(--blue-soft);
+      text-decoration: none;
+    }
+
+    main {
+      max-width: 1220px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 42px 44px 72px;
+    }
+
+    .hero {
+      padding: 34px;
+      border: 1px solid rgba(39, 94, 254, 0.16);
+      border-radius: 28px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(234, 240, 255, 0.88));
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: #172033;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 4.6vw, 58px);
+      line-height: 1.08;
+      letter-spacing: -0.055em;
+    }
+
+    h1 span {
+      color: var(--blue);
+    }
+
+    .subtitle {
+      max-width: 860px;
+      margin: 18px 0 0;
+      color: #3e4b63;
+      font-size: 19px;
+      line-height: 1.7;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 26px;
+    }
+
+    .stat {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.82);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 24px;
+      letter-spacing: -0.03em;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    section {
+      margin-top: 34px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 10px 30px rgba(23, 32, 51, 0.06);
+    }
+
+    section h2 {
+      margin: 0 0 16px;
+      font-size: 28px;
+      line-height: 1.2;
+      letter-spacing: -0.035em;
+    }
+
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 19px;
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      margin: -4px 0 20px;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .callout {
+      margin: 18px 0;
+      padding: 18px 20px;
+      border-left: 5px solid var(--blue);
+      border-radius: 16px;
+      background: var(--blue-soft);
+    }
+
+    .callout strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .danger {
+      border-left-color: var(--red);
+      background: var(--red-soft);
+    }
+
+    .success {
+      border-left-color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .warning {
+      border-left-color: var(--amber);
+      background: var(--amber-soft);
+    }
+
+    .purple {
+      border-left-color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .card {
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .card h3 {
+      margin-top: 0;
+    }
+
+    .card p,
+    .card ul {
+      margin-bottom: 0;
+    }
+
+    .tag {
+      display: inline-block;
+      margin: 0 6px 6px 0;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: #eef2f7;
+      color: #344054;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .tag.blue { background: var(--blue-soft); color: var(--blue); }
+    .tag.green { background: var(--green-soft); color: var(--green); }
+    .tag.amber { background: var(--amber-soft); color: var(--amber); }
+    .tag.red { background: var(--red-soft); color: var(--red); }
+    .tag.purple { background: var(--purple-soft); color: var(--purple); }
+
+    .table-wrap {
+      margin: 16px 0 6px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      min-width: 760px;
+    }
+
+    th,
+    td {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      color: #344054;
+      font-size: 13px;
+      letter-spacing: -0.01em;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 7px;
+      background: #eef2f7;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .num {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--blue);
+      color: white;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .step-body {
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fff;
+    }
+
+    .step-body strong {
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .checklist {
+      columns: 2;
+      column-gap: 26px;
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .checklist li {
+      break-inside: avoid;
+      margin: 0 0 11px;
+      padding-left: 28px;
+      position: relative;
+    }
+
+    .checklist li::before {
+      content: "□";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--blue);
+      font-weight: 900;
+    }
+
+    footer {
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    @media (max-width: 980px) {
+      .layout {
+        display: block;
+      }
+
+      aside {
+        position: relative;
+        height: auto;
+      }
+
+      main {
+        padding: 24px 18px 48px;
+      }
+
+      .hero-grid,
+      .cards {
+        grid-template-columns: 1fr;
+      }
+
+      .checklist {
+        columns: 1;
+      }
+    }
+
+    @media print {
+      body {
+        background: white;
+      }
+
+      aside {
+        display: none;
+      }
+
+      .layout {
+        display: block;
+      }
+
+      main {
+        max-width: none;
+        padding: 0;
+      }
+
+      section,
+      .hero {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <h2>검토 네비게이션</h2>
+      <p>AutoRAG-Research 논문 실험 계획을 빠르게 검토하기 위한 HTML 요약본</p>
+      <nav>
+        <a href="#summary">0. 핵심 결론</a>
+        <a href="#direction">1. 논문 방향성</a>
+        <a href="#rqs">2. 연구 질문</a>
+        <a href="#matrix">3. Core / Full-scale 실험 매트릭스</a>
+        <a href="#subset">4. Subset / Corpus 정책</a>
+        <a href="#pipelines">5. Pipeline 선택</a>
+        <a href="#protocol">6. 재현성 프로토콜</a>
+        <a href="#analysis">7. 분석 계획</a>
+        <a href="#risks">8. 리스크와 보완</a>
+        <a href="#review">9. 검토 체크리스트</a>
+      </nav>
+    </aside>
+
+    <main>
+      <header class="hero" id="summary">
+        <div class="eyebrow">검토용 HTML · 2026-04-26</div>
+        <h1>AutoRAG-Research<br /><span>재현 가능한 RAG 재구현 프레임워크</span> 실험 계획</h1>
+        <p class="subtitle">
+          이 문서는 NeurIPS 2026 / TMLR / JMLR 제출을 염두에 둔 실험 계획을 검토하기 쉽게 재구성한 버전입니다.
+          핵심은 “평가 지표 고발”이 아니라, AutoRAG-Research가 다른 RAG 연구를 재구현하고 재현 가능한 실험 artifact를 만드는
+          프레임워크임을 실험으로 입증하는 것입니다.
+        </p>
+
+        <div class="hero-grid">
+          <div class="stat">
+            <strong>4</strong>
+            <span>핵심 연구 질문</span>
+          </div>
+          <div class="stat">
+            <strong>3</strong>
+            <span>Core 실험 트랙</span>
+          </div>
+          <div class="stat">
+            <strong>2–3K</strong>
+            <span>대형 dataset query cap</span>
+          </div>
+          <div class="stat">
+            <strong>Seed 42</strong>
+            <span>subset 재현성 기준</span>
+          </div>
+        </div>
+      </header>
+
+      <section id="direction">
+        <h2>1. 논문 방향성</h2>
+        <p class="lead">논문의 주장을 어디에 둘지 가장 먼저 고정해야 합니다.</p>
+
+        <div class="callout success">
+          <strong>중심 논문 주장</strong>
+          AutoRAG-Research는 RAG 연구의 재현성을 높이기 위해, published retrieval/generation pipeline을 공통 abstraction으로
+          재구현하고, benchmark dataset을 공통 schema로 ingest하며, config 기반으로 실험을 실행하고, 결과 artifact를 배포할 수 있게 하는
+          재구현 프레임워크이다.
+        </div>
+
+        <div class="cards">
+          <div class="card">
+            <h3>강조해야 할 것</h3>
+            <span class="tag green">Reimplementation fidelity</span>
+            <span class="tag green">Artifact reproducibility</span>
+            <span class="tag green">Common schema</span>
+            <span class="tag green">Config-driven execution</span>
+            <span class="tag green">Extensibility</span>
+            <ul>
+              <li>어떤 method가 어떤 shared abstraction으로 표현되는가</li>
+              <li>어떤 실험 artifact로 figure/table을 재생성할 수 있는가</li>
+              <li>어떤 deviation이 문서화되었는가</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <h3>메인 스토리로 피해야 할 것</h3>
+            <span class="tag red">Metric critique 중심</span>
+            <span class="tag red">Ranking instability 중심</span>
+            <span class="tag red">SOTA 주장</span>
+            <span class="tag red">완전한 역사적 score 복제</span>
+            <ul>
+              <li>“RAG metric이 틀렸다”를 논문 제목/핵심 주장으로 삼지 않기</li>
+              <li>단일 benchmark ranking으로 pipeline 우열을 과도하게 일반화하지 않기</li>
+              <li>closed model / prompt / preprocessing 차이로 인해 exact numeric reproduction은 non-claim으로 처리</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="rqs">
+        <h2>2. 연구 질문</h2>
+        <p class="lead">각 RQ는 실험 결과 표와 artifact evidence로 바로 연결되어야 합니다.</p>
+
+        <div class="timeline">
+          <div class="step">
+            <div class="num">1</div>
+            <div class="step-body">
+              <strong>RQ1 — Framework Reimplementation Coverage</strong>
+              한 framework가 다양한 published RAG retrieval/generation pipeline을 method-specific harness 없이 표현할 수 있는가?
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">2</div>
+            <div class="step-body">
+              <strong>RQ2 — Reproducible Execution and Artifact Reuse</strong>
+              config, DB dump, embedding, cached output, result artifact만으로 table/figure을 재현할 수 있는가?
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">3</div>
+            <div class="step-body">
+              <strong>RQ3 — Empirical Benchmarking Under a Shared Protocol</strong>
+              대표 RAG pipeline을 같은 protocol에서 돌렸을 때 어떤 성능, 비용, runtime, failure pattern이 나타나는가?
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">4</div>
+            <div class="step-body">
+              <strong>RQ4 — Extensibility for Future Reimplementation</strong>
+              새로운 method, metric, dataset을 추가할 때 얼마나 적은 harness 변경으로 executor/evaluator/reporting 흐름에 참여하는가?
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="matrix">
+        <h2>3. Core / Full-scale 실험 매트릭스</h2>
+        <p class="lead">metric compatibility를 지키기 위해 retrieval-only, generation, multimodal을 분리하되, full-scale에서는 모든 구현 pipeline을 modality-compatible dataset에 포함합니다.</p>
+
+        <h3>Track A — Retrieval Reimplementation Benchmark</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Dataset</th>
+                <th>Type</th>
+                <th>포함 이유</th>
+                <th>Metrics</th>
+                <th>Subset 판단</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>BEIR SciFact</strong></td>
+                <td>Scientific text retrieval</td>
+                <td>공개 IR benchmark, qrels sanity check</td>
+                <td>Recall@10, nDCG@10, MRR, MAP</td>
+                <td><span class="tag green">Full query split</span></td>
+              </tr>
+              <tr>
+                <td><strong>MrTyDi English</strong></td>
+                <td>Open-domain retrieval</td>
+                <td>큰 corpus를 가진 multilingual-derived retrieval setting</td>
+                <td>Recall@10, nDCG@10, MRR, MAP</td>
+                <td><span class="tag amber">Query full + corpus target 검토</span></td>
+              </tr>
+              <tr>
+                <td><strong>BRIGHT Biology</strong></td>
+                <td>Reasoning-oriented retrieval</td>
+                <td>어려운 reasoning retrieval + answer field bridge</td>
+                <td>Recall@10, nDCG@10, MRR, MAP</td>
+                <td><span class="tag green">Full domain</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Track B — Generation/RAG Reimplementation Benchmark</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Dataset</th>
+                <th>Type</th>
+                <th>포함 이유</th>
+                <th>Metrics</th>
+                <th>Subset 판단</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>RAGBench techqa/covidqa</strong></td>
+                <td>Long-form RAG QA</td>
+                <td>Native reference answer field</td>
+                <td>ROUGE-L, BERTScore F1, Token F1, EM, BARTScore F1</td>
+                <td><span class="tag green">Selected config full</span></td>
+              </tr>
+              <tr>
+                <td><strong>CRAG dev</strong></td>
+                <td>Web/search-grounded QA</td>
+                <td>Query-specific search results + generation answers</td>
+                <td>ROUGE-L, BERTScore F1, Token F1, EM</td>
+                <td><span class="tag red">query_limit=2000 또는 3000</span></td>
+              </tr>
+              <tr>
+                <td><strong>BRIGHT Biology</strong></td>
+                <td>Reasoning QA</td>
+                <td>retrieval + answer field 기반 end-to-end RAG</td>
+                <td>ROUGE-L, BERTScore F1, Token F1, BARTScore F1</td>
+                <td><span class="tag green">Full domain</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Track C — Multimodal Reimplementation Benchmark</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Dataset</th>
+                <th>Type</th>
+                <th>역할</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>ViDoRe arxivqa_test_subsampled</strong></td>
+                <td>Visual document retrieval</td>
+                <td>multimodal schema/pipeline support 입증</td>
+                <td><span class="tag purple">Full-scale visual retrieval</span></td>
+              </tr>
+              <tr>
+                <td><strong>VisRAG ChartQA</strong></td>
+                <td>Visual/chart QA</td>
+                <td>visual RAG generation support 입증</td>
+                <td><span class="tag purple">Full-scale visual generation</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="subset">
+        <h2>4. Dataset Subset / Corpus 정책</h2>
+        <p class="lead">큰 dataset은 deterministic subset으로 평가하되, 작은 dataset은 그대로 사용합니다.</p>
+
+        <div class="callout warning">
+          <strong>핵심 정책</strong>
+          Query가 이미 2,000–3,000개 이하인 test split은 full로 사용합니다. 그보다 큰 dataset은 retrieval-only에서는
+          <code>query_limit=3000</code>, generation/VLM처럼 비용이 큰 실험에서는 <code>query_limit=2000</code>을 기본값으로 둡니다.
+        </div>
+
+        <div class="cards">
+          <div class="card">
+            <h3>Query subset</h3>
+            <ul>
+              <li>대형 retrieval-only benchmark: <code>query_limit=3000</code></li>
+              <li>generation / judge / multimodal: <code>query_limit=2000</code></li>
+              <li>작은 dataset은 full split 유지</li>
+              <li>seed 42와 selected query IDs 공개</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Corpus target</h3>
+            <ul>
+              <li>현재 ingestor API의 corpus control은 <code>min_corpus_cnt</code></li>
+              <li><code>corpus_limit</code>이라는 hard cap으로 표현하지 않기</li>
+              <li>gold/required corpus를 먼저 포함</li>
+              <li>그 뒤 non-gold corpus를 seed 기반 sampling</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="callout danger">
+          <strong><code>min_corpus_cnt</code> 주의점</strong>
+          이것은 strict maximum이 아닙니다. 선택된 query의 gold/required corpus 수가 target보다 많으면 최종 corpus 수는
+          <code>min_corpus_cnt</code>보다 커질 수 있습니다. 논문과 manifest에서는 “corpus target” 또는 “corpus subset target”으로 설명하는 것이 안전합니다.
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Dataset family</th>
+                <th>Query subset 정책</th>
+                <th>Corpus subset 정책</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>BEIR / MTEB</strong></td>
+                <td>작은 task는 full, 큰 task는 <code>query_limit=3000</code></td>
+                <td><code>min_corpus_cnt</code> 지원. qrel/gold document 항상 보존</td>
+              </tr>
+              <tr>
+                <td><strong>MrTyDi</strong></td>
+                <td>English test query는 full 가능. 더 큰 split/language aggregate는 cap 검토</td>
+                <td>full corpus indexing 부담 시 <code>min_corpus_cnt</code> 사용</td>
+              </tr>
+              <tr>
+                <td><strong>BRIGHT</strong></td>
+                <td>single domain은 full. all-domain aggregate는 비용에 따라 domain-stratified 가능</td>
+                <td>short-document corpus가 클 때 <code>min_corpus_cnt</code> 사용. long-doc mode는 상대적으로 작음</td>
+              </tr>
+              <tr>
+                <td><strong>RAGBench</strong></td>
+                <td>techqa/covidqa는 full. 대형 config/all-config는 <code>query_limit=2000</code></td>
+                <td><code>min_corpus_cnt</code> ineffective. documents가 example 단위로 bundle됨</td>
+              </tr>
+              <tr>
+                <td><strong>CRAG</strong></td>
+                <td>main run은 <code>query_limit=2000</code> 또는 <code>3000</code></td>
+                <td><code>min_corpus_cnt</code> ineffective. search context가 query-specific</td>
+              </tr>
+              <tr>
+                <td><strong>ViDoRe v1</strong></td>
+                <td>subsampled dataset은 full</td>
+                <td>1:1 query-image 구조라 <code>query_limit</code>과 <code>min_corpus_cnt</code>가 사실상 동일</td>
+              </tr>
+              <tr>
+                <td><strong>ViDoRe v2/v3 / VisRAG</strong></td>
+                <td>single config는 대부분 full. all-config aggregate는 stratified/capped</td>
+                <td>shared corpus가 있는 ingestor에서는 <code>min_corpus_cnt</code> 지원</td>
+              </tr>
+              <tr>
+                <td><strong>Open-RAGBench</strong></td>
+                <td>selected path가 cap을 넘으면 <code>query_limit</code> 사용</td>
+                <td><code>min_corpus_cnt</code> ineffective. query-to-section 구조</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="pipelines">
+        <h2>5. Pipeline 선택</h2>
+        <p class="lead">Full-scale 실험에서는 구현된 pipeline을 제외하지 않습니다. 비용은 subset, cache, staged execution으로 제어하고, 결과 표가 너무 크면 appendix/detail artifact로 보냅니다.</p>
+
+        <div class="cards">
+          <div class="card">
+            <h3>Retrieval pipelines — full-scale 포함</h3>
+            <span class="tag green">All implemented where valid</span>
+            <ul>
+              <li><strong>BM25</strong> — sparse lexical baseline, deterministic sanity check</li>
+              <li><strong>Vector Search</strong> — dense retrieval baseline</li>
+              <li><strong>Hybrid RRF</strong> — compositional retrieval wrapper</li>
+              <li><strong>Hybrid CC</strong> — score-level sparse+dense fusion</li>
+              <li><strong>HyDE</strong> — LLM-assisted retriever reimplementation</li>
+              <li><strong>Query Rewrite</strong> — reusable LLM-backed preprocessing</li>
+              <li><strong>RETRO*</strong> — high-cost LLM reranking case, full-scale required</li>
+              <li><strong>Power of Noise</strong> — retrieval perturbation/diagnostic case</li>
+              <li><strong>Question Decomposition Retrieval</strong> — sub-query retrieval case</li>
+              <li><strong>HEAVEN</strong> — visual retrieval on multimodal datasets</li>
+            </ul>
+            <p><span class="tag amber">주의</span> RETRO*는 비싸지만 제외 대상이 아니라 cache/token manifest가 필요한 high-cost case입니다.</p>
+          </div>
+
+          <div class="card">
+            <h3>Generation pipelines — full-scale 포함</h3>
+            <span class="tag green">All implemented where valid</span>
+            <ul>
+              <li><strong>BasicRAG</strong> — retrieve-then-generate baseline</li>
+              <li><strong>IRCoT</strong> — interleaved retrieval + reasoning</li>
+              <li><strong>ET2RAG</strong> — ensemble/subset selection</li>
+              <li><strong>MAIN-RAG</strong> — multi-agent filtering</li>
+              <li><strong>Question Decomposition</strong> — query decomposition abstraction</li>
+              <li><strong>Self-RAG</strong> — self-reflective generation</li>
+              <li><strong>RAG-Critic</strong> — critic-guided correction/revision</li>
+              <li><strong>SPD-RAG</strong> — speculative/parallel RAG strategy</li>
+              <li><strong>AutoThinkRAG</strong> — adaptive reasoning, including multimodal variants where valid</li>
+              <li><strong>VisRAG Generation</strong> — vision-language generation on visual/multimodal datasets</li>
+            </ul>
+            <p>상세 결과가 너무 크면 appendix에 배치하되, full-scale artifact에는 모든 modality-compatible run을 포함합니다.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="protocol">
+        <h2>6. 재현성 프로토콜</h2>
+        <p class="lead">이 논문의 핵심 평가 대상은 model score뿐 아니라 artifact 자체입니다.</p>
+
+        <h3>필수 manifest</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Manifest</th>
+                <th>필수 기록 항목</th>
+                <th>왜 중요한가</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Config manifest</strong></td>
+                <td>experiment YAML, pipeline YAML, metric YAML</td>
+                <td>정확한 실험 재구성</td>
+              </tr>
+              <tr>
+                <td><strong>Dataset manifest</strong></td>
+                <td>ingestor, split/subset, <code>query_limit</code>, <code>min_corpus_cnt</code>, selected query/corpus IDs, embedding model, dump hash</td>
+                <td>preprocessing 재현성</td>
+              </tr>
+              <tr>
+                <td><strong>Environment manifest</strong></td>
+                <td>git commit, lockfile, Python, Docker, PostgreSQL, VectorChord version</td>
+                <td>실행 환경 audit</td>
+              </tr>
+              <tr>
+                <td><strong>LLM manifest</strong></td>
+                <td>provider, model name/version, temperature, max tokens, prompt template, cache key</td>
+                <td>closed/remote model drift 대응</td>
+              </tr>
+              <tr>
+                <td><strong>Result manifest</strong></td>
+                <td>retrieval rows, generation rows, metric rows, artifact hashes</td>
+                <td>figure/table 재생성</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Reproduction modes</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Required inputs</th>
+                <th>Target time</th>
+                <th>Expected output</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Figure-only</strong></td>
+                <td>result parquet/csv + figure scripts</td>
+                <td>&lt; 10분</td>
+                <td>논문 figure/table 재생성</td>
+              </tr>
+              <tr>
+                <td><strong>Small public rerun</strong></td>
+                <td>one DB dump + configs + cached/cheap model path</td>
+                <td>&lt; 1시간</td>
+                <td>subset score 재계산</td>
+              </tr>
+              <tr>
+                <td><strong>Full rerun</strong></td>
+                <td>all datasets + embeddings + API/local models</td>
+                <td>days/weeks</td>
+                <td>full benchmark regeneration</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="analysis">
+        <h2>7. 분석 계획</h2>
+        <p class="lead">benchmark score는 framework validation evidence입니다. 논문의 주객이 뒤집히지 않도록 구성합니다.</p>
+
+        <div class="timeline">
+          <div class="step">
+            <div class="num">A</div>
+            <div class="step-body">
+              <strong>Framework coverage and fidelity</strong>
+              pipeline inventory, dataset inventory, metric inventory, fidelity/deviation cards를 표로 제시.
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">B</div>
+            <div class="step-body">
+              <strong>Reproducibility evaluation</strong>
+              figure-only reproduction time, small rerun time, deterministic retrieval agreement, metric recomputation agreement, artifact completeness를 측정.
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">C</div>
+            <div class="step-body">
+              <strong>Empirical benchmark results</strong>
+              retrieval leaderboard, generation leaderboard, runtime/cost/token usage, per-query failure examples을 보고.
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">D</div>
+            <div class="step-body">
+              <strong>Extensibility case study</strong>
+              작은 plugin/pipeline/metric 추가 사례를 통해 files changed, LOC, tests, config effort를 보고.
+            </div>
+          </div>
+        </div>
+
+        <div class="callout purple">
+          <strong>Metric sensitivity의 위치</strong>
+          metric에 따라 ranking이 바뀌는 현상은 appendix 또는 secondary analysis로 두는 것이 안전합니다.
+          이 논문의 primary evidence는 “재현 가능한 재구현 framework와 artifact package”입니다.
+        </div>
+      </section>
+
+      <section id="risks">
+        <h2>8. 리스크와 보완</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Risk</th>
+                <th>Impact</th>
+                <th>Mitigation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>“그냥 tool paper 아닌가?”라는 인식</td>
+                <td><span class="tag red">High</span></td>
+                <td>재구현 fidelity, artifact reproduction measurement, released configs/results를 전면에 둠</td>
+              </tr>
+              <tr>
+                <td>exact original score reproduction이 안 됨</td>
+                <td><span class="tag red">High</span></td>
+                <td>exact score matching은 non-claim. deviation/fidelity card로 투명하게 처리</td>
+              </tr>
+              <tr>
+                <td>generation metric을 answer 없는 dataset에 사용</td>
+                <td><span class="tag red">High</span></td>
+                <td>retrieval-only vs generation track 분리. <code>generation_gt</code> 필요 조건 명시</td>
+              </tr>
+              <tr>
+                <td>pipeline/config contamination</td>
+                <td><span class="tag amber">Medium</span></td>
+                <td>unique pipeline names + config manifest + DB result hash 관리</td>
+              </tr>
+              <tr>
+                <td>full benchmark 비용 과다</td>
+                <td><span class="tag amber">Medium</span></td>
+                <td>모든 pipeline은 포함하되 deterministic capped runs, cached outputs, staged execution, token/runtime manifest로 비용 관리</td>
+              </tr>
+              <tr>
+                <td>closed model drift</td>
+                <td><span class="tag amber">Medium</span></td>
+                <td>cached outputs, model version, temperature 0, prompt/cache manifest 공개</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="review">
+        <h2>9. 검토 체크리스트</h2>
+        <p class="lead">이 HTML을 보면서 최종 실험 계획에서 빠진 결정을 체크하기 위한 항목입니다.</p>
+
+        <ul class="checklist">
+          <li>논문 제목과 abstract가 “metric critique”로 읽히지 않는가?</li>
+          <li>RQ1–RQ4가 각각 table/figure로 증명 가능한가?</li>
+          <li>BEIR/MrTyDi를 generation metric에 사용하지 않도록 명확히 막았는가?</li>
+          <li>CRAG에 <code>query_limit=2000/3000</code> 정책을 적용했는가?</li>
+          <li>MrTyDi corpus에 <code>min_corpus_cnt</code> 필요 여부를 결정했는가?</li>
+          <li><code>corpus_limit</code>이라는 hard cap 표현을 피했는가?</li>
+          <li>각 subset의 query IDs/corpus IDs/seed를 manifest로 남길 수 있는가?</li>
+          <li>각 pipeline의 fidelity/deviation card 초안이 있는가?</li>
+          <li>figure-only reproduction path가 실제로 10분 내 가능한가?</li>
+          <li>small public rerun dataset과 config가 하나로 좁혀졌는가?</li>
+          <li>LLM output cache와 prompt/model manifest가 준비되는가?</li>
+          <li>full-scale artifact에 모든 구현 pipeline의 modality-compatible run이 포함되는가?</li>
+        </ul>
+
+        <div class="callout success">
+          <strong>검토 시 가장 중요한 한 문장</strong>
+          “AutoRAG-Research는 RAG 방법론을 공통 schema/config/executor/evaluator 아래에서 faithful하게 재구현하고,
+          그 결과를 artifact로 재현 가능하게 만드는 framework다.”
+        </div>
+      </section>
+
+      <footer>
+        Source plans:
+        <code>docs/plans/neurips-2026-experimentation-plan-REVISED.md</code>,
+        <code>docs/plans/neurips-2026-experimentation-plan-FULL.md</code>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

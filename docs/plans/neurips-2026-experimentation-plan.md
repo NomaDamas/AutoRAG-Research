@@ -1,281 +1,384 @@
 # AutoRAG-Research NeurIPS 2026 Experimentation Plan
-## Evaluations & Datasets Track Submission
+## A Reimplementation Framework for Reproducible RAG Research
 
-**Target:** NeurIPS 2026 Evaluations & Datasets Track  
-**Deadlines:** Abstract May 4, 2026 | Full Paper May 6, 2026  
-**Branch:** `experiment/paper-publication`  
-**Paper Working Title:** *AutoRAG-Research: A Unified, Reproducible Benchmarking Framework for Retrieval-Augmented Generation*
+**Target:** NeurIPS 2026 Datasets & Benchmarks / Evaluations-style submission, TMLR, or JMLR
+**Deadlines:** Abstract May 4, 2026 | Full Paper May 6, 2026
+**Branch:** `experiment/paper-publication`
+**Working Title:** *AutoRAG-Research: A Unified Reimplementation Framework for Reproducible Retrieval-Augmented Generation Experiments*
 
 ---
 
-## 1. Paper Positioning & Core Contribution
+## 1. Paper Positioning and Core Contribution
 
 ### 1.1 Problem Statement
-The RAG research landscape is fragmented:
-- Every paper claims SOTA using different datasets, metrics, and experimental setups
-- No unified way to fairly compare pipeline designs across diverse retrieval and generation strategies
-- Existing benchmarks (CRAG, RAGChecker) evaluate *systems* but lack systematic *pipeline design comparison* infrastructure
-- Reproducing and extending prior RAG work requires re-implementing evaluation harnesses from scratch
+
+RAG research is difficult to reproduce and extend because each paper often differs in:
+
+- dataset preprocessing and chunking;
+- retrieval and generation pipeline wiring;
+- prompt templates and LLM backends;
+- metric implementations;
+- result persistence format;
+- experiment orchestration scripts;
+- undocumented hyperparameters and implementation assumptions.
+
+As a result, researchers who want to reproduce or compare RAG methods often need to rebuild substantial infrastructure before they can test the method itself.
 
 ### 1.2 Core Contribution
-AutoRAG-Research is **not** a new RAG pipeline. It is an **evaluation science contribution**:
-- A unified benchmarking framework that implements 20+ SOTA RAG pipelines from papers in one reproducible codebase
-- Pre-computed embeddings and unified data formats across 9+ diverse datasets
-- A plugin architecture enabling extensible, fair comparison of retrieval and generation strategies
-- Systematic analysis revealing how pipeline design choices affect performance across dataset types
+
+AutoRAG-Research is a **reproducible reimplementation framework** for RAG research.
+
+It provides:
+
+1. **Unified pipeline abstractions** for retrieval and generation methods.
+2. **Dataset ingestors** that map heterogeneous benchmarks into a common database schema.
+3. **Config-driven execution** through YAML pipeline/metric/experiment definitions.
+4. **Database-backed result persistence** for retrieval results, generation outputs, and metric scores.
+5. **Metric evaluation services** that can recompute scores from stored outputs.
+6. **Reporting tools** for cross-dataset and cross-pipeline comparison.
+7. **Plugin surfaces** for adding new methods without rewriting the executor/evaluator.
+8. **Artifact packaging practices** that allow reviewers and future researchers to reproduce figures from released outputs.
 
 ### 1.3 Scientific Claims
-1. **Reproducibility Claim:** AutoRAG-Research enables exact reproduction of 20+ published RAG pipeline results with unified data formats and metrics
-2. **Comparative Analysis Claim:** Systematic comparison across pipelines reveals dataset-dependent optimal design patterns (e.g., sparse vs. dense retrieval, single-hop vs. multi-hop generation)
-3. **Evaluation Design Claim:** The choice of evaluation metrics significantly affects pipeline rankings, and unified metric suites are necessary for fair comparison
-4. **Extensibility Claim:** The plugin system lowers the barrier for researchers to contribute new pipelines/metrics and receive automatic benchmarking
+
+1. **Reimplementation Framework Claim:** AutoRAG-Research can express diverse published RAG methods under shared retrieval/generation/data/metric abstractions.
+2. **Reproducibility Claim:** Experiments run through AutoRAG-Research can be reproduced from configs, dataset dumps, cached outputs, and result artifacts.
+3. **Fidelity Claim:** Reimplemented methods can be accompanied by explicit fidelity/deviation cards, making differences from original papers auditable.
+4. **Empirical Utility Claim:** Running representative reimplemented RAG pipelines under one protocol yields useful benchmark results and diagnostic comparisons.
+5. **Extensibility Claim:** New pipelines, metrics, and datasets can be added through configs/plugins while reusing the same execution and evaluation infrastructure.
+
+### 1.4 Non-Claims
+
+The paper should avoid overclaiming:
+
+- It does **not** claim exact numerical reproduction of every original paper result.
+- It does **not** claim that all RAG metrics are unreliable.
+- It does **not** make metric-induced ranking instability the central contribution.
+- It does **not** claim that one benchmark ranking establishes universal pipeline superiority.
+
+The intended claim is faithful, documented, and rerunnable **reimplementation**, not perfect historical score replication.
 
 ---
 
 ## 2. Experimental Design
 
-### 2.1 Datasets (Unified via AutoRAG)
+The experiments are designed to demonstrate that AutoRAG-Research supports real RAG reimplementation work end-to-end.
 
-| Dataset | Type | Size | Domains | Pre-computed Embeddings |
-|---------|------|------|---------|------------------------|
-| BEIR (scifact) | Text | ~5K queries | Scientific | Yes |
-| RAGBench (subset) | Text | ~10K queries | Multi-domain | Yes |
-| MrTyDi (en) | Text | ~6K queries | Multilingual | Yes |
-| BRIGHT | Text | ~2K queries | Reasoning-intensive | Yes |
-| CRAG (dev) | Text | ~4K queries | Web/KG simulated | No (public) |
-| ViDoRe (pdf) | Image | ~3K queries | Visual documents | Yes |
-| VisRAG (ChartQA) | Image | ~2K queries | Charts/figures | Yes |
-| Open-RAGBench | Multi-modal | ~5K queries | arXiv PDFs | Yes |
+### 2.1 Experiment Tracks
 
-**Justification:** Diverse coverage of text, image, and multimodal RAG scenarios. Mix of public benchmarks and AutoRAG-preprocessed versions.
+| Track | Purpose | Output |
+|-------|---------|--------|
+| **A. Retrieval Reimplementation** | Show that retrieval methods can be reimplemented and compared under shared qrels/schema/metrics | Retrieval result tables and reproducibility checks |
+| **B. Generation/RAG Reimplementation** | Show that generation pipelines can compose with retrieval pipelines and be evaluated on datasets with answer GT | Generation benchmark tables and token/runtime/cost analysis |
+| **C. Reproducibility Artifact Evaluation** | Show that results can be regenerated from released configs/artifacts | Figure-only and small-rerun reproduction measurements |
+| **D. Extensibility Case Study** | Show that a new method/metric can be added without rewriting the harness | Plugin or pipeline case-study table |
+| **E. Multimodal Reimplementation** | Demonstrate that the schema can support image/multimodal RAG | Full-scale visual/multimodal results, with detailed tables in appendix if needed |
 
-### 2.2 Pipelines (20+ Implemented)
+### 2.2 Dataset Selection
 
-**Retrieval Pipelines (8):**
-1. Vector Search (DPR) - dense single-vector
-2. Vector Search (ColBERT) - dense multi-vector MaxSim
-3. BM25 - sparse lexical
-4. HyDE - hypothetical document embeddings
-5. Query Rewrite - query reformulation before retrieval
-6. RETRO* - rubric-based LLM reranking
-7. Hybrid RRF - reciprocal rank fusion
-8. Hybrid CC - convex combination
+Dataset choice must respect metric compatibility. Retrieval-only datasets should not be forced into generation evaluation unless generation ground truth is present.
 
-**Generation Pipelines (8):**
-1. BasicRAG - retrieve-then-generate baseline
-2. IRCoT - interleaved retrieval + chain-of-thought
-3. ET2RAG - majority voting on context subsets
-4. MAIN-RAG - multi-agent filtering
-5. VisRAG - vision-language generation
-6. Self-RAG - self-reflective generation
-7. RAG-Critic - critic-guided correction
-8. AutoThinkRAG - adaptive reasoning paths
+#### Retrieval Track
 
-**Justification:** Coverage of major RAG paradigms from 2020-2025, spanning simple to complex strategies.
+| Dataset | Type | Use |
+|---------|------|-----|
+| **BEIR (scifact)** | scientific text retrieval | Retrieval benchmark and qrels sanity check |
+| **MrTyDi (english)** | open-domain text retrieval | Larger retrieval benchmark |
+| **BRIGHT (biology)** | reasoning-oriented text retrieval | Harder retrieval benchmark and bridge to generation |
 
-### 2.3 Metrics
+#### Generation Track
 
-**Retrieval Metrics:**
-- Recall@k, Precision@k, F1@k
-- nDCG@k, MRR, MAP
+| Dataset | Type | Use |
+|---------|------|-----|
+| **RAGBench (techqa or covidqa)** | RAG QA with answer field | Reference-based generation evaluation |
+| **CRAG (dev)** | web/search-grounded QA | Generation evaluation with query-specific search contexts |
+| **BRIGHT (biology)** | reasoning QA | End-to-end retrieval+generation evaluation |
 
-**Generation Metrics:**
-- N-gram: BLEU, ROUGE, METEOR
-- Semantic: BERTScore, BARTScore, SemScore
-- LLM-as-Judge: UniEval (coherence, consistency, fluency, relevance)
-- Diagnostic: Response Relevancy, Token F1, Exact Match
+#### Multimodal Track
 
-**Justification:** Both traditional and modern metrics to study metric-dependent ranking effects.
+| Dataset | Type | Use |
+|---------|------|-----|
+| **ViDoRe (arxivqa_test_subsampled)** | visual document retrieval | Full-scale multimodal retrieval evaluation |
+| **VisRAG (ChartQA)** | visual/chart QA | Full-scale multimodal generation evaluation |
 
-### 2.4 Experimental Protocol
+#### Dataset Subsetting and Corpus Control
 
-**Phase 1: Reproducibility Verification (Weeks 1-2)**
-- Run all retrieval pipelines on all text datasets
-- Run all generation pipelines on datasets with generation ground truth
-- Verify that results align with published paper claims where available
-- Document deviations and implementation choices
+Large datasets should be evaluated through deterministic, manifest-backed subsets. A test dataset with roughly 2,000--3,000
+queries is sufficient for the paper's reproducibility claim; smaller datasets should be kept intact rather than upsampled or
+artificially expanded.
 
-**Phase 2: Systematic Comparison (Weeks 3-4)**
-- Cross-pipeline comparison tables per dataset
-- Analysis of: retrieval type (sparse vs. dense vs. hybrid) vs. dataset characteristics
-- Analysis of: generation complexity (single-pass vs. multi-hop vs. agent-based) vs. query complexity
-- Correlation analysis between retrieval and generation performance
+- Use full query splits when they are already below the cap.
+- Use `query_limit=3000` for large retrieval-only runs and `query_limit=2000` for expensive generation or multimodal runs.
+- Use `min_corpus_cnt` for corpus-size control where the ingestor supports it. This is not a hard `corpus_limit`: gold or
+  required corpus items for the selected queries are always included first, then non-gold items are sampled up to the target.
+- Record query IDs, gold corpus IDs, sampled non-gold corpus IDs, seed, `query_limit`, `min_corpus_cnt`, ingestor version, and
+  dump hash in the dataset ingestion manifest.
+- Treat RAGBench, CRAG, and Open-RAGBench as query-centric datasets where corpus-size limiting is ineffective; use
+  `query_limit` for those datasets.
 
-**Phase 3: Evaluation Design Analysis (Weeks 5-6)**
-- Run all metrics on all generation outputs
-- Compute metric-to-metric correlations (Kendall tau between pipeline rankings)
-- Identify cases where metric choice changes "best" pipeline
-- Compare LLM-judge metrics vs. traditional metrics for ranking stability
+For the current MVP matrix, CRAG is the main dataset that needs a query subset. MrTyDi English can keep the full test query
+split but may need `min_corpus_cnt` if indexing the full corpus is too expensive.
 
-**Phase 4: Ablation & Failure Mode Analysis (Weeks 7-8)**
-- Ablate top-k values (5, 10, 20, 50) across pipelines
-- Ablate LLM backends (GPT-4o-mini, Claude 3.5 Haiku, local models)
-- Identify failure modes: when do complex pipelines underperform simple baselines?
-- Cross-dataset transfer: do top pipelines generalize?
+### 2.3 Pipeline Selection
 
-**Phase 5: Plugin Ecosystem Validation (Week 9)**
-- Implement 2 new pipelines as plugins (to demonstrate extensibility)
-- Run them through the same evaluation harness
-- Measure time-to-benchmark for new contributions
+The full-scale benchmark must run **all implemented pipelines** wherever the dataset modality and metric compatibility make
+them valid. A smaller pilot can be used to validate infrastructure, but expensive methods should not be excluded from the
+full-scale experiment plan; their detailed tables can move to appendix while the artifacts remain released.
 
----
+#### Retrieval Pipelines
 
-## 3. Analysis & Figures
+| Pipeline | Why Included |
+|----------|--------------|
+| **BM25** | Sparse lexical baseline and deterministic sanity check |
+| **Vector Search** | Dense retrieval baseline |
+| **Hybrid RRF** | Demonstrates compositional pipeline reuse |
+| **Hybrid CC** | Alternative sparse+dense score fusion strategy |
+| **HyDE** | Published LLM-assisted retrieval reimplementation |
+| **Query Rewrite** | LLM-based query transformation reimplementation |
+| **RETRO\*** | High-cost but required LLM reranking case study |
+| **Power of Noise** | Retrieval perturbation/diagnostic case |
+| **Question Decomposition Retrieval** | Sub-query retrieval case |
+| **HEAVEN** | Visual retrieval case for multimodal datasets |
 
-### 3.1 Primary Figures
+#### Generation Pipelines
 
-**Figure 1: Framework Overview**
-- Architecture diagram showing: unified data ingestion → pipeline execution → metric evaluation → leaderboard/reporting
-- Highlight plugin system and cross-database analytics
+| Pipeline | Why Included |
+|----------|--------------|
+| **BasicRAG** | Baseline retrieve-then-generate method |
+| **IRCoT** | Interleaved retrieval/reasoning paper reimplementation |
+| **ET2RAG** | Ensemble/subset-selection style generation pipeline |
+| **MAIN-RAG** | Multi-agent filtering RAG reimplementation |
+| **Question Decomposition** | Decomposition-style generation/retrieval composition |
+| **Self-RAG** | Self-reflective generation reimplementation |
+| **RAG-Critic** | Critic-guided correction/revision case |
+| **SPD-RAG** | Speculative/parallel generation strategy case |
+| **AutoThinkRAG** | Adaptive reasoning path case, including multimodal variants where valid |
+| **VisRAG Generation** | Vision-language generation case for visual/multimodal datasets |
 
-**Figure 2: Pipeline Comparison Heatmap**
-- Rows: datasets | Columns: pipelines
-- Color: nDCG@10 (retrieval) or BERTScore F1 (generation)
-- Clustered to show dataset-type preferences
+Cost is handled through `query_limit`, `min_corpus_cnt`, caching, and token/runtime manifests, not by removing implemented
+pipelines from the full-scale experiment matrix.
 
-**Figure 3: Metric Ranking Correlation**
-- Kendall tau correlation matrix between all generation metrics
-- Highlight cases where metric choice inverts rankings
+### 2.4 Metrics
 
-**Figure 4: Design Choice Analysis**
-- Scatter: retrieval complexity (x) vs. generation complexity (y)
-- Points colored by overall performance
-- Annotate surprising findings (e.g., simple BM25+BasicRAG competitive on factoid QA)
+#### Retrieval Metrics
 
-**Figure 5: Failure Mode Examples**
-- Specific query examples where SOTA pipelines fail
-- Side-by-side outputs from different pipeline types
-- Error taxonomy: hallucination, retrieval miss, reasoning error, etc.
+- Recall@10
+- nDCG@10
+- MRR
+- MAP
+- Precision/F1 where appropriate
 
-### 3.2 Primary Tables
+#### Generation Metrics
 
-**Table 1: Dataset Statistics**
-- Dataset | Type | #Queries | #Docs | Avg Doc Length | Domain | Ground Truth Types
+Use reference-based metrics only when `generation_gt` exists:
 
-**Table 2: Retrieval Pipeline Results (nDCG@10)**
-- Full comparison matrix across datasets
-- Bold best per dataset; underline second best
+- ROUGE-L
+- BERTScore F1
+- Token F1
+- Exact Match
+- BARTScore F1
+- UniEval dimensions where retrieved context/reference requirements are satisfied
 
-**Table 3: Generation Pipeline Results (BERTScore F1)**
-- Full comparison matrix across datasets
-- Include retrieval metric as reference
-
-**Table 4: Metric Ranking Stability**
-- Pipeline rankings under different metric sets
-- Report how often "best" pipeline changes
-
-**Table 5: Ablation Results**
-- Top-k sensitivity for top-3 pipelines
-- LLM backend sensitivity
+LLM-as-judge metrics are optional because API access, pricing, and model drift complicate reproduction. If included, publish judge prompts, model versions, sampling policy, and cached judge outputs.
 
 ---
 
-## 4. Paper Structure (9 pages)
+## 3. Reproducibility Protocol
 
-**Abstract (1 paragraph)**
-- Problem: fragmented RAG evaluation
-- Solution: unified benchmarking framework with 20+ pipelines, 9 datasets, comprehensive metrics
-- Key findings: dataset-dependent optimal designs, metric-choice sensitivity, simple baselines often competitive
+### 3.1 Required Manifests
 
-**1. Introduction (1.5 pages)**
-- RAG proliferation and SOTA claims problem
-- Existing benchmarks evaluate systems, not design choices
-- AutoRAG-Research: unified, reproducible, extensible
-- Main contributions (bulleted)
+Every reported run should have:
 
-**2. Related Work (1 page)**
-- RAG benchmarks: CRAG, RAGChecker, ClashEval, UDA, HawkBench
-- Evaluation frameworks: RAGPerf, UniBench, HEMM
-- AutoML for RAG: AutoRAG (the original tool, not this research framework)
-- Gap: no unified pipeline benchmarking with systematic design analysis
+1. Experiment config file.
+2. Pipeline config files.
+3. Metric config files.
+4. Dataset ingestion manifest, including subset/split, `query_limit`, `min_corpus_cnt`, selected query/corpus IDs, seed, and
+   source/dump hash.
+5. Git commit hash.
+6. Dependency lockfile hash.
+7. Database dump hash or source dataset hash.
+8. Embedding model identifier and embedding artifact hash.
+9. LLM model identifier, temperature, max token settings, and prompt templates.
+10. Result artifact hash.
 
-**3. Framework Design (1.5 pages)**
-- Architecture: layered design (repository → UoW → service → pipeline)
-- Unified data format and pre-computed embeddings
-- Pipeline abstraction: retrieval vs. generation base classes
-- Plugin system and extensibility
-- Metric system: retrieval + generation with granularity support
+### 3.2 Unique Naming Policy
 
-**4. Experimental Setup (1 page)**
-- Datasets and preprocessing
-- Pipeline implementations and faithfulness to papers
-- Metrics and evaluation protocol
-- Computational environment and reproducibility measures
+Pipeline names must encode the method combination. Examples:
 
-**5. Results & Analysis (2.5 pages)**
-- 5.1 Reproducibility verification
-- 5.2 Systematic pipeline comparison (heatmaps, rankings)
-- 5.3 Evaluation design analysis (metric correlations, ranking stability)
-- 5.4 Ablation studies and failure modes
-- 5.5 Plugin ecosystem demonstration
+- `bm25__scifact`
+- `vector_search__bge_large__scifact`
+- `hyde__qwen__bge_large__ragbench_techqa`
+- `basic_rag__bm25__gpt4omini__ragbench_techqa`
+- `ircot__hybrid_rrf__gpt4omini__bright_biology`
 
-**6. Discussion & Limitations (0.5 page)**
-- Coverage limitations (languages, modalities)
-- Metric limitations (LLM-judge bias, reference-based metrics)
-- Computational cost of comprehensive benchmarking
+This prevents accidental reuse of database rows from a previous config with the same pipeline name.
 
-**7. Conclusion (0.5 page)**
-- AutoRAG-Research advances RAG evaluation science
-- Future work: real-time leaderboard, community submissions, new modalities
+### 3.3 Fidelity Cards
 
-**References**
+For each reimplemented paper method, include:
 
-**Appendix**
-- A. Implementation details per pipeline
-- B. Full result tables
-- C. Metric definitions and prompts
-- D. Plugin API documentation
-- E. Computational costs
+| Field | Required Content |
+|-------|------------------|
+| Method | Paper name and citation |
+| Scope | Which algorithmic components are implemented |
+| Shared abstraction | Retrieval pipeline, generation pipeline, metric, ingestor, or plugin |
+| Defaults | Hyperparameters used in this paper |
+| Deviations | Differences from the original paper/code |
+| Tests | Unit/integration/smoke tests supporting the implementation |
+| Artifact | Config/result/cache files used in reported experiments |
+
+### 3.4 Reproduction Modes
+
+| Mode | Description | Reviewer Cost |
+|------|-------------|---------------|
+| **Figure-only** | Regenerate all paper figures/tables from released result artifacts | CPU only, minutes |
+| **Small rerun** | Restore one small dataset dump and rerun a subset of pipelines/metrics | PostgreSQL + optional local/mock/API model, under 1 hour target |
+| **Full rerun** | Recreate the complete benchmark | Full compute/API/local model resources, days/weeks |
+
+The paper should promise fast figure reproduction, not fast full benchmark reruns.
 
 ---
 
-## 5. Artifact Preparation
+## 4. Analysis Plan
 
-### 5.1 Code Repository
-- **GitHub:** anonymized repo under `autorag-research` org (or `anonymous-autorag`)
-- **Documentation:** README with quickstart, architecture docs, API reference
-- **Tests:** `make test` passes (Docker PostgreSQL required)
-- **License:** Apache 2.0
+### 4.1 Framework Coverage
 
-### 5.2 Datasets
-- **HuggingFace Datasets:** host pre-processed, unified versions
-- **Croissant metadata:** include core + RAI fields for each dataset
-- **Sample data:** include small samples (<4GB total) for reviewer inspection
+Report:
 
-### 5.3 Pre-computed Results
-- **HuggingFace or Zenodo:** all pipeline outputs and evaluation scores
-- Include: raw retrieval results, generation outputs, metric scores per query
-- Enable reproducibility without requiring API keys or GPU access
+- Number of supported ingestors.
+- Number of retrieval pipelines.
+- Number of generation pipelines.
+- Number of metrics.
+- Which components have tests and docs.
+- Which components have paper/fidelity cards.
 
-### 5.4 Demo
-- **Gradio UI:** hosted HuggingFace Space with leaderboard
-- **CLI demo:** `autorag-research run --db-name=beir_scifact_test` reproduction
+### 4.2 Reimplementation Fidelity
+
+Report a table of representative methods:
+
+| Method | Original Paper | AutoRAG-Research Component | Faithful Parts | Deviations |
+|--------|----------------|----------------------------|----------------|------------|
+| BM25 | Robertson & Zaragoza | retrieval pipeline | lexical sparse retrieval | DB/index implementation differs |
+| HyDE | Gao et al. | retrieval pipeline | hypothetical document generation + dense retrieval | prompt/model may differ |
+| IRCoT | Trivedi et al. | generation pipeline | iterative CoT + retrieval | prompt/model/dataset may differ |
+| MAIN-RAG | MAIN-RAG paper | generation pipeline | multi-agent filtering | logprob/model support may differ |
+| ET2RAG | ET2RAG paper | generation pipeline | context subset voting | model/prompt choices may differ |
+
+### 4.3 Benchmark Results
+
+Report:
+
+1. Retrieval metric table by dataset/pipeline.
+2. Generation metric table by dataset/retrieval/generation combination.
+3. Runtime and token usage table.
+4. Example outputs/failure modes.
+5. Optional metric-family comparison as appendix.
+
+The benchmark results validate the framework; they should not overtake the reproducibility thesis.
+
+### 4.4 Reproducibility Results
+
+Report:
+
+1. Figure reproduction time.
+2. Small rerun time.
+3. Deterministic metric recomputation match.
+4. Retrieval rerun exact-match or score-match rate.
+5. Artifact completeness checklist.
+6. Result export schema and file sizes.
+
+### 4.5 Extensibility Results
+
+If time permits:
+
+- Add one small plugin/pipeline/metric case study.
+- Report implementation effort and tests.
+- Demonstrate that executor/evaluator/reporting work without additional harness code.
 
 ---
 
-## 7. Risks & Mitigations
+## 5. Paper Structure
+
+### Abstract
+A concise statement that AutoRAG-Research is a reproducible reimplementation framework for RAG research, validated through representative reimplemented pipeline experiments and released artifacts.
+
+### 1. Introduction
+- RAG reproducibility problem.
+- Existing ad hoc experiment harnesses.
+- Need for a reusable reimplementation framework.
+- Summary of contributions.
+
+### 2. Background and Related Work
+- RAG pipelines and benchmarks.
+- Reproducibility in ML/NLP.
+- RAG evaluation frameworks and toolkits.
+- Why this paper focuses on reimplementation infrastructure and artifacts.
+
+### 3. AutoRAG-Research Framework
+- Architecture.
+- Data model.
+- Pipeline abstractions.
+- Metric/evaluator system.
+- Config and plugin system.
+- Reporting service.
+
+### 4. Reimplementation and Reproducibility Protocol
+- Dataset compatibility.
+- Pipeline fidelity cards.
+- Config manifests.
+- Artifact release.
+- Reproduction modes.
+
+### 5. Experiments
+- Retrieval track.
+- Generation track.
+- Optional multimodal track.
+- Reproduction measurements.
+- Extensibility case study.
+
+### 6. Results
+- Framework coverage.
+- Reimplementation fidelity summary.
+- Benchmark tables.
+- Reproduction-time/artifact-completeness results.
+- Runtime/cost analysis.
+
+### 7. Discussion
+- What reproducibility improves.
+- What remains hard: closed models, missing hyperparameters, dataset licensing, model drift.
+- How future researchers can extend the framework.
+
+### 8. Conclusion
+AutoRAG-Research makes RAG reimplementation studies more systematic, auditable, and reusable.
+
+---
+
+## 6. Success Criteria
+
+The paper succeeds if it demonstrates:
+
+1. **Framework coverage:** A meaningful set of retrieval/generation pipelines, datasets, and metrics are expressible in one framework.
+2. **Fidelity transparency:** Each representative paper method has documented implementation choices and deviations.
+3. **Reproducible artifacts:** Reviewers can regenerate figures/tables from released result artifacts quickly.
+4. **Small rerun path:** Reviewers can restore a small dataset and rerun a subset without rebuilding the harness.
+5. **Empirical usefulness:** The framework produces nontrivial RAG benchmark results with runtime/cost diagnostics.
+6. **Extensibility:** At least one added method/metric/plugin can reuse the existing execution/evaluation/reporting stack.
+
+---
+
+## 7. Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| API costs for 20+ pipelines x 9 datasets | High | Use smaller model variants (GPT-4o-mini); pre-compute and cache all results |
-| PostgreSQL setup complexity for reviewers | Medium | Provide Docker Compose one-liner; include SQLite fallback mode |
-| Results don't show clear patterns | High | Frame as "negative result" — showing fragmentation IS the finding |
-| Similar to RAGPerf (arXiv 2026) | Medium | Emphasize: more pipelines, more datasets, plugin system, pre-computed embeddings |
-| Computational time exceeds deadline | High | Parallelize across machines; prioritize key experiments |
-| Reviewers question novelty of "just a tool" | High | Frame around evaluation science; emphasize diagnostic insights and systematic analysis |
+| Tool-paper perception | High | Anchor paper in reproducible reimplementation and artifact evaluation, not UI/features |
+| Exact reproduction challenged | High | Claim faithful documented reimplementation; publish deviation cards |
+| Generation metrics used on datasets without answers | High | Split retrieval-only and generation tracks; enforce metric compatibility |
+| Pipeline/config contamination | High | Unique pipeline naming and config manifests |
+| Closed-model drift | Medium | Cache outputs, record versions, temperature 0, publish generations |
+| Full benchmark too costly | Medium | Use deterministic subset caps, cached outputs, staged execution, and token/runtime manifests while still covering all implemented pipelines |
+| Artifact package too large | Medium | Separate figure-only artifacts from full DB dumps |
+| Insufficient time before 2026 deadline | High | Submit MVP if results already exist; otherwise target TMLR/JMLR/next-cycle venue with stronger artifacts |
 
 ---
 
-## 8. Success Criteria
-
-The paper succeeds if it demonstrates:
-1. **Exact reproducibility** of 15+ published pipeline results
-2. **Novel insights** from systematic comparison (≥3 non-obvious findings)
-3. **Metric sensitivity analysis** showing ranking instability across metrics
-4. **Plugin validation** with 2+ community-contributed pipelines benchmarked
-5. **Accessibility:** reviewers can reproduce key results in <30 minutes
-
----
-
-*Drafted: 2026-04-22*
-*Target: NeurIPS 2026 Evaluations & Datasets Track*
+*Draft corrected for reproducibility-framework positioning: 2026-04-24*

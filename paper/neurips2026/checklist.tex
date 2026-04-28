@@ -1,0 +1,85 @@
+\section*{NeurIPS Paper Checklist}
+
+\begin{enumerate}
+
+\item {\bf Claims}
+\item[] Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?
+\item[] Answer: \answerYes{}
+\item[] Justification: The abstract and introduction state that the contribution is a reproducible RAG reimplementation framework, with a special emphasis on shareable pre-embedded corpus dumps and artifact-backed experiments rather than leaderboard superiority.
+
+\item {\bf Limitations}
+\item[] Question: Does the paper discuss the limitations of the work performed by the authors?
+\item[] Answer: \answerYes{}
+\item[] Justification: The limitations section discusses exact reproduction limits, closed-model drift, benchmark cost, dataset licensing, and risks from easier benchmarking.
+
+\item {\bf Theory assumptions and proofs}
+\item[] Question: For each theoretical result, does the paper provide the full set of assumptions and a complete proof?
+\item[] Answer: \answerNA{}
+\item[] Justification: The paper introduces a software and artifact framework and does not contain theoretical results.
+
+\item {\bf Experimental result reproducibility}
+\item[] Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper?
+\item[] Answer: \answerYes{}
+\item[] Justification: The paper specifies configs, dataset manifests, embedding manifests, database dump hashes, environment manifests, LLM/VLM manifests, cached outputs, per-query exports, and figure/table reproduction scripts.
+
+\item {\bf Open access to data and code}
+\item[] Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results?
+\item[] Answer: \answerYes{}
+\item[] Justification: The artifact contains the framework code, reproduction commands, configs, released manifests, and pre-embedded database dumps where upstream licenses permit redistribution.
+
+\item {\bf Experimental setting/details}
+\item[] Question: Does the paper specify all the training and test details necessary to understand the results?
+\item[] Answer: \answerYes{}
+\item[] Justification: The paper describes dataset families, query limits, corpus-target semantics, pipeline coverage, metric compatibility, embedding manifests, and environment/LLM metadata required for reruns.
+
+\item {\bf Experiment statistical significance}
+\item[] Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments?
+\item[] Answer: \answerYes{}
+\item[] Justification: The reported claims focus on artifact reproducibility and deterministic agreement. Where effectiveness comparisons are made, the released aggregate tables include paired-query exports sufficient for bootstrap or paired randomization analyses.
+
+\item {\bf Experiments compute resources}
+\item[] Question: For each experiment, does the paper provide sufficient information on the compute resources needed to reproduce the experiments?
+\item[] Answer: \answerYes{}
+\item[] Justification: The artifact includes environment manifests, token/runtime records, restored-dump timings, and reproduction modes separating figure-only, small rerun, and full rerun costs.
+
+\item {\bf Code of ethics}
+\item[] Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics?
+\item[] Answer: \answerYes{}
+\item[] Justification: The work is a reproducibility framework and benchmark over public research datasets, uses license-gated redistribution for derived dumps, and does not collect human-subject data.
+
+\item {\bf Broader impacts}
+\item[] Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed?
+\item[] Answer: \answerYes{}
+\item[] Justification: The discussion section describes benefits for reproducible research and risks from easier RAG benchmarking and deployment.
+
+\item {\bf Safeguards}
+\item[] Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse?
+\item[] Answer: \answerYes{}
+\item[] Justification: The paper does not release a new pretrained model; dataset-derived dumps are released only when redistribution is permitted, otherwise manifests and rebuild scripts are provided.
+
+\item {\bf Licenses for existing assets}
+\item[] Question: Are the creators or original owners of assets used in the paper properly credited and are the license and terms of use explicitly mentioned and properly respected?
+\item[] Answer: \answerYes{}
+\item[] Justification: The dataset manifest records upstream source, citation, license, redistribution status, and whether a public dump or rebuild-only path is used.
+
+\item {\bf New assets}
+\item[] Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets?
+\item[] Answer: \answerYes{}
+\item[] Justification: New assets include configs, manifests, fidelity cards, cached outputs, result exports, plotting scripts, and database dump metadata; the artifact structure is documented in the appendix.
+
+\item {\bf Crowdsourcing and research with human subjects}
+\item[] Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, as well as details about compensation?
+\item[] Answer: \answerNA{}
+\item[] Justification: The study does not involve crowdsourcing or human-subject experiments.
+
+\item {\bf Institutional review board approvals or equivalent for research with human subjects}
+\item[] Question: Does the paper describe potential risks incurred by study participants and whether IRB approvals were obtained?
+\item[] Answer: \answerNA{}
+\item[] Justification: The study does not involve human subjects.
+
+\item {\bf Declaration of LLM usage}
+\item[] Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research?
+\item[] Answer: \answerYes{}
+\item[] Justification: The paper describes LLM/VLM-backed retrieval and generation pipelines and records model/provider, prompt, decoding, cache, token, and runtime information in the LLM/VLM manifests.
+
+\end{enumerate}

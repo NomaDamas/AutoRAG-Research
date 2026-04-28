@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AutoRAG-Research NeurIPS Paper Preview</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #111; }
+    #bar {
+      position: fixed; top: 0; left: 0; right: 0; height: 40px;
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 12px; box-sizing: border-box;
+      font: 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #eee; background: rgba(20, 20, 20, 0.94); z-index: 2;
+    }
+    #bar code { color: #9cdcfe; }
+    #reload {
+      border: 1px solid #6aa9ff;
+      border-radius: 6px;
+      background: #0b63ce;
+      color: white;
+      padding: 6px 10px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #reload:hover { background: #0a55ad; }
+    #stamp { opacity: 0.82; }
+    #pdf { position: absolute; top: 40px; left: 0; width: 100%; height: calc(100% - 40px); border: 0; background: #333; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <strong>AutoRAG-Research PDF Preview</strong>
+    <button id="reload" type="button">PDF 새로고침</button>
+    <span>자동 새로고침: 꺼짐</span>
+    <span>파일: <code>main.pdf</code></span>
+    <span id="stamp"></span>
+  </div>
+  <iframe id="pdf" title="main.pdf"></iframe>
+  <script>
+    const frame = document.getElementById('pdf');
+    const stamp = document.getElementById('stamp');
+    const button = document.getElementById('reload');
+
+    function loadPdf() {
+      const ts = Date.now();
+      frame.src = `main.pdf?t=${ts}`;
+      stamp.textContent = `last reload: ${new Date(ts).toLocaleTimeString()}`;
+    }
+
+    button.addEventListener('click', loadPdf);
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
+        event.preventDefault();
+        loadPdf();
+      }
+    });
+
+    loadPdf();
+  </script>
+</body>
+</html>
