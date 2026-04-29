@@ -16,6 +16,7 @@ Available benchmarks for RAG evaluation.
 | ViDoRe | Multimodal | varies | varies | No | Visual |
 | ViDoRe v2 | Multimodal | varies | varies | No | Visual |
 | ViDoRe v3 | Multimodal | varies | varies | No | Visual |
+| SDS KoPub VDR | Multimodal | 600 | 40,781 | No | Visual |
 | VisRAG | Multimodal | varies | varies | No | Visual |
 
 ## Text vs Multimodal

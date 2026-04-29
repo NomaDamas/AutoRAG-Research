@@ -9,6 +9,7 @@ Visual document benchmarks for image-based retrieval.
 | [ViDoRe](vidore.md) | Visual Document Retrieval |
 | [ViDoRe v2](vidorev2.md) | Visual Document Retrieval v2 |
 | [ViDoRe v3](vidorev3.md) | Visual Document Retrieval v3 |
+| [SDS KoPub VDR](sds-kopub-vdr.md) | Korean public-document Visual Document Retrieval |
 | [VisRAG](visrag.md) | Visual RAG benchmark |
 | [Open-RAGBench](open-ragbench.md) | Open RAG benchmark from arXiv PDFs |
 
