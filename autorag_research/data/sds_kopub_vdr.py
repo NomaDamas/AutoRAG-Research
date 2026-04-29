@@ -213,7 +213,17 @@ class SDSKoPubVDRIngestor(MultiModalEmbeddingDataIngestor):
 
     def _infer_page_num(self, corpus_id: str) -> int:
         suffix = corpus_id.rsplit("_", maxsplit=1)[-1]
-        return int(suffix) if suffix.isdigit() else 1
+        if suffix.isdigit():
+            return int(suffix)
+        # Defensive fallback: every observed corpus_id in the live dataset ends in
+        # ``_<int>``. Log a warning so any malformed IDs are observable instead of
+        # silently bucketed into page 1.
+        logger.warning(
+            "SDS KoPub VDR corpus_id %r has non-numeric trailing segment %r; falling back to page_num=1",
+            corpus_id,
+            suffix,
+        )
+        return 1
 
     def _get_or_create_page(
         self,

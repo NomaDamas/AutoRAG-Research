@@ -150,6 +150,26 @@ def test_sds_kopub_vdr_ingests_mteb_rows(monkeypatch, fake_sds_rows):
     assert [relation["score"] for relation in q0_relations] == [1]
 
 
+def test_sds_kopub_vdr_infer_page_num_warns_on_non_numeric_suffix(caplog):
+    ingestor = sds_kopub_vdr_module.SDSKoPubVDRIngestor()
+
+    with caplog.at_level("WARNING", logger="AutoRAG-Research"):
+        page_num = ingestor._infer_page_num("malformed_corpus_id_abc")
+
+    assert page_num == 1
+    assert any("non-numeric trailing segment" in record.message for record in caplog.records)
+
+
+def test_sds_kopub_vdr_infer_page_num_silent_on_numeric_suffix(caplog):
+    ingestor = sds_kopub_vdr_module.SDSKoPubVDRIngestor()
+
+    with caplog.at_level("WARNING", logger="AutoRAG-Research"):
+        page_num = ingestor._infer_page_num("public_pdf/foo/bar_42")
+
+    assert page_num == 42
+    assert not any("non-numeric trailing segment" in record.message for record in caplog.records)
+
+
 def test_sds_kopub_vdr_supports_mixed_qrels(monkeypatch, fake_sds_rows):
     def fake_load_dataset(_path: str, config: str, streaming: bool, split: str):
         return _FakeDataset(fake_sds_rows[(config, split)])
@@ -169,17 +189,21 @@ def test_sds_kopub_vdr_supports_mixed_qrels(monkeypatch, fake_sds_rows):
     assert {relation["chunk_id"] for relation in relations} == {"doc-a_1", None}
 
 
+# With seed=42 and query_limit=5, the SDS KoPub VDR ingestor selects 5 queries
+# whose gold corpus IDs map to 5 distinct source documents and pages. ``min_corpus_cnt=20``
+# pads the corpus to 20 image chunks (and matching text chunks). All count fields
+# below are interpreted as minimums via ``chunk_count_is_minimum=True``.
 SDS_KOPUB_VDR_CONFIG = IngestorTestConfig(
     expected_query_count=5,
     expected_chunk_count=20,
     expected_image_chunk_count=20,
     chunk_count_is_minimum=True,
     check_documents=True,
-    expected_document_count=1,
+    expected_document_count=5,
     check_pages=True,
     expected_page_count=20,
     check_files=True,
-    expected_file_count=1,
+    expected_file_count=5,
     check_retrieval_relations=True,
     check_generation_gt=False,
     check_relevance_scores=True,
