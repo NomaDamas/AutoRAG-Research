@@ -190,9 +190,13 @@ def test_sds_kopub_vdr_supports_mixed_qrels(monkeypatch, fake_sds_rows):
 
 
 # With seed=42 and query_limit=5, the SDS KoPub VDR ingestor selects 5 queries
-# whose gold corpus IDs map to 5 distinct source documents and pages. ``min_corpus_cnt=20``
-# pads the corpus to 20 image chunks (and matching text chunks). All count fields
-# below are interpreted as minimums via ``chunk_count_is_minimum=True``.
+# whose gold corpus IDs cover 4 distinct source documents and 5 distinct pages
+# (one document — ``public_pdf/prism/2040 아산시 환경계획(최종안)`` — contributes
+# 2 of the 5 gold pages: page 330 for ``query-281`` and page 379 for ``query-250``).
+# ``min_corpus_cnt=20`` then pads the corpus to ≥20 image+text chunks; in real ingest
+# the padding tends to pull in additional source documents (the @pytest.mark.data run
+# observes ~18 distinct documents/files). All count fields below are therefore
+# interpreted as minimums via ``chunk_count_is_minimum=True`` rather than equalities.
 SDS_KOPUB_VDR_CONFIG = IngestorTestConfig(
     expected_query_count=5,
     expected_chunk_count=20,
