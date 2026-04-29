@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import Any
 
 import pandas as pd
 import pytest
 from PIL import Image
 
+import autorag_research.data.sds_kopub_vdr as sds_kopub_vdr_module
 from autorag_research.data.registry import discover_ingestors
-from autorag_research.data.sds_kopub_vdr import SDSKoPubVDRIngestor
 from autorag_research.orm.models.retrieval_gt import gt_to_relations, normalize_gt
 from autorag_research.orm.service.multi_modal_ingestion import MultiModalIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
@@ -106,16 +107,20 @@ def fake_sds_rows() -> dict[tuple[str, str], list[dict[str, Any]]]:
 
 
 def test_sds_kopub_vdr_detects_string_primary_key():
-    ingestor = SDSKoPubVDRIngestor()
+    ingestor = sds_kopub_vdr_module.SDSKoPubVDRIngestor()
 
     assert ingestor.detect_primary_key_type() == "string"
 
 
 def test_sds_kopub_vdr_is_registered_with_qrels_mode_choices():
     discover_ingestors.cache_clear()
+    # Some registry tests clear the global registry after this module has already
+    # been imported. Reload to re-run the @register_ingestor decorator so this
+    # test is order-independent in the full suite.
+    importlib.reload(sds_kopub_vdr_module)
     meta = discover_ingestors()["sds_kopub_vdr"]
 
-    assert meta.ingestor_class is SDSKoPubVDRIngestor
+    assert meta.ingestor_class is sds_kopub_vdr_module.SDSKoPubVDRIngestor
     qrels_param = next(param for param in meta.params if param.name == "qrels_mode")
     assert qrels_param.choices == ["image", "text", "mixed"]
 
@@ -127,7 +132,7 @@ def test_sds_kopub_vdr_ingests_mteb_rows(monkeypatch, fake_sds_rows):
 
     monkeypatch.setattr("autorag_research.data.sds_kopub_vdr.load_dataset", fake_load_dataset)
     service = _FakeService()
-    ingestor = SDSKoPubVDRIngestor()
+    ingestor = sds_kopub_vdr_module.SDSKoPubVDRIngestor()
     ingestor.set_service(service)  # type: ignore[arg-type]
 
     ingestor.ingest(min_corpus_cnt=3)
@@ -151,7 +156,7 @@ def test_sds_kopub_vdr_supports_mixed_qrels(monkeypatch, fake_sds_rows):
 
     monkeypatch.setattr("autorag_research.data.sds_kopub_vdr.load_dataset", fake_load_dataset)
     service = _FakeService()
-    ingestor = SDSKoPubVDRIngestor(qrels_mode="mixed")
+    ingestor = sds_kopub_vdr_module.SDSKoPubVDRIngestor(qrels_mode="mixed")
     ingestor.set_service(service)  # type: ignore[arg-type]
 
     ingestor.ingest(query_limit=1)
@@ -191,7 +196,7 @@ class TestSDSKoPubVDRIngestorIntegration:
         with create_test_database(SDS_KOPUB_VDR_CONFIG) as db:
             service = MultiModalIngestionService(db.session_factory, schema=db.schema)  # ty: ignore[invalid-argument-type]
 
-            ingestor = SDSKoPubVDRIngestor()
+            ingestor = sds_kopub_vdr_module.SDSKoPubVDRIngestor()
             ingestor.set_service(service)
             ingestor.ingest(
                 query_limit=SDS_KOPUB_VDR_CONFIG.expected_query_count,
