@@ -37,7 +37,7 @@ autorag-research ingest --name=kovidorev2 --extra dataset-name=hr --embedding-mo
 By default, qrels are mapped to image chunks. To evaluate text chunks or mixed image/text retrieval, set `qrels-mode`:
 
 ```bash
-autorag-research ingest --name=kovidorev2 --extra dataset-name=hr qrels-mode=mixed --embedding-model=colpali
+autorag-research ingest --name=kovidorev2 --extra dataset-name=hr --extra qrels-mode=mixed --embedding-model=colpali
 ```
 
 ## Best For

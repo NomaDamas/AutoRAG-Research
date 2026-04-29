@@ -391,6 +391,10 @@ class KoViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
         ingested_text_ids: set[int],
         is_multi_hop: bool,
     ) -> RetrievalGT | None:
+        # Each corpus_id only contributes a TextId/ImageId GT alternative when
+        # that modality was actually ingested. KoViDoRe V2 corpus rows may have
+        # empty `markdown` (image-only pages); unconditionally emitting both
+        # alternatives would produce dangling text-chunk GT entries.
         alternatives_by_corpus = [
             self._mixed_alternatives(corpus_id, score, ingested_image_ids, ingested_text_ids)
             for corpus_id, score in corpus_score_pairs
