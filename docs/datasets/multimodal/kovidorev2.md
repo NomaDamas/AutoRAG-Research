@@ -7,13 +7,13 @@ Korean Visual Document Retrieval benchmark version 2.
 | Field | Value |
 |-------|-------|
 | Modality | Multimodal (Images + Markdown text) |
-| Generation GT | Yes |
+| Generation GT | No |
 | HF Repository | `whybe-choi/kovidore-v2-*-beir` |
 | Primary Key Type | `bigint` |
 
 ## Description
 
-KoViDoRe v2 is a Korean visual document retrieval benchmark from the `whybe-choi/kovidore-benchmark-beir-v2` collection with BEIR-style `corpus`, `queries`, and `qrels` subsets. Corpus rows contain page images plus markdown and layout metadata; query rows contain Korean questions and answer ground truth.
+KoViDoRe v2 is a Korean visual document retrieval benchmark from the `whybe-choi/kovidore-benchmark-beir-v2` collection with BEIR-style `corpus`, `queries`, and `qrels` subsets. Corpus rows contain page images plus markdown and layout metadata; query rows contain Korean retrieval questions.
 
 Supported domains and source datasets:
 
@@ -44,5 +44,4 @@ autorag-research ingest --name=kovidorev2 --extra dataset-name=hr qrels-mode=mix
 
 - Korean visual document retrieval
 - Multi-page visual reasoning
-- Multimodal retrieval with generation answers
 - Comparing image-only, text-only, and mixed page retrieval

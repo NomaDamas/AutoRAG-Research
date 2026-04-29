@@ -177,7 +177,6 @@ def test_kovidorev2_ingests_beir_style_rows(monkeypatch, fake_kovidore_rows):
     ingestor.ingest(min_corpus_cnt=4)
 
     assert [query["id"] for query in service.queries] == [0, 1]
-    assert service.queries[0]["generation_gt"] == ["첫 번째 답변"]
     assert {chunk["id"] for chunk in service.image_chunks} == {
         0,
         1,
@@ -232,8 +231,7 @@ KOVIDOREV2_HR_CONFIG = IngestorTestConfig(
     check_pages=True,
     check_files=True,
     check_retrieval_relations=True,
-    check_generation_gt=True,
-    generation_gt_required_for_all=True,
+    check_generation_gt=False,
     check_relevance_scores=True,
     primary_key_type="bigint",
     db_name="kovidorev2_hr_test",

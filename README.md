@@ -37,7 +37,7 @@ We provide pre-processed datasets with unified formats. Some include **pre-compu
 | [ViDoRe](https://arxiv.org/pdf/2407.01449) | Retrieval + Generation* | Visual document QA with 1:1 query-to-page mapping |
 | [ViDoRe v2](https://arxiv.org/pdf/2505.17166) |        Retrieval        | Visual document retrieval with corpus-level search |
 | [ViDoRe v3](https://arxiv.org/pdf/2601.08620) |        Retrieval        | Visual document retrieval across 8 industry domains |
-| KoViDoRe v2 | Retrieval + Generation* | Korean visual document retrieval with multi-page reasoning |
+| KoViDoRe v2 | Retrieval | Korean visual document retrieval with multi-page reasoning |
 | [VisRAG](https://arxiv.org/pdf/2410.10594) | Retrieval + Generation* | Vision-based RAG benchmark (ChartQA, SlideVQA, DocVQA, ...) |
 
 **Text + Image**

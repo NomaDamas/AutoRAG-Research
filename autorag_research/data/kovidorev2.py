@@ -5,7 +5,7 @@ follow a multimodal BEIR structure
 with separate corpus, queries, and qrels subsets:
 
 - corpus: page images plus OCR/markdown metadata
-- queries: Korean text questions with generation answers and query type metadata
+- queries: Korean text questions with query type metadata
 - qrels: query-to-page relevance judgments with integer IDs
 """
 
@@ -318,11 +318,9 @@ class KoViDoReV2Ingestor(MultiModalEmbeddingDataIngestor):
 
         for query_id in selected_query_ids:
             query_row = queries_df.loc[query_id]
-            answer = query_row.get("answer")
-            answers = [str(answer)] if answer is not None and str(answer).strip() else None
             query_text = str(query_row["query"])
 
-            queries_batch.append({"id": query_id, "contents": query_text, "generation_gt": answers})
+            queries_batch.append({"id": query_id, "contents": query_text})
             query_id_to_pk[query_id] = query_id
 
         if queries_batch:
