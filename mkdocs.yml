@@ -37,6 +37,7 @@ nav:
           - datasets/multimodal/vidore.md
           - datasets/multimodal/vidorev2.md
           - datasets/multimodal/vidorev3.md
+          - datasets/multimodal/sds-kopub-vdr.md
           - datasets/multimodal/kovidorev2.md
           - datasets/multimodal/visrag.md
           - datasets/multimodal/open-ragbench.md
