@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from autorag_research.exceptions import DuplicateRetrievalGTError, LengthMismatchError
@@ -234,3 +236,131 @@ class TestBaseIngestionService:
             uow.retrieval_relations.add(original_rel_3)
             uow.retrieval_relations.add(original_rel_4)
             uow.commit()
+
+    def test_embed_all_queries_skips_failed_items_without_infinite_loop(self, service, caplog):
+        """Regression for #239: failing embeddings must not cause an infinite loop.
+
+        The previous implementation re-fetched rows whose embed call returned
+        None forever, since the SQL filter is "embedding IS NULL". This test
+        proves the loop terminates, the good row gets embedded, the bad row
+        stays unembedded, and the summary log surfaces the skip count.
+        """
+        snapshots = _snapshot_unembedded_queries(service)
+        added_ids = service.add_queries([
+            {"contents": "embed-fail-test good query", "generation_gt": None},
+            {"contents": "embed-fail-test BAD query", "generation_gt": None},
+        ])
+        good_id, bad_id = added_ids
+
+        try:
+            with service._create_uow() as uow:
+                uow.queries.get_by_id(good_id).embedding = None
+                uow.queries.get_by_id(bad_id).embedding = None
+                uow.commit()
+
+            async def flaky_embed(text_value: str) -> list[float]:
+                if "BAD" in text_value:
+                    msg = "simulated embedding failure"
+                    raise RuntimeError(msg)
+                return [0.42] * 768
+
+            with caplog.at_level(logging.INFO, logger="AutoRAG-Research"):
+                embedded = service.embed_all_queries(
+                    flaky_embed,
+                    batch_size=10,
+                    max_concurrency=2,
+                    bm25_tokenizer=None,
+                )
+
+            assert embedded >= 1
+
+            with service._create_uow() as uow:
+                good = uow.queries.get_by_id(good_id)
+                bad = uow.queries.get_by_id(bad_id)
+                assert good.embedding is not None, "good query must have been embedded"
+                assert bad.embedding is None, "bad query must have been skipped, not embedded"
+
+            summary_messages = [r.message for r in caplog.records if "skipped_failed=" in r.message]
+            assert summary_messages, "expected final summary log with skipped_failed counter"
+            assert any("skipped_failed=1" in msg for msg in summary_messages), (
+                f"expected skipped_failed=1 in summary log, got: {summary_messages}"
+            )
+
+            warn_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+            assert any("failed to embed" in msg for msg in warn_messages), (
+                f"expected per-batch failure warning, got: {warn_messages}"
+            )
+
+        finally:
+            with service._create_uow() as uow:
+                for qid in added_ids:
+                    entity = uow.queries.get_by_id(qid)
+                    if entity is not None:
+                        uow.queries.delete(entity)
+                uow.commit()
+            _restore_unembedded_queries(service, snapshots)
+
+    def test_embed_all_queries_terminates_when_every_item_fails(self, service, caplog):
+        """All-failure case: loop must terminate (not spin) when nothing can be embedded."""
+        snapshots = _snapshot_unembedded_queries(service)
+        added_ids = service.add_queries([
+            {"contents": "all-fail-test query A", "generation_gt": None},
+            {"contents": "all-fail-test query B", "generation_gt": None},
+        ])
+
+        try:
+            with service._create_uow() as uow:
+                for qid in added_ids:
+                    uow.queries.get_by_id(qid).embedding = None
+                uow.commit()
+
+            async def always_fail(_text: str) -> list[float]:
+                msg = "simulated total failure"
+                raise RuntimeError(msg)
+
+            with caplog.at_level(logging.INFO, logger="AutoRAG-Research"):
+                embedded = service.embed_all_queries(
+                    always_fail,
+                    batch_size=10,
+                    max_concurrency=2,
+                    bm25_tokenizer=None,
+                )
+
+            assert embedded == 0
+            with service._create_uow() as uow:
+                for qid in added_ids:
+                    assert uow.queries.get_by_id(qid).embedding is None
+
+            summary_messages = [r.message for r in caplog.records if "skipped_failed=" in r.message]
+            assert summary_messages, "expected final summary log with skipped_failed counter"
+
+        finally:
+            with service._create_uow() as uow:
+                for qid in added_ids:
+                    entity = uow.queries.get_by_id(qid)
+                    if entity is not None:
+                        uow.queries.delete(entity)
+                uow.commit()
+            _restore_unembedded_queries(service, snapshots)
+
+
+def _snapshot_unembedded_queries(service: BaseIngestionService) -> list[int]:
+    """Capture IDs of seed queries whose embedding is None.
+
+    Because `embed_all_queries()` is a global operation against the entire
+    database, our tests would otherwise embed seed rows that other tests
+    rely on staying un-embedded (see test_retrieval_pipeline_vector.py).
+    Snapshot + restore keeps the shared seed state intact.
+    """
+    with service._create_uow() as uow:
+        return [q.id for q in uow.queries.get_without_embeddings(limit=10_000)]
+
+
+def _restore_unembedded_queries(service: BaseIngestionService, ids: list[int]) -> None:
+    """Reset previously-unembedded seed queries back to embedding=None."""
+    with service._create_uow() as uow:
+        for qid in ids:
+            entity = uow.queries.get_by_id(qid)
+            if entity is not None:
+                entity.embedding = None
+        uow.commit()
