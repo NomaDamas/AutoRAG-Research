@@ -1,0 +1,10 @@
+_target_: autorag_research.pipelines.retrieval.image_vector_search.ImageVectorSearchPipelineConfig
+description: "ImageChunk vector search with VectorChord; use multi for ColFlor/ColPali MaxSim"
+name: image_vector_search
+search_mode: multi
+embedding_model: null
+top_k: 10
+batch_size: 64
+max_concurrency: 8
+max_retries: 3
+retry_delay: 1.0
