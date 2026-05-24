@@ -1,0 +1,18 @@
+{
+  "model_name": "baseline_vdr_50k_best",
+  "model_path": "/data/home/jeffrey/banana_colflor_baseline/output/training/colflor-vdr-50k-b32-baseline/best",
+  "domain": "physics",
+  "dataset": "vidore/vidore_v3_physics",
+  "metrics": {
+    "recall@1": 0.03191597174324559,
+    "recall@5": 0.10298564483762054,
+    "recall@10": 0.15127587147668145,
+    "ndcg@5": 0.11696957761389311,
+    "ndcg@10": 0.12991995282179206,
+    "num_eval_queries": 1812
+  },
+  "elapsed_sec": 356.1756145954132,
+  "num_queries": 1812,
+  "num_corpus_scored": 1674,
+  "top_k": 10
+}

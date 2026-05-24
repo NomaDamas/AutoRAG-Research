@@ -1,0 +1,18 @@
+{
+  "model_name": "c_hn_1k_best",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-c-hn-1k/best",
+  "domain": "physics",
+  "dataset": "vidore/vidore_v3_physics",
+  "metrics": {
+    "recall@1": 0.03548122903696566,
+    "recall@5": 0.1061092270714264,
+    "recall@10": 0.15585679317447107,
+    "ndcg@5": 0.11943533533273953,
+    "ndcg@10": 0.13374107789860804,
+    "num_eval_queries": 1812
+  },
+  "elapsed_sec": 302.94398021698,
+  "num_queries": 1812,
+  "num_corpus_scored": 1674,
+  "top_k": 10
+}

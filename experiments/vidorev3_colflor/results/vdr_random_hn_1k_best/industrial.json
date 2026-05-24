@@ -1,0 +1,18 @@
+{
+  "model_name": "vdr_random_hn_1k_best",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-random-hn-1k/best",
+  "domain": "industrial",
+  "dataset": "vidore/vidore_v3_industrial",
+  "metrics": {
+    "recall@1": 0.032517331346836674,
+    "recall@5": 0.07026741792959158,
+    "recall@10": 0.08726143268513632,
+    "ndcg@5": 0.06963170788716583,
+    "ndcg@10": 0.0740335155982471,
+    "num_eval_queries": 1698
+  },
+  "elapsed_sec": 896.971745967865,
+  "num_queries": 1698,
+  "num_corpus_scored": 5244,
+  "top_k": 10
+}

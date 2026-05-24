@@ -1,0 +1,18 @@
+{
+  "model_name": "c_hn_1k_best",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-c-hn-1k/best",
+  "domain": "energy",
+  "dataset": "vidore/vidore_v3_energy",
+  "metrics": {
+    "recall@1": 0.05834021906827843,
+    "recall@5": 0.15186060670127924,
+    "recall@10": 0.2095913241703544,
+    "ndcg@5": 0.1344082509937242,
+    "ndcg@10": 0.15286827629019037,
+    "num_eval_queries": 1848
+  },
+  "elapsed_sec": 378.5317392349243,
+  "num_queries": 1848,
+  "num_corpus_scored": 2225,
+  "top_k": 10
+}

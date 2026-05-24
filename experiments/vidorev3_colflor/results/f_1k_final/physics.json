@@ -1,0 +1,18 @@
+{
+  "model_name": "f_1k_final",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-f-1k/final",
+  "domain": "physics",
+  "dataset": "vidore/vidore_v3_physics",
+  "metrics": {
+    "recall@1": 0.029002839836506193,
+    "recall@5": 0.08698601130713875,
+    "recall@10": 0.13400107970855188,
+    "ndcg@5": 0.10331651565399215,
+    "ndcg@10": 0.11663479857528669,
+    "num_eval_queries": 1812
+  },
+  "elapsed_sec": 469.3447616100311,
+  "num_queries": 1812,
+  "num_corpus_scored": 1674,
+  "top_k": 10
+}

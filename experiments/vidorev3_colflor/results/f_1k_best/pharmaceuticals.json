@@ -1,0 +1,18 @@
+{
+  "model_name": "f_1k_best",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-f-1k/best",
+  "domain": "pharmaceuticals",
+  "dataset": "vidore/vidore_v3_pharmaceuticals",
+  "metrics": {
+    "recall@1": 0.06631991008729997,
+    "recall@5": 0.13868348811757222,
+    "recall@10": 0.17828089208751266,
+    "ndcg@5": 0.13953371839318215,
+    "ndcg@10": 0.1507114402527493,
+    "num_eval_queries": 2184
+  },
+  "elapsed_sec": 456.41783714294434,
+  "num_queries": 2184,
+  "num_corpus_scored": 2313,
+  "top_k": 10
+}

@@ -1,0 +1,18 @@
+{
+  "model_name": "vdr_voyage_hn_1k_final",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-voyage-hn-1k/final",
+  "domain": "computer_science",
+  "dataset": "vidore/vidore_v3_computer_science",
+  "metrics": {
+    "recall@1": 0.07105824193033503,
+    "recall@5": 0.17670094332885034,
+    "recall@10": 0.24783841051282887,
+    "ndcg@5": 0.18375058219774315,
+    "ndcg@10": 0.2061799949667892,
+    "num_eval_queries": 1290
+  },
+  "elapsed_sec": 203.52850937843323,
+  "num_queries": 1290,
+  "num_corpus_scored": 1360,
+  "top_k": 10
+}

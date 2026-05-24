@@ -1,0 +1,18 @@
+{
+  "model_name": "vdr_random_hn_1k_best",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-random-hn-1k/best",
+  "domain": "energy",
+  "dataset": "vidore/vidore_v3_energy",
+  "metrics": {
+    "recall@1": 0.05735412727720356,
+    "recall@5": 0.14877841716264678,
+    "recall@10": 0.20510267400743348,
+    "ndcg@5": 0.13533973657201578,
+    "ndcg@10": 0.1532280030465809,
+    "num_eval_queries": 1848
+  },
+  "elapsed_sec": 379.1210300922394,
+  "num_queries": 1848,
+  "num_corpus_scored": 2225,
+  "top_k": 10
+}

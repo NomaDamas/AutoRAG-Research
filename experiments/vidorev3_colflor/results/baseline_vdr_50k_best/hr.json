@@ -1,0 +1,18 @@
+{
+  "model_name": "baseline_vdr_50k_best",
+  "model_path": "/data/home/jeffrey/banana_colflor_baseline/output/training/colflor-vdr-50k-b32-baseline/best",
+  "domain": "hr",
+  "dataset": "vidore/vidore_v3_hr",
+  "metrics": {
+    "recall@1": 0.03548517402197283,
+    "recall@5": 0.084626614017341,
+    "recall@10": 0.1196804738679904,
+    "ndcg@5": 0.08768111079706065,
+    "ndcg@10": 0.09779474702799912,
+    "num_eval_queries": 1908
+  },
+  "elapsed_sec": 208.28421235084534,
+  "num_queries": 1908,
+  "num_corpus_scored": 1110,
+  "top_k": 10
+}

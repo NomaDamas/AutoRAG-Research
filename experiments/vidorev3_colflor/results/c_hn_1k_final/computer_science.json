@@ -1,0 +1,18 @@
+{
+  "model_name": "c_hn_1k_final",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-c-hn-1k/final",
+  "domain": "computer_science",
+  "dataset": "vidore/vidore_v3_computer_science",
+  "metrics": {
+    "recall@1": 0.07191171231868915,
+    "recall@5": 0.18173777557498477,
+    "recall@10": 0.24402401646587685,
+    "ndcg@5": 0.18739142474891488,
+    "ndcg@10": 0.20597277008907697,
+    "num_eval_queries": 1290
+  },
+  "elapsed_sec": 202.93671369552612,
+  "num_queries": 1290,
+  "num_corpus_scored": 1360,
+  "top_k": 10
+}

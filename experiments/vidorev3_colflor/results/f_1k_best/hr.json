@@ -1,0 +1,18 @@
+{
+  "model_name": "f_1k_best",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-f-1k/best",
+  "domain": "hr",
+  "dataset": "vidore/vidore_v3_hr",
+  "metrics": {
+    "recall@1": 0.03453616945399958,
+    "recall@5": 0.09092037515807168,
+    "recall@10": 0.12717250354601703,
+    "ndcg@5": 0.09244422417457733,
+    "ndcg@10": 0.10272775866781764,
+    "num_eval_queries": 1908
+  },
+  "elapsed_sec": 231.27581906318665,
+  "num_queries": 1908,
+  "num_corpus_scored": 1110,
+  "top_k": 10
+}
