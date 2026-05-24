@@ -1,0 +1,18 @@
+{
+  "model_name": "vdr_voyage_hn_1k_final",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-voyage-hn-1k/final",
+  "domain": "pharmaceuticals",
+  "dataset": "vidore/vidore_v3_pharmaceuticals",
+  "metrics": {
+    "recall@1": 0.07235882963724893,
+    "recall@5": 0.14578863309615844,
+    "recall@10": 0.18921531735033198,
+    "ndcg@5": 0.14537690597059966,
+    "ndcg@10": 0.15891211368249678,
+    "num_eval_queries": 2184
+  },
+  "elapsed_sec": 382.35096859931946,
+  "num_queries": 2184,
+  "num_corpus_scored": 2313,
+  "top_k": 10
+}

@@ -1,0 +1,18 @@
+{
+  "model_name": "baseline_vdr_50k_best",
+  "model_path": "/data/home/jeffrey/banana_colflor_baseline/output/training/colflor-vdr-50k-b32-baseline/best",
+  "domain": "pharmaceuticals",
+  "dataset": "vidore/vidore_v3_pharmaceuticals",
+  "metrics": {
+    "recall@1": 0.06907759850574309,
+    "recall@5": 0.14192287189866648,
+    "recall@10": 0.18129376888963508,
+    "ndcg@5": 0.14173222079706432,
+    "ndcg@10": 0.1526400362234093,
+    "num_eval_queries": 2184
+  },
+  "elapsed_sec": 416.1219131946564,
+  "num_queries": 2184,
+  "num_corpus_scored": 2313,
+  "top_k": 10
+}

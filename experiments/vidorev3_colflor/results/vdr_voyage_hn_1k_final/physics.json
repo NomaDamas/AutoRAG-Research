@@ -1,0 +1,18 @@
+{
+  "model_name": "vdr_voyage_hn_1k_final",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-voyage-hn-1k/final",
+  "domain": "physics",
+  "dataset": "vidore/vidore_v3_physics",
+  "metrics": {
+    "recall@1": 0.03440893163759818,
+    "recall@5": 0.11214636147394735,
+    "recall@10": 0.16055056411408236,
+    "ndcg@5": 0.12470743465987524,
+    "ndcg@10": 0.1383321080697122,
+    "num_eval_queries": 1812
+  },
+  "elapsed_sec": 294.8290855884552,
+  "num_queries": 1812,
+  "num_corpus_scored": 1674,
+  "top_k": 10
+}

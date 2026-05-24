@@ -1,0 +1,18 @@
+{
+  "model_name": "baseline_vdr_50k_final",
+  "model_path": "/data/home/jeffrey/banana_colflor_baseline/output/training/colflor-vdr-50k-b32-baseline/final",
+  "domain": "finance_fr",
+  "dataset": "vidore/vidore_v3_finance_fr",
+  "metrics": {
+    "recall@1": 0.033891707251082294,
+    "recall@5": 0.08923029186386534,
+    "recall@10": 0.13053896727556905,
+    "ndcg@5": 0.08308166516834602,
+    "ndcg@10": 0.09842985178271527,
+    "num_eval_queries": 1920
+  },
+  "elapsed_sec": 408.4776818752289,
+  "num_queries": 1920,
+  "num_corpus_scored": 2384,
+  "top_k": 10
+}

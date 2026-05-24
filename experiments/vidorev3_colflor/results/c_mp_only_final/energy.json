@@ -1,0 +1,18 @@
+{
+  "model_name": "c_mp_only_final",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-c-mp-only/final",
+  "domain": "energy",
+  "dataset": "vidore/vidore_v3_energy",
+  "metrics": {
+    "recall@1": 0.052001077849478834,
+    "recall@5": 0.14015761021255482,
+    "recall@10": 0.19764859107243973,
+    "ndcg@5": 0.12200583775122717,
+    "ndcg@10": 0.14167424539592866,
+    "num_eval_queries": 1848
+  },
+  "elapsed_sec": 389.70342469215393,
+  "num_queries": 1848,
+  "num_corpus_scored": 2225,
+  "top_k": 10
+}

@@ -1,0 +1,18 @@
+{
+  "model_name": "vdr_random_hn_1k_final",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-random-hn-1k/final",
+  "domain": "pharmaceuticals",
+  "dataset": "vidore/vidore_v3_pharmaceuticals",
+  "metrics": {
+    "recall@1": 0.07202434441467387,
+    "recall@5": 0.14188653003540155,
+    "recall@10": 0.18684795473228236,
+    "ndcg@5": 0.1421080383367705,
+    "ndcg@10": 0.15550057265015652,
+    "num_eval_queries": 2184
+  },
+  "elapsed_sec": 384.47561407089233,
+  "num_queries": 2184,
+  "num_corpus_scored": 2313,
+  "top_k": 10
+}

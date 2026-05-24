@@ -1,0 +1,18 @@
+{
+  "model_name": "baseline_vdr_50k_best",
+  "model_path": "/data/home/jeffrey/banana_colflor_baseline/output/training/colflor-vdr-50k-b32-baseline/best",
+  "domain": "computer_science",
+  "dataset": "vidore/vidore_v3_computer_science",
+  "metrics": {
+    "recall@1": 0.07008411485155681,
+    "recall@5": 0.178454489094024,
+    "recall@10": 0.2496834044508463,
+    "ndcg@5": 0.1860918919125207,
+    "ndcg@10": 0.20755949224762746,
+    "num_eval_queries": 1290
+  },
+  "elapsed_sec": 222.41342091560364,
+  "num_queries": 1290,
+  "num_corpus_scored": 1360,
+  "top_k": 10
+}

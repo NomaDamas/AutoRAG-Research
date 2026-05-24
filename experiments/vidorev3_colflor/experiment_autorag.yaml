@@ -1,0 +1,9 @@
+db_name: vidorev3_PLACEHOLDER
+max_retries: 3
+eval_batch_size: 100
+pipelines:
+  retrieval: [image_vector_search]
+  generation: []
+metrics:
+  retrieval: [recall, ndcg]
+  generation: []

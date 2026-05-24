@@ -1,0 +1,18 @@
+{
+  "model_name": "baseline_vdr_50k_final",
+  "model_path": "/data/home/jeffrey/banana_colflor_baseline/output/training/colflor-vdr-50k-b32-baseline/final",
+  "domain": "energy",
+  "dataset": "vidore/vidore_v3_energy",
+  "metrics": {
+    "recall@1": 0.059853109853109834,
+    "recall@5": 0.15493663731079815,
+    "recall@10": 0.22003136936508794,
+    "ndcg@5": 0.1380442231637923,
+    "ndcg@10": 0.1598955736550707,
+    "num_eval_queries": 1848
+  },
+  "elapsed_sec": 384.28156328201294,
+  "num_queries": 1848,
+  "num_corpus_scored": 2225,
+  "top_k": 10
+}

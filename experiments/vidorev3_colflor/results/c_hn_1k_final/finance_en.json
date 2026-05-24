@@ -1,0 +1,18 @@
+{
+  "model_name": "c_hn_1k_final",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-c-hn-1k/final",
+  "domain": "finance_en",
+  "dataset": "vidore/vidore_v3_finance_en",
+  "metrics": {
+    "recall@1": 0.05725249364510643,
+    "recall@5": 0.12615292841385445,
+    "recall@10": 0.1741259922090674,
+    "ndcg@5": 0.12607502942212145,
+    "ndcg@10": 0.1425487582853442,
+    "num_eval_queries": 1854
+  },
+  "elapsed_sec": 516.953519821167,
+  "num_queries": 1854,
+  "num_corpus_scored": 2942,
+  "top_k": 10
+}

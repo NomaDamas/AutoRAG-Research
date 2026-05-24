@@ -1,0 +1,18 @@
+[
+  {"name":"baseline_vdr_50k_best","path":"/data/home/jeffrey/banana_colflor_baseline/output/training/colflor-vdr-50k-b32-baseline/best"},
+  {"name":"baseline_vdr_50k_final","path":"/data/home/jeffrey/banana_colflor_baseline/output/training/colflor-vdr-50k-b32-baseline/final"},
+  {"name":"vdr_random_hn_1k_best","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-random-hn-1k/best"},
+  {"name":"vdr_random_hn_1k_final","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-random-hn-1k/final"},
+  {"name":"vdr_voyage_hn_1k_best","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-voyage-hn-1k/best"},
+  {"name":"vdr_voyage_hn_1k_final","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-voyage-hn-1k/final"},
+  {"name":"c_hn_1k_best","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-c-hn-1k/best"},
+  {"name":"c_hn_1k_final","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-c-hn-1k/final"},
+  {"name":"d_1k_best","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-d-1k/best"},
+  {"name":"d_1k_final","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-d-1k/final"},
+  {"name":"c_mp_only_best","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-c-mp-only/best"},
+  {"name":"c_mp_only_final","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-c-mp-only/final"},
+  {"name":"c_full_1k_best","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-c-full-1k/best"},
+  {"name":"c_full_1k_final","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-c-full-1k/final"},
+  {"name":"f_1k_best","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-f-1k/best"},
+  {"name":"f_1k_final","path":"/data/home/jeffrey/banana_hn_controls/training/colflor-f-1k/final"}
+]

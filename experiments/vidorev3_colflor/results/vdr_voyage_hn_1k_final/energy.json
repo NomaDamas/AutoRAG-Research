@@ -1,0 +1,18 @@
+{
+  "model_name": "vdr_voyage_hn_1k_final",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-voyage-hn-1k/final",
+  "domain": "energy",
+  "dataset": "vidore/vidore_v3_energy",
+  "metrics": {
+    "recall@1": 0.06472903480432586,
+    "recall@5": 0.15198729337536426,
+    "recall@10": 0.20958653754809373,
+    "ndcg@5": 0.13986329886355098,
+    "ndcg@10": 0.15837991634966556,
+    "num_eval_queries": 1848
+  },
+  "elapsed_sec": 374.63796496391296,
+  "num_queries": 1848,
+  "num_corpus_scored": 2225,
+  "top_k": 10
+}

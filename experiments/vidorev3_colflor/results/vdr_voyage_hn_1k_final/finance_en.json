@@ -1,0 +1,18 @@
+{
+  "model_name": "vdr_voyage_hn_1k_final",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-vdr-50k-voyage-hn-1k/final",
+  "domain": "finance_en",
+  "dataset": "vidore/vidore_v3_finance_en",
+  "metrics": {
+    "recall@1": 0.05658744043150953,
+    "recall@5": 0.12608503006188027,
+    "recall@10": 0.17365422546984202,
+    "ndcg@5": 0.12523681121740166,
+    "ndcg@10": 0.14165007675709745,
+    "num_eval_queries": 1854
+  },
+  "elapsed_sec": 522.082967042923,
+  "num_queries": 1854,
+  "num_corpus_scored": 2942,
+  "top_k": 10
+}

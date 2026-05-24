@@ -1,0 +1,18 @@
+{
+  "model_name": "c_mp_only_best",
+  "model_path": "/data/home/jeffrey/banana_hn_controls/training/colflor-c-mp-only/best",
+  "domain": "industrial",
+  "dataset": "vidore/vidore_v3_industrial",
+  "metrics": {
+    "recall@1": 0.036115295678016565,
+    "recall@5": 0.0762427038105849,
+    "recall@10": 0.10440824189796191,
+    "ndcg@5": 0.07863856363021839,
+    "ndcg@10": 0.08643838654175184,
+    "num_eval_queries": 1698
+  },
+  "elapsed_sec": 891.9105863571167,
+  "num_queries": 1698,
+  "num_corpus_scored": 5244,
+  "top_k": 10
+}
