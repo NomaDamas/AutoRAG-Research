@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
+from autorag_research.exceptions import EmbeddingError
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 from autorag_research.pipelines.retrieval.gqr_hybrid import (
     GQRHybridRetrievalPipeline,
@@ -14,12 +15,40 @@ from autorag_research.pipelines.retrieval.gqr_hybrid import (
 )
 
 
-def _make_stub_pipeline(name: str, by_id_results: list[dict], by_text_results: list[dict]) -> SimpleNamespace:
-    return SimpleNamespace(
-        name=name,
-        _retrieve_by_id=AsyncMock(return_value=by_id_results),
-        _retrieve_by_text=AsyncMock(return_value=by_text_results),
-    )
+class StubRetrievalPipeline(BaseRetrievalPipeline):
+    """Typed retrieval test double for GQR child pipelines."""
+
+    def __init__(
+        self,
+        name: str,
+        by_id_results: list[dict],
+        by_text_results: list[dict] | BaseException,
+    ):
+        self.name = name
+        self.pipeline_id = 1
+        self._retrieve_by_id_mock = AsyncMock(return_value=by_id_results)
+        self._retrieve_by_text_mock = AsyncMock(
+            side_effect=by_text_results if isinstance(by_text_results, BaseException) else None
+        )
+        if not isinstance(by_text_results, BaseException):
+            self._retrieve_by_text_mock.return_value = by_text_results
+
+    def _get_pipeline_config(self) -> dict:
+        return {"type": "stub"}
+
+    async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict]:
+        return await self._retrieve_by_id_mock(query_id, top_k)
+
+    async def _retrieve_by_text(self, query_text: str, top_k: int) -> list[dict]:
+        return await self._retrieve_by_text_mock(query_text, top_k)
+
+
+def _make_stub_pipeline(
+    name: str,
+    by_id_results: list[dict],
+    by_text_results: list[dict] | BaseException,
+) -> StubRetrievalPipeline:
+    return StubRetrievalPipeline(name=name, by_id_results=by_id_results, by_text_results=by_text_results)
 
 
 class TestGQRHybridRetrievalPipelineConfig:
@@ -230,3 +259,33 @@ class TestGQRHybridRetrievalPipeline:
 
         assert len(results) == 2
         assert {results[0]["doc_id"], results[1]["doc_id"]} == {1, 2}
+
+    @pytest.mark.asyncio
+    async def test_retrieve_by_text_falls_back_to_complementary_when_primary_needs_embedding(
+        self,
+        session_factory: sessionmaker[Session],
+    ):
+        primary = _make_stub_pipeline(
+            "vector_search",
+            by_id_results=[],
+            by_text_results=EmbeddingError(),
+        )
+        complementary = _make_stub_pipeline(
+            "bm25",
+            by_id_results=[],
+            by_text_results=[{"doc_id": 2, "score": 8.0}, {"doc_id": 1, "score": 0.2}],
+        )
+        pipeline = GQRHybridRetrievalPipeline(
+            session_factory=session_factory,
+            name="gqr_text_embedding_boundary",
+            primary_retrieval_pipeline=primary,
+            complementary_retrieval_pipeline=complementary,
+            candidate_pool_mode="union",
+            n_steps=10,
+        )
+        with patch.object(pipeline, "_get_candidate_embeddings", return_value=([], np.empty((0, 0)))):
+            results = await pipeline._retrieve_by_text("ad hoc query", top_k=2)
+
+        assert [result["doc_id"] for result in results] == [2, 1]
+        primary._retrieve_by_text_mock.assert_awaited_once_with("ad hoc query", 4)
+        complementary._retrieve_by_text_mock.assert_awaited_once_with("ad hoc query", 4)

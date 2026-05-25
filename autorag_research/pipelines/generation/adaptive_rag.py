@@ -6,6 +6,7 @@ AdaptiveRAG routes each query to a retrieval strategy based on predicted complex
 - multi: iterative retrieval with follow-up query generation
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -54,7 +55,7 @@ Previous Follow-up Queries:
 {follow_up_queries}
 
 Generate the next short retrieval query to gather missing evidence.
-If enough evidence is already available, respond exactly with STOP.
+If enough evidence is already available, respond exactly with {stop_query_signal}.
 
 Next Retrieval Query:"""
 
@@ -195,12 +196,16 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
         if normalized == "medium":
             return "moderate"
 
-        if "simple" in normalized:
-            return "simple"
-        if "moderate" in normalized or "medium" in normalized:
-            return "moderate"
-        if "complex" in normalized:
-            return "complex"
+        tier_tokens = {
+            "moderate" if label == "medium" else label
+            for label in re.findall(r"\b(simple|moderate|medium|complex)\b", normalized)
+        }
+        if len(tier_tokens) == 1:
+            tier = tier_tokens.pop()
+            if tier == "simple":
+                return "simple"
+            if tier == "complex":
+                return "complex"
 
         return "moderate"
 
@@ -323,6 +328,7 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
                 query=query_text,
                 context=context,
                 follow_up_queries=previous_queries,
+                stop_query_signal=self._stop_query_signal,
             )
 
             next_query_response = await self._llm.ainvoke(next_query_prompt)

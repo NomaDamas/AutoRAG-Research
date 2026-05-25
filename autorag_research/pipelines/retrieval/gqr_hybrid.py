@@ -22,6 +22,7 @@ import numpy as np
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
+from autorag_research.exceptions import EmbeddingError
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 from autorag_research.pipelines.retrieval.hybrid import HybridRetrievalPipeline
 from autorag_research.util import normalize_zscore
@@ -103,7 +104,7 @@ class GQRHybridRetrievalPipelineConfig(BaseRetrievalPipelineConfig):
     learning_rate: float = 0.1
     temperature: float = 1.0
     mixture_alpha: float = 0.5
-    candidate_pool_mode: CandidatePoolMode = "primary"
+    candidate_pool_mode: CandidatePoolMode = "union"
 
     def __post_init__(self) -> None:
         if self.fetch_k_multiplier <= 0:
@@ -157,7 +158,7 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
         learning_rate: float = 0.1,
         temperature: float = 1.0,
         mixture_alpha: float = 0.5,
-        candidate_pool_mode: CandidatePoolMode = "primary",
+        candidate_pool_mode: CandidatePoolMode = "union",
         schema: Any | None = None,
         config_dir: Path | None = None,
     ):
@@ -356,8 +357,8 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
         primary_distribution = _softmax(primary_scores, self.temperature)
         complementary_distribution = _softmax(complementary_scores, self.temperature)
         target_distribution = (
-            (1 - self.mixture_alpha) * primary_distribution + self.mixture_alpha * complementary_distribution
-        )
+            1 - self.mixture_alpha
+        ) * primary_distribution + self.mixture_alpha * complementary_distribution
 
         final_score_map: dict[int | str, float] = {
             doc_id: float(primary_scores[index]) for index, doc_id in enumerate(candidate_ids)
@@ -378,9 +379,7 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
                 final_score_map[doc_id] = float(score)
         else:
             optimized_scores = self._optimize_in_score_space(primary_scores, target_distribution)
-            final_score_map = {
-                doc_id: float(optimized_scores[index]) for index, doc_id in enumerate(candidate_ids)
-            }
+            final_score_map = {doc_id: float(optimized_scores[index]) for index, doc_id in enumerate(candidate_ids)}
 
         return self._sort_results(final_score_map, top_k)
 
@@ -401,8 +400,21 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
     async def _retrieve_by_text(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
         """Retrieve with Guided Query Refinement using raw query text."""
         fetch_k = top_k * self.fetch_k_multiplier
-        primary_results = await self._primary_retrieval_pipeline._retrieve_by_text(query_text, fetch_k)
-        complementary_results = await self._complementary_retrieval_pipeline._retrieve_by_text(query_text, fetch_k)
+        primary_results: list[dict[str, Any]]
+        complementary_results: list[dict[str, Any]]
+
+        try:
+            primary_results = await self._primary_retrieval_pipeline._retrieve_by_text(query_text, fetch_k)
+        except EmbeddingError:
+            complementary_results = await self._complementary_retrieval_pipeline._retrieve_by_text(query_text, fetch_k)
+            primary_results = complementary_results
+        else:
+            try:
+                complementary_results = await self._complementary_retrieval_pipeline._retrieve_by_text(
+                    query_text, fetch_k
+                )
+            except EmbeddingError:
+                complementary_results = primary_results
 
         query_embedding = await self._get_query_embedding_by_text(query_text)
         return await self._run_gqr(

@@ -13,7 +13,7 @@
 #   learning_rate: Query update step size
 #   temperature: Softmax temperature for retrieval distributions
 #   mixture_alpha: Guidance weight from complementary distribution (0-1)
-#   candidate_pool_mode: "primary" (primary-only pool) or "union" (primary∪complementary)
+#   candidate_pool_mode: "union" (true hybrid pool) or "primary" (primary-bounded reranker)
 #
 _target_: autorag_research.pipelines.retrieval.gqr_hybrid.GQRHybridRetrievalPipelineConfig
 description: "Guided Query Refinement hybrid retrieval"
@@ -25,7 +25,7 @@ n_steps: 25
 learning_rate: 0.1
 temperature: 1.0
 mixture_alpha: 0.5
-candidate_pool_mode: primary
+candidate_pool_mode: union
 top_k: 10
 batch_size: 128
 max_concurrency: 16

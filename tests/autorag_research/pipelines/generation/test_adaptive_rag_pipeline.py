@@ -3,7 +3,11 @@ from unittest.mock import AsyncMock
 import pytest
 from langchain_core.language_models.fake import FakeListLLM
 
-from autorag_research.pipelines.generation.adaptive_rag import AdaptiveRAGPipeline, AdaptiveRAGPipelineConfig
+from autorag_research.pipelines.generation.adaptive_rag import (
+    DEFAULT_MULTI_RETRIEVAL_QUERY_PROMPT_TEMPLATE,
+    AdaptiveRAGPipeline,
+    AdaptiveRAGPipelineConfig,
+)
 from tests.autorag_research.pipelines.pipeline_test_utils import (
     PipelineTestConfig,
     PipelineTestVerifier,
@@ -124,6 +128,12 @@ class TestAdaptiveRAGPipeline:
         mock_retrieval._retrieve_by_id.assert_awaited_once_with(1, 2)
         assert mock_retrieval.retrieve.await_count == 0
 
+    def test_ambiguous_complexity_output_falls_back_to_moderate(self):
+        assert AdaptiveRAGPipeline._parse_complexity_tier("not simple; complex") == "moderate"
+
+    def test_default_multi_retrieval_query_prompt_uses_configurable_stop_signal(self):
+        assert "{stop_query_signal}" in DEFAULT_MULTI_RETRIEVAL_QUERY_PROMPT_TEMPLATE
+
     def test_adaptive_rag_config(self, mock_retrieval):
         llm = FakeListLLM(responses=["answer"])
         config = AdaptiveRAGPipelineConfig(
@@ -206,5 +216,6 @@ class TestAdaptiveRAGPipeline:
             check_execution_time=True,
             check_persistence=True,
         )
+        assert isinstance(pipeline.pipeline_id, int)
         verifier = PipelineTestVerifier(result, pipeline.pipeline_id, session_factory, config)
         verifier.verify_all()
