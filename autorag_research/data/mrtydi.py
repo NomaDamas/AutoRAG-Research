@@ -172,58 +172,6 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         logger.info(f"Sampled {len(reservoir)} queries from streaming Mr. TyDi queries")
         return reservoir
 
-    def _process_corpus(
-        self,
-        dataset,
-        gold_docids: set[str],
-        min_corpus_cnt: int | None,
-        rng: random.Random,
-    ) -> dict[str, dict[str, str]]:
-        """Process corpus dataset to extract documents.
-
-        Args:
-            dataset: HuggingFace dataset with corpus.
-            gold_docids: Set of gold docids that must be included.
-            min_corpus_cnt: Maximum corpus size.
-            rng: Random number generator for sampling.
-
-        Returns:
-            Corpus dictionary mapping docid to {title, text}.
-        """
-        # Build corpus dict - only include gold docids + random samples if limit is set
-        corpus: dict[str, dict[str, str]] = {}
-        non_gold_docs: list[dict] = []
-
-        for row in dataset:
-            docid = row["docid"]
-            doc_data = {"title": row["title"], "text": row["text"]}
-
-            if docid in gold_docids:
-                corpus[docid] = doc_data
-            elif min_corpus_cnt is None:
-                # No limit - include all docs
-                corpus[docid] = doc_data
-            else:
-                # Limit specified - collect non-gold for later sampling
-                non_gold_docs.append({"docid": docid, **doc_data})
-
-        # If min_corpus_cnt is set, add random non-gold docs up to the threshold
-        if min_corpus_cnt is not None:
-            additional_needed = min_corpus_cnt - len(corpus)
-            if additional_needed > 0 and non_gold_docs:
-                sampled = rng.sample(non_gold_docs, min(additional_needed, len(non_gold_docs)))
-                for doc in sampled:
-                    corpus[doc["docid"]] = {"title": doc["title"], "text": doc["text"]}
-
-            logger.info(
-                f"Corpus subset: {len(gold_docids)} gold IDs + "
-                f"{len(corpus) - len(gold_docids)} random = {len(corpus)} total"
-            )
-        else:
-            logger.info(f"Loaded full corpus: {len(corpus)} documents")
-
-        return corpus
-
     def _ingest_corpus_streaming(
         self,
         dataset,
@@ -324,19 +272,6 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
             raise ServiceNotSetError
         logger.info(f"Ingesting {len(queries)} queries from Mr. TyDi ({self.language})...")
         self.service.add_queries([{"id": qid, "contents": text} for qid, text in queries.items()])
-
-    def _ingest_corpus(self, corpus: dict[str, dict[str, str]]) -> None:
-        """Ingest corpus documents into the database."""
-        if self.service is None:
-            raise ServiceNotSetError
-        logger.info(f"Ingesting {len(corpus)} corpus documents from Mr. TyDi ({self.language})...")
-        self.service.add_chunks([
-            {
-                "id": cid,
-                "contents": (doc.get("title", "") + " " + doc["text"]).strip(),
-            }
-            for cid, doc in corpus.items()
-        ])
 
     def _ingest_qrels(self, qrels: dict[str, dict[str, int]], corpus_ids_set: set[str]) -> None:
         """Ingest query-document relevance relations."""

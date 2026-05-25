@@ -171,3 +171,8 @@ def test_query_processing_uses_bounded_reservoir_when_limit_is_set(mock_embeddin
     assert len(queries) == 4
     assert set(qrels) == set(queries)
     assert len(gold_docids) == 4
+
+
+def test_mrtydi_ingestor_does_not_expose_eager_corpus_helpers():
+    assert not hasattr(MrTyDiIngestor, "_process_corpus")
+    assert not hasattr(MrTyDiIngestor, "_ingest_corpus")
