@@ -40,7 +40,7 @@ InteractActionKind = Literal[
 
 DEFAULT_INTERACT_RAG_STEP_PROMPT = """You are an INTERACT-RAG agent that can reason and interact with the retrieval corpus.
 Use exactly one XML-like action per step. Retrieval actions are prompt-simulated through the configured
-retrieval pipeline unless that retriever advertises richer native capabilities:
+retrieval pipeline query boundary:
 - <semantic_search>query</semantic_search>: evidence search
 - <exact_search>keywords</exact_search>: prompt-simulated lexical/exact intent search
 - <weighted_fusion semantic="0.6" exact="0.4">query</weighted_fusion>: prompt-simulated semantic/exact intent
@@ -114,8 +114,12 @@ def parse_interact_rag_action(response_text: str) -> InteractRAGAction:
         if action_kind == "weighted_fusion":
             weight_match = _WEIGHTED_FUSION_ATTR_RE.search(response_text)
             if weight_match is not None:
-                semantic_weight = float(weight_match.group(1))
-                exact_weight = float(weight_match.group(2))
+                try:
+                    semantic_weight = float(weight_match.group(1))
+                    exact_weight = float(weight_match.group(2))
+                except ValueError:
+                    semantic_weight = None
+                    exact_weight = None
         return InteractRAGAction(
             kind=action_kind,
             text=match.group(1).strip(),
@@ -418,6 +422,7 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         self,
         evidence: list[dict[str, Any]],
         new_evidence: list[dict[str, Any]],
+        state: InteractRAGState,
     ) -> list[dict[str, Any]]:
         """Append deduplicated evidence while respecting evidence_budget."""
         updated = list(evidence)
@@ -427,7 +432,25 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             if content and content not in existing_contents:
                 updated.append(item)
                 existing_contents.add(content)
-        return updated[-self.evidence_budget :]
+        return self._trim_evidence_to_budget(updated, state)
+
+    def _trim_evidence_to_budget(
+        self,
+        evidence: list[dict[str, Any]],
+        state: InteractRAGState,
+    ) -> list[dict[str, Any]]:
+        """Trim evidence while preserving explicitly included chunks."""
+        included_doc_ids = self._known_doc_ids(set(state.included_doc_ids))
+        included_evidence = [item for item in evidence if item.get("doc_id") in included_doc_ids]
+        if not included_evidence:
+            return evidence[-self.evidence_budget :]
+
+        remaining_budget = self.evidence_budget - len(included_evidence)
+        if remaining_budget <= 0:
+            return included_evidence
+
+        non_included_evidence = [item for item in evidence if item.get("doc_id") not in included_doc_ids]
+        return [*included_evidence, *non_included_evidence[-remaining_budget:]]
 
     @staticmethod
     def _is_prompt_simulated_action(action: InteractRAGAction) -> bool:
@@ -467,7 +490,7 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             if doc_id not in retrieved_doc_ids:
                 retrieved_doc_ids.append(doc_id)
         trace.append(f"{action.kind}: {action.text}")
-        return self._append_evidence(evidence, new_evidence)
+        return self._append_evidence(evidence, new_evidence, state)
 
     async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate an answer through INTERACT-RAG corpus interaction primitives."""

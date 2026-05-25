@@ -63,6 +63,14 @@ class TestInteractRAGParsing:
         assert action.semantic_weight == 0.7
         assert action.exact_weight == 0.3
 
+    def test_parse_weighted_fusion_malformed_weights_falls_back_to_defaults(self):
+        action = parse_interact_rag_action('<weighted_fusion semantic="." exact="0.2">apollo 11</weighted_fusion>')
+
+        assert action.kind == "weighted_fusion"
+        assert action.text == "apollo 11"
+        assert action.semantic_weight is None
+        assert action.exact_weight is None
+
     def test_parse_answer_preferred(self):
         action = parse_interact_rag_action("<semantic_search>x</semantic_search><answer>final</answer>")
 
@@ -205,6 +213,7 @@ class TestInteractRAGPipeline:
         result = await pipeline._generate(1, top_k=2)
 
         retrieval_pipeline.retrieve.assert_awaited_once_with("apollo 11 landing", 2)
+        assert result.metadata is not None
         assert result.text == "Apollo 11 landed in 1969."
         assert result.metadata["retrieved_chunk_ids"] == [10]
         assert result.metadata["evidence"] == ["Apollo 11 landed in July 1969."]
@@ -242,6 +251,7 @@ class TestInteractRAGPipeline:
 
         result = await pipeline._generate(1, top_k=1)
 
+        assert result.metadata is not None
         assert retrieval_pipeline.retrieve.await_args_list[0].args == ("exact: target terms", 4)
         assert retrieval_pipeline.retrieve.await_args_list[1].args == ("exact: target terms", 4)
         assert result.metadata["excluded_doc_ids"] == [2]
@@ -270,6 +280,7 @@ class TestInteractRAGPipeline:
 
         result = await pipeline._generate(1, top_k=2)
 
+        assert result.metadata is not None
         assert retrieval_pipeline.retrieve.await_args_list[0].args == ("Curie", 2)
         assert retrieval_pipeline.retrieve.await_args_list[1].args == ("entity: Curie", 2)
         service.get_chunk_contents.assert_any_call([5, 6])
@@ -297,9 +308,44 @@ class TestInteractRAGPipeline:
 
         result = await pipeline._generate(1, top_k=2)
 
+        assert result.metadata is not None
         retrieval_pipeline.retrieve.assert_awaited_once_with(
             "semantic weight 0.80; exact weight 0.20; query: apollo", 2
         )
         assert result.metadata["retrieval_action_mode"] == "prompt_simulated"
         assert result.metadata["degraded_actions"] == ["weighted_fusion"]
         assert "degraded weighted_fusion" in result.metadata["trace"][0]
+
+    @pytest.mark.asyncio
+    async def test_generate_keeps_included_doc_within_evidence_budget(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<semantic_search>first</semantic_search>"),
+                _mock_response("<include_docs>5</include_docs>"),
+                _mock_response("<semantic_search>second</semantic_search>"),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        retrieval_pipeline.retrieve = AsyncMock(
+            side_effect=[
+                [{"doc_id": 5, "score": 0.9, "content": "pinned"}],
+                [
+                    {"doc_id": 6, "score": 0.8, "content": "new6"},
+                    {"doc_id": 7, "score": 0.7, "content": "new7"},
+                    {"doc_id": 8, "score": 0.6, "content": "new8"},
+                ],
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(
+            llm, retrieval_pipeline, service, max_steps=4, initial_scale=3, evidence_budget=2
+        )
+
+        result = await pipeline._generate(1, top_k=3)
+
+        assert result.metadata is not None
+        assert result.metadata["included_doc_ids"] == [5]
+        assert result.metadata["evidence"] == ["pinned", "new8"]
