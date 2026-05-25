@@ -158,6 +158,7 @@ class FakeRAGBenchService:
     def __init__(self):
         self.chunks: list[list[dict[str, str | int | None]]] = []
         self.queries: list[list[dict[str, str | list[str] | None]]] = []
+        self.persisted_queries: dict[str, tuple[str, list[str] | None]] = {}
         self.retrieval_gt_calls: list[tuple[str, RetrievalGT, str, bool]] = []
 
     def add_chunks(self, chunks: list[dict[str, str | int | None]]) -> None:
@@ -165,6 +166,12 @@ class FakeRAGBenchService:
 
     def add_queries(self, queries: list[dict[str, str | list[str] | None]]) -> None:
         self.queries.append(queries)
+        for query in queries:
+            query_id = str(query["id"])
+            if query_id not in self.persisted_queries:
+                generation_gt = query["generation_gt"]
+                assert generation_gt is None or isinstance(generation_gt, list)
+                self.persisted_queries[query_id] = (str(query["contents"]), generation_gt)
 
     def add_retrieval_gt(self, query_id: str, gt: RetrievalGT, chunk_type: str = "mixed", upsert: bool = False) -> None:
         self.retrieval_gt_calls.append((query_id, gt, chunk_type, upsert))
@@ -263,6 +270,7 @@ def test_process_batch_warns_on_duplicate_ragbench_query_metadata_mismatch_acros
 
     query_id = _make_query_id("covidqa", "test", "dup")
     assert query_metadata_by_query[query_id] == ("What is duplicated?", "First response")
+    assert service.persisted_queries[query_id] == ("What is duplicated?", ["First response"])
     assert any(
         "Duplicate RAGBench query id" in record.message
         and query_id in record.message
@@ -309,6 +317,7 @@ def test_process_batch_warns_on_duplicate_ragbench_query_metadata_mismatch_withi
 
     query_id = _make_query_id("covidqa", "test", "dup")
     assert query_metadata_by_query[query_id] == ("What is duplicated?", "Same response")
+    assert service.persisted_queries[query_id] == ("What is duplicated?", ["Same response"])
     assert any(
         "Duplicate RAGBench query id" in record.message
         and query_id in record.message

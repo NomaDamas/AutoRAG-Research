@@ -257,10 +257,15 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
             raise ServiceNotSetError
 
         queries: list[dict[str, str | list[str] | None]] = []
+        seen_query_ids: set[str] = set()
 
         for example in examples:
             example_id = str(example["id"])
             query_id = _make_query_id(config, split, example_id)
+            if query_id in seen_query_ids:
+                continue
+            seen_query_ids.add(query_id)
+
             response = example.get("response")
 
             # RAGBench duplicate IDs are expected to repeat the same query/response metadata. Query insertion remains
