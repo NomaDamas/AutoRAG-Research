@@ -13,14 +13,15 @@ from typing import Any
 
 from autorag_research.orm.service.base_evaluation import BaseEvaluationService
 from autorag_research.orm.uow.evaluation_uow import GenerationEvaluationUnitOfWork
-from autorag_research.schema import MetricInput
+from autorag_research.schema import (
+    GENERATION_CONTEXT_CHUNK_ID_KEYS,
+    GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS,
+    MetricInput,
+)
 
 __all__ = ["GenerationEvaluationService"]
 
 logger = logging.getLogger("AutoRAG-Research")
-
-FINAL_CONTEXT_CHUNK_ID_KEYS = ("context_chunk_ids", "source_chunk_ids", "selected_subset_chunk_ids", "chunk_ids")
-LEGACY_RETRIEVED_CHUNK_ID_KEYS = ("retrieved_chunk_ids", "retrieval_chunk_ids")
 
 
 class GenerationEvaluationService(BaseEvaluationService):
@@ -134,13 +135,15 @@ class GenerationEvaluationService(BaseEvaluationService):
                 if not isinstance(result_metadata, dict):
                     continue
 
-                context_chunk_ids = self._get_metadata_chunk_ids(result_metadata, FINAL_CONTEXT_CHUNK_ID_KEYS)
+                context_chunk_ids = self._get_metadata_chunk_ids(result_metadata, GENERATION_CONTEXT_CHUNK_ID_KEYS)
                 if context_chunk_ids is not None:
                     metadata_context_by_query[executor_result.query_id] = context_chunk_ids
                     metadata_chunk_ids_to_fetch.update(context_chunk_ids)
                     continue
 
-                legacy_chunk_ids = self._get_metadata_chunk_ids(result_metadata, LEGACY_RETRIEVED_CHUNK_ID_KEYS)
+                legacy_chunk_ids = self._get_metadata_chunk_ids(
+                    result_metadata, GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS
+                )
                 if legacy_chunk_ids is None:
                     continue
                 metadata_legacy_retrieved_by_query[executor_result.query_id].extend(legacy_chunk_ids)

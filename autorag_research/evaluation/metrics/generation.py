@@ -391,7 +391,12 @@ class MiniCheckScorer:
 
 
 class HuggingFaceMiniCheckScorer(MiniCheckScorer):
-    """Thin wrapper around the official MiniCheck Flan-T5 style scorer."""
+    """Thin wrapper around the official MiniCheck Flan-T5 style scorer.
+
+    The default label token IDs are tied to ``lytang/MiniCheck-Flan-T5-Large``:
+    token 209 means support and token 3 means unsupported. Custom checkpoints
+    must use the same label-token contract or pass compatible token IDs.
+    """
 
     def __init__(
         self,
@@ -1319,7 +1324,12 @@ class ResponseRelevancyConfig(BaseGenerationMetricConfig):
 
 @dataclass
 class MiniCheckConfig(BaseGenerationMetricConfig):
-    """Configuration for MiniCheck claim-grounding metric."""
+    """Configuration for MiniCheck claim-grounding metric.
+
+    Default label token IDs match ``lytang/MiniCheck-Flan-T5-Large``. Override
+    ``support_token_id`` and ``unsupported_token_id`` for checkpoints with a
+    different label-token contract.
+    """
 
     model_name_or_path: str = MINICHECK_MODEL_NAME
     batch_size: int = MINICHECK_BATCH_SIZE

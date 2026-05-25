@@ -1,5 +1,5 @@
 _target_: autorag_research.evaluation.metrics.generation.MiniCheckConfig
-description: "MiniCheck - EMNLP 2024 claim-level grounding against retrieved context"
+description: "MiniCheck - EMNLP 2024 claim-level grounding against final generation context; defaults use Flan-T5 label-token IDs for lytang/MiniCheck-Flan-T5-Large"
 model_name_or_path: lytang/MiniCheck-Flan-T5-Large
 batch_size: 8
 max_length: 2048

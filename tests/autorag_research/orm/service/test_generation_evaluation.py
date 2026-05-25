@@ -3,7 +3,12 @@ from uuid import uuid4
 import pytest
 
 from autorag_research.orm.service.generation_evaluation import GenerationEvaluationService
-from autorag_research.schema import MetricInput
+from autorag_research.schema import (
+    GENERATION_CONTEXT_CHUNK_ID_KEY,
+    GENERATION_CONTEXT_CHUNK_ID_KEYS,
+    GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS,
+    MetricInput,
+)
 
 
 class TestGenerationEvaluationService:
@@ -81,6 +86,16 @@ class TestGenerationEvaluationService:
     def test_get_execution_results_no_executor_result(self, service):
         results = service._get_execution_results(pipeline_id=1, query_ids=[3])
         assert 3 not in results
+
+    def test_generation_context_metadata_contract_is_shared_with_evaluator(self):
+        assert GENERATION_CONTEXT_CHUNK_ID_KEY == "context_chunk_ids"
+        assert GENERATION_CONTEXT_CHUNK_ID_KEYS == (
+            "context_chunk_ids",
+            "source_chunk_ids",
+            "selected_subset_chunk_ids",
+            "chunk_ids",
+        )
+        assert GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS == ("retrieved_chunk_ids", "retrieval_chunk_ids")
 
     def test_get_execution_results_includes_retrieved_contents_from_pipeline_results(self, service, monkeypatch):
         class Obj:
