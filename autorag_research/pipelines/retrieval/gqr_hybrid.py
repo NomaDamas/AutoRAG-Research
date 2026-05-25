@@ -365,7 +365,8 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
         }
 
         embedding_ids, candidate_embeddings = self._get_candidate_embeddings(candidate_ids)
-        if query_embedding is not None and embedding_ids and candidate_embeddings.size > 0:
+        all_candidates_have_embeddings = len(embedding_ids) == len(candidate_ids)
+        if query_embedding is not None and all_candidates_have_embeddings and candidate_embeddings.size > 0:
             id_to_index = {doc_id: idx for idx, doc_id in enumerate(candidate_ids)}
             distribution_indices = [id_to_index[doc_id] for doc_id in embedding_ids]
             embedding_target = target_distribution[distribution_indices]

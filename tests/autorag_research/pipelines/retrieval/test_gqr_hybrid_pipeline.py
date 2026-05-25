@@ -232,6 +232,44 @@ class TestGQRHybridRetrievalPipeline:
         assert results[0]["doc_id"] == 2
 
     @pytest.mark.asyncio
+    async def test_partial_candidate_embeddings_use_score_space_for_whole_pool(
+        self,
+        session_factory: sessionmaker[Session],
+    ):
+        primary = _make_stub_pipeline(
+            "vector_search",
+            by_id_results=[{"doc_id": 1, "score": 0.9}],
+            by_text_results=[],
+        )
+        complementary = _make_stub_pipeline(
+            "bm25",
+            by_id_results=[{"doc_id": 2, "score": 8.0}],
+            by_text_results=[],
+        )
+        pipeline = GQRHybridRetrievalPipeline(
+            session_factory=session_factory,
+            name="gqr_partial_embeddings",
+            primary_retrieval_pipeline=primary,
+            complementary_retrieval_pipeline=complementary,
+            candidate_pool_mode="union",
+            n_steps=5,
+        )
+        with (
+            patch.object(pipeline, "_get_query_embedding_by_id", return_value=np.asarray([1.0, 0.0])),
+            patch.object(
+                pipeline,
+                "_get_candidate_embeddings",
+                return_value=([1], np.asarray([[1.0, 0.0]], dtype=np.float64)),
+            ),
+            patch.object(pipeline, "_optimize_query_embedding", side_effect=AssertionError("mixed score spaces")),
+            patch.object(pipeline, "_optimize_in_score_space", return_value=np.asarray([0.1, 0.9])),
+        ):
+            results = await pipeline._retrieve_by_id(query_id=1, top_k=2)
+
+        assert [result["doc_id"] for result in results] == [2, 1]
+        assert [result["score"] for result in results] == [0.9, 0.1]
+
+    @pytest.mark.asyncio
     async def test_retrieve_by_text_uses_score_space_when_embedding_model_missing(
         self,
         session_factory: sessionmaker[Session],

@@ -71,6 +71,22 @@ Follow-up Queries Used:
 
 Answer:"""
 
+_SUPPORTED_ROUTES = {"zero", "single", "multi"}
+
+
+def _normalize_adaptive_route(route: str, field_name: str) -> Literal["zero", "single", "multi"]:
+    """Normalize and validate AdaptiveRAG route labels."""
+    normalized = route.strip().lower()
+    if normalized == "zero":
+        return "zero"
+    if normalized == "single":
+        return "single"
+    if normalized == "multi":
+        return "multi"
+
+    msg = f"{field_name} must be one of {sorted(_SUPPORTED_ROUTES)}; got {route!r}"
+    raise ValueError(msg)
+
 
 @dataclass(kw_only=True)
 class AdaptiveRAGPipelineConfig(BaseGenerationPipelineConfig):
@@ -86,6 +102,11 @@ class AdaptiveRAGPipelineConfig(BaseGenerationPipelineConfig):
     route_for_complex: Literal["zero", "single", "multi"] = "multi"
     max_multi_steps: int = 2
     stop_query_signal: str = "STOP"
+
+    def __post_init__(self) -> None:
+        self.route_for_simple = _normalize_adaptive_route(self.route_for_simple, "route_for_simple")
+        self.route_for_moderate = _normalize_adaptive_route(self.route_for_moderate, "route_for_moderate")
+        self.route_for_complex = _normalize_adaptive_route(self.route_for_complex, "route_for_complex")
 
     def get_pipeline_class(self) -> type["AdaptiveRAGPipeline"]:
         """Return the AdaptiveRAGPipeline class."""
@@ -140,9 +161,9 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
         self._single_retrieval_prompt_template = single_retrieval_prompt_template
         self._multi_retrieval_query_prompt_template = multi_retrieval_query_prompt_template
         self._multi_retrieval_answer_prompt_template = multi_retrieval_answer_prompt_template
-        self._route_for_simple = route_for_simple
-        self._route_for_moderate = route_for_moderate
-        self._route_for_complex = route_for_complex
+        self._route_for_simple = self._normalize_route(route_for_simple, "route_for_simple")
+        self._route_for_moderate = self._normalize_route(route_for_moderate, "route_for_moderate")
+        self._route_for_complex = self._normalize_route(route_for_complex, "route_for_complex")
         self._max_multi_steps = max_multi_steps
         self._stop_query_signal = stop_query_signal
 
@@ -210,17 +231,9 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
         return "moderate"
 
     @staticmethod
-    def _normalize_route(route: str) -> Literal["zero", "single", "multi"]:
+    def _normalize_route(route: str, field_name: str = "route") -> Literal["zero", "single", "multi"]:
         """Normalize route labels to supported route names."""
-        normalized = route.strip().lower()
-        if normalized in {"zero", "single", "multi"}:
-            if normalized == "zero":
-                return "zero"
-            if normalized == "single":
-                return "single"
-            if normalized == "multi":
-                return "multi"
-        return "single"
+        return _normalize_adaptive_route(route, field_name)
 
     def _select_route(
         self, complexity_tier: Literal["simple", "moderate", "complex"]
@@ -231,7 +244,7 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
             "moderate": self._route_for_moderate,
             "complex": self._route_for_complex,
         }
-        return self._normalize_route(route_map[complexity_tier])
+        return self._normalize_route(route_map[complexity_tier], f"route_for_{complexity_tier}")
 
     @staticmethod
     def _merge_retrieval_results(result_sets: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:

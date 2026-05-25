@@ -1,3 +1,4 @@
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -133,6 +134,27 @@ class TestAdaptiveRAGPipeline:
 
     def test_default_multi_retrieval_query_prompt_uses_configurable_stop_signal(self):
         assert "{stop_query_signal}" in DEFAULT_MULTI_RETRIEVAL_QUERY_PROMPT_TEMPLATE
+
+    def test_invalid_constructor_route_raises_value_error(self, session_factory, mock_retrieval):
+        llm = FakeListLLM(responses=["answer"])
+
+        with pytest.raises(ValueError, match="route_for_simple"):
+            AdaptiveRAGPipeline(
+                session_factory=session_factory,
+                name="test_adaptive_rag_invalid_route",
+                llm=llm,
+                retrieval_pipeline=mock_retrieval,
+                route_for_simple=cast(Any, "singel"),
+            )
+
+    def test_invalid_config_route_raises_value_error(self):
+        with pytest.raises(ValueError, match="route_for_complex"):
+            AdaptiveRAGPipelineConfig(
+                name="adaptive_rag_invalid_cfg",
+                retrieval_pipeline_name="bm25",
+                llm=FakeListLLM(responses=["answer"]),
+                route_for_complex=cast(Any, "mulit"),
+            )
 
     def test_adaptive_rag_config(self, mock_retrieval):
         llm = FakeListLLM(responses=["answer"])
