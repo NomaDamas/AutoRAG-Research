@@ -54,7 +54,7 @@ Previous Follow-up Queries:
 {follow_up_queries}
 
 Generate the next short retrieval query to gather missing evidence.
-If enough evidence is already available, respond exactly with STOP.
+If enough evidence is already available, respond exactly with {stop_query_signal}.
 
 Next Retrieval Query:"""
 
@@ -96,6 +96,12 @@ class AdaptiveRAGPipelineConfig(BaseGenerationPipelineConfig):
             msg = f"Retrieval pipeline '{self.retrieval_pipeline_name}' not injected"
             raise ValueError(msg)
 
+        route_map = AdaptiveRAGPipeline._validate_route_map(
+            route_for_simple=self.route_for_simple,
+            route_for_moderate=self.route_for_moderate,
+            route_for_complex=self.route_for_complex,
+        )
+
         return {
             "llm": self.llm,
             "retrieval_pipeline": self._retrieval_pipeline,
@@ -104,9 +110,9 @@ class AdaptiveRAGPipelineConfig(BaseGenerationPipelineConfig):
             "single_retrieval_prompt_template": self.single_retrieval_prompt_template,
             "multi_retrieval_query_prompt_template": self.multi_retrieval_query_prompt_template,
             "multi_retrieval_answer_prompt_template": self.multi_retrieval_answer_prompt_template,
-            "route_for_simple": self.route_for_simple,
-            "route_for_moderate": self.route_for_moderate,
-            "route_for_complex": self.route_for_complex,
+            "route_for_simple": route_map["simple"],
+            "route_for_moderate": route_map["moderate"],
+            "route_for_complex": route_map["complex"],
             "max_multi_steps": self.max_multi_steps,
             "stop_query_signal": self.stop_query_signal,
         }
@@ -139,9 +145,14 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
         self._single_retrieval_prompt_template = single_retrieval_prompt_template
         self._multi_retrieval_query_prompt_template = multi_retrieval_query_prompt_template
         self._multi_retrieval_answer_prompt_template = multi_retrieval_answer_prompt_template
-        self._route_for_simple = route_for_simple
-        self._route_for_moderate = route_for_moderate
-        self._route_for_complex = route_for_complex
+        route_map = self._validate_route_map(
+            route_for_simple=route_for_simple,
+            route_for_moderate=route_for_moderate,
+            route_for_complex=route_for_complex,
+        )
+        self._route_for_simple = route_map["simple"]
+        self._route_for_moderate = route_map["moderate"]
+        self._route_for_complex = route_map["complex"]
         self._max_multi_steps = max_multi_steps
         self._stop_query_signal = stop_query_signal
 
@@ -205,28 +216,44 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
         return "moderate"
 
     @staticmethod
-    def _normalize_route(route: str) -> Literal["zero", "single", "multi"]:
-        """Normalize route labels to supported route names."""
+    def _normalize_route(route: str, field_name: str = "route") -> Literal["zero", "single", "multi"]:
+        """Normalize and validate route labels to supported route names."""
         normalized = route.strip().lower()
-        if normalized in {"zero", "single", "multi"}:
-            if normalized == "zero":
-                return "zero"
-            if normalized == "single":
-                return "single"
-            if normalized == "multi":
-                return "multi"
-        return "single"
+        if normalized == "zero":
+            return "zero"
+        if normalized == "single":
+            return "single"
+        if normalized == "multi":
+            return "multi"
+
+        msg = f"{field_name} must be one of: zero, single, multi (got {route!r})"
+        raise ValueError(msg)
+
+    @classmethod
+    def _validate_route_map(
+        cls,
+        *,
+        route_for_simple: str,
+        route_for_moderate: str,
+        route_for_complex: str,
+    ) -> dict[Literal["simple", "moderate", "complex"], Literal["zero", "single", "multi"]]:
+        """Validate tier-specific route configuration and return normalized routes."""
+        return {
+            "simple": cls._normalize_route(route_for_simple, "route_for_simple"),
+            "moderate": cls._normalize_route(route_for_moderate, "route_for_moderate"),
+            "complex": cls._normalize_route(route_for_complex, "route_for_complex"),
+        }
 
     def _select_route(
         self, complexity_tier: Literal["simple", "moderate", "complex"]
     ) -> Literal["zero", "single", "multi"]:
         """Select route name from tier-specific mapping."""
-        route_map = {
+        route_map: dict[Literal["simple", "moderate", "complex"], Literal["zero", "single", "multi"]] = {
             "simple": self._route_for_simple,
             "moderate": self._route_for_moderate,
             "complex": self._route_for_complex,
         }
-        return self._normalize_route(route_map[complexity_tier])
+        return route_map[complexity_tier]
 
     @staticmethod
     def _merge_retrieval_results(result_sets: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -323,6 +350,7 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
                 query=query_text,
                 context=context,
                 follow_up_queries=previous_queries,
+                stop_query_signal=self._stop_query_signal,
             )
 
             next_query_response = await self._llm.ainvoke(next_query_prompt)

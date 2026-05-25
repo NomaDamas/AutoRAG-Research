@@ -1,3 +1,4 @@
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -124,6 +125,58 @@ class TestAdaptiveRAGPipeline:
         mock_retrieval._retrieve_by_id.assert_awaited_once_with(1, 2)
         assert mock_retrieval.retrieve.await_count == 0
 
+    @pytest.mark.asyncio
+    async def test_multi_route_uses_configured_stop_query_signal_in_prompt(self, mock_retrieval):
+        class StubService:
+            def get_query_text(self, query_id: int | str) -> str:
+                return f"query {query_id}"
+
+            def get_chunk_contents(self, chunk_ids: list[int | str]) -> list[str]:
+                return [f"chunk {chunk_id}" for chunk_id in chunk_ids]
+
+        llm = FakeListLLM(responses=["complex", "DONE", "Complex answer"])
+        mock_retrieval._retrieve_by_id = AsyncMock(return_value=[{"doc_id": 1, "score": 0.8}])
+        mock_retrieval.retrieve = AsyncMock(return_value=[{"doc_id": 4, "score": 0.95}])
+        pipeline = AdaptiveRAGPipeline.__new__(AdaptiveRAGPipeline)
+        pipeline._service = StubService()
+        pipeline._llm = llm
+        pipeline._retrieval_pipeline = mock_retrieval
+        pipeline._complexity_prompt_template = "{query}"
+        pipeline._zero_retrieval_prompt_template = "{query}"
+        pipeline._single_retrieval_prompt_template = "{context} {query}"
+        pipeline._multi_retrieval_query_prompt_template = (
+            "Question: {query}\nContext: {context}\nPrevious: {follow_up_queries}\n"
+            "Respond with {stop_query_signal} when enough evidence is available."
+        )
+        pipeline._multi_retrieval_answer_prompt_template = "{query} {context} {follow_up_queries}"
+        pipeline._route_for_simple = "zero"
+        pipeline._route_for_moderate = "single"
+        pipeline._route_for_complex = "multi"
+        pipeline._max_multi_steps = 2
+        pipeline._stop_query_signal = "DONE"
+
+        result = await pipeline._generate(query_id=1, top_k=4)
+
+        assert result.text == "Complex answer"
+        assert result.metadata is not None
+        assert result.metadata["follow_up_queries"] == []
+        mock_retrieval._retrieve_by_id.assert_awaited_once_with(1, 4)
+        assert mock_retrieval.retrieve.await_count == 0
+
+    def test_config_rejects_invalid_route_values(self, mock_retrieval):
+        llm = FakeListLLM(responses=["answer"])
+        invalid_route = cast(Any, "singel")
+        config = AdaptiveRAGPipelineConfig(
+            name="adaptive_rag_invalid_route_cfg",
+            retrieval_pipeline_name="bm25",
+            llm=llm,
+            route_for_simple=invalid_route,
+        )
+        config.inject_retrieval_pipeline(mock_retrieval)
+
+        with pytest.raises(ValueError, match="route_for_simple"):
+            config.get_pipeline_kwargs()
+
     def test_adaptive_rag_config(self, mock_retrieval):
         llm = FakeListLLM(responses=["answer"])
         config = AdaptiveRAGPipelineConfig(
@@ -206,5 +259,6 @@ class TestAdaptiveRAGPipeline:
             check_execution_time=True,
             check_persistence=True,
         )
+        assert isinstance(pipeline.pipeline_id, int)
         verifier = PipelineTestVerifier(result, pipeline.pipeline_id, session_factory, config)
         verifier.verify_all()
