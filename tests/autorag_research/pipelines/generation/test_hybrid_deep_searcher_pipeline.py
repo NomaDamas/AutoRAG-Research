@@ -1,11 +1,15 @@
 """Tests for Hybrid Deep Searcher generation pipeline."""
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from hydra.utils import instantiate
 from langchain_core.language_models.fake import FakeListLLM
+from omegaconf import OmegaConf
 
+from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.hybrid_deep_searcher import (
     HybridDeepSearcherPipeline,
     HybridDeepSearcherPipelineConfig,
@@ -35,6 +39,11 @@ def _build_unit_pipeline(llm: Any, retrieval_pipeline: Any, service: Any, **kwar
     pipeline._service = service
     pipeline.pipeline_id = 1
     return pipeline
+
+
+def _metadata(result: GenerationResult) -> dict[str, Any]:
+    assert result.metadata is not None
+    return result.metadata
 
 
 class TestHybridDeepSearchActionParsing:
@@ -99,6 +108,20 @@ class TestHybridDeepSearcherPipelineConfig:
         assert kwargs["max_turns"] == 4
         assert kwargs["max_parallel_queries"] == 3
 
+    def test_default_yaml_config_uses_text_query_capable_retriever(self):
+        config_path = Path("configs/pipelines/generation/hybrid_deep_searcher.yaml")
+        with patch("autorag_research.injection.load_llm", return_value=FakeListLLM(responses=["<answer>ok</answer>"])):
+            config = instantiate(OmegaConf.load(config_path))
+
+        assert isinstance(config, HybridDeepSearcherPipelineConfig)
+        assert config.retrieval_pipeline_name == "bm25"
+
+        retrieval_pipeline = create_mock_retrieval_pipeline(pipeline_id=89)
+        config.inject_retrieval_pipeline(retrieval_pipeline)
+        kwargs = config.get_pipeline_kwargs()
+
+        assert kwargs["retrieval_pipeline"] is retrieval_pipeline
+
 
 class TestHybridDeepSearcherPipeline:
     """Tests for HDS generation behavior."""
@@ -141,8 +164,9 @@ class TestHybridDeepSearcherPipeline:
         retrieval_pipeline.retrieve.assert_any_await("moon origin", 2)
         retrieval_pipeline.retrieve.assert_any_await("moon composition", 2)
         assert result.text == "The Moon likely formed from giant-impact debris."
-        assert result.metadata["retrieved_chunk_ids"] == [1, 2]
-        assert result.metadata["terminated_by"] == "answer"
+        metadata = _metadata(result)
+        assert metadata["retrieved_chunk_ids"] == [1, 2]
+        assert metadata["terminated_by"] == "answer"
         assert result.token_usage == {"prompt_tokens": 4, "completion_tokens": 6, "total_tokens": 10}
 
     @pytest.mark.asyncio
@@ -168,9 +192,10 @@ class TestHybridDeepSearcherPipeline:
         result = await pipeline._generate(1, top_k=3)
 
         assert result.text == "fallback answer"
-        assert result.metadata["retrieved_chunk_ids"] == [1]
-        assert result.metadata["evidence"] == ["high"]
-        assert result.metadata["terminated_by"] == "max_turns_fallback"
+        metadata = _metadata(result)
+        assert metadata["retrieved_chunk_ids"] == [1]
+        assert metadata["evidence"] == ["high"]
+        assert metadata["terminated_by"] == "max_turns_fallback"
 
     @pytest.mark.asyncio
     async def test_generate_backfills_missing_contents(self):
@@ -190,4 +215,53 @@ class TestHybridDeepSearcherPipeline:
         result = await pipeline._generate(1, top_k=1)
 
         service.get_chunk_contents.assert_called_once_with([7])
-        assert result.metadata["evidence"] == ["Fetched content."]
+        metadata = _metadata(result)
+        assert metadata["evidence"] == ["Fetched content."]
+
+    @pytest.mark.asyncio
+    async def test_generate_raises_when_fanout_retrieval_fails_by_default(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(return_value=_mock_response("<queries>\nbroken generated subquery\n</queries>"))
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        retrieval_pipeline.retrieve = AsyncMock(side_effect=RuntimeError("retriever unavailable"))
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_turns=1)
+
+        with pytest.raises(RuntimeError, match="Hybrid Deep Searcher retrieval failed"):
+            await pipeline._generate(1, top_k=1)
+
+    @pytest.mark.asyncio
+    async def test_generate_records_partial_retrieval_failures_when_allowed(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<queries>\nok generated subquery\nbroken generated subquery\n</queries>"),
+                _mock_response("fallback with partial evidence"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        retrieval_pipeline.retrieve = AsyncMock(
+            side_effect=[
+                [{"doc_id": 11, "score": 0.7, "content": "usable evidence"}],
+                RuntimeError("retriever unavailable"),
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(
+            llm,
+            retrieval_pipeline,
+            service,
+            max_turns=1,
+            allow_partial_retrieval_failures=True,
+        )
+
+        result = await pipeline._generate(1, top_k=1)
+
+        assert result.text == "fallback with partial evidence"
+        metadata = _metadata(result)
+        assert metadata["evidence"] == ["usable evidence"]
+        assert metadata["retrieval_failures"] == [
+            {"query": "broken generated subquery", "error": "retriever unavailable"}
+        ]
