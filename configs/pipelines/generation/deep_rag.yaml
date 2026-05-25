@@ -2,7 +2,7 @@ _target_: autorag_research.pipelines.generation.deep_rag.DeepRAGPipelineConfig
 description: "DeepRAG-style adaptive iterative retrieve-or-reason generation pipeline"
 name: deep_rag
 retrieval_pipeline_name: bm25
-llm: openai-gpt4o-mini
+llm: mock
 max_steps: 5
 k_per_retrieval: 5
 evidence_budget: 12

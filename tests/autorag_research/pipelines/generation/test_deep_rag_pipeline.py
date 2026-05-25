@@ -4,7 +4,9 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from hydra.utils import instantiate
 from langchain_core.language_models.fake import FakeListLLM
+from omegaconf import OmegaConf
 
 from autorag_research.pipelines.generation.deep_rag import DeepRAGPipeline, DeepRAGPipelineConfig, parse_deeprag_action
 from tests.autorag_research.pipelines.pipeline_test_utils import create_mock_retrieval_pipeline
@@ -57,6 +59,15 @@ class TestDeepRAGActionParsing:
 
 class TestDeepRAGPipelineConfig:
     """Tests for DeepRAGPipelineConfig."""
+
+    def test_shipped_yaml_config_instantiates(self):
+        cfg = OmegaConf.load("configs/pipelines/generation/deep_rag.yaml")
+
+        config = instantiate(cfg)
+
+        assert isinstance(config, DeepRAGPipelineConfig)
+        assert config.name == "deep_rag"
+        assert config.retrieval_pipeline_name == "bm25"
 
     def test_get_pipeline_class(self):
         config = DeepRAGPipelineConfig(
@@ -134,6 +145,7 @@ class TestDeepRAGPipeline:
 
         retrieval_pipeline.retrieve.assert_awaited_once_with("apollo 11 date", 2)
         assert result.text == "Apollo 11 landed in July 1969."
+        assert result.metadata is not None
         assert result.metadata["follow_up_queries"] == ["apollo 11 date"]
         assert result.metadata["retrieved_chunk_ids"] == [10]
         assert result.metadata["retrieved_scores"] == [0.9]
@@ -156,6 +168,7 @@ class TestDeepRAGPipeline:
         result = await pipeline._generate(1, top_k=5)
 
         assert result.text == "fallback answer"
+        assert result.metadata is not None
         assert result.metadata["terminated_by"] == "max_steps_fallback"
 
     @pytest.mark.asyncio
@@ -176,4 +189,5 @@ class TestDeepRAGPipeline:
         result = await pipeline._generate(1, top_k=1)
 
         service.get_chunk_contents.assert_called_once_with([5])
+        assert result.metadata is not None
         assert result.metadata["evidence"] == ["Fetched evidence."]
