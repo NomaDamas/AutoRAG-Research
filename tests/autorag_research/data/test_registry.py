@@ -104,12 +104,14 @@ class TestGetIngestor:
     def test_mrtydi_common_name_aliases_resolve(self):
         """Mr. TyDi can be requested with common punctuation variants."""
         canonical = get_ingestor("mrtydi")
+        hyphen_alias = get_ingestor("mr-tydi")
+        dot_alias = get_ingestor("mr.tydi")
 
         assert canonical is not None
-        assert get_ingestor("mr-tydi") is not None
-        assert get_ingestor("mr.tydi") is not None
-        assert get_ingestor("mr-tydi").ingestor_class is canonical.ingestor_class  # ty: ignore[union-attr]
-        assert get_ingestor("mr.tydi").ingestor_class is canonical.ingestor_class  # ty: ignore[union-attr]
+        assert hyphen_alias is not None
+        assert dot_alias is not None
+        assert hyphen_alias.ingestor_class is canonical.ingestor_class
+        assert dot_alias.ingestor_class is canonical.ingestor_class
 
 
 class TestRegisterIngestor:
