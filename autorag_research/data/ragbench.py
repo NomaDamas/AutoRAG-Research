@@ -127,6 +127,7 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         )
 
         seen_chunk_ids: set[str] = set()
+        relation_chunk_ids_by_query: dict[str, set[str]] = {}
         batch: list[dict[str, Any]] = []
         total_processed = 0
 
@@ -135,7 +136,7 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
             batch.append(example_dict)
 
             if len(batch) >= self.batch_size:
-                self._process_batch(config, split, batch, seen_chunk_ids)
+                self._process_batch(config, split, batch, seen_chunk_ids, relation_chunk_ids_by_query)
                 total_processed += len(batch)
                 logger.info(f"[{config}] Processed {total_processed} examples...")
                 batch = []
@@ -146,7 +147,7 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
                 break
 
         if batch:
-            self._process_batch(config, split, batch, seen_chunk_ids)
+            self._process_batch(config, split, batch, seen_chunk_ids, relation_chunk_ids_by_query)
             total_processed += len(batch)
 
         logger.info(f"[{config}] Total examples processed: {total_processed}")
@@ -158,10 +159,11 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         split: str,
         examples: list[dict[str, Any]],
         seen_chunk_ids: set[str],
+        relation_chunk_ids_by_query: dict[str, set[str]],
     ) -> None:
         doc_to_chunk_mapping = self._ingest_chunks(config, examples, seen_chunk_ids)
         self._ingest_queries(config, split, examples)
-        self._ingest_relations(config, split, examples, doc_to_chunk_mapping)
+        self._ingest_relations(config, split, examples, doc_to_chunk_mapping, relation_chunk_ids_by_query)
 
     def _ingest_chunks(
         self,
@@ -230,6 +232,7 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         split: str,
         examples: list[dict[str, Any]],
         doc_to_chunk_mapping: dict[tuple[str, int], str],
+        relation_chunk_ids_by_query: dict[str, set[str]] | None = None,
     ) -> None:
         if self.service is None:
             raise ServiceNotSetError
@@ -259,4 +262,11 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
             ]
 
             if chunk_ids:
-                self.service.add_retrieval_gt(query_id, or_all(chunk_ids), chunk_type="text")
+                stored_chunk_ids = (
+                    relation_chunk_ids_by_query.setdefault(query_id, set())
+                    if relation_chunk_ids_by_query is not None
+                    else set()
+                )
+                stored_chunk_ids.update(chunk_ids)
+                gt_chunk_ids = sorted(stored_chunk_ids) if relation_chunk_ids_by_query is not None else chunk_ids
+                self.service.add_retrieval_gt(query_id, or_all(gt_chunk_ids), chunk_type="text", upsert=True)
