@@ -149,8 +149,33 @@ class TestDeepRAGPipeline:
         assert result.metadata["follow_up_queries"] == ["apollo 11 date"]
         assert result.metadata["retrieved_chunk_ids"] == [10]
         assert result.metadata["retrieved_scores"] == [0.9]
+        assert result.metadata["effective_retrieval_k"] == 2
+        assert result.metadata["top_k_cap"] == 2
         assert result.metadata["terminated_by"] == "answer"
         assert result.token_usage == {"prompt_tokens": 6, "completion_tokens": 9, "total_tokens": 15}
+
+    @pytest.mark.asyncio
+    async def test_generate_uses_k_per_retrieval_when_top_k_is_not_positive(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<retrieve>broad evidence</retrieve>"),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline(
+            default_results=[{"doc_id": 11, "score": 0.8, "content": "Evidence."}]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=2, k_per_retrieval=4)
+
+        result = await pipeline._generate(1, top_k=0)
+
+        retrieval_pipeline.retrieve.assert_awaited_once_with("broad evidence", 4)
+        assert result.metadata is not None
+        assert result.metadata["effective_retrieval_k"] == 4
+        assert result.metadata["top_k_cap"] == 0
 
     @pytest.mark.asyncio
     async def test_generate_falls_back_after_max_steps(self):

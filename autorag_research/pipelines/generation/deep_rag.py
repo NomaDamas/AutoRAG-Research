@@ -243,10 +243,14 @@ class DeepRAGPipeline(BaseGenerationPipeline):
                 updated.append(content)
         return updated[-self.evidence_budget :]
 
+    def _resolve_retrieval_k(self, top_k: int) -> int:
+        """Resolve per-step retrieval size using top_k as a global runner cap when provided."""
+        return max(1, min(top_k, self.k_per_retrieval)) if top_k > 0 else self.k_per_retrieval
+
     async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate an answer using adaptive DeepRAG control actions."""
         query_text = self._service.get_query_text(query_id)
-        retrieval_k = max(1, min(top_k, self.k_per_retrieval)) if top_k > 0 else self.k_per_retrieval
+        retrieval_k = self._resolve_retrieval_k(top_k)
         tracker = TokenUsageTracker()
         evidence: list[str] = []
         trace: list[str] = []
@@ -296,6 +300,8 @@ class DeepRAGPipeline(BaseGenerationPipeline):
                 "follow_up_queries": follow_up_queries,
                 "retrieved_chunk_ids": retrieved_chunk_ids,
                 "retrieved_scores": retrieved_scores,
+                "effective_retrieval_k": retrieval_k,
+                "top_k_cap": top_k,
                 "terminated_by": terminated_by,
             },
         )
