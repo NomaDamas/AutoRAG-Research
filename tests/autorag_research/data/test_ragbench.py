@@ -192,13 +192,59 @@ def test_process_batch_upserts_duplicate_ragbench_query_relations_across_batches
     second_example = {
         "id": "dup",
         "question": "What is duplicated?",
-        "response": "Second response",
+        "response": "First response",
         "documents": ["Second supporting document.", "Shared supporting document."],
         "all_relevant_sentence_keys": ["0a", "1b"],
     }
 
     ingestor._process_batch("covidqa", "test", [first_example], seen_chunk_ids, relation_chunk_ids_by_query)
     ingestor._process_batch("covidqa", "test", [second_example], seen_chunk_ids, relation_chunk_ids_by_query)
+
+    query_id = _make_query_id("covidqa", "test", "dup")
+    first_chunk_id = compute_chunk_id("First supporting document.", "covidqa")
+    second_chunk_id = compute_chunk_id("Second supporting document.", "covidqa")
+    shared_chunk_id = compute_chunk_id("Shared supporting document.", "covidqa")
+
+    assert [call[0] for call in service.retrieval_gt_calls] == [query_id, query_id]
+    assert [call[2] for call in service.retrieval_gt_calls] == ["text", "text"]
+    assert [call[3] for call in service.retrieval_gt_calls] == [True, True]
+    assert _extract_or_gt_ids(service.retrieval_gt_calls[0][1]) == [first_chunk_id]
+    assert _extract_or_gt_ids(service.retrieval_gt_calls[1][1]) == sorted([
+        first_chunk_id,
+        second_chunk_id,
+        shared_chunk_id,
+    ])
+
+
+def test_process_batch_preserves_duplicate_ragbench_query_relations_within_same_batch(mock_embedding_model):
+    service = FakeRAGBenchService()
+    ingestor = RAGBenchIngestor(mock_embedding_model, config="covidqa")
+    ingestor.set_service(service)  # ty: ignore[invalid-argument-type]
+    seen_chunk_ids: set[str] = set()
+    relation_chunk_ids_by_query: dict[str, set[str]] = {}
+
+    first_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "Same response",
+        "documents": ["First supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+    second_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "Same response",
+        "documents": ["Second supporting document.", "Shared supporting document."],
+        "all_relevant_sentence_keys": ["0a", "1b"],
+    }
+
+    ingestor._process_batch(
+        "covidqa",
+        "test",
+        [first_example, second_example],
+        seen_chunk_ids,
+        relation_chunk_ids_by_query,
+    )
 
     query_id = _make_query_id("covidqa", "test", "dup")
     first_chunk_id = compute_chunk_id("First supporting document.", "covidqa")

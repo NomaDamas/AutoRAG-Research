@@ -161,23 +161,23 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         seen_chunk_ids: set[str],
         relation_chunk_ids_by_query: dict[str, set[str]],
     ) -> None:
-        doc_to_chunk_mapping = self._ingest_chunks(config, examples, seen_chunk_ids)
+        row_doc_to_chunk_mapping = self._ingest_chunks(config, examples, seen_chunk_ids)
         self._ingest_queries(config, split, examples)
-        self._ingest_relations(config, split, examples, doc_to_chunk_mapping, relation_chunk_ids_by_query)
+        self._ingest_relations(config, split, examples, row_doc_to_chunk_mapping, relation_chunk_ids_by_query)
 
     def _ingest_chunks(
         self,
         config: str,
         examples: list[dict[str, Any]],
         seen_chunk_ids: set[str],
-    ) -> dict[tuple[str, int], str]:
+    ) -> dict[tuple[int, int], str]:
         if self.service is None:
             raise ServiceNotSetError
 
         chunks_to_add: list[dict[str, str | int | None]] = []
-        doc_to_chunk_mapping: dict[tuple[str, int], str] = {}
+        row_doc_to_chunk_mapping: dict[tuple[int, int], str] = {}
 
-        for example in examples:
+        for row_idx, example in enumerate(examples):
             example_id = str(example["id"])
             documents = example.get("documents", [])
 
@@ -187,7 +187,7 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
                     continue
 
                 chunk_id = compute_chunk_id(doc_text, config)
-                doc_to_chunk_mapping[(example_id, doc_idx)] = chunk_id
+                row_doc_to_chunk_mapping[(row_idx, doc_idx)] = chunk_id
 
                 if chunk_id not in seen_chunk_ids:
                     seen_chunk_ids.add(chunk_id)
@@ -199,7 +199,7 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         if chunks_to_add:
             self.service.add_chunks(chunks_to_add)
 
-        return doc_to_chunk_mapping
+        return row_doc_to_chunk_mapping
 
     def _ingest_queries(
         self,
@@ -217,6 +217,8 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
             query_id = _make_query_id(config, split, example_id)
             response = example.get("response")
 
+            # RAGBench duplicate IDs are expected to repeat the same query/response metadata. Query insertion remains
+            # first-wins via the ingestion service's default duplicate-skip behavior, while retrieval GT is unioned.
             queries.append({
                 "id": query_id,
                 "contents": example["question"],
@@ -231,13 +233,13 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         config: str,
         split: str,
         examples: list[dict[str, Any]],
-        doc_to_chunk_mapping: dict[tuple[str, int], str],
+        row_doc_to_chunk_mapping: dict[tuple[int, int], str],
         relation_chunk_ids_by_query: dict[str, set[str]] | None = None,
     ) -> None:
         if self.service is None:
             raise ServiceNotSetError
 
-        for example in examples:
+        for row_idx, example in enumerate(examples):
             example_id = str(example["id"])
             query_id = _make_query_id(config, split, example_id)
 
@@ -256,9 +258,9 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
                 logger.warning(f"Some sentence keys reference non-existent documents for example {example_id}")
 
             chunk_ids = [
-                doc_to_chunk_mapping[(example_id, idx)]
+                row_doc_to_chunk_mapping[(row_idx, idx)]
                 for idx in sorted(valid_indices)
-                if (example_id, idx) in doc_to_chunk_mapping
+                if (row_idx, idx) in row_doc_to_chunk_mapping
             ]
 
             if chunk_ids:
