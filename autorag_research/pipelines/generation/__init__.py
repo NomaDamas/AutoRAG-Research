@@ -7,6 +7,7 @@ from autorag_research.pipelines.generation.et2rag import (
     ET2RAGPipelineConfig,
     OrganizationStrategy,
 )
+from autorag_research.pipelines.generation.interact_rag import InteractRAGPipeline, InteractRAGPipelineConfig
 from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline, IRCoTGenerationPipelineConfig
 from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
 from autorag_research.pipelines.generation.question_decomposition import (
@@ -34,6 +35,8 @@ __all__ = [
     "ET2RAGPipelineConfig",
     "IRCoTGenerationPipeline",
     "IRCoTGenerationPipelineConfig",
+    "InteractRAGPipeline",
+    "InteractRAGPipelineConfig",
     "MAINRAGPipeline",
     "OrganizationStrategy",
     "QuestionDecompositionPipeline",
