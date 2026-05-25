@@ -158,6 +158,7 @@ class TestDiscoverMetrics:
         assert "exact_match" in result
         assert "rouge" in result
         assert "token_f1" in result
+        assert "mini_check" in result
         assert "unieval_coherence" in result
         assert "unieval_consistency" in result
         assert "unieval_fluency" in result

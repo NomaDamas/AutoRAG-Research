@@ -13,6 +13,7 @@ from autorag_research.evaluation.metrics.generation import (
     BartScorePrecisionConfig,
     BartScoreRecallConfig,
     ExactMatchConfig,
+    MiniCheckConfig,
     TokenF1Config,
     bart_score_f1,
     bart_score_faithfulness,
@@ -22,6 +23,7 @@ from autorag_research.evaluation.metrics.generation import (
     bleu,
     exact_match,
     meteor,
+    mini_check,
     response_relevancy,
     rouge,
     sem_score,
@@ -604,5 +606,156 @@ def test_bart_score_runtime_guard_points_to_optional_dependencies(
 
     with pytest.raises(ImportError, match=r"autorag-research\[gpu\]") as exc_info:
         generation_module._import_bartscore_runtime()
+
+    assert "uv sync --all-extras --all-groups" in str(exc_info.value)
+
+
+class DummyMiniCheckScorer:
+    def __init__(self, responses: list[float]) -> None:
+        self.responses = responses
+        self.calls: list[tuple[list[str], list[str], int]] = []
+
+    def score(self, documents: list[str], claims: list[str], batch_size: int = 8) -> list[float]:
+        self.calls.append((documents, claims, batch_size))
+        return self.responses[: len(claims)]
+
+
+def test_mini_check_scores_claims_against_best_retrieved_context():
+    scorer = DummyMiniCheckScorer(responses=[0.1, 0.8, 0.7, 0.2])
+
+    scores = mini_check(
+        metric_inputs=[
+            MetricInput(
+                retrieved_contents=["Paris is France's capital.", "France is in Europe."],
+                generated_texts="Paris is the capital of France. It is in Europe.",
+            )
+        ],
+        scorer=scorer,
+        batch_size=4,
+    )
+
+    assert scores == [pytest.approx((0.8 + 0.7) / 2)]
+    assert scorer.calls == [
+        (
+            ["Paris is France's capital.", "France is in Europe."] * 2,
+            ["Paris is the capital of France."] * 2 + ["It is in Europe."] * 2,
+            4,
+        )
+    ]
+
+
+def test_mini_check_concat_strategy_scores_joined_context_once_per_claim():
+    scorer = DummyMiniCheckScorer(responses=[0.25, 0.75])
+
+    scores = mini_check(
+        metric_inputs=[
+            MetricInput(
+                retrieved_contents=["Grounded context A.", "Grounded context B."],
+                generated_texts="First claim. Second claim.",
+            )
+        ],
+        scorer=scorer,
+        context_strategy="concat",
+    )
+
+    assert scores == [pytest.approx(0.5)]
+    assert scorer.calls == [
+        (
+            ["Grounded context A.\n\nGrounded context B."] * 2,
+            ["First claim.", "Second claim."],
+            8,
+        )
+    ]
+
+
+def test_mini_check_min_aggregation_keeps_worst_claim_support():
+    scorer = DummyMiniCheckScorer(responses=[0.91, 0.12])
+
+    scores = mini_check(
+        metric_inputs=[MetricInput(retrieved_contents=["Grounded context."], generated_texts="Grounded. Unsupported.")],
+        scorer=scorer,
+        aggregation="min",
+    )
+
+    assert scores == [pytest.approx(0.12)]
+
+
+def test_mini_check_returns_none_without_context_or_generated_text():
+    scorer = DummyMiniCheckScorer(responses=[0.9])
+
+    scores = mini_check(
+        metric_inputs=[
+            MetricInput(generated_texts="Paris is France's capital."),
+            MetricInput(retrieved_contents=["Paris is France's capital."]),
+            MetricInput(retrieved_contents=["   "], generated_texts="Paris is France's capital."),
+        ],
+        scorer=scorer,
+    )
+
+    assert scores == [None, None, None]
+    assert scorer.calls == []
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"context_strategy": "all"}, "Unsupported MiniCheck context_strategy"),
+        ({"aggregation": "median"}, "Unsupported MiniCheck aggregation"),
+    ],
+)
+def test_mini_check_rejects_unknown_options(kwargs: dict[str, str], match: str):
+    with pytest.raises(ValueError, match=match):
+        mini_check(
+            metric_inputs=[MetricInput(retrieved_contents=["Context"], generated_texts="Claim")],
+            scorer=DummyMiniCheckScorer(responses=[0.5]),
+            **kwargs,
+        )
+
+
+def test_mini_check_config_exposes_metric_function_and_kwargs():
+    config = MiniCheckConfig(
+        model_name_or_path="custom-minicheck",
+        batch_size=2,
+        max_length=256,
+        device="cpu",
+        cache_dir="custom-cache",
+        context_strategy="concat",
+        aggregation="min",
+        support_token_id=10,
+        unsupported_token_id=11,
+    )
+
+    assert config.get_metric_name() == "mini_check"
+    assert config.get_metric_func() is mini_check
+    assert config.get_metric_kwargs() == {
+        "model_name_or_path": "custom-minicheck",
+        "batch_size": 2,
+        "max_length": 256,
+        "device": "cpu",
+        "cache_dir": "custom-cache",
+        "context_strategy": "concat",
+        "aggregation": "min",
+        "support_token_id": 10,
+        "unsupported_token_id": 11,
+    }
+
+
+def test_mini_check_runtime_guard_points_to_optional_dependencies(monkeypatch: pytest.MonkeyPatch):
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    original_import_module = generation_module.importlib.import_module
+
+    def fake_import_module(name: str):
+        if name == "transformers":
+            msg = "missing transformers"
+            raise ImportError(msg)
+        if name == "torch":
+            return object()
+        return original_import_module(name)
+
+    monkeypatch.setattr(generation_module.importlib, "import_module", fake_import_module)
+
+    with pytest.raises(ImportError, match=r"autorag-research\[gpu\]") as exc_info:
+        generation_module._import_minicheck_runtime()
 
     assert "uv sync --all-extras --all-groups" in str(exc_info.value)
