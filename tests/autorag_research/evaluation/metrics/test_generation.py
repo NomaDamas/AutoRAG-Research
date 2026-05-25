@@ -626,6 +626,16 @@ class DummyAlignScoreScorer:
         return self.responses[: len(claims)]
 
 
+class MappingAlignScoreScorer:
+    def __init__(self, responses: dict[tuple[str, str], float]) -> None:
+        self.responses = responses
+        self.calls: list[tuple[list[str], list[str], int]] = []
+
+    def score(self, contexts: list[str], claims: list[str], batch_size: int = 8) -> list[float]:
+        self.calls.append((contexts, claims, batch_size))
+        return [self.responses[(context, claim)] for context, claim in zip(contexts, claims, strict=True)]
+
+
 class FakeAlignScoreTensor:
     def __init__(self, values: list[list[float]] | list[float]) -> None:
         self.values = values
@@ -737,7 +747,14 @@ def _make_fake_alignscore_runtime():
 
 
 def test_align_score_scores_sentence_claims_against_retrieved_context():
-    scorer = DummyAlignScoreScorer(responses=[0.25, 0.75])
+    scorer = MappingAlignScoreScorer(
+        responses={
+            ("France is in Europe.", "Paris is the capital of France."): 0.25,
+            ("Paris is France's capital.", "Paris is the capital of France."): 0.75,
+            ("France is in Europe.", "It is in Europe."): 0.25,
+            ("Paris is France's capital.", "It is in Europe."): 0.1,
+        }
+    )
 
     scores = align_score(
         metric_inputs=[
@@ -753,9 +770,78 @@ def test_align_score_scores_sentence_claims_against_retrieved_context():
     assert scores == [pytest.approx(0.5)]
     assert scorer.calls == [
         (
-            ["France is in Europe.\n\nParis is France's capital."] * 2,
-            ["Paris is the capital of France.", "It is in Europe."],
+            [
+                "France is in Europe.",
+                "Paris is France's capital.",
+                "France is in Europe.",
+                "Paris is France's capital.",
+            ],
+            [
+                "Paris is the capital of France.",
+                "Paris is the capital of France.",
+                "It is in Europe.",
+                "It is in Europe.",
+            ],
             4,
+        )
+    ]
+
+
+def test_align_score_uses_later_retrieved_passage_when_it_best_supports_claim():
+    scorer = MappingAlignScoreScorer(
+        responses={
+            ("Irrelevant early passage.", "Paris is the capital of France."): 0.05,
+            ("Paris is the capital of France.", "Paris is the capital of France."): 0.95,
+        }
+    )
+
+    scores = align_score(
+        metric_inputs=[
+            MetricInput(
+                retrieved_contents=["Irrelevant early passage.", "Paris is the capital of France."],
+                generated_texts="Paris is the capital of France.",
+            )
+        ],
+        scorer=scorer,
+        batch_size=4,
+    )
+
+    assert scores == [pytest.approx(0.95)]
+    assert scorer.calls == [
+        (
+            ["Irrelevant early passage.", "Paris is the capital of France."],
+            ["Paris is the capital of France.", "Paris is the capital of France."],
+            4,
+        )
+    ]
+
+
+def test_align_score_uses_later_sentence_window_when_passage_is_long():
+    early_window = "One. Two. Three. Four. Five."
+    later_window = "Paris is the capital of France."
+    scorer = MappingAlignScoreScorer(
+        responses={
+            (early_window, "Paris is the capital of France."): 0.02,
+            (later_window, "Paris is the capital of France."): 0.98,
+        }
+    )
+
+    scores = align_score(
+        metric_inputs=[
+            MetricInput(
+                retrieved_contents=[f"{early_window} {later_window}"],
+                generated_texts="Paris is the capital of France.",
+            )
+        ],
+        scorer=scorer,
+    )
+
+    assert scores == [pytest.approx(0.98)]
+    assert scorer.calls == [
+        (
+            [early_window, later_window],
+            ["Paris is the capital of France.", "Paris is the capital of France."],
+            8,
         )
     ]
 

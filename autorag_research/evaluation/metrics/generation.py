@@ -77,6 +77,7 @@ ALIGNSCORE_MAX_LENGTH = 1024
 ALIGNSCORE_DEVICE = "cpu"
 ALIGNSCORE_TRUST_REMOTE_CODE = False
 ALIGNSCORE_AGGREGATIONS = ("mean", "min")
+ALIGNSCORE_CONTEXT_WINDOW_SENTENCES = 5
 ALIGNSCORE_DEPENDENCY_MESSAGE = (
     "AlignScore requires the optional `torch` and `transformers` dependencies. "
     "Install them with `pip install 'autorag-research[gpu]'` or run "
@@ -322,9 +323,20 @@ def _split_alignscore_claims(text: str) -> list[str]:
     return sentences or [stripped_text]
 
 
-def _build_alignscore_context(retrieved_contents: list[str]) -> str:
-    """Join retrieved passages into the source context scored by AlignScore."""
-    return "\n\n".join(content.strip() for content in retrieved_contents if content.strip())
+def _build_alignscore_context_windows(retrieved_contents: list[str]) -> list[str]:
+    """Build independently scored retrieved-context windows for AlignScore."""
+    context_windows: list[str] = []
+    for content in retrieved_contents:
+        stripped_content = content.strip()
+        if not stripped_content:
+            continue
+        sentences = _split_alignscore_claims(stripped_content)
+        if len(sentences) <= ALIGNSCORE_CONTEXT_WINDOW_SENTENCES:
+            context_windows.append(stripped_content)
+            continue
+        for start in range(0, len(sentences), ALIGNSCORE_CONTEXT_WINDOW_SENTENCES):
+            context_windows.append(" ".join(sentences[start : start + ALIGNSCORE_CONTEXT_WINDOW_SENTENCES]))
+    return context_windows
 
 
 def _aggregate_alignscore_scores(scores: list[float], aggregation: str) -> float:
@@ -1142,25 +1154,27 @@ def align_score(
     AlignScore (Zha et al., ACL 2023) estimates information alignment between a
     source context and generated text. The wrapper follows the RAG faithfulness
     use case by splitting each generated answer into sentence-level claims,
-    scoring every claim against the concatenated retrieved context, then
-    aggregating claim scores into one higher-is-better query score.
+    scoring every claim against each retrieved passage/window, taking the best
+    support score per claim, then aggregating claim scores into one
+    higher-is-better query score.
     """
     normalized_aggregation = _validate_alignscore_aggregation(aggregation)
     prepared_contexts: list[str] = []
     prepared_claims: list[str] = []
-    claim_counts: list[tuple[int, int]] = []
+    claim_counts: list[tuple[int, int, int]] = []
     results: list[float | None] = [None] * len(metric_inputs)
 
     for index, metric_input in enumerate(metric_inputs):
         if not metric_input.is_fields_notnone(["retrieved_contents", "generated_texts"]):
             continue
-        context = _build_alignscore_context(cast(list[str], metric_input.retrieved_contents))
+        context_windows = _build_alignscore_context_windows(cast(list[str], metric_input.retrieved_contents))
         claims = _split_alignscore_claims(cast(str, metric_input.generated_texts))
-        if not context or not claims:
+        if not context_windows or not claims:
             continue
-        prepared_contexts.extend([context] * len(claims))
-        prepared_claims.extend(claims)
-        claim_counts.append((index, len(claims)))
+        for claim in claims:
+            prepared_contexts.extend(context_windows)
+            prepared_claims.extend([claim] * len(context_windows))
+        claim_counts.append((index, len(claims), len(context_windows)))
 
     if not prepared_claims:
         return results
@@ -1179,10 +1193,14 @@ def align_score(
         raise ValueError(msg)
 
     score_offset = 0
-    for index, count in claim_counts:
-        current_scores = claim_scores[score_offset : score_offset + count]
-        results[index] = _aggregate_alignscore_scores(current_scores, normalized_aggregation)
-        score_offset += count
+    for index, claim_count, context_window_count in claim_counts:
+        current_scores = claim_scores[score_offset : score_offset + (claim_count * context_window_count)]
+        claim_support_scores = [
+            max(current_scores[start : start + context_window_count])
+            for start in range(0, len(current_scores), context_window_count)
+        ]
+        results[index] = _aggregate_alignscore_scores(claim_support_scores, normalized_aggregation)
+        score_offset += claim_count * context_window_count
 
     return results
 
