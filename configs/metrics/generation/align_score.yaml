@@ -5,4 +5,6 @@ batch_size: 8
 max_length: 1024
 device: cpu
 cache_dir: null
+trust_remote_code: true
+revision: cc13dc572fce8aa32778a437fb66a02d39a5b8e3
 aggregation: mean

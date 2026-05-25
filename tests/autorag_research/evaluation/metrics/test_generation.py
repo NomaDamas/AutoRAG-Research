@@ -1,15 +1,19 @@
 import math
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 import pytest
+import yaml
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.fake import FakeListLLM
 from langchain_openai import OpenAIEmbeddings
 
 from autorag_research import cli
 from autorag_research.evaluation.metrics.generation import (
+    ALIGNSCORE_MODEL_NAME,
+    ALIGNSCORE_REVISION,
     AlignScoreConfig,
     BartScoreF1Config,
     BartScoreFaithfulnessConfig,
@@ -626,10 +630,15 @@ class FakeAlignScoreTensor:
     def __init__(self, values: list[list[float]] | list[float]) -> None:
         self.values = values
 
+    def _matrix_values(self) -> list[list[float]]:
+        assert self.values and isinstance(self.values[0], list)
+        return cast(list[list[float]], self.values)
+
     @property
     def shape(self) -> tuple[int, ...]:
         if self.values and isinstance(self.values[0], list):
-            return (len(self.values), len(self.values[0]))
+            matrix_values = self._matrix_values()
+            return (len(matrix_values), len(matrix_values[0]))
         return (len(self.values),)
 
     def to(self, _device: str) -> "FakeAlignScoreTensor":
@@ -637,7 +646,7 @@ class FakeAlignScoreTensor:
 
     def reshape(self, *_shape: int) -> "FakeAlignScoreTensor":
         if self.values and isinstance(self.values[0], list):
-            return FakeAlignScoreTensor([item for row in self.values for item in row])
+            return FakeAlignScoreTensor([item for row in self._matrix_values() for item in row])
         return self
 
     def tolist(self) -> list[float] | list[list[float]]:
@@ -646,7 +655,7 @@ class FakeAlignScoreTensor:
     def __getitem__(self, key: tuple[slice, int]) -> "FakeAlignScoreTensor":
         rows, column = key
         assert rows == slice(None)
-        return FakeAlignScoreTensor([row[column] for row in self.values])
+        return FakeAlignScoreTensor([row[column] for row in self._matrix_values()])
 
 
 class FakeAlignScoreNoGrad:
@@ -666,7 +675,7 @@ class FakeAlignScoreTorch:
     def softmax(tensor: FakeAlignScoreTensor, dim: int) -> FakeAlignScoreTensor:
         assert dim == -1
         normalized_rows = []
-        for row in tensor.values:
+        for row in tensor._matrix_values():
             denominator = sum(math.exp(value) for value in row)
             normalized_rows.append([math.exp(value) / denominator for value in row])
         return FakeAlignScoreTensor(normalized_rows)
@@ -800,6 +809,8 @@ def test_align_score_config_exposes_metric_function_and_kwargs():
         max_length=256,
         device="cpu",
         cache_dir="custom-cache",
+        trust_remote_code=True,
+        revision="custom-revision",
         aggregation="min",
     )
 
@@ -813,7 +824,75 @@ def test_align_score_config_exposes_metric_function_and_kwargs():
         "cache_dir": "custom-cache",
         "aggregation": "min",
         "trust_remote_code": True,
+        "revision": "custom-revision",
     }
+
+
+def test_align_score_shipped_config_pins_revision_and_explicit_trust():
+    config_path = Path("configs/metrics/generation/align_score.yaml")
+    config = yaml.safe_load(config_path.read_text())
+
+    assert config["model_name_or_path"] == ALIGNSCORE_MODEL_NAME
+    assert config["trust_remote_code"] is True
+    assert config["revision"] == ALIGNSCORE_REVISION
+
+
+def test_align_score_default_checkpoint_requires_explicit_remote_code_trust():
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    with pytest.raises(ValueError, match="trust_remote_code=True") as exc_info:
+        generation_module.HuggingFaceAlignScoreScorer(
+            model_name_or_path=ALIGNSCORE_MODEL_NAME,
+            trust_remote_code=False,
+        )
+
+    assert ALIGNSCORE_MODEL_NAME in str(exc_info.value)
+
+
+def test_align_score_default_checkpoint_rejects_unpinned_remote_code_revision():
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    with pytest.raises(ValueError, match="pinned commit revision") as exc_info:
+        generation_module.HuggingFaceAlignScoreScorer(
+            model_name_or_path=ALIGNSCORE_MODEL_NAME,
+            trust_remote_code=True,
+            revision=None,
+        )
+
+    assert ALIGNSCORE_MODEL_NAME in str(exc_info.value)
+
+
+def test_align_score_custom_model_does_not_inherit_builtin_revision(monkeypatch: pytest.MonkeyPatch):
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    fake_torch, fake_model, fake_tokenizer, model_load_calls, tokenizer_load_calls, _tokenizer_encode_calls = (
+        _make_fake_alignscore_runtime()
+    )
+
+    monkeypatch.setattr(
+        generation_module,
+        "_import_alignscore_runtime",
+        lambda: (fake_torch, fake_model, fake_tokenizer),
+    )
+
+    generation_module.HuggingFaceAlignScoreScorer(model_name_or_path="local/custom-alignscore")
+
+    assert model_load_calls == [
+        {
+            "model_name_or_path": "local/custom-alignscore",
+            "cache_dir": None,
+            "trust_remote_code": False,
+            "revision": None,
+        }
+    ]
+    assert tokenizer_load_calls == [
+        {
+            "model_name_or_path": "local/custom-alignscore",
+            "cache_dir": None,
+            "trust_remote_code": False,
+            "revision": None,
+        }
+    ]
 
 
 def test_align_score_default_huggingface_scorer_uses_alignscore_remote_contract(
@@ -831,14 +910,28 @@ def test_align_score_default_huggingface_scorer_uses_alignscore_remote_contract(
         lambda: (fake_torch, fake_model, fake_tokenizer),
     )
 
-    scorer = generation_module.HuggingFaceAlignScoreScorer(model_name_or_path="liuyanyi/AlignScore-large-hf")
+    scorer = generation_module.HuggingFaceAlignScoreScorer(
+        model_name_or_path="liuyanyi/AlignScore-large-hf",
+        trust_remote_code=True,
+        revision=ALIGNSCORE_REVISION,
+    )
     scores = scorer.score(["context 1", "context 2"], ["claim 1", "claim 2"], batch_size=2)
 
     assert model_load_calls == [
-        {"model_name_or_path": "liuyanyi/AlignScore-large-hf", "cache_dir": None, "trust_remote_code": True}
+        {
+            "model_name_or_path": "liuyanyi/AlignScore-large-hf",
+            "cache_dir": None,
+            "trust_remote_code": True,
+            "revision": ALIGNSCORE_REVISION,
+        }
     ]
     assert tokenizer_load_calls == [
-        {"model_name_or_path": "liuyanyi/AlignScore-large-hf", "cache_dir": None, "trust_remote_code": True}
+        {
+            "model_name_or_path": "liuyanyi/AlignScore-large-hf",
+            "cache_dir": None,
+            "trust_remote_code": True,
+            "revision": ALIGNSCORE_REVISION,
+        }
     ]
     assert tokenizer_encode_calls == [
         {

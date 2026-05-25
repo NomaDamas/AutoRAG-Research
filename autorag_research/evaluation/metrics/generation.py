@@ -71,10 +71,11 @@ BARTSCORE_DEPENDENCY_MESSAGE = (
 UNIEVAL_MODEL_NAME = "MingZhong/unieval-sum"
 UNIEVAL_DIMENSIONS = ("coherence", "consistency", "fluency", "relevance")
 ALIGNSCORE_MODEL_NAME = "liuyanyi/AlignScore-large-hf"
+ALIGNSCORE_REVISION = "cc13dc572fce8aa32778a437fb66a02d39a5b8e3"
 ALIGNSCORE_BATCH_SIZE = 8
 ALIGNSCORE_MAX_LENGTH = 1024
 ALIGNSCORE_DEVICE = "cpu"
-ALIGNSCORE_TRUST_REMOTE_CODE = True
+ALIGNSCORE_TRUST_REMOTE_CODE = False
 ALIGNSCORE_AGGREGATIONS = ("mean", "min")
 ALIGNSCORE_DEPENDENCY_MESSAGE = (
     "AlignScore requires the optional `torch` and `transformers` dependencies. "
@@ -356,6 +357,38 @@ def _import_alignscore_torch() -> Any:
         raise ImportError(ALIGNSCORE_DEPENDENCY_MESSAGE) from e
 
 
+def _requires_alignscore_remote_code(model_name_or_path: str) -> bool:
+    """Return whether the known AlignScore checkpoint requires remote code."""
+    return model_name_or_path == ALIGNSCORE_MODEL_NAME
+
+
+def _is_pinned_commit_revision(revision: str | None) -> bool:
+    """Return whether a Hugging Face revision is pinned to an immutable commit SHA."""
+    return revision is not None and re.fullmatch(r"[0-9a-f]{40}", revision) is not None
+
+
+def _validate_alignscore_remote_code_trust(
+    model_name_or_path: str,
+    trust_remote_code: bool,
+    revision: str | None,
+) -> None:
+    """Fail clearly before loading known remote-code AlignScore checkpoints without a trust boundary."""
+    if not _requires_alignscore_remote_code(model_name_or_path):
+        return
+    if not trust_remote_code:
+        msg = (
+            f"AlignScore checkpoint {model_name_or_path!r} requires trust_remote_code=True. "
+            f"Enable trust_remote_code explicitly and pin revision={ALIGNSCORE_REVISION!r} before loading it."
+        )
+        raise ValueError(msg)
+    if not _is_pinned_commit_revision(revision):
+        msg = (
+            f"AlignScore checkpoint {model_name_or_path!r} executes remote code and requires a pinned commit revision. "
+            f"Set revision={ALIGNSCORE_REVISION!r} or another immutable 40-character commit SHA."
+        )
+        raise ValueError(msg)
+
+
 def _import_alignscore_runtime() -> tuple[Any, Any, Any]:
     """Import AlignScore runtime dependencies lazily."""
     torch = _import_alignscore_torch()
@@ -384,7 +417,9 @@ class HuggingFaceAlignScoreScorer(AlignScoreScorer):
         device: str = ALIGNSCORE_DEVICE,
         cache_dir: str | None = None,
         trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE,
+        revision: str | None = None,
     ) -> None:
+        _validate_alignscore_remote_code_trust(model_name_or_path, trust_remote_code, revision)
         torch, AutoModelForSequenceClassification, AutoTokenizer = _import_alignscore_runtime()
         self._torch = torch
         self.device = _resolve_alignscore_device(device)
@@ -393,11 +428,13 @@ class HuggingFaceAlignScoreScorer(AlignScoreScorer):
             model_name_or_path,
             cache_dir=cache_dir,
             trust_remote_code=trust_remote_code,
+            revision=revision,
         )
         self.model = AutoModelForSequenceClassification.from_pretrained(
             model_name_or_path,
             cache_dir=cache_dir,
             trust_remote_code=trust_remote_code,
+            revision=revision,
         )
         self.model.eval()
         self.model.to(self.device)
@@ -459,14 +496,16 @@ def get_alignscore_scorer(
     device: str = ALIGNSCORE_DEVICE,
     cache_dir: str | None = None,
     trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE,
+    revision: str | None = None,
 ) -> AlignScoreScorer:
     """Return a cached AlignScore scorer instance."""
     logger.debug(
-        "Loading AlignScore scorer model_name_or_path=%s max_length=%s device=%s cache_dir=%s",
+        "Loading AlignScore scorer model_name_or_path=%s max_length=%s device=%s cache_dir=%s revision=%s",
         model_name_or_path,
         max_length,
         device,
         cache_dir,
+        revision,
     )
     return HuggingFaceAlignScoreScorer(
         model_name_or_path=model_name_or_path,
@@ -474,6 +513,7 @@ def get_alignscore_scorer(
         device=device,
         cache_dir=cache_dir,
         trust_remote_code=trust_remote_code,
+        revision=revision,
     )
 
 
@@ -1093,6 +1133,7 @@ def align_score(
     device: str = ALIGNSCORE_DEVICE,
     cache_dir: str | None = None,
     trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE,
+    revision: str | None = None,
     aggregation: str = "mean",
     scorer: AlignScoreScorer | None = None,
 ) -> list[float | None]:
@@ -1130,6 +1171,7 @@ def align_score(
         device=device,
         cache_dir=cache_dir,
         trust_remote_code=trust_remote_code,
+        revision=revision,
     )
     claim_scores = effective_scorer.score(prepared_contexts, prepared_claims, batch_size=batch_size)
     if len(claim_scores) != len(prepared_claims):
@@ -1320,6 +1362,7 @@ class AlignScoreConfig(BaseGenerationMetricConfig):
     device: str = ALIGNSCORE_DEVICE
     cache_dir: str | None = None
     trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE
+    revision: str | None = None
     aggregation: str = "mean"
 
     def __post_init__(self) -> None:
@@ -1343,6 +1386,7 @@ class AlignScoreConfig(BaseGenerationMetricConfig):
             "device": self.device,
             "cache_dir": self.cache_dir,
             "trust_remote_code": self.trust_remote_code,
+            "revision": self.revision,
             "aggregation": self.aggregation,
         }
 
