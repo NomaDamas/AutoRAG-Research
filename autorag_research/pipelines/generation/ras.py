@@ -25,7 +25,7 @@ from autorag_research.util import TokenUsageTracker
 
 logger = logging.getLogger("AutoRAG-Research")
 
-RASPlanKind = Literal["retrieve", "sufficient"]
+RASPlanKind = Literal["retrieve", "sufficient", "invalid"]
 
 DEFAULT_RAS_PLAN_PROMPT = """You are a Retrieval-And-Structuring (RAS) planner.
 Decide whether more retrieval is needed before building the structured answer graph.
@@ -104,16 +104,24 @@ def parse_ras_plan_action(response_text: str) -> RASPlanAction:
     """Parse RAS planner output."""
     sufficient_match = _SUFFICIENT_RE.search(response_text)
     if sufficient_match is not None:
-        return RASPlanAction(kind="sufficient", text=sufficient_match.group(1).strip())
+        text = sufficient_match.group(1).strip()
+        if text:
+            return RASPlanAction(kind="sufficient", text=text)
+        return RASPlanAction(kind="invalid", text=response_text.strip())
 
     subquery_match = _SUBQUERY_RE.search(response_text)
     if subquery_match is not None:
-        return RASPlanAction(kind="retrieve", text=subquery_match.group(1).strip())
+        text = subquery_match.group(1).strip()
+        if text:
+            return RASPlanAction(kind="retrieve", text=text)
+        return RASPlanAction(kind="invalid", text=response_text.strip())
 
     stripped_response = response_text.strip()
     if stripped_response.lower().startswith("subquery:"):
-        return RASPlanAction(kind="retrieve", text=stripped_response.split(":", 1)[1].strip())
-    return RASPlanAction(kind="sufficient", text=stripped_response)
+        text = stripped_response.split(":", 1)[1].strip()
+        if text:
+            return RASPlanAction(kind="retrieve", text=text)
+    return RASPlanAction(kind="invalid", text=stripped_response)
 
 
 def parse_ras_triples(response_text: str) -> list[RASTriple]:
@@ -326,6 +334,18 @@ class RASGenerationPipeline(BaseGenerationPipeline):
         subqueries: list[str] = []
         retrieved_chunk_ids: list[int | str] = []
         plan_trace: list[str] = []
+        malformed_plans: list[str] = []
+
+        initial_results = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
+        doc_ids, passages = self._contents_from_results(initial_results)
+        for doc_id in doc_ids:
+            if doc_id not in retrieved_chunk_ids:
+                retrieved_chunk_ids.append(doc_id)
+        evidence = self._append_evidence(evidence, passages)
+        triples = self._merge_triples(
+            triples,
+            await self._extract_triples_for_passages(query_text, passages, tracker),
+        )
 
         for step in range(1, self.max_steps + 1):
             plan_prompt = self._build_plan_prompt(query_text, evidence, triples, step)
@@ -336,8 +356,13 @@ class RASGenerationPipeline(BaseGenerationPipeline):
             if action.kind == "sufficient":
                 break
 
-            subqueries.append(action.text)
-            results = await self._retrieval_pipeline.retrieve(action.text, retrieval_k)
+            retrieval_query = action.text
+            if action.kind == "invalid":
+                malformed_plans.append(action.text)
+                retrieval_query = query_text
+
+            subqueries.append(retrieval_query)
+            results = await self._retrieval_pipeline.retrieve(retrieval_query, retrieval_k)
             doc_ids, passages = self._contents_from_results(results)
             for doc_id in doc_ids:
                 if doc_id not in retrieved_chunk_ids:
@@ -363,6 +388,7 @@ class RASGenerationPipeline(BaseGenerationPipeline):
                 "triple_texts": [triple.as_text() for triple in triples],
                 "evidence": evidence,
                 "plan_trace": plan_trace,
+                "malformed_plans": malformed_plans,
             },
         )
 
