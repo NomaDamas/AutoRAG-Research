@@ -8,12 +8,14 @@ from langchain_openai import OpenAIEmbeddings
 
 from autorag_research import cli
 from autorag_research.evaluation.metrics.generation import (
+    AlignScoreConfig,
     BartScoreF1Config,
     BartScoreFaithfulnessConfig,
     BartScorePrecisionConfig,
     BartScoreRecallConfig,
     ExactMatchConfig,
     TokenF1Config,
+    align_score,
     bart_score_f1,
     bart_score_faithfulness,
     bart_score_precision,
@@ -604,5 +606,124 @@ def test_bart_score_runtime_guard_points_to_optional_dependencies(
 
     with pytest.raises(ImportError, match=r"autorag-research\[gpu\]") as exc_info:
         generation_module._import_bartscore_runtime()
+
+    assert "uv sync --all-extras --all-groups" in str(exc_info.value)
+
+
+class DummyAlignScoreScorer:
+    def __init__(self, responses: list[float]) -> None:
+        self.responses = responses
+        self.calls: list[tuple[list[str], list[str], int]] = []
+
+    def score(self, contexts: list[str], claims: list[str], batch_size: int = 8) -> list[float]:
+        self.calls.append((contexts, claims, batch_size))
+        return self.responses[: len(claims)]
+
+
+def test_align_score_scores_sentence_claims_against_retrieved_context():
+    scorer = DummyAlignScoreScorer(responses=[0.25, 0.75])
+
+    scores = align_score(
+        metric_inputs=[
+            MetricInput(
+                retrieved_contents=["France is in Europe.", "Paris is France's capital."],
+                generated_texts="Paris is the capital of France. It is in Europe.",
+            )
+        ],
+        scorer=scorer,
+        batch_size=4,
+    )
+
+    assert scores == [pytest.approx(0.5)]
+    assert scorer.calls == [
+        (
+            ["France is in Europe.\n\nParis is France's capital."] * 2,
+            ["Paris is the capital of France.", "It is in Europe."],
+            4,
+        )
+    ]
+
+
+def test_align_score_min_aggregation_keeps_worst_supported_claim():
+    scorer = DummyAlignScoreScorer(responses=[0.91, 0.12])
+
+    scores = align_score(
+        metric_inputs=[
+            MetricInput(
+                retrieved_contents=["Grounded context."],
+                generated_texts="Grounded claim. Unsupported claim.",
+            )
+        ],
+        scorer=scorer,
+        aggregation="min",
+    )
+
+    assert scores == [pytest.approx(0.12)]
+
+
+def test_align_score_returns_none_without_context_or_generated_text():
+    scorer = DummyAlignScoreScorer(responses=[0.9])
+
+    scores = align_score(
+        metric_inputs=[
+            MetricInput(generated_texts="Paris is France's capital."),
+            MetricInput(retrieved_contents=["Paris is France's capital."]),
+            MetricInput(retrieved_contents=["   "], generated_texts="Paris is France's capital."),
+        ],
+        scorer=scorer,
+    )
+
+    assert scores == [None, None, None]
+    assert scorer.calls == []
+
+
+def test_align_score_rejects_unknown_aggregation():
+    with pytest.raises(ValueError, match="Unsupported AlignScore aggregation"):
+        align_score(
+            metric_inputs=[MetricInput(retrieved_contents=["Context"], generated_texts="Claim")],
+            scorer=DummyAlignScoreScorer(responses=[0.5]),
+            aggregation="median",
+        )
+
+
+def test_align_score_config_exposes_metric_function_and_kwargs():
+    config = AlignScoreConfig(
+        model_name_or_path="custom-alignscore",
+        batch_size=2,
+        max_length=256,
+        device="cpu",
+        cache_dir="custom-cache",
+        aggregation="min",
+    )
+
+    assert config.get_metric_name() == "align_score"
+    assert config.get_metric_func() is align_score
+    assert config.get_metric_kwargs() == {
+        "model_name_or_path": "custom-alignscore",
+        "batch_size": 2,
+        "max_length": 256,
+        "device": "cpu",
+        "cache_dir": "custom-cache",
+        "aggregation": "min",
+    }
+
+
+def test_align_score_runtime_guard_points_to_optional_dependencies(monkeypatch: pytest.MonkeyPatch):
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    original_import_module = generation_module.importlib.import_module
+
+    def fake_import_module(name: str):
+        if name == "transformers":
+            msg = "missing transformers"
+            raise ImportError(msg)
+        if name == "torch":
+            return object()
+        return original_import_module(name)
+
+    monkeypatch.setattr(generation_module.importlib, "import_module", fake_import_module)
+
+    with pytest.raises(ImportError, match=r"autorag-research\[gpu\]") as exc_info:
+        generation_module._import_alignscore_runtime()
 
     assert "uv sync --all-extras --all-groups" in str(exc_info.value)

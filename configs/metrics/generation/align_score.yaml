@@ -1,0 +1,8 @@
+_target_: autorag_research.evaluation.metrics.generation.AlignScoreConfig
+description: "AlignScore - ACL 2023 factual consistency against retrieved context"
+model_name_or_path: liuyanyi/AlignScore-large-hf
+batch_size: 8
+max_length: 1024
+device: cpu
+cache_dir: null
+aggregation: mean

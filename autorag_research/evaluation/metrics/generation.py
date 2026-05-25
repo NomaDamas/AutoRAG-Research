@@ -70,6 +70,16 @@ BARTSCORE_DEPENDENCY_MESSAGE = (
 )
 UNIEVAL_MODEL_NAME = "MingZhong/unieval-sum"
 UNIEVAL_DIMENSIONS = ("coherence", "consistency", "fluency", "relevance")
+ALIGNSCORE_MODEL_NAME = "liuyanyi/AlignScore-large-hf"
+ALIGNSCORE_BATCH_SIZE = 8
+ALIGNSCORE_MAX_LENGTH = 1024
+ALIGNSCORE_DEVICE = "cpu"
+ALIGNSCORE_AGGREGATIONS = ("mean", "min")
+ALIGNSCORE_DEPENDENCY_MESSAGE = (
+    "AlignScore requires the optional `torch` and `transformers` dependencies. "
+    "Install them with `pip install 'autorag-research[gpu]'` or run "
+    "`uv sync --all-extras --all-groups` in a development checkout."
+)
 
 
 def _get_normalized_tokens(text: str) -> list[str]:
@@ -287,6 +297,162 @@ def _aggregate_unieval_scores(dimension: str, scores: list[float]) -> float:
     if dimension == "relevance":
         return max(scores)
     return scores[0]
+
+
+def _validate_alignscore_aggregation(aggregation: str) -> str:
+    """Validate and normalize AlignScore claim aggregation."""
+    normalized = aggregation.strip().lower()
+    if normalized not in ALIGNSCORE_AGGREGATIONS:
+        msg = f"Unsupported AlignScore aggregation: {aggregation}"
+        raise ValueError(msg)
+    return normalized
+
+
+def _split_alignscore_claims(text: str) -> list[str]:
+    """Split generated text into claim-sized sentence units for AlignScore."""
+    stripped_text = text.strip()
+    if not stripped_text:
+        return []
+    try:
+        sentences = [sentence.strip() for sentence in nltk.sent_tokenize(stripped_text) if sentence.strip()]
+    except LookupError:
+        sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", stripped_text) if sentence.strip()]
+    return sentences or [stripped_text]
+
+
+def _build_alignscore_context(retrieved_contents: list[str]) -> str:
+    """Join retrieved passages into the source context scored by AlignScore."""
+    return "\n\n".join(content.strip() for content in retrieved_contents if content.strip())
+
+
+def _aggregate_alignscore_scores(scores: list[float], aggregation: str) -> float:
+    """Aggregate claim-level AlignScore outputs into one sample-level score."""
+    normalized_aggregation = _validate_alignscore_aggregation(aggregation)
+    if normalized_aggregation == "min":
+        return min(scores)
+    return float(sum(scores) / len(scores))
+
+
+def _resolve_alignscore_device(device: str) -> str:
+    """Resolve a concrete torch device string for AlignScore."""
+    if device != "auto":
+        return device
+
+    torch = _import_alignscore_torch()
+    if torch.cuda.is_available():
+        return "cuda"
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    if mps_backend is not None and mps_backend.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _import_alignscore_torch() -> Any:
+    """Import torch with an AlignScore-specific dependency error message."""
+    try:
+        return importlib.import_module("torch")
+    except ImportError as e:
+        raise ImportError(ALIGNSCORE_DEPENDENCY_MESSAGE) from e
+
+
+def _import_alignscore_runtime() -> tuple[Any, Any, Any]:
+    """Import AlignScore runtime dependencies lazily."""
+    torch = _import_alignscore_torch()
+    try:
+        transformers = importlib.import_module("transformers")
+    except ImportError as e:
+        raise ImportError(ALIGNSCORE_DEPENDENCY_MESSAGE) from e
+    return torch, transformers.AutoModelForSequenceClassification, transformers.AutoTokenizer
+
+
+class AlignScoreScorer:
+    """Protocol-like base for AlignScore scorers used by generation metrics."""
+
+    def score(self, contexts: list[str], claims: list[str], batch_size: int = ALIGNSCORE_BATCH_SIZE) -> list[float]:
+        """Return one support score per context/claim pair."""
+        raise NotImplementedError
+
+
+class HuggingFaceAlignScoreScorer(AlignScoreScorer):
+    """Thin wrapper around a Hugging Face-format AlignScore sequence classifier."""
+
+    def __init__(
+        self,
+        model_name_or_path: str = ALIGNSCORE_MODEL_NAME,
+        max_length: int = ALIGNSCORE_MAX_LENGTH,
+        device: str = ALIGNSCORE_DEVICE,
+        cache_dir: str | None = None,
+    ) -> None:
+        torch, AutoModelForSequenceClassification, AutoTokenizer = _import_alignscore_runtime()
+        self._torch = torch
+        self.device = _resolve_alignscore_device(device)
+        self.max_length = max_length
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=cache_dir)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path, cache_dir=cache_dir)
+        self.model.eval()
+        self.model.to(self.device)
+        self.positive_label_id = self._resolve_positive_label_id()
+
+    def _resolve_positive_label_id(self) -> int:
+        """Find the factual-consistency/entailment class id from model config labels."""
+        id2label = getattr(self.model.config, "id2label", {}) or {}
+        for label_id, label in id2label.items():
+            if any(token in str(label).strip().lower() for token in ("entail", "support", "positive", "consistent")):
+                return int(label_id)
+        return max(0, int(getattr(self.model.config, "num_labels", 2)) - 1)
+
+    def score(self, contexts: list[str], claims: list[str], batch_size: int = ALIGNSCORE_BATCH_SIZE) -> list[float]:
+        """Compute factual consistency probabilities for aligned context/claim pairs."""
+        if len(contexts) != len(claims):
+            msg = f"AlignScore received {len(contexts)} contexts for {len(claims)} claims"
+            raise ValueError(msg)
+        if not contexts:
+            return []
+
+        scores: list[float] = []
+        for start in range(0, len(contexts), batch_size):
+            batch_contexts = contexts[start : start + batch_size]
+            batch_claims = claims[start : start + batch_size]
+            with self._torch.no_grad():
+                encoded = self.tokenizer(
+                    batch_contexts,
+                    batch_claims,
+                    max_length=self.max_length,
+                    truncation=True,
+                    padding=True,
+                    return_tensors="pt",
+                )
+                encoded = {key: value.to(self.device) for key, value in encoded.items()}
+                logits = self.model(**encoded).logits
+                if logits.shape[-1] == 1:
+                    probabilities = self._torch.sigmoid(logits).reshape(-1)
+                else:
+                    probabilities = self._torch.softmax(logits, dim=-1)[:, self.positive_label_id]
+                scores.extend(float(score) for score in probabilities.tolist())
+        return scores
+
+
+@lru_cache(maxsize=4)
+def get_alignscore_scorer(
+    model_name_or_path: str = ALIGNSCORE_MODEL_NAME,
+    max_length: int = ALIGNSCORE_MAX_LENGTH,
+    device: str = ALIGNSCORE_DEVICE,
+    cache_dir: str | None = None,
+) -> AlignScoreScorer:
+    """Return a cached AlignScore scorer instance."""
+    logger.debug(
+        "Loading AlignScore scorer model_name_or_path=%s max_length=%s device=%s cache_dir=%s",
+        model_name_or_path,
+        max_length,
+        device,
+        cache_dir,
+    )
+    return HuggingFaceAlignScoreScorer(
+        model_name_or_path=model_name_or_path,
+        max_length=max_length,
+        device=device,
+        cache_dir=cache_dir,
+    )
 
 
 @convert_inputs_to_list
@@ -896,6 +1062,65 @@ def unieval(
     return results
 
 
+@convert_inputs_to_list
+def align_score(
+    metric_inputs: list[MetricInput],
+    model_name_or_path: str = ALIGNSCORE_MODEL_NAME,
+    batch_size: int = ALIGNSCORE_BATCH_SIZE,
+    max_length: int = ALIGNSCORE_MAX_LENGTH,
+    device: str = ALIGNSCORE_DEVICE,
+    cache_dir: str | None = None,
+    aggregation: str = "mean",
+    scorer: AlignScoreScorer | None = None,
+) -> list[float | None]:
+    """Compute AlignScore factual consistency against retrieved source context.
+
+    AlignScore (Zha et al., ACL 2023) estimates information alignment between a
+    source context and generated text. The wrapper follows the RAG faithfulness
+    use case by splitting each generated answer into sentence-level claims,
+    scoring every claim against the concatenated retrieved context, then
+    aggregating claim scores into one higher-is-better query score.
+    """
+    normalized_aggregation = _validate_alignscore_aggregation(aggregation)
+    prepared_contexts: list[str] = []
+    prepared_claims: list[str] = []
+    claim_counts: list[tuple[int, int]] = []
+    results: list[float | None] = [None] * len(metric_inputs)
+
+    for index, metric_input in enumerate(metric_inputs):
+        if not metric_input.is_fields_notnone(["retrieved_contents", "generated_texts"]):
+            continue
+        context = _build_alignscore_context(cast(list[str], metric_input.retrieved_contents))
+        claims = _split_alignscore_claims(cast(str, metric_input.generated_texts))
+        if not context or not claims:
+            continue
+        prepared_contexts.extend([context] * len(claims))
+        prepared_claims.extend(claims)
+        claim_counts.append((index, len(claims)))
+
+    if not prepared_claims:
+        return results
+
+    effective_scorer = scorer or get_alignscore_scorer(
+        model_name_or_path=model_name_or_path,
+        max_length=max_length,
+        device=device,
+        cache_dir=cache_dir,
+    )
+    claim_scores = effective_scorer.score(prepared_contexts, prepared_claims, batch_size=batch_size)
+    if len(claim_scores) != len(prepared_claims):
+        msg = f"AlignScore scorer returned {len(claim_scores)} scores for {len(prepared_claims)} claims"
+        raise ValueError(msg)
+
+    score_offset = 0
+    for index, count in claim_counts:
+        current_scores = claim_scores[score_offset : score_offset + count]
+        results[index] = _aggregate_alignscore_scores(current_scores, normalized_aggregation)
+        score_offset += count
+
+    return results
+
+
 # Metric Configurations
 @dataclass
 class BleuConfig(BaseGenerationMetricConfig):
@@ -1058,6 +1283,41 @@ class ResponseRelevancyConfig(BaseGenerationMetricConfig):
             "llm": self.llm,
             "embedding_model": self.embedding_model,
             "prompt_template": self.prompt_template,
+        }
+
+
+@dataclass
+class AlignScoreConfig(BaseGenerationMetricConfig):
+    """Configuration for AlignScore factual consistency metric."""
+
+    model_name_or_path: str = ALIGNSCORE_MODEL_NAME
+    batch_size: int = ALIGNSCORE_BATCH_SIZE
+    max_length: int = ALIGNSCORE_MAX_LENGTH
+    device: str = ALIGNSCORE_DEVICE
+    cache_dir: str | None = None
+    aggregation: str = "mean"
+
+    def __post_init__(self) -> None:
+        """Validate AlignScore configuration."""
+        self.aggregation = _validate_alignscore_aggregation(self.aggregation)
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "align_score"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return align_score
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "model_name_or_path": self.model_name_or_path,
+            "batch_size": self.batch_size,
+            "max_length": self.max_length,
+            "device": self.device,
+            "cache_dir": self.cache_dir,
+            "aggregation": self.aggregation,
         }
 
 
