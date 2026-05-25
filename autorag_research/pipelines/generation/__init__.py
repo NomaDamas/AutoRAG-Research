@@ -1,6 +1,7 @@
 from autorag_research.pipelines.generation.autothinkrag import AutoThinkRAGPipeline, AutoThinkRAGPipelineConfig
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.generation.basic_rag import BasicRAGPipeline, BasicRAGPipelineConfig
+from autorag_research.pipelines.generation.deep_rag import DeepRAGPipeline, DeepRAGPipelineConfig
 from autorag_research.pipelines.generation.et2rag import (
     DEFAULT_PROMPT_TEMPLATE,
     ET2RAGPipeline,
@@ -30,6 +31,8 @@ __all__ = [
     "BaseGenerationPipeline",
     "BasicRAGPipeline",
     "BasicRAGPipelineConfig",
+    "DeepRAGPipeline",
+    "DeepRAGPipelineConfig",
     "ET2RAGPipeline",
     "ET2RAGPipelineConfig",
     "IRCoTGenerationPipeline",
