@@ -131,10 +131,12 @@ class TestDynamicRAGPipeline:
         retrieval_pipeline._retrieve_by_id.assert_awaited_once_with(1, 5)
         assert "second" in llm.ainvoke.await_args.args[0]
         assert result.text == "final answer"
-        assert result.metadata["candidate_chunk_ids"] == [1, 2]
-        assert result.metadata["selected_chunk_ids"] == [2]
-        assert result.metadata["selected_scores"] == [0.95]
-        assert result.metadata["effective_top_k"] == 1
+        metadata = result.metadata
+        assert metadata is not None
+        assert metadata["candidate_chunk_ids"] == [1, 2]
+        assert metadata["selected_chunk_ids"] == [2]
+        assert metadata["selected_scores"] == [0.95]
+        assert metadata["effective_top_k"] == 1
 
     @pytest.mark.asyncio
     async def test_generate_backfills_missing_contents(self):
@@ -150,4 +152,6 @@ class TestDynamicRAGPipeline:
         result = await pipeline._generate(1, top_k=1)
 
         service.get_chunk_contents.assert_called_once_with([5])
-        assert result.metadata["selected_chunk_ids"] == [5]
+        metadata = result.metadata
+        assert metadata is not None
+        assert metadata["selected_chunk_ids"] == [5]

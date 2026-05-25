@@ -36,7 +36,9 @@ class DynamicRAGReranker(BaseReranker):
             for index, document in enumerate(documents)
         ]
 
-    def _dynamic_cut(self, ranked_results: list[RerankResult], requested_top_k: int | None) -> int:
+    def _dynamic_cut(
+        self, ranked_results: list[RerankResult], requested_top_k: int | None, *, allow_score_cut: bool
+    ) -> int:
         """Choose an effective cutoff from ranked results."""
         if not ranked_results:
             return 0
@@ -50,6 +52,9 @@ class DynamicRAGReranker(BaseReranker):
         min_keep = min(self.min_top_k, upper_bound)
 
         effective_k = upper_bound
+        if not allow_score_cut:
+            return effective_k
+
         for position in range(min_keep, upper_bound):
             current_score = ranked_results[position].score
             previous_score = ranked_results[position - 1].score
@@ -68,7 +73,7 @@ class DynamicRAGReranker(BaseReranker):
             return []
         ranked_results = self._score_documents(query, documents)
         ranked_results.sort(key=lambda result: result.score, reverse=True)
-        effective_k = self._dynamic_cut(ranked_results, top_k)
+        effective_k = self._dynamic_cut(ranked_results, top_k, allow_score_cut=self.base_reranker is not None)
         return ranked_results[:effective_k]
 
     async def arerank(self, query: str, documents: list[str], top_k: int | None = None) -> list[RerankResult]:
@@ -78,7 +83,7 @@ class DynamicRAGReranker(BaseReranker):
         if self.base_reranker is not None:
             ranked_results = await self.base_reranker.arerank(query, documents, top_k=len(documents))
             ranked_results.sort(key=lambda result: result.score, reverse=True)
-            effective_k = self._dynamic_cut(ranked_results, top_k)
+            effective_k = self._dynamic_cut(ranked_results, top_k, allow_score_cut=self.base_reranker is not None)
             return ranked_results[:effective_k]
         return self.rerank(query, documents, top_k)
 
