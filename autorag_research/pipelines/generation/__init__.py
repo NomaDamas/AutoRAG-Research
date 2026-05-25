@@ -7,6 +7,10 @@ from autorag_research.pipelines.generation.et2rag import (
     ET2RAGPipelineConfig,
     OrganizationStrategy,
 )
+from autorag_research.pipelines.generation.hybrid_deep_searcher import (
+    HybridDeepSearcherPipeline,
+    HybridDeepSearcherPipelineConfig,
+)
 from autorag_research.pipelines.generation.ircot import IRCoTGenerationPipeline, IRCoTGenerationPipelineConfig
 from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
 from autorag_research.pipelines.generation.question_decomposition import (
@@ -32,6 +36,8 @@ __all__ = [
     "BasicRAGPipelineConfig",
     "ET2RAGPipeline",
     "ET2RAGPipelineConfig",
+    "HybridDeepSearcherPipeline",
+    "HybridDeepSearcherPipelineConfig",
     "IRCoTGenerationPipeline",
     "IRCoTGenerationPipelineConfig",
     "MAINRAGPipeline",
