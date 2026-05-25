@@ -1,4 +1,6 @@
+import math
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -620,6 +622,111 @@ class DummyAlignScoreScorer:
         return self.responses[: len(claims)]
 
 
+class FakeAlignScoreTensor:
+    def __init__(self, values: list[list[float]] | list[float]) -> None:
+        self.values = values
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        if self.values and isinstance(self.values[0], list):
+            return (len(self.values), len(self.values[0]))
+        return (len(self.values),)
+
+    def to(self, _device: str) -> "FakeAlignScoreTensor":
+        return self
+
+    def reshape(self, *_shape: int) -> "FakeAlignScoreTensor":
+        if self.values and isinstance(self.values[0], list):
+            return FakeAlignScoreTensor([item for row in self.values for item in row])
+        return self
+
+    def tolist(self) -> list[float] | list[list[float]]:
+        return self.values
+
+    def __getitem__(self, key: tuple[slice, int]) -> "FakeAlignScoreTensor":
+        rows, column = key
+        assert rows == slice(None)
+        return FakeAlignScoreTensor([row[column] for row in self.values])
+
+
+class FakeAlignScoreNoGrad:
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+
+class FakeAlignScoreTorch:
+    @staticmethod
+    def no_grad() -> FakeAlignScoreNoGrad:
+        return FakeAlignScoreNoGrad()
+
+    @staticmethod
+    def softmax(tensor: FakeAlignScoreTensor, dim: int) -> FakeAlignScoreTensor:
+        assert dim == -1
+        normalized_rows = []
+        for row in tensor.values:
+            denominator = sum(math.exp(value) for value in row)
+            normalized_rows.append([math.exp(value) / denominator for value in row])
+        return FakeAlignScoreTensor(normalized_rows)
+
+    @staticmethod
+    def sigmoid(_tensor: FakeAlignScoreTensor) -> FakeAlignScoreTensor:
+        pytest.fail("AlignScore default path should use tri_label_logits, not a generic logits sigmoid")
+
+
+def _make_fake_alignscore_runtime():
+    tokenizer_load_calls: list[dict[str, object]] = []
+    tokenizer_encode_calls: list[dict[str, object]] = []
+    model_load_calls: list[dict[str, object]] = []
+
+    class FakeTokenizer:
+        @classmethod
+        def from_pretrained(cls, model_name_or_path: str, **kwargs: object) -> "FakeTokenizer":
+            tokenizer_load_calls.append({"model_name_or_path": model_name_or_path, **kwargs})
+            return cls()
+
+        def __call__(
+            self,
+            contexts: list[str],
+            claims: list[str],
+            **kwargs: object,
+        ) -> dict[str, FakeAlignScoreTensor]:
+            tokenizer_encode_calls.append({"contexts": contexts, "claims": claims, **kwargs})
+            return {"input_ids": FakeAlignScoreTensor([[1, 2], [3, 4]])}
+
+    class FakeModel:
+        def __init__(self) -> None:
+            self.config = SimpleNamespace(
+                model_type="alignscore",
+                id2label={0: "entailment", 1: "neutral", 2: "contradiction"},
+            )
+
+        @classmethod
+        def from_pretrained(cls, model_name_or_path: str, **kwargs: object) -> "FakeModel":
+            model_load_calls.append({"model_name_or_path": model_name_or_path, **kwargs})
+            return cls()
+
+        def eval(self) -> None:
+            return None
+
+        def to(self, _device: str) -> None:
+            return None
+
+        def __call__(self, **_encoded: FakeAlignScoreTensor) -> SimpleNamespace:
+            return SimpleNamespace(tri_label_logits=FakeAlignScoreTensor([[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]]))
+
+    return (
+        FakeAlignScoreTorch,
+        FakeModel,
+        FakeTokenizer,
+        model_load_calls,
+        tokenizer_load_calls,
+        tokenizer_encode_calls,
+    )
+
+
 def test_align_score_scores_sentence_claims_against_retrieved_context():
     scorer = DummyAlignScoreScorer(responses=[0.25, 0.75])
 
@@ -705,7 +812,45 @@ def test_align_score_config_exposes_metric_function_and_kwargs():
         "device": "cpu",
         "cache_dir": "custom-cache",
         "aggregation": "min",
+        "trust_remote_code": True,
     }
+
+
+def test_align_score_default_huggingface_scorer_uses_alignscore_remote_contract(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    fake_torch, fake_model, fake_tokenizer, model_load_calls, tokenizer_load_calls, tokenizer_encode_calls = (
+        _make_fake_alignscore_runtime()
+    )
+
+    monkeypatch.setattr(
+        generation_module,
+        "_import_alignscore_runtime",
+        lambda: (fake_torch, fake_model, fake_tokenizer),
+    )
+
+    scorer = generation_module.HuggingFaceAlignScoreScorer(model_name_or_path="liuyanyi/AlignScore-large-hf")
+    scores = scorer.score(["context 1", "context 2"], ["claim 1", "claim 2"], batch_size=2)
+
+    assert model_load_calls == [
+        {"model_name_or_path": "liuyanyi/AlignScore-large-hf", "cache_dir": None, "trust_remote_code": True}
+    ]
+    assert tokenizer_load_calls == [
+        {"model_name_or_path": "liuyanyi/AlignScore-large-hf", "cache_dir": None, "trust_remote_code": True}
+    ]
+    assert tokenizer_encode_calls == [
+        {
+            "contexts": ["context 1", "context 2"],
+            "claims": ["claim 1", "claim 2"],
+            "max_length": 1024,
+            "truncation": "only_first",
+            "padding": "max_length",
+            "return_tensors": "pt",
+        }
+    ]
+    assert scores == [pytest.approx(0.786986), pytest.approx(0.106507)]
 
 
 def test_align_score_runtime_guard_points_to_optional_dependencies(monkeypatch: pytest.MonkeyPatch):

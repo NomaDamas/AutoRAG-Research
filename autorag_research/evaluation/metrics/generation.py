@@ -74,6 +74,7 @@ ALIGNSCORE_MODEL_NAME = "liuyanyi/AlignScore-large-hf"
 ALIGNSCORE_BATCH_SIZE = 8
 ALIGNSCORE_MAX_LENGTH = 1024
 ALIGNSCORE_DEVICE = "cpu"
+ALIGNSCORE_TRUST_REMOTE_CODE = True
 ALIGNSCORE_AGGREGATIONS = ("mean", "min")
 ALIGNSCORE_DEPENDENCY_MESSAGE = (
     "AlignScore requires the optional `torch` and `transformers` dependencies. "
@@ -382,13 +383,22 @@ class HuggingFaceAlignScoreScorer(AlignScoreScorer):
         max_length: int = ALIGNSCORE_MAX_LENGTH,
         device: str = ALIGNSCORE_DEVICE,
         cache_dir: str | None = None,
+        trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE,
     ) -> None:
         torch, AutoModelForSequenceClassification, AutoTokenizer = _import_alignscore_runtime()
         self._torch = torch
         self.device = _resolve_alignscore_device(device)
         self.max_length = max_length
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=cache_dir)
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path, cache_dir=cache_dir)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name_or_path,
+            cache_dir=cache_dir,
+            trust_remote_code=trust_remote_code,
+        )
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            model_name_or_path,
+            cache_dir=cache_dir,
+            trust_remote_code=trust_remote_code,
+        )
         self.model.eval()
         self.model.to(self.device)
         self.positive_label_id = self._resolve_positive_label_id()
@@ -400,6 +410,20 @@ class HuggingFaceAlignScoreScorer(AlignScoreScorer):
             if any(token in str(label).strip().lower() for token in ("entail", "support", "positive", "consistent")):
                 return int(label_id)
         return max(0, int(getattr(self.model.config, "num_labels", 2)) - 1)
+
+    def _extract_alignment_probabilities(self, model_output: Any) -> Any:
+        """Convert AlignScore or generic classifier outputs into support probabilities."""
+        if hasattr(model_output, "tri_label_logits"):
+            return self._torch.softmax(model_output.tri_label_logits, dim=-1)[:, 0]
+        if hasattr(model_output, "seq_relationship_logits"):
+            return self._torch.softmax(model_output.seq_relationship_logits, dim=-1)[:, 1]
+        if hasattr(model_output, "reg_label_logits"):
+            return model_output.reg_label_logits.reshape(-1)
+
+        logits = model_output.logits
+        if logits.shape[-1] == 1:
+            return self._torch.sigmoid(logits).reshape(-1)
+        return self._torch.softmax(logits, dim=-1)[:, self.positive_label_id]
 
     def score(self, contexts: list[str], claims: list[str], batch_size: int = ALIGNSCORE_BATCH_SIZE) -> list[float]:
         """Compute factual consistency probabilities for aligned context/claim pairs."""
@@ -418,16 +442,12 @@ class HuggingFaceAlignScoreScorer(AlignScoreScorer):
                     batch_contexts,
                     batch_claims,
                     max_length=self.max_length,
-                    truncation=True,
-                    padding=True,
+                    truncation="only_first",
+                    padding="max_length",
                     return_tensors="pt",
                 )
                 encoded = {key: value.to(self.device) for key, value in encoded.items()}
-                logits = self.model(**encoded).logits
-                if logits.shape[-1] == 1:
-                    probabilities = self._torch.sigmoid(logits).reshape(-1)
-                else:
-                    probabilities = self._torch.softmax(logits, dim=-1)[:, self.positive_label_id]
+                probabilities = self._extract_alignment_probabilities(self.model(**encoded))
                 scores.extend(float(score) for score in probabilities.tolist())
         return scores
 
@@ -438,6 +458,7 @@ def get_alignscore_scorer(
     max_length: int = ALIGNSCORE_MAX_LENGTH,
     device: str = ALIGNSCORE_DEVICE,
     cache_dir: str | None = None,
+    trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE,
 ) -> AlignScoreScorer:
     """Return a cached AlignScore scorer instance."""
     logger.debug(
@@ -452,6 +473,7 @@ def get_alignscore_scorer(
         max_length=max_length,
         device=device,
         cache_dir=cache_dir,
+        trust_remote_code=trust_remote_code,
     )
 
 
@@ -1070,6 +1092,7 @@ def align_score(
     max_length: int = ALIGNSCORE_MAX_LENGTH,
     device: str = ALIGNSCORE_DEVICE,
     cache_dir: str | None = None,
+    trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE,
     aggregation: str = "mean",
     scorer: AlignScoreScorer | None = None,
 ) -> list[float | None]:
@@ -1106,6 +1129,7 @@ def align_score(
         max_length=max_length,
         device=device,
         cache_dir=cache_dir,
+        trust_remote_code=trust_remote_code,
     )
     claim_scores = effective_scorer.score(prepared_contexts, prepared_claims, batch_size=batch_size)
     if len(claim_scores) != len(prepared_claims):
@@ -1295,6 +1319,7 @@ class AlignScoreConfig(BaseGenerationMetricConfig):
     max_length: int = ALIGNSCORE_MAX_LENGTH
     device: str = ALIGNSCORE_DEVICE
     cache_dir: str | None = None
+    trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE
     aggregation: str = "mean"
 
     def __post_init__(self) -> None:
@@ -1317,6 +1342,7 @@ class AlignScoreConfig(BaseGenerationMetricConfig):
             "max_length": self.max_length,
             "device": self.device,
             "cache_dir": self.cache_dir,
+            "trust_remote_code": self.trust_remote_code,
             "aggregation": self.aggregation,
         }
 
