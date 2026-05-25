@@ -67,6 +67,12 @@ class TestRASParsing:
         assert action.kind == "invalid"
         assert action.text == "I need Apollo 11 context but forgot the tags."
 
+    def test_parse_untagged_subquery_prefix_is_invalid(self):
+        action = parse_ras_plan_action("subquery: apollo 11 crew")
+
+        assert action.kind == "invalid"
+        assert action.text == "subquery: apollo 11 crew"
+
     def test_parse_empty_required_tags_are_invalid(self):
         assert parse_ras_plan_action("<subquery> </subquery>").kind == "invalid"
         assert parse_ras_plan_action("<sufficient> </sufficient>").kind == "invalid"
@@ -184,6 +190,36 @@ class TestRASGenerationPipeline:
         ]
         assert metadata["malformed_plans"] == []
         assert result.token_usage == {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25}
+
+    @pytest.mark.asyncio
+    async def test_generate_skips_duplicate_passages_before_extracting_triples(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<triple>Apollo 11 | mission | lunar landing</triple>"),
+                _mock_response("<subquery>apollo 11 crew</subquery>"),
+                _mock_response("<sufficient>enough</sufficient>"),
+                _mock_response("Neil Armstrong commanded Apollo 11."),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        retrieval_pipeline._retrieve_by_id = AsyncMock(
+            return_value=[{"doc_id": 9, "score": 1.0, "content": "Apollo 11 was a lunar landing mission."}]
+        )
+        retrieval_pipeline.retrieve = AsyncMock(
+            return_value=[{"doc_id": 9, "score": 0.9, "content": "Apollo 11 was a lunar landing mission."}]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Who commanded Apollo 11?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=2, k_per_step=1)
+
+        result = await pipeline._generate(1, top_k=1)
+        metadata = _metadata(result)
+
+        assert llm.ainvoke.await_count == 4
+        assert metadata["retrieved_chunk_ids"] == [9]
+        assert metadata["evidence"] == ["Apollo 11 was a lunar landing mission."]
+        assert metadata["triples"] == [("Apollo 11", "mission", "lunar landing")]
 
     @pytest.mark.asyncio
     async def test_generate_backfills_missing_content(self):

@@ -117,10 +117,6 @@ def parse_ras_plan_action(response_text: str) -> RASPlanAction:
         return RASPlanAction(kind="invalid", text=response_text.strip())
 
     stripped_response = response_text.strip()
-    if stripped_response.lower().startswith("subquery:"):
-        text = stripped_response.split(":", 1)[1].strip()
-        if text:
-            return RASPlanAction(kind="retrieve", text=text)
     return RASPlanAction(kind="invalid", text=stripped_response)
 
 
@@ -336,15 +332,21 @@ class RASGenerationPipeline(BaseGenerationPipeline):
         plan_trace: list[str] = []
         malformed_plans: list[str] = []
 
+        extracted_chunk_ids: set[int | str] = set()
+
         initial_results = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
         doc_ids, passages = self._contents_from_results(initial_results)
-        for doc_id in doc_ids:
+        new_passages: list[str] = []
+        for doc_id, passage in zip(doc_ids, passages, strict=False):
             if doc_id not in retrieved_chunk_ids:
                 retrieved_chunk_ids.append(doc_id)
+            if doc_id not in extracted_chunk_ids:
+                extracted_chunk_ids.add(doc_id)
+                new_passages.append(passage)
         evidence = self._append_evidence(evidence, passages)
         triples = self._merge_triples(
             triples,
-            await self._extract_triples_for_passages(query_text, passages, tracker),
+            await self._extract_triples_for_passages(query_text, new_passages, tracker),
         )
 
         for step in range(1, self.max_steps + 1):
@@ -364,13 +366,17 @@ class RASGenerationPipeline(BaseGenerationPipeline):
             subqueries.append(retrieval_query)
             results = await self._retrieval_pipeline.retrieve(retrieval_query, retrieval_k)
             doc_ids, passages = self._contents_from_results(results)
-            for doc_id in doc_ids:
+            new_passages = []
+            for doc_id, passage in zip(doc_ids, passages, strict=False):
                 if doc_id not in retrieved_chunk_ids:
                     retrieved_chunk_ids.append(doc_id)
+                if doc_id not in extracted_chunk_ids:
+                    extracted_chunk_ids.add(doc_id)
+                    new_passages.append(passage)
             evidence = self._append_evidence(evidence, passages)
             triples = self._merge_triples(
                 triples,
-                await self._extract_triples_for_passages(query_text, passages, tracker),
+                await self._extract_triples_for_passages(query_text, new_passages, tracker),
             )
 
         answer_prompt = self._build_answer_prompt(query_text, evidence, triples)
