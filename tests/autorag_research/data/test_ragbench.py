@@ -13,6 +13,7 @@ from autorag_research.data.ragbench import (
     compute_chunk_id,
     extract_relevant_doc_indices,
 )
+from autorag_research.orm.models.retrieval_gt import RetrievalGT, normalize_gt
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestConfig,
@@ -135,7 +136,7 @@ RAGBENCH_INTEGRATION_CONFIG = IngestorTestConfig(
 class TestRAGBenchIngestorIntegration:
     def test_ingest_covidqa_subset(self, mock_embedding_model):
         with create_test_database(RAGBENCH_INTEGRATION_CONFIG) as db:
-            service = TextDataIngestionService(db.session_factory, schema=db.schema)
+            service = TextDataIngestionService(db.session_factory, schema=db.schema)  # ty: ignore[invalid-argument-type]
 
             ingestor = RAGBenchIngestor(
                 mock_embedding_model,
@@ -155,7 +156,7 @@ class FakeRAGBenchService:
     def __init__(self):
         self.chunks: list[list[dict[str, str | int | None]]] = []
         self.queries: list[list[dict[str, str | list[str] | None]]] = []
-        self.retrieval_gt_calls: list[tuple[str, object, str, bool]] = []
+        self.retrieval_gt_calls: list[tuple[str, RetrievalGT, str, bool]] = []
 
     def add_chunks(self, chunks: list[dict[str, str | int | None]]) -> None:
         self.chunks.append(chunks)
@@ -163,16 +164,14 @@ class FakeRAGBenchService:
     def add_queries(self, queries: list[dict[str, str | list[str] | None]]) -> None:
         self.queries.append(queries)
 
-    def add_retrieval_gt(self, query_id: str, gt: object, chunk_type: str = "mixed", upsert: bool = False) -> None:
+    def add_retrieval_gt(self, query_id: str, gt: RetrievalGT, chunk_type: str = "mixed", upsert: bool = False) -> None:
         self.retrieval_gt_calls.append((query_id, gt, chunk_type, upsert))
 
 
-def _extract_or_gt_ids(gt: object) -> list[str]:
-    if hasattr(gt, "items"):
-        return [str(item.id) for item in gt.items]
-    if hasattr(gt, "value"):
-        return [str(gt.value)]
-    raise AssertionError
+def _extract_or_gt_ids(gt: RetrievalGT) -> list[str]:
+    normalized_gt = normalize_gt(gt, chunk_type="text")
+    assert len(normalized_gt.groups) == 1
+    return [str(item.id) for item in normalized_gt.groups[0].items]
 
 
 def test_process_batch_upserts_duplicate_ragbench_query_relations_across_batches(mock_embedding_model):
