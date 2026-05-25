@@ -92,6 +92,18 @@ class TestRerankRetrievalPipelineConfig:
         assert kwargs["reranker"] is reranker
         assert kwargs["candidate_top_k"] == 25
 
+    def test_inject_retrieval_pipeline_rejects_image_chunk_pipeline(self):
+        wrapped_retrieval = create_mock_retrieval_pipeline(pipeline_id=77)
+        wrapped_retrieval._get_pipeline_config.return_value = {"type": "heaven", "retrieval_unit": "image_chunk"}
+        config = RerankRetrievalPipelineConfig(
+            name="rerank",
+            retrieval_pipeline_name="heaven",
+            reranker=FakeReranker(),
+        )
+
+        with pytest.raises(ValueError, match="only supports text chunk retrieval pipelines"):
+            config.inject_retrieval_pipeline(wrapped_retrieval)
+
     @pytest.mark.api
     def test_string_reranker_conversion(self):
         with (
@@ -146,6 +158,36 @@ class TestRerankRetrievalPipeline:
         assert config["candidate_top_k"] == 50
         assert config["reranker_model"] == "fake-reranker"
         assert config["retrieval_pipeline_id"] == 123
+        assert config["retrieval_unit"] == "chunk"
+
+    def test_pipeline_config_declares_text_chunk_retrieval_unit_without_database(self, session_factory):
+        with patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None):
+            pipeline = RerankRetrievalPipeline(
+                session_factory=session_factory,
+                name="rerank_config",
+                retrieval_pipeline=create_mock_retrieval_pipeline(pipeline_id=123),
+                reranker=FakeReranker(model_name="fake-reranker"),
+                candidate_top_k=50,
+            )
+
+        config = pipeline._get_pipeline_config()
+
+        assert config["retrieval_unit"] == "chunk"
+
+    def test_creation_rejects_image_chunk_wrapped_pipeline(self, session_factory):
+        wrapped_retrieval = create_mock_retrieval_pipeline()
+        wrapped_retrieval._get_pipeline_config.return_value = {"type": "heaven", "retrieval_unit": "image_chunk"}
+
+        with (
+            patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None),
+            pytest.raises(ValueError, match="only supports text chunk retrieval pipelines"),
+        ):
+            RerankRetrievalPipeline(
+                session_factory=session_factory,
+                name="rerank_image_chunk",
+                retrieval_pipeline=wrapped_retrieval,
+                reranker=FakeReranker(),
+            )
 
     @pytest.mark.asyncio
     async def test_retrieve_by_text_reranks_wrapped_candidates(

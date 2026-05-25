@@ -1,5 +1,5 @@
 _target_: autorag_research.pipelines.retrieval.rerank.RerankRetrievalPipelineConfig
-description: "Retriever → Reranker wrapper retrieval pipeline"
+description: "Text chunk retriever → reranker wrapper retrieval pipeline"
 name: rerank
 retrieval_pipeline_name: bm25
 reranker: sentence_transformer

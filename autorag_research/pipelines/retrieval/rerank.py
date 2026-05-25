@@ -1,9 +1,9 @@
-"""Retriever-reranker retrieval pipeline for AutoRAG-Research.
+"""Text retriever-reranker retrieval pipeline for AutoRAG-Research.
 
-This pipeline wraps any existing retrieval pipeline, fetches a larger candidate
-set, and reranks those candidate texts with a configured reranker. It keeps the
-standard retrieval pipeline interface so generation pipelines can compose with
-it by referencing the configured pipeline name.
+This pipeline wraps an existing text chunk retrieval pipeline, fetches a larger
+candidate set, and reranks those candidate texts with a configured reranker. It
+keeps the standard retrieval pipeline interface so generation pipelines can
+compose with it by referencing the configured pipeline name.
 """
 
 from __future__ import annotations
@@ -18,10 +18,35 @@ from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 from autorag_research.rerankers.base import BaseReranker, RerankResult
 
+TEXT_RETRIEVAL_UNIT = "chunk"
+
+
+def _get_wrapped_pipeline_config(pipeline: BaseRetrievalPipeline) -> dict[str, Any]:
+    """Return the wrapped pipeline config when it is available as a dict."""
+    get_config = getattr(pipeline, "_get_pipeline_config", None)
+    if not callable(get_config):
+        return {}
+
+    config = get_config()
+    return config if isinstance(config, dict) else {}
+
+
+def _validate_text_retrieval_pipeline(pipeline: BaseRetrievalPipeline) -> None:
+    """Reject wrapped pipelines whose persisted results are not text chunks."""
+    config = _get_wrapped_pipeline_config(pipeline)
+    retrieval_unit = config.get("retrieval_unit", TEXT_RETRIEVAL_UNIT)
+    if retrieval_unit != TEXT_RETRIEVAL_UNIT:
+        pipeline_type = config.get("type", type(pipeline).__name__)
+        msg = (
+            "RerankRetrievalPipeline only supports text chunk retrieval pipelines "
+            f"(retrieval_unit='chunk'); got retrieval_unit={retrieval_unit!r} from {pipeline_type!r}."
+        )
+        raise ValueError(msg)
+
 
 @dataclass(kw_only=True)
 class RerankRetrievalPipelineConfig(BaseRetrievalPipelineConfig):
-    """Configuration for the retriever-reranker retrieval wrapper."""
+    """Configuration for the text chunk retriever-reranker retrieval wrapper."""
 
     retrieval_pipeline_name: str
     reranker: str | BaseReranker
@@ -37,7 +62,8 @@ class RerankRetrievalPipelineConfig(BaseRetrievalPipelineConfig):
         super().__setattr__(name, value)
 
     def inject_retrieval_pipeline(self, pipeline: BaseRetrievalPipeline) -> None:
-        """Inject the wrapped retrieval pipeline instance."""
+        """Inject the wrapped text chunk retrieval pipeline instance."""
+        _validate_text_retrieval_pipeline(pipeline)
         self._retrieval_pipeline = pipeline
 
     def get_pipeline_class(self) -> type[RerankRetrievalPipeline]:
@@ -58,7 +84,7 @@ class RerankRetrievalPipelineConfig(BaseRetrievalPipelineConfig):
 
 
 class RerankRetrievalPipeline(BaseRetrievalPipeline):
-    """Generic retriever → reranker retrieval wrapper."""
+    """Text chunk retriever → reranker retrieval wrapper."""
 
     def __init__(
         self,
@@ -74,7 +100,7 @@ class RerankRetrievalPipeline(BaseRetrievalPipeline):
         Args:
             session_factory: SQLAlchemy sessionmaker for database connections.
             name: Name for this pipeline.
-            retrieval_pipeline: Wrapped first-stage retrieval pipeline.
+            retrieval_pipeline: Wrapped first-stage text chunk retrieval pipeline.
             reranker: Reranker used to rescore candidate texts.
             candidate_top_k: Number of first-stage candidates to fetch before reranking.
             schema: Optional dynamic schema namespace.
@@ -82,6 +108,7 @@ class RerankRetrievalPipeline(BaseRetrievalPipeline):
         if candidate_top_k < 1:
             msg = "candidate_top_k must be >= 1"
             raise ValueError(msg)
+        _validate_text_retrieval_pipeline(retrieval_pipeline)
 
         self._retrieval_pipeline = retrieval_pipeline
         self.reranker = reranker
@@ -93,6 +120,7 @@ class RerankRetrievalPipeline(BaseRetrievalPipeline):
         """Return rerank pipeline configuration for storage."""
         return {
             "type": "rerank",
+            "retrieval_unit": TEXT_RETRIEVAL_UNIT,
             "candidate_top_k": self.candidate_top_k,
             "reranker_model": getattr(self.reranker, "model_name", type(self.reranker).__name__),
             "retrieval_pipeline_id": getattr(self._retrieval_pipeline, "pipeline_id", None),
