@@ -122,6 +122,15 @@ class TestHybridDeepSearcherPipelineConfig:
 
         assert kwargs["retrieval_pipeline"] is retrieval_pipeline
 
+    def test_default_yaml_references_existing_llm_config(self):
+        config_path = Path("configs/pipelines/generation/hybrid_deep_searcher.yaml")
+        llm_config_name = OmegaConf.load(config_path).llm
+        llm_config_dir = Path("configs/llm")
+
+        assert (llm_config_dir / f"{llm_config_name}.yaml").exists() or (
+            llm_config_dir / f"{llm_config_name}.yml"
+        ).exists()
+
 
 class TestHybridDeepSearcherPipeline:
     """Tests for HDS generation behavior."""
