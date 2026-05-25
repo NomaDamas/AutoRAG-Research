@@ -4,6 +4,8 @@ Unit tests for helper functions (TDD - tests written before implementation).
 Integration tests use real data subsets against PostgreSQL.
 """
 
+import logging
+
 import pytest
 from langchain_core.embeddings.fake import FakeEmbeddings
 
@@ -213,6 +215,106 @@ def test_process_batch_upserts_duplicate_ragbench_query_relations_across_batches
         second_chunk_id,
         shared_chunk_id,
     ])
+
+
+def test_process_batch_warns_on_duplicate_ragbench_query_metadata_mismatch_across_batches(
+    mock_embedding_model,
+    caplog,
+):
+    service = FakeRAGBenchService()
+    ingestor = RAGBenchIngestor(mock_embedding_model, config="covidqa", batch_size=1)
+    ingestor.set_service(service)  # ty: ignore[invalid-argument-type]
+    seen_chunk_ids: set[str] = set()
+    relation_chunk_ids_by_query: dict[str, set[str]] = {}
+    query_metadata_by_query: dict[str, tuple[str, str | None]] = {}
+
+    first_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "First response",
+        "documents": ["First supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+    second_example = {
+        "id": "dup",
+        "question": "What changed?",
+        "response": "Different response",
+        "documents": ["Second supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+
+    with caplog.at_level(logging.WARNING, logger="AutoRAG-Research"):
+        ingestor._process_batch(
+            "covidqa",
+            "test",
+            [first_example],
+            seen_chunk_ids,
+            relation_chunk_ids_by_query,
+            query_metadata_by_query,
+        )
+        ingestor._process_batch(
+            "covidqa",
+            "test",
+            [second_example],
+            seen_chunk_ids,
+            relation_chunk_ids_by_query,
+            query_metadata_by_query,
+        )
+
+    query_id = _make_query_id("covidqa", "test", "dup")
+    assert query_metadata_by_query[query_id] == ("What is duplicated?", "First response")
+    assert any(
+        "Duplicate RAGBench query id" in record.message
+        and query_id in record.message
+        and "different question/response metadata" in record.message
+        for record in caplog.records
+    )
+
+
+def test_process_batch_warns_on_duplicate_ragbench_query_metadata_mismatch_within_same_batch(
+    mock_embedding_model,
+    caplog,
+):
+    service = FakeRAGBenchService()
+    ingestor = RAGBenchIngestor(mock_embedding_model, config="covidqa")
+    ingestor.set_service(service)  # ty: ignore[invalid-argument-type]
+    seen_chunk_ids: set[str] = set()
+    relation_chunk_ids_by_query: dict[str, set[str]] = {}
+    query_metadata_by_query: dict[str, tuple[str, str | None]] = {}
+
+    first_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "Same response",
+        "documents": ["First supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+    second_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "Changed response",
+        "documents": ["Second supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+
+    with caplog.at_level(logging.WARNING, logger="AutoRAG-Research"):
+        ingestor._process_batch(
+            "covidqa",
+            "test",
+            [first_example, second_example],
+            seen_chunk_ids,
+            relation_chunk_ids_by_query,
+            query_metadata_by_query,
+        )
+
+    query_id = _make_query_id("covidqa", "test", "dup")
+    assert query_metadata_by_query[query_id] == ("What is duplicated?", "Same response")
+    assert any(
+        "Duplicate RAGBench query id" in record.message
+        and query_id in record.message
+        and "different question/response metadata" in record.message
+        for record in caplog.records
+    )
 
 
 def test_process_batch_preserves_duplicate_ragbench_query_relations_within_same_batch(mock_embedding_model):

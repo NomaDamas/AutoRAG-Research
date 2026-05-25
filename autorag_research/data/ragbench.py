@@ -128,6 +128,7 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
 
         seen_chunk_ids: set[str] = set()
         relation_chunk_ids_by_query: dict[str, set[str]] = {}
+        query_metadata_by_query: dict[str, tuple[str, str | None]] = {}
         batch: list[dict[str, Any]] = []
         total_processed = 0
 
@@ -136,7 +137,14 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
             batch.append(example_dict)
 
             if len(batch) >= self.batch_size:
-                self._process_batch(config, split, batch, seen_chunk_ids, relation_chunk_ids_by_query)
+                self._process_batch(
+                    config,
+                    split,
+                    batch,
+                    seen_chunk_ids,
+                    relation_chunk_ids_by_query,
+                    query_metadata_by_query,
+                )
                 total_processed += len(batch)
                 logger.info(f"[{config}] Processed {total_processed} examples...")
                 batch = []
@@ -147,7 +155,14 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
                 break
 
         if batch:
-            self._process_batch(config, split, batch, seen_chunk_ids, relation_chunk_ids_by_query)
+            self._process_batch(
+                config,
+                split,
+                batch,
+                seen_chunk_ids,
+                relation_chunk_ids_by_query,
+                query_metadata_by_query,
+            )
             total_processed += len(batch)
 
         logger.info(f"[{config}] Total examples processed: {total_processed}")
@@ -160,10 +175,41 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         examples: list[dict[str, Any]],
         seen_chunk_ids: set[str],
         relation_chunk_ids_by_query: dict[str, set[str]],
+        query_metadata_by_query: dict[str, tuple[str, str | None]] | None = None,
     ) -> None:
+        if query_metadata_by_query is not None:
+            self._record_query_metadata_and_warn_on_mismatch(config, split, examples, query_metadata_by_query)
         row_doc_to_chunk_mapping = self._ingest_chunks(config, examples, seen_chunk_ids)
         self._ingest_queries(config, split, examples)
         self._ingest_relations(config, split, examples, row_doc_to_chunk_mapping, relation_chunk_ids_by_query)
+
+    def _record_query_metadata_and_warn_on_mismatch(
+        self,
+        config: str,
+        split: str,
+        examples: list[dict[str, Any]],
+        query_metadata_by_query: dict[str, tuple[str, str | None]],
+    ) -> None:
+        for example in examples:
+            example_id = str(example["id"])
+            query_id = _make_query_id(config, split, example_id)
+            question = str(example["question"])
+            response = example.get("response")
+            response_text = str(response) if response is not None else None
+            current_metadata = (question, response_text)
+            first_metadata = query_metadata_by_query.setdefault(query_id, current_metadata)
+
+            if first_metadata != current_metadata:
+                logger.warning(
+                    "Duplicate RAGBench query id %s has different question/response metadata; "
+                    "keeping first query metadata while unioning retrieval ground truth. "
+                    "first_question=%r duplicate_question=%r first_response=%r duplicate_response=%r",
+                    query_id,
+                    first_metadata[0],
+                    question,
+                    first_metadata[1],
+                    response_text,
+                )
 
     def _ingest_chunks(
         self,
