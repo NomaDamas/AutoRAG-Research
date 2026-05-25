@@ -120,8 +120,26 @@ class GenerationEvaluationService(BaseEvaluationService):
         with self._create_uow() as uow:
             result: dict[int | str, dict[str, Any]] = {}
 
-            chunk_results = uow.executor_results.get_by_queries_and_pipeline(query_ids, pipeline_id)
-            generated_texts: dict[int | str, str] = {elem.query_id: elem.generation_result for elem in chunk_results}
+            executor_results = uow.executor_results.get_by_queries_and_pipeline(query_ids, pipeline_id)
+            generated_texts: dict[int | str, str] = {elem.query_id: elem.generation_result for elem in executor_results}
+
+            metadata_retrieved_by_query: dict[int | str, list[int | str]] = defaultdict(list)
+            metadata_retrieved_chunk_ids: set[int | str] = set()
+            for executor_result in executor_results:
+                result_metadata = getattr(executor_result, "result_metadata", None)
+                if not isinstance(result_metadata, dict):
+                    continue
+                metadata_chunk_ids = result_metadata.get("retrieved_chunk_ids")
+                if not isinstance(metadata_chunk_ids, list | tuple):
+                    continue
+
+                seen_metadata_chunk_ids: set[int | str] = set()
+                for chunk_id in metadata_chunk_ids:
+                    if chunk_id is None or chunk_id in seen_metadata_chunk_ids:
+                        continue
+                    seen_metadata_chunk_ids.add(chunk_id)
+                    metadata_retrieved_by_query[executor_result.query_id].append(chunk_id)
+                    metadata_retrieved_chunk_ids.add(chunk_id)
 
             retrieved_by_query: dict[int | str, list[Any]] = defaultdict(list)
             retrieved_chunk_ids: set[int | str] = set()
@@ -132,7 +150,7 @@ class GenerationEvaluationService(BaseEvaluationService):
                 retrieved_chunk_ids.add(retrieved_result.chunk_id)
 
             relations_by_query: dict[int | str, list[Any]] = {}
-            text_chunk_ids: set[int | str] = set(retrieved_chunk_ids)
+            text_chunk_ids: set[int | str] = retrieved_chunk_ids | metadata_retrieved_chunk_ids
             for query_id in query_ids:
                 relations = uow.retrieval_relations.get_by_query_id(query_id)
                 relations_by_query[query_id] = relations
@@ -166,6 +184,14 @@ class GenerationEvaluationService(BaseEvaluationService):
                 for retrieved_result in retrieved_by_query.get(query_id, []):
                     chunk_id = retrieved_result.chunk_id
                     if chunk_id is None or chunk_id in seen_chunk_ids:
+                        continue
+                    seen_chunk_ids.add(chunk_id)
+                    chunk_content = chunk_map.get(chunk_id)
+                    if chunk_content:
+                        retrieved_contents.append(chunk_content)
+
+                for chunk_id in metadata_retrieved_by_query.get(query_id, []):
+                    if chunk_id in seen_chunk_ids:
                         continue
                     seen_chunk_ids.add(chunk_id)
                     chunk_content = chunk_map.get(chunk_id)

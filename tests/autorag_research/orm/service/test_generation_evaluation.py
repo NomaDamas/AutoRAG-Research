@@ -120,6 +120,43 @@ class TestGenerationEvaluationService:
         results = service._get_execution_results(pipeline_id=1, query_ids=[1])
         assert results[1]["retrieved_contents"] == ["chunk two", "chunk one"]
 
+    def test_get_execution_results_includes_retrieved_contents_from_executor_metadata(self, service, monkeypatch):
+        class Obj:
+            def __init__(self, **kwargs):
+                self.__dict__.update(kwargs)
+
+        class FakeUow:
+            def __init__(self):
+                self.executor_results = Obj(
+                    get_by_queries_and_pipeline=lambda query_ids, pipeline_id: [
+                        Obj(
+                            query_id=1,
+                            generation_result="Generated answer",
+                            result_metadata={"retrieved_chunk_ids": [2, 1, 2]},
+                        )
+                    ]
+                )
+                self.chunk_results = Obj(get_by_query_and_pipeline=lambda query_ids, pipeline_id: [])
+                self.retrieval_relations = Obj(get_by_query_id=lambda query_id: [])
+                self.chunks = Obj(
+                    get_by_ids=lambda chunk_ids: [
+                        Obj(id=1, contents="chunk one"),
+                        Obj(id=2, contents="chunk two"),
+                    ]
+                )
+                self.queries = Obj(get_by_id=lambda query_id: Obj(contents="q1", generation_gt=["gt"]))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        monkeypatch.setattr(service, "_create_uow", lambda: FakeUow())
+
+        results = service._get_execution_results(pipeline_id=1, query_ids=[1])
+        assert results[1]["retrieved_contents"] == ["chunk two", "chunk one"]
+
     def test_filter_missing_query_ids(self, service):
         missing = service._filter_missing_query_ids(pipeline_id=1, metric_id=2, query_ids=[1, 2, 3])
 
