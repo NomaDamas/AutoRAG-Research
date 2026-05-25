@@ -8,6 +8,7 @@ import asyncio
 import logging
 from abc import ABC
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
@@ -42,6 +43,40 @@ ENTITY_CONFIG: dict[str, tuple[str, str, str, bool]] = {
     "chunk": ("chunks", "contents", "chunks", False),
     "image_chunk": ("image_chunks", "content", "image chunks", True),
 }
+
+
+def _partition_none_content(
+    items: list[tuple[int | str, Any]],
+) -> tuple[list[tuple[int | str, Any]], list[tuple[int | str, Any]]]:
+    """Split items into (with-content, none-content) lists for image_chunk filter."""
+    valid: list[tuple[int | str, Any]] = []
+    none_content: list[tuple[int | str, Any]] = []
+    for item_id, data in items:
+        (none_content if data is None else valid).append((item_id, data))
+    return valid, none_content
+
+
+def _partition_embedding_results(
+    items: list[tuple[int | str, Any]],
+    embeddings: list[Any],
+) -> tuple[list[tuple[int | str, Any]], list[int | str]]:
+    """Split (item, embedding) pairs into (successful_updates, failed_ids)."""
+    valid_updates: list[tuple[int | str, Any]] = []
+    failed_ids: list[int | str] = []
+    for (item_id, _), emb in zip(items, embeddings, strict=True):
+        if emb is None:
+            failed_ids.append(item_id)
+        else:
+            valid_updates.append((item_id, emb))
+    return valid_updates, failed_ids
+
+
+@dataclass
+class _EmbedRunState:
+    """Mutable counters tracked across one `_embed_entities` run."""
+
+    total_embedded: int = 0
+    skipped_none_content: int = 0
 
 
 class BaseIngestionService(BaseService, ABC):
@@ -348,55 +383,118 @@ class BaseIngestionService(BaseService, ABC):
             logger.info(f"No {display_name} to embed{embedding_suffix}")
             return 0
 
-        total_embedded = 0
+        # `failed_ids` is per-run only — junk rows that fail in this run are skipped
+        # for the rest of the run to prevent re-fetching them forever (the same query
+        # returns "rows without embeddings" indefinitely). A subsequent ingest call
+        # will retry them, which is correct for transient failures.
+        failed_ids: set[int | str] = set()
+        state = _EmbedRunState()
 
         with tqdm(total=total_to_embed, desc=f"Embedding {display_name}", unit="items") as pbar:
             while True:
-                # Fetch entities without embeddings
-                with self._create_uow() as uow:
-                    # Check if repository exists
-                    repository = getattr(uow, repo_attr, None)
-                    if repository is None:
-                        raise RepositoryNotSupportedError(repo_attr, type(uow).__name__)
+                items_to_embed = self._fetch_unembedded_batch(
+                    repo_attr=repo_attr,
+                    fetch_method_name=fetch_method_name,
+                    data_attr=data_attr,
+                    batch_size=batch_size,
+                    failed_ids=failed_ids,
+                )
+                if not items_to_embed:
+                    break
 
-                    # Get fetch method and call it
-                    fetch_method = getattr(repository, fetch_method_name)
-                    entities = fetch_method(limit=batch_size)
-                    if not entities:
-                        break
-
-                    # Extract (id, data) pairs using data_attr
-                    items_to_embed = [(e.id, getattr(e, data_attr)) for e in entities]
-
-                # Filter None content if required (for image chunks)
                 if filter_none:
-                    valid_items = [(item_id, data) for item_id, data in items_to_embed if data is not None]
-                    if not valid_items:
-                        break
-                else:
-                    valid_items = items_to_embed
+                    items_to_embed, none_skipped = _partition_none_content(items_to_embed)
+                    if none_skipped:
+                        failed_ids.update(item_id for item_id, _ in none_skipped)
+                        state.skipped_none_content += len(none_skipped)
+                    if not items_to_embed:
+                        continue
 
-                # Run embedding
-                data_list = [data for _, data in valid_items]
-                embeddings = asyncio.run(run_with_concurrency_limit(data_list, embed_func, max_concurrency, error_msg))  # ty: ignore[invalid-argument-type]
+                items_to_embed = items_to_embed[:batch_size]
+                made_progress = self._embed_batch(
+                    items_to_embed=items_to_embed,
+                    embed_func=embed_func,
+                    max_concurrency=max_concurrency,
+                    error_msg=error_msg,
+                    display_name=display_name,
+                    repo_attr=repo_attr,
+                    is_multi_vector=is_multi_vector,
+                    failed_ids=failed_ids,
+                    state=state,
+                    pbar=pbar,
+                )
+                if not made_progress:
+                    break
 
-                # Filter out None embeddings and update entities
-                valid_updates = [
-                    (item_id, emb) for (item_id, _), emb in zip(valid_items, embeddings, strict=True) if emb is not None
-                ]
-                if valid_updates:
-                    ids_to_update = [item_id for item_id, _ in valid_updates]
-                    embeddings_to_update = [emb for _, emb in valid_updates]
-                    batch_count = self._set_embeddings(ids_to_update, embeddings_to_update, repo_attr, is_multi_vector)
-                    total_embedded += batch_count
-                    pbar.update(batch_count)
-
-        # Generate BM25 tokens for chunks/queries if tokenizer is specified
         if entity_type in ("chunk", "query") and bm25_tokenizer is not None:
             self._populate_bm25_tokens(bm25_tokenizer, entity_type=entity_type, batch_size=batch_size)
 
-        logger.info(f"Total {display_name} embedded{embedding_suffix}: {total_embedded}")
-        return total_embedded
+        embed_failures = len(failed_ids) - state.skipped_none_content
+        logger.info(
+            f"Total {display_name} embedded{embedding_suffix}: {state.total_embedded} "
+            f"(skipped_failed={embed_failures}, skipped_empty_content={state.skipped_none_content})"
+        )
+        return state.total_embedded
+
+    def _fetch_unembedded_batch(
+        self,
+        *,
+        repo_attr: str,
+        fetch_method_name: str,
+        data_attr: str,
+        batch_size: int,
+        failed_ids: set[int | str],
+    ) -> list[tuple[int | str, Any]]:
+        """Fetch the next batch of entities without embeddings, excluding `failed_ids`.
+
+        Over-fetches by `len(failed_ids)` so already-failed rows do not starve
+        the batch when they appear at the head of the database ordering.
+        """
+        with self._create_uow() as uow:
+            repository = getattr(uow, repo_attr, None)
+            if repository is None:
+                raise RepositoryNotSupportedError(repo_attr, type(uow).__name__)
+            fetch_method = getattr(repository, fetch_method_name)
+            entities = fetch_method(limit=batch_size + len(failed_ids))
+            if not entities:
+                return []
+            return [(e.id, getattr(e, data_attr)) for e in entities if e.id not in failed_ids]
+
+    def _embed_batch(
+        self,
+        *,
+        items_to_embed: list[tuple[int | str, Any]],
+        embed_func: Any,
+        max_concurrency: int,
+        error_msg: str,
+        display_name: str,
+        repo_attr: str,
+        is_multi_vector: bool,
+        failed_ids: set[int | str],
+        state: "_EmbedRunState",
+        pbar: Any,
+    ) -> bool:
+        """Embed one batch and persist successes. Returns True if any progress was made."""
+        data_list = [data for _, data in items_to_embed]
+        embeddings = asyncio.run(run_with_concurrency_limit(data_list, embed_func, max_concurrency, error_msg))
+        valid_updates, batch_failed_ids = _partition_embedding_results(items_to_embed, embeddings)
+
+        if batch_failed_ids:
+            failed_ids.update(batch_failed_ids)
+            logger.warning(
+                f"Skipping {len(batch_failed_ids)} {display_name} that failed to embed in this run "
+                f"(IDs: {batch_failed_ids[:5]}{'...' if len(batch_failed_ids) > 5 else ''})"
+            )
+
+        if valid_updates:
+            ids_to_update = [item_id for item_id, _ in valid_updates]
+            embeddings_to_update = [emb for _, emb in valid_updates]
+            batch_count = self._set_embeddings(ids_to_update, embeddings_to_update, repo_attr, is_multi_vector)
+            state.total_embedded += batch_count
+            pbar.update(batch_count)
+            return True
+
+        return bool(batch_failed_ids)
 
     def _populate_bm25_tokens(
         self,
