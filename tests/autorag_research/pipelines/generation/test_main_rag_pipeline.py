@@ -641,6 +641,7 @@ class TestMAINRAGEdgeCases:
         assert result.text != ""
         assert result.metadata is not None
         assert result.metadata.get("skipped_filtering") is True
+        assert result.metadata["context_chunk_ids"] == [1]
 
     @pytest.mark.asyncio
     async def test_filtering_preserves_document_order_by_score(self, session_factory, cleanup_pipeline_results):
@@ -716,6 +717,8 @@ class TestMAINRAGEdgeCases:
 
         # Check that relevance_scores in metadata are sorted descending
         assert result.metadata is not None
+        assert result.metadata["context_chunk_ids"] == [2, 3]
+        assert result.metadata["retrieved_chunk_ids"] == [1, 2, 3]
         relevance_scores = result.metadata.get("relevance_scores", [])
         if len(relevance_scores) > 1:
             scores = [s["score"] for s in relevance_scores]

@@ -462,6 +462,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                     "std_multiplier": self._std_multiplier,
                     "original_doc_count": 0,
                     "filtered_doc_count": 0,
+                    "context_chunk_ids": [],
                 },
             )
 
@@ -486,6 +487,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                     "original_doc_count": 1,
                     "filtered_doc_count": 1,
                     "threshold": None,
+                    "context_chunk_ids": chunk_ids,
                     "retrieved_chunk_ids": chunk_ids,
                     "retrieval_scores": retrieval_scores,
                     "relevance_scores": [{"doc_id": chunk_ids[0], "score": None}],
@@ -536,6 +538,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
 
         # Build metadata with filtering statistics
         relevance_scores_metadata = [{"doc_id": doc["doc_id"], "score": doc["score"]} for doc in filtered_docs]
+        context_chunk_ids = [doc["doc_id"] for doc in filtered_docs]
 
         return GenerationResult(
             text=final_answer,
@@ -546,6 +549,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                 "threshold": threshold,
                 "original_doc_count": len(chunk_contents),
                 "filtered_doc_count": len(filtered_docs),
+                "context_chunk_ids": context_chunk_ids,
                 "retrieved_chunk_ids": chunk_ids,
                 "retrieval_scores": retrieval_scores,
                 "relevance_scores": relevance_scores_metadata,

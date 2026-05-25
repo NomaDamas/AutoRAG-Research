@@ -244,6 +244,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
                 text="I don't have enough information to answer this question.",
                 token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
+                    "context_chunk_ids": [],
                     "retrieval_chunk_ids": [],
                     "organization_strategy": self._organization_strategy.value,
                     "num_subsets": 0,
@@ -265,6 +266,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
                 text="Retrieved documents had no content.",
                 token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
+                    "context_chunk_ids": [],
                     "retrieval_chunk_ids": chunk_ids,
                     "organization_strategy": self._organization_strategy.value,
                     "num_subsets": 0,
@@ -280,6 +282,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
                 text="Could not create context subsets from retrieved documents.",
                 token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
+                    "context_chunk_ids": [],
                     "retrieval_chunk_ids": chunk_ids,
                     "organization_strategy": self._organization_strategy.value,
                     "num_subsets": 0,
@@ -315,6 +318,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         # Build metadata
         metadata = {
+            "context_chunk_ids": [doc[0] for doc in selected_subset],
             "retrieval_chunk_ids": chunk_ids,
             "organization_strategy": self._organization_strategy.value,
             "num_subsets": len(subsets),

@@ -186,6 +186,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
             text=text,
             token_usage=token_usage,
             metadata={
+                "context_chunk_ids": chunk_ids,
                 "retrieved_chunk_ids": chunk_ids,
                 "retrieved_scores": [r["score"] for r in retrieved],
             },

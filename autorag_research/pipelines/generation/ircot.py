@@ -349,6 +349,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
         # 4. Build metadata
         metadata = {
             "cot_sentences": cot_sentences,
+            "context_chunk_ids": chunk_ids,
             "chunk_ids": chunk_ids,
             "steps": steps_completed,
         }
