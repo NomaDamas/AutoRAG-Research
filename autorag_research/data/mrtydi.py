@@ -33,6 +33,16 @@ MRTYDI_CORPUS_BASE_URL = "https://huggingface.co/datasets/castorini/mr-tydi-corp
 
 
 @register_ingestor(
+    name="mr.tydi",
+    description="Mr. TyDi multilingual retrieval benchmark (alias for mrtydi)",
+    hf_repo="mrtydi-dumps",
+)
+@register_ingestor(
+    name="mr-tydi",
+    description="Mr. TyDi multilingual retrieval benchmark (alias for mrtydi)",
+    hf_repo="mrtydi-dumps",
+)
+@register_ingestor(
     name="mrtydi",
     description="Mr. TyDi multilingual retrieval benchmark",
     hf_repo="mrtydi-dumps",

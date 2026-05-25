@@ -263,3 +263,16 @@ class TestGenerateDbName:
         # Should have underscores separating parts
         parts = result.split("_")
         assert len(parts) >= 3
+
+    def test_sanitizes_ingestor_name_with_common_dataset_punctuation(self) -> None:
+        """Generated DB names are safe for aliases such as mr.tydi and mr-tydi."""
+        result = generate_db_name(
+            ingestor_name="mr.tydi",
+            params={"language": "english"},
+            subset="test",
+            embedding_model="openai-small",
+        )
+
+        assert result == "mr_tydi_english_test_openai_small"
+        assert "." not in result
+        assert "-" not in result

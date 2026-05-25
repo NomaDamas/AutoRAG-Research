@@ -15,6 +15,7 @@ Examples:
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING, Annotated, Literal
 
 import typer
@@ -102,6 +103,11 @@ def _convert_param_value(value: str, param_meta) -> str | int | bool | list[str]
     return value
 
 
+def _sanitize_db_name_part(value: str) -> str:
+    """Normalize one generated database/schema-name part."""
+    return re.sub(r"[^a-z0-9_]+", "_", value.lower()).strip("_")
+
+
 def generate_db_name(ingestor_name: str, params: dict, subset: str, embedding_model: str) -> str:
     """Generate database schema name from ingestor parameters.
 
@@ -109,19 +115,19 @@ def generate_db_name(ingestor_name: str, params: dict, subset: str, embedding_mo
         beir + dataset_name=scifact + test + bge-small -> beir_scifact_test_bge_small
         ragbench + configs=[covidqa, msmarco] + test + openai -> ragbench_covidqa_msmarco_test_openai
     """
-    parts = [ingestor_name]
+    parts = [_sanitize_db_name_part(ingestor_name)]
 
     # Include all parameter values
     for _param_name, param_value in params.items():
         if param_value is None:
             continue
         if isinstance(param_value, list):
-            parts.extend([v.lower().replace("-", "_") for v in param_value])
+            parts.extend([_sanitize_db_name_part(v) for v in param_value])
         elif isinstance(param_value, str):
-            parts.append(param_value.lower().replace("-", "_"))
+            parts.append(_sanitize_db_name_part(param_value))
 
-    parts.append(subset)
-    parts.append(embedding_model.lower().replace("-", "_"))
+    parts.append(_sanitize_db_name_part(subset))
+    parts.append(_sanitize_db_name_part(embedding_model))
     return "_".join(parts)
 
 
