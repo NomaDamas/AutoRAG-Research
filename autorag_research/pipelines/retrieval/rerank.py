@@ -14,7 +14,6 @@ from typing import Any
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
-from autorag_research.injection import health_check_reranker
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 from autorag_research.rerankers.base import BaseReranker, RerankResult
@@ -35,7 +34,6 @@ class RerankRetrievalPipelineConfig(BaseRetrievalPipelineConfig):
             from autorag_research.injection import load_reranker
 
             value = load_reranker(value)
-            health_check_reranker(value)
         super().__setattr__(name, value)
 
     def inject_retrieval_pipeline(self, pipeline: BaseRetrievalPipeline) -> None:
@@ -111,11 +109,17 @@ class RerankRetrievalPipeline(BaseRetrievalPipeline):
             chunks = uow.chunks.get_by_ids(missing_ids)
 
         contents_by_id = {chunk.id: chunk.contents for chunk in chunks}
+        unresolved_ids = sorted({doc_id for doc_id in missing_ids if doc_id not in contents_by_id}, key=str)
+        if unresolved_ids:
+            missing_ids_text = ", ".join(str(doc_id) for doc_id in unresolved_ids)
+            msg = f"Missing chunk content for candidate doc_ids: {missing_ids_text}"
+            raise ValueError(msg)
+
         enriched_candidates: list[dict[str, Any]] = []
         for candidate in candidates:
             enriched_candidate = dict(candidate)
             if not enriched_candidate.get("content"):
-                enriched_candidate["content"] = contents_by_id.get(candidate["doc_id"], "")
+                enriched_candidate["content"] = contents_by_id[candidate["doc_id"]]
             enriched_candidates.append(enriched_candidate)
 
         return enriched_candidates

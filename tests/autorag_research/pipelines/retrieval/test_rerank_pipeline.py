@@ -94,7 +94,12 @@ class TestRerankRetrievalPipelineConfig:
 
     @pytest.mark.api
     def test_string_reranker_conversion(self):
-        with patch("autorag_research.injection.load_reranker") as mock_load:
+        with (
+            patch("autorag_research.injection.load_reranker") as mock_load,
+            patch(
+                "autorag_research.pipelines.retrieval.rerank.health_check_reranker", create=True
+            ) as mock_health_check,
+        ):
             mock_reranker = MagicMock()
             mock_load.return_value = mock_reranker
 
@@ -105,6 +110,7 @@ class TestRerankRetrievalPipelineConfig:
             )
 
             mock_load.assert_called_once_with("mock")
+            mock_health_check.assert_not_called()
             assert config.reranker is mock_reranker
 
 
@@ -206,6 +212,34 @@ class TestRerankRetrievalPipeline:
         await pipeline._retrieve_by_text("query text", top_k=2)
 
         reranker.arerank.assert_awaited_once_with("query text", chunk_contents, top_k=2)
+
+    def test_missing_candidate_content_requires_existing_chunk(self, session_factory):
+        wrapped_retrieval = create_mock_retrieval_pipeline()
+
+        with patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None):
+            pipeline = RerankRetrievalPipeline(
+                session_factory=session_factory,
+                name="rerank_missing_content",
+                retrieval_pipeline=wrapped_retrieval,
+                reranker=FakeReranker(),
+                candidate_top_k=2,
+            )
+        pipeline.session_factory = session_factory
+        pipeline._schema = None
+
+        mock_uow = MagicMock()
+        mock_uow.chunks.get_by_ids.return_value = []
+        mock_uow_context = MagicMock()
+        mock_uow_context.__enter__.return_value = mock_uow
+        mock_uow_context.__exit__.return_value = None
+
+        with (
+            patch("autorag_research.pipelines.retrieval.rerank.RetrievalUnitOfWork", return_value=mock_uow_context),
+            pytest.raises(ValueError, match="Missing chunk content for candidate doc_ids: 999"),
+        ):
+            pipeline._ensure_candidate_contents([{"doc_id": 999, "score": 0.9}])
+
+        mock_uow.chunks.get_by_ids.assert_called_once_with([999])
 
     @pytest.mark.asyncio
     async def test_retrieve_by_id_fetches_query_text_then_reranks(
