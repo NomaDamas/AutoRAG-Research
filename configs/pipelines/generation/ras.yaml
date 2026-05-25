@@ -1,0 +1,14 @@
+_target_: autorag_research.pipelines.generation.ras.RASGenerationPipelineConfig
+description: "RAS retrieval-and-structuring generation pipeline with question-specific triples"
+name: ras
+retrieval_pipeline_name: bm25
+llm: openai-gpt4o-mini
+max_steps: 3
+k_per_step: 4
+evidence_budget: 12
+triple_budget: 40
+top_k: 4
+batch_size: 32
+max_concurrency: 4
+max_retries: 3
+retry_delay: 1.0
