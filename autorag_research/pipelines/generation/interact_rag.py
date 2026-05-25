@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -38,13 +39,14 @@ InteractActionKind = Literal[
 ]
 
 DEFAULT_INTERACT_RAG_STEP_PROMPT = """You are an INTERACT-RAG agent that can reason and interact with the retrieval corpus.
-Use exactly one XML-like action per step:
-- <semantic_search>query</semantic_search>: dense/semantic evidence search
-- <exact_search>keywords</exact_search>: lexical/exact evidence search
-- <weighted_fusion semantic="0.6" exact="0.4">query</weighted_fusion>: combine semantic and exact intent
-- <entity_match>entity name</entity_match>: focus retrieval around an entity
-- <include_docs>1, 2</include_docs>: force known useful doc IDs into context
-- <exclude_docs>3, 4</exclude_docs>: remove noisy doc IDs from future context
+Use exactly one XML-like action per step. Retrieval actions are prompt-simulated through the configured
+retrieval pipeline unless that retriever advertises richer native capabilities:
+- <semantic_search>query</semantic_search>: evidence search
+- <exact_search>keywords</exact_search>: prompt-simulated lexical/exact intent search
+- <weighted_fusion semantic="0.6" exact="0.4">query</weighted_fusion>: prompt-simulated semantic/exact intent
+- <entity_match>entity name</entity_match>: prompt-simulated entity-focused retrieval
+- <include_docs>chunk_id</include_docs>: force known useful chunk IDs from displayed evidence into context
+- <exclude_docs>chunk_id</exclude_docs>: remove noisy chunk IDs from displayed evidence and future context
 - <adjust_scale>8</adjust_scale>: change retrieval scale for later searches
 - <answer>final answer</answer>: finish
 
@@ -75,7 +77,10 @@ _ACTION_PATTERNS: tuple[tuple[InteractActionKind, re.Pattern[str]], ...] = (
     ("answer", re.compile(r"<answer>\s*(.*?)\s*</answer>", re.IGNORECASE | re.DOTALL)),
     ("semantic_search", re.compile(r"<semantic_search>\s*(.*?)\s*</semantic_search>", re.IGNORECASE | re.DOTALL)),
     ("exact_search", re.compile(r"<exact_search>\s*(.*?)\s*</exact_search>", re.IGNORECASE | re.DOTALL)),
-    ("weighted_fusion", re.compile(r"<weighted_fusion(?:\s+[^>]*)?>\s*(.*?)\s*</weighted_fusion>", re.IGNORECASE | re.DOTALL)),
+    (
+        "weighted_fusion",
+        re.compile(r"<weighted_fusion(?:\s+[^>]*)?>\s*(.*?)\s*</weighted_fusion>", re.IGNORECASE | re.DOTALL),
+    ),
     ("entity_match", re.compile(r"<entity_match>\s*(.*?)\s*</entity_match>", re.IGNORECASE | re.DOTALL)),
     ("include_docs", re.compile(r"<include_docs>\s*(.*?)\s*</include_docs>", re.IGNORECASE | re.DOTALL)),
     ("exclude_docs", re.compile(r"<exclude_docs>\s*(.*?)\s*</exclude_docs>", re.IGNORECASE | re.DOTALL)),
@@ -242,13 +247,28 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         return ", ".join(str(doc_id) for doc_id in doc_ids) if doc_ids else "(none)"
 
     @staticmethod
-    def _format_scratchpad(trace: list[str], evidence: list[str]) -> str:
+    def _format_evidence_item(item: str | dict[str, Any]) -> str:
+        """Format one evidence item with exposed chunk IDs when available."""
+        if not isinstance(item, dict):
+            return item
+
+        doc_id = item.get("doc_id")
+        content = str(item.get("content", ""))
+        if doc_id is None:
+            return content
+
+        score = item.get("score")
+        score_label = "" if score is None else f" score={score}"
+        return f"[chunk_id={doc_id}{score_label}] {content}"
+
+    @classmethod
+    def _format_scratchpad(cls, trace: list[str], evidence: Sequence[str | dict[str, Any]]) -> str:
         """Format trace and evidence for prompting."""
         sections: list[str] = []
         if trace:
             sections.append("Trace:\n" + "\n".join(trace))
         if evidence:
-            sections.append("Evidence:\n" + "\n\n".join(f"[{i + 1}] {item}" for i, item in enumerate(evidence)))
+            sections.append("Evidence:\n" + "\n\n".join(cls._format_evidence_item(item) for item in evidence))
         return "\n\n".join(sections) if sections else "(empty)"
 
     def _build_step_prompt(
@@ -256,7 +276,7 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         query: str,
         state: InteractRAGState,
         trace: list[str],
-        evidence: list[str],
+        evidence: list[dict[str, Any]],
         steps_used: int,
     ) -> str:
         """Build one interaction prompt."""
@@ -270,21 +290,23 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             excluded_doc_ids=self._format_doc_ids(state.excluded_doc_ids),
         )
 
-    def _build_final_prompt(self, query: str, trace: list[str], evidence: list[str]) -> str:
+    def _build_final_prompt(self, query: str, trace: list[str], evidence: list[dict[str, Any]]) -> str:
         """Build fallback answer prompt."""
         return self.final_prompt_template.format(query=query, scratchpad=self._format_scratchpad(trace, evidence))
 
-    def _contents_from_results(self, retrieval_results: list[dict[str, Any]]) -> tuple[list[int | str], list[str]]:
-        """Extract IDs and contents from retrieval results, backfilling when needed."""
+    def _evidence_from_results(self, retrieval_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Extract displayable evidence snippets from retrieval results, backfilling missing content when needed."""
         doc_ids: list[int | str] = []
         contents: list[str | None] = []
         missing_positions: list[int] = []
         missing_ids: list[int | str] = []
+        scores: list[Any] = []
         for result in retrieval_results:
             doc_id = result.get("doc_id")
             if doc_id is None:
                 continue
             doc_ids.append(doc_id)
+            scores.append(result.get("score"))
             content = result.get("content")
             if content:
                 contents.append(str(content))
@@ -297,33 +319,72 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             fetched_contents = self._service.get_chunk_contents(missing_ids)
             for position, fetched_content in zip(missing_positions, fetched_contents, strict=False):
                 contents[position] = fetched_content
-        return doc_ids, [content or "" for content in contents]
+        return [
+            {"doc_id": doc_id, "score": score, "content": content or ""}
+            for doc_id, score, content in zip(doc_ids, scores, contents, strict=False)
+        ]
 
-    def _apply_state_action(self, action: InteractRAGAction, state: InteractRAGState, trace: list[str]) -> bool:
+    @staticmethod
+    def _known_doc_ids(exposed_doc_ids: set[int | str]) -> set[int | str]:
+        """Return exposed IDs plus their string forms for tolerant matching."""
+        return exposed_doc_ids | {str(doc_id) for doc_id in exposed_doc_ids}
+
+    def _apply_doc_id_action(
+        self,
+        action: InteractRAGAction,
+        state: InteractRAGState,
+        trace: list[str],
+        exposed_doc_ids: set[int | str],
+    ) -> bool:
+        """Apply include/exclude actions only to IDs shown to the model."""
+        target_list = state.included_doc_ids if action.kind == "include_docs" else state.excluded_doc_ids
+        known_doc_ids = self._known_doc_ids(exposed_doc_ids)
+        requested_doc_ids = parse_doc_ids(action.text)
+        accepted_doc_ids = [doc_id for doc_id in requested_doc_ids if doc_id in known_doc_ids]
+        ignored_doc_ids = [doc_id for doc_id in requested_doc_ids if doc_id not in known_doc_ids]
+
+        for doc_id in accepted_doc_ids:
+            if doc_id not in target_list:
+                target_list.append(doc_id)
+
+        if accepted_doc_ids:
+            trace.append(f"{action.kind}: {self._format_doc_ids(target_list)}")
+        if ignored_doc_ids:
+            trace.append(f"{action.kind} ignored unknown IDs: {self._format_doc_ids(ignored_doc_ids)}")
+        if not accepted_doc_ids and not ignored_doc_ids:
+            trace.append(f"{action.kind}: (none)")
+        return True
+
+    def _apply_scale_action(self, action: InteractRAGAction, state: InteractRAGState, trace: list[str]) -> bool:
+        """Apply retrieval scale changes."""
+        parsed_values = parse_doc_ids(action.text)
+        if parsed_values:
+            state.current_scale = min(max(parsed_values[0], 1), self.max_scale)
+        trace.append(f"adjust_scale: {state.current_scale}")
+        return True
+
+    @staticmethod
+    def _apply_weight_action(action: InteractRAGAction, state: InteractRAGState) -> bool:
+        """Store weighted-fusion hint values for metadata."""
+        if action.semantic_weight is not None and action.exact_weight is not None:
+            state.semantic_weight = action.semantic_weight
+            state.exact_weight = action.exact_weight
+        return False
+
+    def _apply_state_action(
+        self,
+        action: InteractRAGAction,
+        state: InteractRAGState,
+        trace: list[str],
+        exposed_doc_ids: set[int | str],
+    ) -> bool:
         """Apply non-search context-shaping actions. Return True if handled."""
-        if action.kind == "include_docs":
-            for doc_id in parse_doc_ids(action.text):
-                if doc_id not in state.included_doc_ids:
-                    state.included_doc_ids.append(doc_id)
-            trace.append(f"include_docs: {self._format_doc_ids(state.included_doc_ids)}")
-            return True
-        if action.kind == "exclude_docs":
-            for doc_id in parse_doc_ids(action.text):
-                if doc_id not in state.excluded_doc_ids:
-                    state.excluded_doc_ids.append(doc_id)
-            trace.append(f"exclude_docs: {self._format_doc_ids(state.excluded_doc_ids)}")
-            return True
+        if action.kind in {"include_docs", "exclude_docs"}:
+            return self._apply_doc_id_action(action, state, trace, exposed_doc_ids)
         if action.kind == "adjust_scale":
-            parsed_values = parse_doc_ids(action.text)
-            if parsed_values:
-                state.current_scale = min(max(parsed_values[0], 1), self.max_scale)
-            trace.append(f"adjust_scale: {state.current_scale}")
-            return True
+            return self._apply_scale_action(action, state, trace)
         if action.kind == "weighted_fusion":
-            if action.semantic_weight is not None and action.exact_weight is not None:
-                state.semantic_weight = action.semantic_weight
-                state.exact_weight = action.exact_weight
-            return False
+            return self._apply_weight_action(action, state)
         return False
 
     def _build_retrieval_query(self, action: InteractRAGAction) -> str:
@@ -353,32 +414,60 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         ]
         return [*included, *filtered_results]
 
-    def _append_evidence(self, evidence: list[str], new_contents: list[str]) -> list[str]:
+    def _append_evidence(
+        self,
+        evidence: list[dict[str, Any]],
+        new_evidence: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Append deduplicated evidence while respecting evidence_budget."""
         updated = list(evidence)
-        for content in new_contents:
-            if content and content not in updated:
-                updated.append(content)
+        existing_contents = {item.get("content") for item in updated}
+        for item in new_evidence:
+            content = item.get("content")
+            if content and content not in existing_contents:
+                updated.append(item)
+                existing_contents.add(content)
         return updated[-self.evidence_budget :]
+
+    @staticmethod
+    def _is_prompt_simulated_action(action: InteractRAGAction) -> bool:
+        """Return True when an action is represented as a query hint over the base retrieval boundary."""
+        return action.kind in {"exact_search", "weighted_fusion", "entity_match"}
+
+    @staticmethod
+    def _drop_excluded_docs(
+        evidence: list[dict[str, Any]],
+        retrieved_doc_ids: list[int | str],
+        state: InteractRAGState,
+    ) -> list[dict[str, Any]]:
+        """Remove excluded chunks from the active evidence context and metadata."""
+        excluded_doc_ids = set(state.excluded_doc_ids)
+        retrieved_doc_ids[:] = [doc_id for doc_id in retrieved_doc_ids if doc_id not in excluded_doc_ids]
+        return [item for item in evidence if item.get("doc_id") not in excluded_doc_ids]
 
     async def _execute_retrieval_action(
         self,
         action: InteractRAGAction,
         state: InteractRAGState,
         trace: list[str],
-        evidence: list[str],
+        evidence: list[dict[str, Any]],
         retrieved_doc_ids: list[int | str],
-    ) -> list[str]:
+        degraded_actions: list[str],
+    ) -> list[dict[str, Any]]:
         """Run one retrieval-like action and update evidence."""
         retrieval_query = self._build_retrieval_query(action)
+        if self._is_prompt_simulated_action(action) and action.kind not in degraded_actions:
+            degraded_actions.append(action.kind)
+            trace.append(f"degraded {action.kind}: prompt-simulated via retrieval query")
         retrieval_results = await self._retrieval_pipeline.retrieve(retrieval_query, state.current_scale)
         filtered_results = self._filter_results(retrieval_results, state)
-        doc_ids, contents = self._contents_from_results(filtered_results)
+        new_evidence = self._evidence_from_results(filtered_results)
+        doc_ids = [item["doc_id"] for item in new_evidence]
         for doc_id in doc_ids:
             if doc_id not in retrieved_doc_ids:
                 retrieved_doc_ids.append(doc_id)
         trace.append(f"{action.kind}: {action.text}")
-        return self._append_evidence(evidence, contents)
+        return self._append_evidence(evidence, new_evidence)
 
     async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate an answer through INTERACT-RAG corpus interaction primitives."""
@@ -386,8 +475,9 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         state = InteractRAGState(current_scale=min(max(top_k, self.initial_scale), self.max_scale))
         tracker = TokenUsageTracker()
         trace: list[str] = []
-        evidence: list[str] = []
+        evidence: list[dict[str, Any]] = []
         retrieved_doc_ids: list[int | str] = []
+        degraded_actions: list[str] = []
         final_answer = ""
         terminated_by = "max_steps"
 
@@ -401,9 +491,18 @@ class InteractRAGPipeline(BaseGenerationPipeline):
                 trace.append(f"answer: {final_answer}")
                 terminated_by = "answer"
                 break
-            if self._apply_state_action(action, state, trace):
+            if self._apply_state_action(action, state, trace, set(retrieved_doc_ids)):
+                if action.kind == "exclude_docs":
+                    evidence = self._drop_excluded_docs(evidence, retrieved_doc_ids, state)
                 continue
-            evidence = await self._execute_retrieval_action(action, state, trace, evidence, retrieved_doc_ids)
+            evidence = await self._execute_retrieval_action(
+                action,
+                state,
+                trace,
+                evidence,
+                retrieved_doc_ids,
+                degraded_actions,
+            )
 
         if not final_answer and self.fallback_to_final_prompt:
             final_prompt = self._build_final_prompt(query_text, trace, evidence)
@@ -417,13 +516,15 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             token_usage=tracker.total,
             metadata={
                 "trace": trace,
-                "evidence": evidence,
+                "evidence": [item.get("content", "") for item in evidence],
                 "retrieved_chunk_ids": retrieved_doc_ids,
                 "included_doc_ids": state.included_doc_ids,
                 "excluded_doc_ids": state.excluded_doc_ids,
                 "current_scale": state.current_scale,
                 "semantic_weight": state.semantic_weight,
                 "exact_weight": state.exact_weight,
+                "retrieval_action_mode": "prompt_simulated",
+                "degraded_actions": degraded_actions,
                 "terminated_by": terminated_by,
             },
         )

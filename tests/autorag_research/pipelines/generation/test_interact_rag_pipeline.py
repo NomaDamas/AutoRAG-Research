@@ -1,14 +1,17 @@
 """Tests for the INTERACT-RAG generation pipeline."""
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.language_models.fake import FakeListLLM
+from omegaconf import OmegaConf
 
 from autorag_research.pipelines.generation.interact_rag import (
     InteractRAGPipeline,
     InteractRAGPipelineConfig,
+    InteractRAGState,
     parse_doc_ids,
     parse_interact_rag_action,
 )
@@ -53,7 +56,7 @@ class TestInteractRAGParsing:
         assert action.text == "moon landing timeline"
 
     def test_parse_weighted_fusion_with_weights(self):
-        action = parse_interact_rag_action("<weighted_fusion semantic=\"0.7\" exact=\"0.3\">apollo 11</weighted_fusion>")
+        action = parse_interact_rag_action('<weighted_fusion semantic="0.7" exact="0.3">apollo 11</weighted_fusion>')
 
         assert action.kind == "weighted_fusion"
         assert action.text == "apollo 11"
@@ -72,6 +75,12 @@ class TestInteractRAGParsing:
 
 class TestInteractRAGPipelineConfig:
     """Tests for InteractRAGPipelineConfig."""
+
+    def test_shipped_yaml_uses_existing_llm_config(self):
+        config = OmegaConf.load(Path("configs/pipelines/generation/interact_rag.yaml"))
+        llm_name = str(config.llm)
+
+        assert (Path("configs/llm") / f"{llm_name}.yaml").exists() or (Path("configs/llm") / f"{llm_name}.yml").exists()
 
     def test_get_pipeline_class(self):
         config = InteractRAGPipelineConfig(
@@ -114,6 +123,55 @@ class TestInteractRAGPipelineConfig:
 
 class TestInteractRAGPipeline:
     """Tests for INTERACT-RAG generation behavior."""
+
+    def test_format_scratchpad_exposes_real_chunk_ids_and_scores(self):
+        scratchpad = InteractRAGPipeline._format_scratchpad(
+            ["semantic_search: apollo"],
+            [{"doc_id": 42, "score": 0.75, "content": "Apollo evidence."}],
+        )
+
+        assert "[chunk_id=42 score=0.75] Apollo evidence." in scratchpad
+        assert "[1]" not in scratchpad
+
+    def test_apply_include_docs_rejects_unexposed_ordinal_ids(self):
+        pipeline = _build_unit_pipeline(
+            FakeListLLM(responses=["<answer>ok</answer>"]),
+            create_mock_retrieval_pipeline(),
+            MagicMock(),
+        )
+        state = InteractRAGState()
+        trace: list[str] = []
+
+        handled = pipeline._apply_state_action(
+            parse_interact_rag_action("<include_docs>1</include_docs>"),
+            state,
+            trace,
+            exposed_doc_ids={42},
+        )
+
+        assert handled is True
+        assert state.included_doc_ids == []
+        assert trace == ["include_docs ignored unknown IDs: 1"]
+
+    def test_apply_include_docs_accepts_exposed_chunk_ids(self):
+        pipeline = _build_unit_pipeline(
+            FakeListLLM(responses=["<answer>ok</answer>"]),
+            create_mock_retrieval_pipeline(),
+            MagicMock(),
+        )
+        state = InteractRAGState()
+        trace: list[str] = []
+
+        handled = pipeline._apply_state_action(
+            parse_interact_rag_action("<include_docs>42</include_docs>"),
+            state,
+            trace,
+            exposed_doc_ids={42},
+        )
+
+        assert handled is True
+        assert state.included_doc_ids == [42]
+        assert trace == ["include_docs: 42"]
 
     def test_initialization_rejects_invalid_steps(self):
         with (
@@ -159,6 +217,7 @@ class TestInteractRAGPipeline:
         llm.ainvoke = AsyncMock(
             side_effect=[
                 _mock_response("<adjust_scale>4</adjust_scale>"),
+                _mock_response("<exact_search>target terms</exact_search>"),
                 _mock_response("<exclude_docs>2</exclude_docs>"),
                 _mock_response("<exact_search>target terms</exact_search>"),
                 _mock_response("fallback answer"),
@@ -176,39 +235,71 @@ class TestInteractRAGPipeline:
             llm,
             retrieval_pipeline,
             service,
-            max_steps=3,
+            max_steps=4,
             initial_scale=1,
             max_scale=5,
         )
 
         result = await pipeline._generate(1, top_k=1)
 
-        retrieval_pipeline.retrieve.assert_awaited_once_with("exact: target terms", 4)
+        assert retrieval_pipeline.retrieve.await_args_list[0].args == ("exact: target terms", 4)
+        assert retrieval_pipeline.retrieve.await_args_list[1].args == ("exact: target terms", 4)
         assert result.metadata["excluded_doc_ids"] == [2]
         assert result.metadata["retrieved_chunk_ids"] == [3]
         assert result.metadata["evidence"] == ["kept"]
         assert result.metadata["terminated_by"] == "max_steps_fallback"
 
     @pytest.mark.asyncio
-    async def test_generate_applies_include_docs_and_backfills_content(self):
+    async def test_generate_applies_include_docs_for_exposed_ids_and_backfills_content(self):
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("<semantic_search>Curie</semantic_search>"),
                 _mock_response("<include_docs>5</include_docs>"),
                 _mock_response("<entity_match>Curie</entity_match>"),
                 _mock_response("<answer>Curie answer.</answer>"),
             ]
         )
-        retrieval_pipeline = create_mock_retrieval_pipeline(default_results=[{"doc_id": 6, "score": 0.8}])
+        retrieval_pipeline = create_mock_retrieval_pipeline(
+            default_results=[{"doc_id": 5, "score": 0.9}, {"doc_id": 6, "score": 0.8}]
+        )
         service = MagicMock()
         service.get_query_text.return_value = "Question?"
         service.get_chunk_contents.return_value = ["Forced evidence.", "Fetched evidence."]
-        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=3, initial_scale=2)
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=4, initial_scale=2)
 
         result = await pipeline._generate(1, top_k=2)
 
-        retrieval_pipeline.retrieve.assert_awaited_once_with("entity: Curie", 2)
-        service.get_chunk_contents.assert_called_once_with([5, 6])
+        assert retrieval_pipeline.retrieve.await_args_list[0].args == ("Curie", 2)
+        assert retrieval_pipeline.retrieve.await_args_list[1].args == ("entity: Curie", 2)
+        service.get_chunk_contents.assert_any_call([5, 6])
         assert result.metadata["included_doc_ids"] == [5]
         assert result.metadata["retrieved_chunk_ids"] == [5, 6]
         assert result.metadata["evidence"] == ["Forced evidence.", "Fetched evidence."]
+        second_prompt = llm.ainvoke.await_args_list[1].args[0]
+        assert "[chunk_id=5 score=0.9] Forced evidence." in second_prompt
+
+    @pytest.mark.asyncio
+    async def test_generate_records_prompt_simulated_degradation_for_weighted_fusion(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response('<weighted_fusion semantic="0.8" exact="0.2">apollo</weighted_fusion>'),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline(
+            default_results=[{"doc_id": 10, "score": 0.9, "content": "Apollo evidence."}]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=2, initial_scale=2)
+
+        result = await pipeline._generate(1, top_k=2)
+
+        retrieval_pipeline.retrieve.assert_awaited_once_with(
+            "semantic weight 0.80; exact weight 0.20; query: apollo", 2
+        )
+        assert result.metadata["retrieval_action_mode"] == "prompt_simulated"
+        assert result.metadata["degraded_actions"] == ["weighted_fusion"]
+        assert "degraded weighted_fusion" in result.metadata["trace"][0]
