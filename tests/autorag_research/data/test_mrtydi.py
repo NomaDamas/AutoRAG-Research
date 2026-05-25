@@ -34,6 +34,34 @@ class TestMrTyDiIngestorInit:
         ingestor = MrTyDiIngestor(mock_embedding_model, language="english")
         assert ingestor.detect_primary_key_type() == "string"
 
+    @pytest.mark.parametrize("batch_size", [0, -1])
+    def test_rejects_non_positive_batch_size(self, mock_embedding_model, batch_size):
+        with pytest.raises(ValueError, match="batch_size must be greater than 0"):
+            MrTyDiIngestor(mock_embedding_model, language="english", batch_size=batch_size)
+
+
+@pytest.mark.parametrize(
+    ("ingest_kwargs", "message"),
+    [
+        ({"query_limit": -1}, "query_limit must be greater than or equal to 0"),
+        ({"min_corpus_cnt": -1}, "min_corpus_cnt must be greater than or equal to 0"),
+    ],
+)
+def test_ingest_rejects_negative_limits_before_loading_dataset(
+    mock_embedding_model,
+    monkeypatch,
+    ingest_kwargs,
+    message,
+):
+    def fail_load_dataset(*args, **kwargs):
+        pytest.fail("load_dataset should not run when bounds are invalid")
+
+    monkeypatch.setattr("autorag_research.data.mrtydi.load_dataset", fail_load_dataset)
+    ingestor = MrTyDiIngestor(mock_embedding_model, language="english")
+
+    with pytest.raises(ValueError, match=message):
+        ingestor.ingest(**ingest_kwargs)
+
 
 # ==================== Integration Tests ====================
 
@@ -171,6 +199,42 @@ def test_query_processing_uses_bounded_reservoir_when_limit_is_set(mock_embeddin
     assert len(queries) == 4
     assert set(qrels) == set(queries)
     assert len(gold_docids) == 4
+
+
+def test_query_processing_rejects_negative_limit(mock_embedding_model):
+    ingestor = MrTyDiIngestor(mock_embedding_model, language="english")
+    query_rows = (
+        {
+            "query_id": index,
+            "query": f"query {index}",
+            "positive_passages": [{"docid": f"doc-{index}"}],
+        }
+        for index in range(3)
+    )
+
+    with pytest.raises(ValueError, match="query_limit must be greater than or equal to 0"):
+        ingestor._process_queries(
+            query_rows,
+            query_limit=-1,
+            rng=__import__("random").Random(42),
+        )
+
+
+def test_streaming_corpus_ingestion_rejects_negative_min_corpus_count(mock_embedding_model):
+    ingestor = MrTyDiIngestor(mock_embedding_model, language="english")
+    service = FakeMrTyDiService()
+    ingestor.set_service(service)  # ty: ignore[invalid-argument-type]
+    corpus_rows = ({"docid": f"doc-{index}", "title": f"Title {index}", "text": f"Text {index}"} for index in range(3))
+
+    with pytest.raises(ValueError, match="min_corpus_cnt must be greater than or equal to 0"):
+        ingestor._ingest_corpus_streaming(
+            corpus_rows,
+            gold_docids={"doc-1"},
+            min_corpus_cnt=-1,
+            rng=__import__("random").Random(42),
+        )
+
+    assert service.chunk_batches == []
 
 
 def test_mrtydi_ingestor_does_not_expose_eager_corpus_helpers():

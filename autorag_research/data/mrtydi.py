@@ -14,6 +14,14 @@ logger = logging.getLogger("AutoRAG-Research")
 RANDOM_SEED = 42
 DEFAULT_BATCH_SIZE = 1000
 
+
+class InvalidMrTyDiIngestionBoundError(ValueError):
+    """Raised when Mr. TyDi ingestion receives an invalid numeric bound."""
+
+    def __init__(self, name: str, expected: str):
+        super().__init__(f"{name} must be {expected}")
+
+
 # Mr. TyDi supported languages
 MRTYDI_LANGUAGES = Literal[
     "arabic",
@@ -66,6 +74,8 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         valid_languages = get_args(MRTYDI_LANGUAGES)
         if language.lower() not in valid_languages:
             raise UnsupportedLanguageError(language.lower(), list(valid_languages))
+        if batch_size <= 0:
+            raise InvalidMrTyDiIngestionBoundError("batch_size", "greater than 0")
         self.language = language.lower()
         self.language_dir = f"mrtydi-v1.1-{self.language}"
         self.batch_size = batch_size
@@ -89,6 +99,9 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
             min_corpus_cnt: Maximum number of corpus items to ingest.
                          Gold passages are always included.
         """
+        self._validate_non_negative_limit("query_limit", query_limit)
+        self._validate_non_negative_limit("min_corpus_cnt", min_corpus_cnt)
+
         if self.service is None:
             raise ServiceNotSetError
 
@@ -156,6 +169,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         rng: random.Random,
     ) -> list[dict[str, Any]]:
         """Return all rows or a bounded reservoir sample without materializing unlimited streams."""
+        self._validate_non_negative_limit("query_limit", query_limit)
         if query_limit is None:
             return list(dataset)
 
@@ -187,6 +201,8 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         row is inserted in database batches instead of first building a full
         in-memory dictionary.
         """
+        self._validate_non_negative_limit("min_corpus_cnt", min_corpus_cnt)
+
         if self.service is None:
             raise ServiceNotSetError
 
@@ -265,6 +281,12 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
             "id": row["docid"],
             "contents": (row.get("title", "") + " " + row["text"]).strip(),
         }
+
+    @staticmethod
+    def _validate_non_negative_limit(name: str, value: int | None) -> None:
+        """Reject negative optional row limits before streaming work starts."""
+        if value is not None and value < 0:
+            raise InvalidMrTyDiIngestionBoundError(name, "greater than or equal to 0")
 
     def _ingest_queries(self, queries: dict[str, str]) -> None:
         """Ingest queries into the database."""
