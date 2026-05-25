@@ -39,6 +39,11 @@ class TestMrTyDiIngestorInit:
         with pytest.raises(ValueError, match="batch_size must be greater than 0"):
             MrTyDiIngestor(mock_embedding_model, language="english", batch_size=batch_size)
 
+    @pytest.mark.parametrize("batch_size", [1.5, "2", True, False])
+    def test_rejects_non_integer_batch_size(self, mock_embedding_model, batch_size):
+        with pytest.raises(ValueError, match="batch_size must be an integer greater than 0"):
+            MrTyDiIngestor(mock_embedding_model, language="english", batch_size=batch_size)
+
 
 @pytest.mark.parametrize(
     ("ingest_kwargs", "message"),
@@ -48,6 +53,33 @@ class TestMrTyDiIngestorInit:
     ],
 )
 def test_ingest_rejects_negative_limits_before_loading_dataset(
+    mock_embedding_model,
+    monkeypatch,
+    ingest_kwargs,
+    message,
+):
+    def fail_load_dataset(*args, **kwargs):
+        pytest.fail("load_dataset should not run when bounds are invalid")
+
+    monkeypatch.setattr("autorag_research.data.mrtydi.load_dataset", fail_load_dataset)
+    ingestor = MrTyDiIngestor(mock_embedding_model, language="english")
+
+    with pytest.raises(ValueError, match=message):
+        ingestor.ingest(**ingest_kwargs)
+
+
+@pytest.mark.parametrize(
+    ("ingest_kwargs", "message"),
+    [
+        ({"query_limit": 1.5}, "query_limit must be an integer greater than or equal to 0"),
+        ({"query_limit": "2"}, "query_limit must be an integer greater than or equal to 0"),
+        ({"query_limit": True}, "query_limit must be an integer greater than or equal to 0"),
+        ({"min_corpus_cnt": 2.5}, "min_corpus_cnt must be an integer greater than or equal to 0"),
+        ({"min_corpus_cnt": "3"}, "min_corpus_cnt must be an integer greater than or equal to 0"),
+        ({"min_corpus_cnt": False}, "min_corpus_cnt must be an integer greater than or equal to 0"),
+    ],
+)
+def test_ingest_rejects_non_integer_limits_before_loading_dataset(
     mock_embedding_model,
     monkeypatch,
     ingest_kwargs,
@@ -220,6 +252,26 @@ def test_query_processing_rejects_negative_limit(mock_embedding_model):
         )
 
 
+@pytest.mark.parametrize("query_limit", [1.5, "2", True])
+def test_query_processing_rejects_non_integer_limit(mock_embedding_model, query_limit):
+    ingestor = MrTyDiIngestor(mock_embedding_model, language="english")
+    query_rows = (
+        {
+            "query_id": index,
+            "query": f"query {index}",
+            "positive_passages": [{"docid": f"doc-{index}"}],
+        }
+        for index in range(3)
+    )
+
+    with pytest.raises(ValueError, match="query_limit must be an integer greater than or equal to 0"):
+        ingestor._process_queries(
+            query_rows,
+            query_limit=query_limit,
+            rng=__import__("random").Random(42),
+        )
+
+
 def test_streaming_corpus_ingestion_rejects_negative_min_corpus_count(mock_embedding_model):
     ingestor = MrTyDiIngestor(mock_embedding_model, language="english")
     service = FakeMrTyDiService()
@@ -231,6 +283,27 @@ def test_streaming_corpus_ingestion_rejects_negative_min_corpus_count(mock_embed
             corpus_rows,
             gold_docids={"doc-1"},
             min_corpus_cnt=-1,
+            rng=__import__("random").Random(42),
+        )
+
+    assert service.chunk_batches == []
+
+
+@pytest.mark.parametrize("min_corpus_cnt", [2.5, "3", False])
+def test_streaming_corpus_ingestion_rejects_non_integer_min_corpus_count(
+    mock_embedding_model,
+    min_corpus_cnt,
+):
+    ingestor = MrTyDiIngestor(mock_embedding_model, language="english")
+    service = FakeMrTyDiService()
+    ingestor.set_service(service)  # ty: ignore[invalid-argument-type]
+    corpus_rows = ({"docid": f"doc-{index}", "title": f"Title {index}", "text": f"Text {index}"} for index in range(3))
+
+    with pytest.raises(ValueError, match="min_corpus_cnt must be an integer greater than or equal to 0"):
+        ingestor._ingest_corpus_streaming(
+            corpus_rows,
+            gold_docids={"doc-1"},
+            min_corpus_cnt=min_corpus_cnt,
             rng=__import__("random").Random(42),
         )
 

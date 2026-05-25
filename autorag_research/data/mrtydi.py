@@ -74,8 +74,7 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         valid_languages = get_args(MRTYDI_LANGUAGES)
         if language.lower() not in valid_languages:
             raise UnsupportedLanguageError(language.lower(), list(valid_languages))
-        if batch_size <= 0:
-            raise InvalidMrTyDiIngestionBoundError("batch_size", "greater than 0")
+        self._validate_positive_bound("batch_size", batch_size)
         self.language = language.lower()
         self.language_dir = f"mrtydi-v1.1-{self.language}"
         self.batch_size = batch_size
@@ -283,9 +282,21 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         }
 
     @staticmethod
+    def _validate_positive_bound(name: str, value: int) -> None:
+        """Reject non-integer and non-positive required bounds before work starts."""
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise InvalidMrTyDiIngestionBoundError(name, "an integer greater than 0")
+        if value <= 0:
+            raise InvalidMrTyDiIngestionBoundError(name, "greater than 0")
+
+    @staticmethod
     def _validate_non_negative_limit(name: str, value: int | None) -> None:
-        """Reject negative optional row limits before streaming work starts."""
-        if value is not None and value < 0:
+        """Reject non-integer and negative optional row limits before streaming work starts."""
+        if value is None:
+            return
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise InvalidMrTyDiIngestionBoundError(name, "an integer greater than or equal to 0")
+        if value < 0:
             raise InvalidMrTyDiIngestionBoundError(name, "greater than or equal to 0")
 
     def _ingest_queries(self, queries: dict[str, str]) -> None:
