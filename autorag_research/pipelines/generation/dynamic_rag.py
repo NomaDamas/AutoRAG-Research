@@ -95,6 +95,40 @@ class DynamicRAGPipeline(BaseGenerationPipeline):
 
         super().__init__(session_factory, name, llm, retrieval_pipeline, schema)
 
+    @staticmethod
+    def _is_json_config_value(value: Any) -> bool:
+        """Return whether value is safe to persist as JSON pipeline config."""
+        if value is None or isinstance(value, str | int | float | bool):
+            return True
+        if isinstance(value, list):
+            return all(DynamicRAGPipeline._is_json_config_value(item) for item in value)
+        if isinstance(value, dict):
+            return all(
+                isinstance(key, str) and DynamicRAGPipeline._is_json_config_value(item) for key, item in value.items()
+            )
+        return False
+
+    @staticmethod
+    def _reranker_config(reranker: BaseReranker) -> dict[str, Any]:
+        """Return JSON-safe reranker identity/config for experiment provenance."""
+        excluded_runtime_fields = {"api_key", "base_reranker", "results"}
+        config: dict[str, Any] = {"type": type(reranker).__name__}
+        for field_name in type(reranker).model_fields:
+            if field_name in excluded_runtime_fields:
+                continue
+            value = getattr(reranker, field_name)
+            if DynamicRAGPipeline._is_json_config_value(value):
+                config[field_name] = value
+
+        if isinstance(reranker, DynamicRAGReranker):
+            config["base_reranker"] = (
+                DynamicRAGPipeline._reranker_config(reranker.base_reranker)
+                if reranker.base_reranker is not None
+                else None
+            )
+
+        return config
+
     def _get_pipeline_config(self) -> dict[str, Any]:
         """Return DynamicRAG pipeline configuration."""
         model_name = getattr(self._llm, "model_name", None)
@@ -105,6 +139,7 @@ class DynamicRAGPipeline(BaseGenerationPipeline):
             "prompt_template": self.prompt_template,
             "candidate_top_k": self.candidate_top_k,
             "reranker_model": getattr(self.reranker, "model_name", type(self.reranker).__name__),
+            "reranker": self._reranker_config(self.reranker),
             "retrieval_pipeline_id": self._retrieval_pipeline.pipeline_id,
             "llm_model": model_name,
         }

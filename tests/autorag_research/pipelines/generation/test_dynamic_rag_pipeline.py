@@ -8,6 +8,7 @@ from langchain_core.language_models.fake import FakeListLLM
 
 from autorag_research.pipelines.generation.dynamic_rag import DynamicRAGPipeline, DynamicRAGPipelineConfig
 from autorag_research.rerankers.base import BaseReranker, RerankResult
+from autorag_research.rerankers.dynamic_rag import DynamicRAGReranker
 from tests.autorag_research.pipelines.pipeline_test_utils import create_mock_retrieval_pipeline
 
 
@@ -104,6 +105,67 @@ class TestDynamicRAGPipeline:
                 retrieval_pipeline=create_mock_retrieval_pipeline(),
                 candidate_top_k=0,
             )
+
+    def test_pipeline_config_distinguishes_dynamic_rag_cut_policy(self):
+        llm = FakeListLLM(responses=["answer"])
+        retrieval_pipeline = create_mock_retrieval_pipeline(pipeline_id=77)
+        service = MagicMock()
+        conservative = _build_unit_pipeline(
+            llm,
+            retrieval_pipeline,
+            service,
+            reranker=DynamicRAGReranker(score_drop_threshold=0.10, min_top_k=1, max_top_k=8),
+        )
+        permissive = _build_unit_pipeline(
+            llm,
+            retrieval_pipeline,
+            service,
+            reranker=DynamicRAGReranker(score_drop_threshold=0.90, min_top_k=1, max_top_k=8),
+        )
+
+        conservative_config = conservative._get_pipeline_config()
+        permissive_config = permissive._get_pipeline_config()
+
+        assert conservative_config != permissive_config
+        assert conservative_config["reranker"]["score_drop_threshold"] == 0.10
+        assert permissive_config["reranker"]["score_drop_threshold"] == 0.90
+
+    def test_pipeline_config_records_dynamic_rag_base_reranker_identity(self):
+        llm = FakeListLLM(responses=["answer"])
+        retrieval_pipeline = create_mock_retrieval_pipeline(pipeline_id=77)
+        service = MagicMock()
+        base_reranker = FixedAsyncReranker(model_name="fixed-scorer", batch_size=7, results=[])
+        pipeline = _build_unit_pipeline(
+            llm,
+            retrieval_pipeline,
+            service,
+            reranker=DynamicRAGReranker(
+                base_reranker=base_reranker,
+                min_top_k=2,
+                max_top_k=6,
+                score_drop_threshold=0.30,
+                min_score=0.40,
+            ),
+        )
+
+        config = pipeline._get_pipeline_config()
+
+        assert config["reranker"] == {
+            "type": "DynamicRAGReranker",
+            "model_name": "dynamic-rag",
+            "batch_size": 64,
+            "max_concurrency": 10,
+            "base_reranker": {
+                "type": "FixedAsyncReranker",
+                "model_name": "fixed-scorer",
+                "batch_size": 7,
+                "max_concurrency": 10,
+            },
+            "min_top_k": 2,
+            "max_top_k": 6,
+            "score_drop_threshold": 0.30,
+            "min_score": 0.40,
+        }
 
     @pytest.mark.asyncio
     async def test_generate_retrieves_dynamic_reranks_and_answers(self):
