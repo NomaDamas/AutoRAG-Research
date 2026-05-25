@@ -215,18 +215,18 @@ class TestGenerateDbName:
         assert "-" not in result
         assert "_" in result
 
-    def test_preserves_case_from_params(self) -> None:
-        """Preserves case from parameter values (lowercase recommended by convention)."""
+    def test_lowercases_params_for_safe_db_names(self) -> None:
+        """Lowercases parameter values while generating safe DB names."""
         result = generate_db_name(
             ingestor_name="beir",
-            params={"dataset_name": "scifact"},
+            params={"dataset_name": "SciFact"},
             subset="test",
             embedding_model="bge-small",
         )
 
-        # Function preserves case; users should provide lowercase
         assert "beir" in result
         assert "scifact" in result
+        assert "SciFact" not in result
 
     def test_list_params_joined(self) -> None:
         """List parameters are joined."""
