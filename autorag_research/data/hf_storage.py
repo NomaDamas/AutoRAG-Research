@@ -26,10 +26,10 @@ def get_repo_id(ingestor: str) -> str:
     Raises:
         KeyError: If ingestor is not recognized or has no HF repo configured
     """
-    from autorag_research.data.registry import discover_ingestors
+    from autorag_research.data.registry import discover_ingestors, get_ingestor
 
     registry = discover_ingestors()
-    meta = registry.get(ingestor)
+    meta = get_ingestor(ingestor)
     if meta is None or meta.hf_repo is None:
         available = sorted(name for name, m in registry.items() if m.hf_repo is not None)
         raise KeyError(f"Unknown ingestor or no HF repo configured: '{ingestor}'. Available: {', '.join(available)}")  # noqa: TRY003

@@ -11,7 +11,7 @@ from autorag_research.cli.commands.ingest import (
     _validate_required_params,
     generate_db_name,
 )
-from autorag_research.data.registry import IngestorMeta, ParamMeta, discover_ingestors
+from autorag_research.data.registry import IngestorMeta, ParamMeta, discover_ingestors, get_ingestor
 
 
 @pytest.fixture
@@ -266,7 +266,7 @@ class TestGenerateDbName:
 
     @pytest.mark.parametrize("ingestor_name", ["mr.tydi", "mr-tydi"])
     def test_sanitizes_ingestor_name_with_common_dataset_punctuation(self, ingestor_name: str) -> None:
-        """Generated DB names are safe for aliases such as mr.tydi and mr-tydi."""
+        """Generated DB names are safe for raw aliases such as mr.tydi and mr-tydi."""
         result = generate_db_name(
             ingestor_name=ingestor_name,
             params={"language": "english"},
@@ -277,3 +277,18 @@ class TestGenerateDbName:
         assert result == "mr_tydi_english_test_openai_small"
         assert "." not in result
         assert "-" not in result
+
+    @pytest.mark.parametrize("alias", ["mr.tydi", "mr-tydi"])
+    def test_alias_resolution_uses_canonical_mrtydi_name_for_default_db_name(self, alias: str) -> None:
+        """CLI default DB names should use canonical metadata after resolving aliases."""
+        meta = get_ingestor(alias)
+
+        assert meta is not None
+        result = generate_db_name(
+            ingestor_name=meta.name,
+            params={"language": "english"},
+            subset="test",
+            embedding_model="openai-small",
+        )
+
+        assert result == "mrtydi_english_test_openai_small"

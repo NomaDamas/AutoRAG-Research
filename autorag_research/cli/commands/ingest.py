@@ -220,7 +220,7 @@ def ingest(  # noqa: C901
             init_kwargs[param.name] = param.default
 
     # Generate db_name from all parameters
-    final_db_name = db_name or generate_db_name(name, init_kwargs, subset, embedding_model)
+    final_db_name = db_name or generate_db_name(meta.name, init_kwargs, subset, embedding_model)
 
     # Load DB config from YAML first, then override with CLI options
     db_conn = DBConnection.from_config()
