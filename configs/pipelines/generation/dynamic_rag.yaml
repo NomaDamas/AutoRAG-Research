@@ -1,0 +1,12 @@
+_target_: autorag_research.pipelines.generation.dynamic_rag.DynamicRAGPipelineConfig
+description: "DynamicRAG generation pipeline with dynamic rerank-and-cut evidence selection"
+name: dynamic_rag
+retrieval_pipeline_name: bm25
+llm: openai-gpt4o-mini
+reranker: dynamic_rag
+candidate_top_k: 20
+top_k: 8
+batch_size: 32
+max_concurrency: 4
+max_retries: 3
+retry_delay: 1.0
