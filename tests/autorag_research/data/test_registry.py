@@ -256,6 +256,23 @@ class TestRegisterIngestor:
             registry_module._INGESTOR_REGISTRY.pop("test_duplicate_alias_target", None)
             registry_module._INGESTOR_ALIASES.pop("test-duplicate-alias", None)
 
+    def test_register_ingestor_rejects_duplicate_aliases_in_single_registration(self):
+        """Aliases should be unique within a single ingestor registration."""
+        import autorag_research.data.registry as registry_module
+
+        with pytest.raises(ValueError, match="aliases contain duplicates"):
+
+            @register_ingestor(
+                name="test_duplicate_aliases_single_registration",
+                description="Test",
+                aliases=("test-duplicate-alias-single", "test-duplicate-alias-single"),
+            )
+            class TestDuplicateAliasesSingleRegistrationIngestor:
+                pass
+
+        assert "test_duplicate_aliases_single_registration" not in registry_module._INGESTOR_REGISTRY
+        assert "test-duplicate-alias-single" not in registry_module._INGESTOR_ALIASES
+
     def test_register_ingestor_rejects_canonical_name_that_matches_alias(self):
         """Canonical names should not be allowed to shadow existing aliases."""
         import autorag_research.data.registry as registry_module
