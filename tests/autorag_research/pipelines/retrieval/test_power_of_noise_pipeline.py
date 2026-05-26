@@ -25,7 +25,7 @@ from tests.autorag_research.pipelines.pipeline_test_utils import (
 
 class _FakeLeafRetrievalPipeline(BaseRetrievalPipeline):
     def _get_pipeline_config(self) -> dict[str, Any]:
-        return {"type": "fake_leaf"}
+        return {"type": "fake_leaf", "retrieval_unit": "chunk"}
 
     async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:
         return []
@@ -48,6 +48,7 @@ class _FakeWrapperRetrievalPipeline(BaseRetrievalPipeline):
     def _get_pipeline_config(self) -> dict[str, Any]:
         return {
             "type": "fake_wrapper",
+            "retrieval_unit": self.inner_retrieval_pipeline._get_pipeline_config().get("retrieval_unit"),
             "inner_pipeline_name": self.inner_retrieval_pipeline.name,
         }
 
@@ -123,6 +124,7 @@ def base_pipeline_stub() -> SimpleNamespace:
                 {"doc_id": 3, "score": 0.8, "content": "Chunk 2-1"},
             ]
         ),
+        _get_pipeline_config=lambda: {"type": "vector_search", "retrieval_unit": "chunk"},
     )
 
 
@@ -296,6 +298,7 @@ class TestPowerOfNoiseRetrievalPipeline:
 
         assert pipeline._get_pipeline_config() == {
             "type": "power_of_noise",
+            "retrieval_unit": "chunk",
             "base_retrieval_pipeline": "vector_search",
             "noise_count": 2,
             "noise_ratio": 0.5,

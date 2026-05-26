@@ -159,6 +159,7 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
         """
         return {
             "type": "hyde",
+            "retrieval_unit": "chunk",
             "prompt_template": self.prompt_template,
         }
 

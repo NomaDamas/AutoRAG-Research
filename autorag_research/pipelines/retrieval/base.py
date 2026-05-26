@@ -15,6 +15,15 @@ from autorag_research.pipelines.base import BasePipeline
 logger = logging.getLogger("AutoRAG-Research")
 
 
+def get_retrieval_pipeline_config(pipeline: object) -> dict[str, Any]:
+    """Return a retrieval pipeline config when the object exposes one."""
+    get_config = getattr(pipeline, "_get_pipeline_config", None)
+    if not callable(get_config):
+        return {}
+    config = get_config()
+    return config if isinstance(config, dict) else {}
+
+
 class BaseRetrievalPipeline(BasePipeline, ABC):
     """Abstract base class for all retrieval pipelines.
 
