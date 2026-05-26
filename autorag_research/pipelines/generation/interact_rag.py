@@ -90,7 +90,7 @@ _WEIGHTED_FUSION_ATTR_RE = re.compile(
     r"<weighted_fusion\s+semantic=['\"]?([0-9.]+)['\"]?\s+exact=['\"]?([0-9.]+)['\"]?",
     re.IGNORECASE,
 )
-_DOC_ID_RE = re.compile(r"-?\d+")
+_DOC_ID_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
 
 
 @dataclass(frozen=True)
@@ -133,9 +133,18 @@ def parse_interact_rag_action(response_text: str) -> InteractRAGAction:
     return InteractRAGAction(kind="answer", text=stripped_response)
 
 
-def parse_doc_ids(text: str) -> list[int]:
-    """Parse document IDs from comma/space/free-form text."""
-    return [int(match.group(0)) for match in _DOC_ID_RE.finditer(text)]
+def parse_doc_ids(text: str) -> list[int | str]:
+    """Parse document IDs from comma/space/free-form text without splitting string IDs."""
+    doc_ids: list[int | str] = []
+    for token_match in _DOC_ID_TOKEN_RE.finditer(text):
+        token = token_match.group(0).strip(".,;:")
+        if not token or token.lower() in {"id", "ids", "and"}:
+            continue
+        if re.fullmatch(r"-?\d+", token):
+            doc_ids.append(int(token))
+        else:
+            doc_ids.append(token)
+    return doc_ids
 
 
 @dataclass
@@ -333,6 +342,23 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         """Return exposed IDs plus their string forms for tolerant matching."""
         return exposed_doc_ids | {str(doc_id) for doc_id in exposed_doc_ids}
 
+    @staticmethod
+    def _resolve_requested_doc_ids(
+        requested_doc_ids: list[int | str],
+        exposed_doc_ids: set[int | str],
+    ) -> tuple[list[int | str], list[int | str]]:
+        """Resolve requested document IDs to exposed IDs while preserving their stored type."""
+        exposed_by_label = {str(doc_id): doc_id for doc_id in exposed_doc_ids}
+        accepted_doc_ids: list[int | str] = []
+        ignored_doc_ids: list[int | str] = []
+        for requested_doc_id in requested_doc_ids:
+            resolved_doc_id = exposed_by_label.get(str(requested_doc_id))
+            if resolved_doc_id is None:
+                ignored_doc_ids.append(requested_doc_id)
+            else:
+                accepted_doc_ids.append(resolved_doc_id)
+        return accepted_doc_ids, ignored_doc_ids
+
     def _apply_doc_id_action(
         self,
         action: InteractRAGAction,
@@ -342,10 +368,8 @@ class InteractRAGPipeline(BaseGenerationPipeline):
     ) -> bool:
         """Apply include/exclude actions only to IDs shown to the model."""
         target_list = state.included_doc_ids if action.kind == "include_docs" else state.excluded_doc_ids
-        known_doc_ids = self._known_doc_ids(exposed_doc_ids)
         requested_doc_ids = parse_doc_ids(action.text)
-        accepted_doc_ids = [doc_id for doc_id in requested_doc_ids if doc_id in known_doc_ids]
-        ignored_doc_ids = [doc_id for doc_id in requested_doc_ids if doc_id not in known_doc_ids]
+        accepted_doc_ids, ignored_doc_ids = self._resolve_requested_doc_ids(requested_doc_ids, exposed_doc_ids)
 
         for doc_id in accepted_doc_ids:
             if doc_id not in target_list:
@@ -362,8 +386,9 @@ class InteractRAGPipeline(BaseGenerationPipeline):
     def _apply_scale_action(self, action: InteractRAGAction, state: InteractRAGState, trace: list[str]) -> bool:
         """Apply retrieval scale changes."""
         parsed_values = parse_doc_ids(action.text)
-        if parsed_values:
-            state.current_scale = min(max(parsed_values[0], 1), self.max_scale)
+        parsed_scale = next((value for value in parsed_values if isinstance(value, int)), None)
+        if parsed_scale is not None:
+            state.current_scale = min(max(parsed_scale, 1), self.max_scale)
         trace.append(f"adjust_scale: {state.current_scale}")
         return True
 

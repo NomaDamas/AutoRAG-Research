@@ -80,6 +80,9 @@ class TestInteractRAGParsing:
     def test_parse_doc_ids(self):
         assert parse_doc_ids("IDs: 3, 7 and 12") == [3, 7, 12]
 
+    def test_parse_doc_ids_preserves_string_chunk_ids(self):
+        assert parse_doc_ids("chunk-alpha, abc-123, alpha") == ["chunk-alpha", "abc-123", "alpha"]
+
 
 class TestInteractRAGPipelineConfig:
     """Tests for InteractRAGPipelineConfig."""
@@ -180,6 +183,26 @@ class TestInteractRAGPipeline:
         assert handled is True
         assert state.included_doc_ids == [42]
         assert trace == ["include_docs: 42"]
+
+    def test_apply_include_docs_accepts_exposed_string_chunk_ids(self):
+        pipeline = _build_unit_pipeline(
+            FakeListLLM(responses=["<answer>ok</answer>"]),
+            create_mock_retrieval_pipeline(),
+            MagicMock(),
+        )
+        state = InteractRAGState()
+        trace: list[str] = []
+
+        handled = pipeline._apply_state_action(
+            parse_interact_rag_action("<include_docs>chunk-alpha, abc-123, alpha</include_docs>"),
+            state,
+            trace,
+            exposed_doc_ids={"chunk-alpha", "abc-123", "alpha"},
+        )
+
+        assert handled is True
+        assert state.included_doc_ids == ["chunk-alpha", "abc-123", "alpha"]
+        assert trace == ["include_docs: chunk-alpha, abc-123, alpha"]
 
     def test_initialization_rejects_invalid_steps(self):
         with (
@@ -349,3 +372,33 @@ class TestInteractRAGPipeline:
         assert result.metadata is not None
         assert result.metadata["included_doc_ids"] == [5]
         assert result.metadata["evidence"] == ["pinned", "new8"]
+
+    @pytest.mark.asyncio
+    async def test_generate_applies_string_include_and_exclude_controls(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<semantic_search>first</semantic_search>"),
+                _mock_response("<include_docs>chunk-alpha</include_docs>"),
+                _mock_response("<exclude_docs>abc-123</exclude_docs>"),
+                _mock_response("<semantic_search>second</semantic_search>"),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline(
+            default_results=[
+                {"doc_id": "chunk-alpha", "score": 0.9, "content": "included"},
+                {"doc_id": "abc-123", "score": 0.8, "content": "excluded"},
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=5, initial_scale=2)
+
+        result = await pipeline._generate("query-alpha", top_k=2)
+
+        assert result.metadata is not None
+        assert result.metadata["included_doc_ids"] == ["chunk-alpha"]
+        assert result.metadata["excluded_doc_ids"] == ["abc-123"]
+        assert result.metadata["retrieved_chunk_ids"] == ["chunk-alpha"]
+        assert result.metadata["evidence"] == ["included"]
