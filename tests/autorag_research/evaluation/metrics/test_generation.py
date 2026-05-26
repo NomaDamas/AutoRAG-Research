@@ -637,6 +637,38 @@ class MappingAlignScoreScorer:
         return [self.responses[(context, claim)] for context, claim in zip(contexts, claims, strict=True)]
 
 
+class KeywordAlignScoreScorer:
+    tokenizer: "WhitespaceAlignScoreTokenizer"
+
+    def __init__(self, keyword: str) -> None:
+        self.keyword = keyword
+        self.tokenizer = WhitespaceAlignScoreTokenizer()
+        self.calls: list[tuple[list[str], list[str], int]] = []
+
+    def score(self, contexts: list[str], claims: list[str], batch_size: int = 8) -> list[float]:
+        self.calls.append((contexts, claims, batch_size))
+        return [0.99 if self.keyword in context else 0.01 for context in contexts]
+
+
+class WhitespaceAlignScoreTokenizer:
+    @staticmethod
+    def _tokens(text: str) -> list[str]:
+        return text.split()
+
+    def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
+        token_ids = list(range(len(self._tokens(text))))
+        if add_special_tokens:
+            return [-1, *token_ids, -2]
+        return token_ids
+
+    def decode(self, token_ids: list[int], skip_special_tokens: bool = True) -> str:
+        return " ".join(f"tok{token_id}" for token_id in token_ids if not skip_special_tokens or token_id >= 0)
+
+    @staticmethod
+    def num_special_tokens_to_add(pair: bool = False) -> int:
+        return 3 if pair else 2
+
+
 class FakeAlignScoreTensor:
     def __init__(self, values: list[list[float]] | list[float]) -> None:
         self.values = values
@@ -862,6 +894,67 @@ def test_align_score_min_aggregation_keeps_worst_supported_claim():
     )
 
     assert scores == [pytest.approx(0.12)]
+
+
+def test_align_score_splits_long_single_sentence_context_by_token_budget():
+    late_evidence = "late_evidence_marker"
+    long_sentence = " ".join([*(f"filler{i}" for i in range(60)), late_evidence]) + "."
+    scorer = KeywordAlignScoreScorer(keyword="tok60")
+
+    scores = align_score(
+        metric_inputs=[
+            MetricInput(
+                retrieved_contents=[long_sentence],
+                generated_texts="Supported claim.",
+            )
+        ],
+        scorer=scorer,
+        max_length=20,
+    )
+
+    assert scores == [pytest.approx(0.99)]
+    contexts, claims, _batch_size = scorer.calls[0]
+    assert len(contexts) > 1
+    assert all(len(context.split()) <= 15 for context in contexts)
+    assert claims == ["Supported claim."] * len(contexts)
+
+
+def test_align_score_rejects_claim_that_exceeds_token_budget():
+    scorer = KeywordAlignScoreScorer(keyword="anything")
+    over_budget_claim = " ".join(f"claim{i}" for i in range(18)) + "."
+
+    with pytest.raises(ValueError, match="AlignScore claim exceeds the model token budget"):
+        align_score(
+            metric_inputs=[MetricInput(retrieved_contents=["Context evidence."], generated_texts=over_budget_claim)],
+            scorer=scorer,
+            max_length=20,
+        )
+
+    assert scorer.calls == []
+
+
+def test_align_score_short_text_keeps_existing_window_scores_with_tokenizer():
+    scorer = KeywordAlignScoreScorer(keyword="capital")
+
+    scores = align_score(
+        metric_inputs=[
+            MetricInput(
+                retrieved_contents=["Paris is the capital of France."],
+                generated_texts="Paris is the capital of France.",
+            )
+        ],
+        scorer=scorer,
+        max_length=30,
+    )
+
+    assert scores == [pytest.approx(0.99)]
+    assert scorer.calls == [
+        (
+            ["Paris is the capital of France."],
+            ["Paris is the capital of France."],
+            8,
+        )
+    ]
 
 
 def test_align_score_returns_none_without_context_or_generated_text():

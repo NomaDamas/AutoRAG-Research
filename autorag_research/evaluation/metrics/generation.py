@@ -78,6 +78,8 @@ ALIGNSCORE_DEVICE = "cpu"
 ALIGNSCORE_TRUST_REMOTE_CODE = False
 ALIGNSCORE_AGGREGATIONS = ("mean", "min")
 ALIGNSCORE_CONTEXT_WINDOW_SENTENCES = 5
+ALIGNSCORE_CONTEXT_TOKEN_OVERLAP = 32
+ALIGNSCORE_PAIR_SPECIAL_TOKENS = 3
 ALIGNSCORE_DEPENDENCY_MESSAGE = (
     "AlignScore requires the optional `torch` and `transformers` dependencies. "
     "Install them with `pip install 'autorag-research[gpu]'` or run "
@@ -323,8 +325,116 @@ def _split_alignscore_claims(text: str) -> list[str]:
     return sentences or [stripped_text]
 
 
-def _build_alignscore_context_windows(retrieved_contents: list[str]) -> list[str]:
+def _get_alignscore_tokenizer(scorer: "AlignScoreScorer") -> Any | None:
+    """Return the scorer tokenizer when available."""
+    return getattr(scorer, "tokenizer", None)
+
+
+def _count_alignscore_tokens(tokenizer: Any, text: str) -> int:
+    """Count tokenizer tokens excluding special tokens."""
+    if hasattr(tokenizer, "encode"):
+        return len(tokenizer.encode(text, add_special_tokens=False))
+    encoded = tokenizer(text, add_special_tokens=False)
+    input_ids = encoded["input_ids"] if isinstance(encoded, dict) else encoded.input_ids
+    if input_ids and isinstance(input_ids[0], list):
+        return len(input_ids[0])
+    return len(input_ids)
+
+
+def _get_alignscore_pair_special_token_count(tokenizer: Any) -> int:
+    """Return tokenizer special-token overhead for a sequence pair."""
+    if hasattr(tokenizer, "num_special_tokens_to_add"):
+        return int(tokenizer.num_special_tokens_to_add(pair=True))
+    return ALIGNSCORE_PAIR_SPECIAL_TOKENS
+
+
+def _decode_alignscore_tokens(tokenizer: Any, token_ids: list[int]) -> str:
+    """Decode context token chunks for overlong AlignScore sentences."""
+    if hasattr(tokenizer, "decode"):
+        return str(tokenizer.decode(token_ids, skip_special_tokens=True)).strip()
+    return " ".join(str(token_id) for token_id in token_ids).strip()
+
+
+def _split_alignscore_context_to_token_windows(
+    tokenizer: Any,
+    text: str,
+    token_budget: int,
+    token_overlap: int = ALIGNSCORE_CONTEXT_TOKEN_OVERLAP,
+) -> list[str]:
+    """Split one overlong context sentence into token windows with overlap."""
+    if token_budget <= 0:
+        return []
+    token_ids = tokenizer.encode(text, add_special_tokens=False)
+    if not token_ids:
+        return []
+
+    stride = max(1, token_budget - min(token_overlap, max(0, token_budget - 1)))
+    windows = []
+    for start in range(0, len(token_ids), stride):
+        window = _decode_alignscore_tokens(tokenizer, token_ids[start : start + token_budget])
+        if window:
+            windows.append(window)
+        if start + token_budget >= len(token_ids):
+            break
+    return windows
+
+
+def _build_alignscore_context_windows(
+    retrieved_contents: list[str],
+    tokenizer: Any | None = None,
+    claim: str | None = None,
+    max_length: int = ALIGNSCORE_MAX_LENGTH,
+) -> list[str]:
     """Build independently scored retrieved-context windows for AlignScore."""
+    if tokenizer is None or claim is None:
+        return _build_alignscore_sentence_context_windows(retrieved_contents)
+
+    special_token_count = _get_alignscore_pair_special_token_count(tokenizer)
+    claim_token_count = _count_alignscore_tokens(tokenizer, claim)
+    max_claim_tokens = max_length - special_token_count
+    if claim_token_count > max_claim_tokens:
+        msg = (
+            f"AlignScore claim exceeds the model token budget: claim has {claim_token_count} tokens, "
+            f"but max_length={max_length} leaves at most {max_claim_tokens} claim tokens after reserving "
+            f"{special_token_count} special tokens. Split the generated claim before scoring."
+        )
+        raise ValueError(msg)
+
+    context_token_budget = max_length - claim_token_count - special_token_count
+    context_windows: list[str] = []
+    for content in retrieved_contents:
+        stripped_content = content.strip()
+        if not stripped_content:
+            continue
+        current_sentences: list[str] = []
+        current_token_count = 0
+        for sentence in _split_alignscore_claims(stripped_content):
+            sentence_token_count = _count_alignscore_tokens(tokenizer, sentence)
+            if sentence_token_count > context_token_budget:
+                if current_sentences:
+                    context_windows.append(" ".join(current_sentences))
+                    current_sentences = []
+                    current_token_count = 0
+                context_windows.extend(
+                    _split_alignscore_context_to_token_windows(tokenizer, sentence, context_token_budget)
+                )
+                continue
+
+            if current_sentences and current_token_count + sentence_token_count > context_token_budget:
+                context_windows.append(" ".join(current_sentences))
+                current_sentences = []
+                current_token_count = 0
+
+            current_sentences.append(sentence)
+            current_token_count += sentence_token_count
+
+        if current_sentences:
+            context_windows.append(" ".join(current_sentences))
+    return context_windows
+
+
+def _build_alignscore_sentence_context_windows(retrieved_contents: list[str]) -> list[str]:
+    """Build independently scored retrieved-context windows by sentence count."""
     context_windows: list[str] = []
     for content in retrieved_contents:
         stripped_content = content.strip()
@@ -1164,21 +1274,6 @@ def align_score(
     claim_counts: list[tuple[int, int, int]] = []
     results: list[float | None] = [None] * len(metric_inputs)
 
-    for index, metric_input in enumerate(metric_inputs):
-        if not metric_input.is_fields_notnone(["retrieved_contents", "generated_texts"]):
-            continue
-        context_windows = _build_alignscore_context_windows(cast(list[str], metric_input.retrieved_contents))
-        claims = _split_alignscore_claims(cast(str, metric_input.generated_texts))
-        if not context_windows or not claims:
-            continue
-        for claim in claims:
-            prepared_contexts.extend(context_windows)
-            prepared_claims.extend([claim] * len(context_windows))
-        claim_counts.append((index, len(claims), len(context_windows)))
-
-    if not prepared_claims:
-        return results
-
     effective_scorer = scorer or get_alignscore_scorer(
         model_name_or_path=model_name_or_path,
         max_length=max_length,
@@ -1187,20 +1282,48 @@ def align_score(
         trust_remote_code=trust_remote_code,
         revision=revision,
     )
+    tokenizer = _get_alignscore_tokenizer(effective_scorer)
+
+    for index, metric_input in enumerate(metric_inputs):
+        if not metric_input.is_fields_notnone(["retrieved_contents", "generated_texts"]):
+            continue
+        claims = _split_alignscore_claims(cast(str, metric_input.generated_texts))
+        if not claims:
+            continue
+        for claim in claims:
+            context_windows = _build_alignscore_context_windows(
+                cast(list[str], metric_input.retrieved_contents),
+                tokenizer=tokenizer,
+                claim=claim,
+                max_length=max_length,
+            )
+            if not context_windows:
+                continue
+            prepared_contexts.extend(context_windows)
+            prepared_claims.extend([claim] * len(context_windows))
+            claim_counts.append((index, 1, len(context_windows)))
+
+    if not prepared_claims:
+        return results
+
     claim_scores = effective_scorer.score(prepared_contexts, prepared_claims, batch_size=batch_size)
     if len(claim_scores) != len(prepared_claims):
         msg = f"AlignScore scorer returned {len(claim_scores)} scores for {len(prepared_claims)} claims"
         raise ValueError(msg)
 
     score_offset = 0
+    grouped_claim_scores: dict[int, list[float]] = {}
     for index, claim_count, context_window_count in claim_counts:
         current_scores = claim_scores[score_offset : score_offset + (claim_count * context_window_count)]
         claim_support_scores = [
             max(current_scores[start : start + context_window_count])
             for start in range(0, len(current_scores), context_window_count)
         ]
-        results[index] = _aggregate_alignscore_scores(claim_support_scores, normalized_aggregation)
+        grouped_claim_scores.setdefault(index, []).extend(claim_support_scores)
         score_offset += claim_count * context_window_count
+
+    for index, claim_support_scores in grouped_claim_scores.items():
+        results[index] = _aggregate_alignscore_scores(claim_support_scores, normalized_aggregation)
 
     return results
 
