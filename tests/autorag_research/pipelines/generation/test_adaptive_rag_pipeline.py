@@ -4,11 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 from langchain_core.language_models.fake import FakeListLLM
 
-from autorag_research.pipelines.generation.adaptive_rag import (
-    DEFAULT_MULTI_RETRIEVAL_QUERY_PROMPT_TEMPLATE,
-    AdaptiveRAGPipeline,
-    AdaptiveRAGPipelineConfig,
-)
+from autorag_research.pipelines.generation.adaptive_rag import AdaptiveRAGPipeline, AdaptiveRAGPipelineConfig
 from tests.autorag_research.pipelines.pipeline_test_utils import (
     PipelineTestConfig,
     PipelineTestVerifier,
@@ -129,32 +125,67 @@ class TestAdaptiveRAGPipeline:
         mock_retrieval._retrieve_by_id.assert_awaited_once_with(1, 2)
         assert mock_retrieval.retrieve.await_count == 0
 
-    def test_ambiguous_complexity_output_falls_back_to_moderate(self):
-        assert AdaptiveRAGPipeline._parse_complexity_tier("not simple; complex") == "moderate"
+    @pytest.mark.asyncio
+    async def test_multi_route_uses_configured_stop_query_signal_in_prompt(self, mock_retrieval):
+        class StubService:
+            def get_query_text(self, query_id: int | str) -> str:
+                return f"query {query_id}"
 
-    def test_default_multi_retrieval_query_prompt_uses_configurable_stop_signal(self):
-        assert "{stop_query_signal}" in DEFAULT_MULTI_RETRIEVAL_QUERY_PROMPT_TEMPLATE
+            def get_chunk_contents(self, chunk_ids: list[int | str]) -> list[str]:
+                return [f"chunk {chunk_id}" for chunk_id in chunk_ids]
 
-    def test_invalid_constructor_route_raises_value_error(self, session_factory, mock_retrieval):
+        llm = FakeListLLM(responses=["complex", "DONE", "Complex answer"])
+        mock_retrieval._retrieve_by_id = AsyncMock(return_value=[{"doc_id": 1, "score": 0.8}])
+        mock_retrieval.retrieve = AsyncMock(return_value=[{"doc_id": 4, "score": 0.95}])
+        pipeline = AdaptiveRAGPipeline.__new__(AdaptiveRAGPipeline)
+        pipeline._service = StubService()
+        pipeline._llm = llm
+        pipeline._retrieval_pipeline = mock_retrieval
+        pipeline._complexity_prompt_template = "{query}"
+        pipeline._zero_retrieval_prompt_template = "{query}"
+        pipeline._single_retrieval_prompt_template = "{context} {query}"
+        pipeline._multi_retrieval_query_prompt_template = (
+            "Question: {query}\nContext: {context}\nPrevious: {follow_up_queries}\n"
+            "Respond with {stop_query_signal} when enough evidence is available."
+        )
+        pipeline._multi_retrieval_answer_prompt_template = "{query} {context} {follow_up_queries}"
+        pipeline._route_for_simple = "zero"
+        pipeline._route_for_moderate = "single"
+        pipeline._route_for_complex = "multi"
+        pipeline._max_multi_steps = 2
+        pipeline._stop_query_signal = "DONE"
+
+        result = await pipeline._generate(query_id=1, top_k=4)
+
+        assert result.text == "Complex answer"
+        assert result.metadata is not None
+        assert result.metadata["follow_up_queries"] == []
+        mock_retrieval._retrieve_by_id.assert_awaited_once_with(1, 4)
+        assert mock_retrieval.retrieve.await_count == 0
+
+    def test_complexity_parser_uses_safest_tier_when_multiple_labels_are_present(self):
+        assert AdaptiveRAGPipeline._parse_complexity_tier("not simple; this is complex") == "complex"
+
+    def test_complexity_parser_accepts_single_label_explanatory_output(self):
+        assert AdaptiveRAGPipeline._parse_complexity_tier("The question is moderate.") == "moderate"
+
+    @pytest.mark.parametrize("response_text", ["simplicity", "simplex", "complexity"])
+    def test_complexity_parser_matches_labels_as_whole_tokens(self, response_text):
+        assert AdaptiveRAGPipeline._parse_complexity_tier(response_text) == "moderate"
+
+    def test_config_rejects_invalid_route_values(self, mock_retrieval):
         llm = FakeListLLM(responses=["answer"])
+        invalid_route = cast(Any, "singel")
+        config = AdaptiveRAGPipelineConfig(
+            name="adaptive_rag_invalid_route_cfg",
+            retrieval_pipeline_name="bm25",
+            llm=llm,
+            route_for_simple=invalid_route,
+        )
+        config.inject_retrieval_pipeline(mock_retrieval)
 
         with pytest.raises(ValueError, match="route_for_simple"):
-            AdaptiveRAGPipeline(
-                session_factory=session_factory,
-                name="test_adaptive_rag_invalid_route",
-                llm=llm,
-                retrieval_pipeline=mock_retrieval,
-                route_for_simple=cast(Any, "singel"),
-            )
-
-    def test_invalid_config_route_raises_value_error(self):
-        with pytest.raises(ValueError, match="route_for_complex"):
-            AdaptiveRAGPipelineConfig(
-                name="adaptive_rag_invalid_cfg",
-                retrieval_pipeline_name="bm25",
-                llm=FakeListLLM(responses=["answer"]),
-                route_for_complex=cast(Any, "mulit"),
-            )
+            config.get_pipeline_kwargs()
 
     def test_adaptive_rag_config(self, mock_retrieval):
         llm = FakeListLLM(responses=["answer"])

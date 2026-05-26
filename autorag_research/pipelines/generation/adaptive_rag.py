@@ -71,22 +71,6 @@ Follow-up Queries Used:
 
 Answer:"""
 
-_SUPPORTED_ROUTES = {"zero", "single", "multi"}
-
-
-def _normalize_adaptive_route(route: str, field_name: str) -> Literal["zero", "single", "multi"]:
-    """Normalize and validate AdaptiveRAG route labels."""
-    normalized = route.strip().lower()
-    if normalized == "zero":
-        return "zero"
-    if normalized == "single":
-        return "single"
-    if normalized == "multi":
-        return "multi"
-
-    msg = f"{field_name} must be one of {sorted(_SUPPORTED_ROUTES)}; got {route!r}"
-    raise ValueError(msg)
-
 
 @dataclass(kw_only=True)
 class AdaptiveRAGPipelineConfig(BaseGenerationPipelineConfig):
@@ -103,11 +87,6 @@ class AdaptiveRAGPipelineConfig(BaseGenerationPipelineConfig):
     max_multi_steps: int = 2
     stop_query_signal: str = "STOP"
 
-    def __post_init__(self) -> None:
-        self.route_for_simple = _normalize_adaptive_route(self.route_for_simple, "route_for_simple")
-        self.route_for_moderate = _normalize_adaptive_route(self.route_for_moderate, "route_for_moderate")
-        self.route_for_complex = _normalize_adaptive_route(self.route_for_complex, "route_for_complex")
-
     def get_pipeline_class(self) -> type["AdaptiveRAGPipeline"]:
         """Return the AdaptiveRAGPipeline class."""
         return AdaptiveRAGPipeline
@@ -118,6 +97,12 @@ class AdaptiveRAGPipelineConfig(BaseGenerationPipelineConfig):
             msg = f"Retrieval pipeline '{self.retrieval_pipeline_name}' not injected"
             raise ValueError(msg)
 
+        route_map = AdaptiveRAGPipeline._validate_route_map(
+            route_for_simple=self.route_for_simple,
+            route_for_moderate=self.route_for_moderate,
+            route_for_complex=self.route_for_complex,
+        )
+
         return {
             "llm": self.llm,
             "retrieval_pipeline": self._retrieval_pipeline,
@@ -126,9 +111,9 @@ class AdaptiveRAGPipelineConfig(BaseGenerationPipelineConfig):
             "single_retrieval_prompt_template": self.single_retrieval_prompt_template,
             "multi_retrieval_query_prompt_template": self.multi_retrieval_query_prompt_template,
             "multi_retrieval_answer_prompt_template": self.multi_retrieval_answer_prompt_template,
-            "route_for_simple": self.route_for_simple,
-            "route_for_moderate": self.route_for_moderate,
-            "route_for_complex": self.route_for_complex,
+            "route_for_simple": route_map["simple"],
+            "route_for_moderate": route_map["moderate"],
+            "route_for_complex": route_map["complex"],
             "max_multi_steps": self.max_multi_steps,
             "stop_query_signal": self.stop_query_signal,
         }
@@ -161,9 +146,14 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
         self._single_retrieval_prompt_template = single_retrieval_prompt_template
         self._multi_retrieval_query_prompt_template = multi_retrieval_query_prompt_template
         self._multi_retrieval_answer_prompt_template = multi_retrieval_answer_prompt_template
-        self._route_for_simple = self._normalize_route(route_for_simple, "route_for_simple")
-        self._route_for_moderate = self._normalize_route(route_for_moderate, "route_for_moderate")
-        self._route_for_complex = self._normalize_route(route_for_complex, "route_for_complex")
+        route_map = self._validate_route_map(
+            route_for_simple=route_for_simple,
+            route_for_moderate=route_for_moderate,
+            route_for_complex=route_for_complex,
+        )
+        self._route_for_simple = route_map["simple"]
+        self._route_for_moderate = route_map["moderate"]
+        self._route_for_complex = route_map["complex"]
         self._max_multi_steps = max_multi_steps
         self._stop_query_signal = stop_query_signal
 
@@ -205,46 +195,65 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
 
     @staticmethod
     def _parse_complexity_tier(response_text: str) -> Literal["simple", "moderate", "complex"]:
-        """Parse complexity output, defaulting to moderate for unknown outputs."""
+        """Parse complexity output, defaulting to moderate for unknown outputs.
+
+        The classifier prompt asks for one label, but LLMs can still return explanatory text.
+        Match labels as whole tokens and choose the safest mentioned tier when output is ambiguous.
+        """
         normalized = response_text.strip().lower()
-
-        if normalized == "simple":
-            return "simple"
-        if normalized == "moderate":
-            return "moderate"
-        if normalized == "complex":
-            return "complex"
-        if normalized == "medium":
-            return "moderate"
-
         tier_tokens = {
             "moderate" if label == "medium" else label
             for label in re.findall(r"\b(simple|moderate|medium|complex)\b", normalized)
         }
-        if len(tier_tokens) == 1:
-            tier = tier_tokens.pop()
-            if tier == "simple":
-                return "simple"
-            if tier == "complex":
-                return "complex"
+
+        if "complex" in tier_tokens:
+            return "complex"
+        if "moderate" in tier_tokens:
+            return "moderate"
+        if "simple" in tier_tokens:
+            return "simple"
 
         return "moderate"
 
     @staticmethod
     def _normalize_route(route: str, field_name: str = "route") -> Literal["zero", "single", "multi"]:
-        """Normalize route labels to supported route names."""
-        return _normalize_adaptive_route(route, field_name)
+        """Normalize and validate route labels to supported route names."""
+        normalized = route.strip().lower()
+        if normalized == "zero":
+            return "zero"
+        if normalized == "single":
+            return "single"
+        if normalized == "multi":
+            return "multi"
+
+        msg = f"{field_name} must be one of: zero, single, multi (got {route!r})"
+        raise ValueError(msg)
+
+    @classmethod
+    def _validate_route_map(
+        cls,
+        *,
+        route_for_simple: str,
+        route_for_moderate: str,
+        route_for_complex: str,
+    ) -> dict[Literal["simple", "moderate", "complex"], Literal["zero", "single", "multi"]]:
+        """Validate tier-specific route configuration and return normalized routes."""
+        return {
+            "simple": cls._normalize_route(route_for_simple, "route_for_simple"),
+            "moderate": cls._normalize_route(route_for_moderate, "route_for_moderate"),
+            "complex": cls._normalize_route(route_for_complex, "route_for_complex"),
+        }
 
     def _select_route(
         self, complexity_tier: Literal["simple", "moderate", "complex"]
     ) -> Literal["zero", "single", "multi"]:
         """Select route name from tier-specific mapping."""
-        route_map = {
+        route_map: dict[Literal["simple", "moderate", "complex"], Literal["zero", "single", "multi"]] = {
             "simple": self._route_for_simple,
             "moderate": self._route_for_moderate,
             "complex": self._route_for_complex,
         }
-        return self._normalize_route(route_map[complexity_tier], f"route_for_{complexity_tier}")
+        return route_map[complexity_tier]
 
     @staticmethod
     def _merge_retrieval_results(result_sets: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
