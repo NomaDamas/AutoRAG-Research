@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy import delete
@@ -430,3 +430,18 @@ class TestPowerOfNoiseRetrievalPipeline:
             ),
         )
         verifier.verify_all()
+
+    def test_creation_rejects_image_pipeline_when_text_noise_enabled(self):
+        image_pipeline = SimpleNamespace(
+            name="heaven",
+            retrieval_unit="image_chunk",
+            _get_pipeline_config=lambda: {"type": "heaven", "retrieval_unit": "image_chunk"},
+        )
+
+        with pytest.raises(ValueError, match="text chunk retrieval pipeline"):
+            PowerOfNoiseRetrievalPipeline(
+                session_factory=MagicMock(),
+                name="test_power_of_noise_image_with_text_noise",
+                base_retrieval_pipeline=image_pipeline,
+                noise_count=1,
+            )

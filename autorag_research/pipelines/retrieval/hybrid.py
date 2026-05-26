@@ -328,6 +328,7 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
         self._retrieval_pipeline_1 = retrieval_pipeline_1
         self._retrieval_pipeline_2 = retrieval_pipeline_2
         self.fetch_k_multiplier = fetch_k_multiplier
+        self._validate_supported_retrieval_units()
 
         super().__init__(session_factory, name, schema)
 
@@ -370,6 +371,13 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
         if retrieval_unit_1 == retrieval_unit_2:
             return retrieval_unit_1
         return "mixed"
+
+    def _validate_supported_retrieval_units(self) -> None:
+        """Reject mixed namespaces before raw doc_id fusion can collide IDs."""
+        retrieval_unit = self.retrieval_unit
+        if retrieval_unit == "mixed":
+            msg = "Mixed retrieval_unit hybrid pipelines are not supported until fused results carry entity namespaces."
+            raise ValueError(msg)
 
     @abstractmethod
     def _fuse_results(
