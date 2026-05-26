@@ -669,6 +669,11 @@ class WhitespaceAlignScoreTokenizer:
         return 3 if pair else 2
 
 
+class ExpandingDecodeAlignScoreTokenizer(WhitespaceAlignScoreTokenizer):
+    def decode(self, token_ids: list[int], skip_special_tokens: bool = True) -> str:
+        return " ".join(f"tok{token_id} expanded" for token_id in token_ids if not skip_special_tokens or token_id >= 0)
+
+
 class FakeAlignScoreTensor:
     def __init__(self, values: list[list[float]] | list[float]) -> None:
         self.values = values
@@ -728,7 +733,7 @@ class FakeAlignScoreTorch:
         pytest.fail("AlignScore default path should use tri_label_logits, not a generic logits sigmoid")
 
 
-def _make_fake_alignscore_runtime():
+def _make_fake_alignscore_runtime():  # noqa: C901
     tokenizer_load_calls: list[dict[str, object]] = []
     tokenizer_encode_calls: list[dict[str, object]] = []
     model_load_calls: list[dict[str, object]] = []
@@ -738,6 +743,21 @@ def _make_fake_alignscore_runtime():
         def from_pretrained(cls, model_name_or_path: str, **kwargs: object) -> "FakeTokenizer":
             tokenizer_load_calls.append({"model_name_or_path": model_name_or_path, **kwargs})
             return cls()
+
+        @staticmethod
+        def encode(text: str, add_special_tokens: bool = True) -> list[int]:
+            token_ids = list(range(len(text.split())))
+            if add_special_tokens:
+                return [-1, *token_ids, -2]
+            return token_ids
+
+        @staticmethod
+        def decode(token_ids: list[int], skip_special_tokens: bool = True) -> str:
+            return " ".join(f"tok{token_id}" for token_id in token_ids if not skip_special_tokens or token_id >= 0)
+
+        @staticmethod
+        def num_special_tokens_to_add(pair: bool = False) -> int:
+            return 3 if pair else 2
 
         def __call__(
             self,
@@ -919,6 +939,52 @@ def test_align_score_splits_long_single_sentence_context_by_token_budget():
     assert claims == ["Supported claim."] * len(contexts)
 
 
+def test_align_score_splits_long_single_sentence_context_at_default_token_budget():
+    scorer = KeywordAlignScoreScorer(keyword="tok520")
+    long_sentence = " ".join(f"filler{i}" for i in range(700)) + "."
+
+    scores = align_score(
+        metric_inputs=[
+            MetricInput(
+                retrieved_contents=[long_sentence],
+                generated_texts="Supported claim.",
+            )
+        ],
+        scorer=scorer,
+    )
+
+    assert scores == [pytest.approx(0.99)]
+    contexts, claims, _batch_size = scorer.calls[0]
+    assert len(contexts) > 1
+    assert all(len(context.split()) <= 507 for context in contexts)
+    assert any("tok520" in context for context in contexts)
+    assert claims == ["Supported claim."] * len(contexts)
+
+
+def test_align_score_shrinks_decoded_context_windows_that_retokenize_over_budget():
+    scorer = KeywordAlignScoreScorer(keyword="tok20")
+    scorer.tokenizer = ExpandingDecodeAlignScoreTokenizer()
+    long_sentence = " ".join(f"filler{i}" for i in range(40)) + "."
+
+    scores = align_score(
+        metric_inputs=[
+            MetricInput(
+                retrieved_contents=[long_sentence],
+                generated_texts="Supported claim.",
+            )
+        ],
+        scorer=scorer,
+        max_length=20,
+    )
+
+    assert scores == [pytest.approx(0.99)]
+    contexts, claims, _batch_size = scorer.calls[0]
+    assert len(contexts) > 1
+    assert all(len(context.split()) <= 15 for context in contexts)
+    assert any("tok20" in context for context in contexts)
+    assert claims == ["Supported claim."] * len(contexts)
+
+
 def test_align_score_rejects_claim_that_exceeds_token_budget():
     scorer = KeywordAlignScoreScorer(keyword="anything")
     over_budget_claim = " ".join(f"claim{i}" for i in range(18)) + "."
@@ -931,6 +997,36 @@ def test_align_score_rejects_claim_that_exceeds_token_budget():
         )
 
     assert scorer.calls == []
+
+
+def test_align_score_rejects_claim_that_leaves_no_context_token_budget():
+    scorer = KeywordAlignScoreScorer(keyword="anything")
+    budget_filling_claim = " ".join(f"claim{i}" for i in range(17)) + "."
+
+    with pytest.raises(ValueError, match="at least one context token"):
+        align_score(
+            metric_inputs=[MetricInput(retrieved_contents=["Context evidence."], generated_texts=budget_filling_claim)],
+            scorer=scorer,
+            max_length=20,
+        )
+
+    assert scorer.calls == []
+
+
+def test_align_score_allows_claim_that_leaves_one_context_token_budget():
+    scorer = KeywordAlignScoreScorer(keyword="tok0")
+    one_context_token_claim = " ".join(f"claim{i}" for i in range(16)) + "."
+
+    scores = align_score(
+        metric_inputs=[MetricInput(retrieved_contents=["Context evidence."], generated_texts=one_context_token_claim)],
+        scorer=scorer,
+        max_length=20,
+    )
+
+    assert scores == [pytest.approx(0.99)]
+    contexts, claims, _batch_size = scorer.calls[0]
+    assert all(len(context.split()) == 1 for context in contexts)
+    assert claims == [one_context_token_claim] * len(contexts)
 
 
 def test_align_score_short_text_keeps_existing_window_scores_with_tokenizer():
@@ -1129,6 +1225,33 @@ def test_align_score_default_huggingface_scorer_uses_alignscore_remote_contract(
         }
     ]
     assert scores == [pytest.approx(0.786986), pytest.approx(0.106507)]
+
+
+def test_align_score_default_huggingface_scorer_rejects_over_budget_claim_before_tokenization(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import autorag_research.evaluation.metrics.generation as generation_module
+
+    fake_torch, fake_model, fake_tokenizer, _model_load_calls, _tokenizer_load_calls, tokenizer_encode_calls = (
+        _make_fake_alignscore_runtime()
+    )
+
+    monkeypatch.setattr(
+        generation_module,
+        "_import_alignscore_runtime",
+        lambda: (fake_torch, fake_model, fake_tokenizer),
+    )
+
+    scorer = generation_module.HuggingFaceAlignScoreScorer(
+        model_name_or_path="liuyanyi/AlignScore-large-hf",
+        trust_remote_code=True,
+        revision=ALIGNSCORE_REVISION,
+    )
+
+    with pytest.raises(ValueError, match="AlignScore claim exceeds the model token budget"):
+        scorer.score(["short context"], [" ".join(f"claim{i}" for i in range(510))], batch_size=1)
+
+    assert tokenizer_encode_calls == []
 
 
 def test_align_score_runtime_guard_points_to_optional_dependencies(monkeypatch: pytest.MonkeyPatch):

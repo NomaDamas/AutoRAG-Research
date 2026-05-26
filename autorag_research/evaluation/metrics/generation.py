@@ -348,6 +348,29 @@ def _get_alignscore_pair_special_token_count(tokenizer: Any) -> int:
     return ALIGNSCORE_PAIR_SPECIAL_TOKENS
 
 
+def _validate_alignscore_claim_token_budget(
+    tokenizer: Any,
+    claim: str,
+    max_length: int,
+    special_token_count: int | None = None,
+) -> tuple[int, int]:
+    """Return claim and special-token counts after enforcing the pair token budget."""
+    resolved_special_token_count = (
+        _get_alignscore_pair_special_token_count(tokenizer) if special_token_count is None else special_token_count
+    )
+    claim_token_count = _count_alignscore_tokens(tokenizer, claim)
+    max_claim_tokens = max_length - resolved_special_token_count - 1
+    if claim_token_count > max_claim_tokens:
+        msg = (
+            f"AlignScore claim exceeds the model token budget: claim has {claim_token_count} tokens, "
+            f"but max_length={max_length} leaves at most {max_claim_tokens} claim tokens after reserving "
+            f"{resolved_special_token_count} special tokens and at least one context token. "
+            "Split the generated claim before scoring."
+        )
+        raise ValueError(msg)
+    return claim_token_count, resolved_special_token_count
+
+
 def _decode_alignscore_tokens(tokenizer: Any, token_ids: list[int]) -> str:
     """Decode context token chunks for overlong AlignScore sentences."""
     if hasattr(tokenizer, "decode"):
@@ -368,14 +391,23 @@ def _split_alignscore_context_to_token_windows(
     if not token_ids:
         return []
 
-    stride = max(1, token_budget - min(token_overlap, max(0, token_budget - 1)))
     windows = []
-    for start in range(0, len(token_ids), stride):
-        window = _decode_alignscore_tokens(tokenizer, token_ids[start : start + token_budget])
+    start = 0
+    while start < len(token_ids):
+        end = min(len(token_ids), start + token_budget)
+        window = _decode_alignscore_tokens(tokenizer, token_ids[start:end])
+        while window and _count_alignscore_tokens(tokenizer, window) > token_budget:
+            end -= 1
+            if end <= start:
+                window = ""
+                break
+            window = _decode_alignscore_tokens(tokenizer, token_ids[start:end])
         if window:
             windows.append(window)
-        if start + token_budget >= len(token_ids):
+        if end >= len(token_ids):
             break
+        next_start = end - min(token_overlap, max(0, end - start - 1))
+        start = max(start + 1, next_start)
     return windows
 
 
@@ -389,17 +421,7 @@ def _build_alignscore_context_windows(
     if tokenizer is None or claim is None:
         return _build_alignscore_sentence_context_windows(retrieved_contents)
 
-    special_token_count = _get_alignscore_pair_special_token_count(tokenizer)
-    claim_token_count = _count_alignscore_tokens(tokenizer, claim)
-    max_claim_tokens = max_length - special_token_count
-    if claim_token_count > max_claim_tokens:
-        msg = (
-            f"AlignScore claim exceeds the model token budget: claim has {claim_token_count} tokens, "
-            f"but max_length={max_length} leaves at most {max_claim_tokens} claim tokens after reserving "
-            f"{special_token_count} special tokens. Split the generated claim before scoring."
-        )
-        raise ValueError(msg)
-
+    claim_token_count, special_token_count = _validate_alignscore_claim_token_budget(tokenizer, claim, max_length)
     context_token_budget = max_length - claim_token_count - special_token_count
     context_windows: list[str] = []
     for content in retrieved_contents:
@@ -591,6 +613,10 @@ class HuggingFaceAlignScoreScorer(AlignScoreScorer):
             raise ValueError(msg)
         if not contexts:
             return []
+
+        special_token_count = _get_alignscore_pair_special_token_count(self.tokenizer)
+        for claim in claims:
+            _validate_alignscore_claim_token_budget(self.tokenizer, claim, self.max_length, special_token_count)
 
         scores: list[float] = []
         for start in range(0, len(contexts), batch_size):
