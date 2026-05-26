@@ -343,6 +343,31 @@ class TestBaseIngestionService:
                 uow.commit()
             _restore_unembedded_queries(service, snapshots)
 
+    def test_embed_all_queries_uses_bounded_server_side_failed_id_exclusion(self):
+        """Broad embedding failures must not grow fetch limits with failed-prefix over-fetching."""
+        service = FakeIngestionService([FakeEntity(item_id, f"query {item_id}") for item_id in range(1, 21)])
+
+        async def always_fail(_text: str) -> list[float]:
+            msg = "simulated provider outage"
+            raise RuntimeError(msg)
+
+        embedded = service.embed_all_queries(
+            always_fail,
+            batch_size=5,
+            max_concurrency=2,
+            bm25_tokenizer=None,
+        )
+
+        assert embedded == 0
+        assert service.repository.fetch_limits == [5, 5, 5, 5, 5]
+        assert service.repository.fetch_excluded_ids == [
+            set(),
+            {1, 2, 3, 4, 5},
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+        ]
+
 
 def _snapshot_unembedded_queries(service: BaseIngestionService) -> list[int]:
     """Capture IDs of seed queries whose embedding is None.
@@ -364,3 +389,55 @@ def _restore_unembedded_queries(service: BaseIngestionService, ids: list[int]) -
             if entity is not None:
                 entity.embedding = None
         uow.commit()
+
+
+class FakeEntity:
+    def __init__(self, item_id: int, contents: str):
+        self.id = item_id
+        self.contents = contents
+
+
+class FakeEmbeddingRepository:
+    def __init__(self, entities: list[FakeEntity]):
+        self.entities = entities
+        self.fetch_limits: list[int | None] = []
+        self.fetch_excluded_ids: list[set[int | str]] = []
+
+    def count_without_embeddings(self) -> int:
+        return len(self.entities)
+
+    def get_without_embeddings(
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+        exclude_ids: set[int | str] | None = None,
+    ) -> list[FakeEntity]:
+        del offset
+        excluded = set() if exclude_ids is None else set(exclude_ids)
+        self.fetch_limits.append(limit)
+        self.fetch_excluded_ids.append(excluded)
+        entities = [entity for entity in self.entities if entity.id not in excluded]
+        return entities if limit is None else entities[:limit]
+
+
+class FakeUnitOfWork:
+    def __init__(self, repository: FakeEmbeddingRepository):
+        self.queries = repository
+
+    def __enter__(self) -> "FakeUnitOfWork":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+
+class FakeIngestionService(BaseIngestionService):
+    def __init__(self, entities: list[FakeEntity]):
+        super().__init__(session_factory=None)  # type: ignore[arg-type]
+        self.repository = FakeEmbeddingRepository(entities)
+
+    def _create_uow(self) -> FakeUnitOfWork:
+        return FakeUnitOfWork(self.repository)
+
+    def _get_schema_classes(self) -> dict[str, type]:
+        return {}

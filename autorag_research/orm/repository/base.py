@@ -569,17 +569,25 @@ class BaseEmbeddingRepository(GenericRepository[T]):
             stmt = stmt.limit(limit)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_without_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
+    def get_without_embeddings(
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+        exclude_ids: set[int | str] | None = None,
+    ) -> list[T]:
         """Retrieve entities that do not have embeddings.
 
         Args:
             limit: Maximum number of results to return.
             offset: Number of results to skip.
+            exclude_ids: Entity IDs to omit from the result set.
 
         Returns:
             List of entities without embeddings.
         """
         stmt = select(self.model_cls).where(self.model_cls.embedding.is_(None))  # ty: ignore[possibly-missing-attribute]
+        if exclude_ids:
+            stmt = stmt.where(self.model_cls.id.not_in(exclude_ids))  # ty: ignore[possibly-missing-attribute]
         return self._execute_with_offset_limit(stmt, limit, offset)
 
     def get_with_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
@@ -595,17 +603,25 @@ class BaseEmbeddingRepository(GenericRepository[T]):
         stmt = select(self.model_cls).where(self.model_cls.embedding.is_not(None))  # ty: ignore[possibly-missing-attribute]
         return self._execute_with_offset_limit(stmt, limit, offset)
 
-    def get_without_multi_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
+    def get_without_multi_embeddings(
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+        exclude_ids: set[int | str] | None = None,
+    ) -> list[T]:
         """Retrieve entities that do not have multi-vector embeddings.
 
         Args:
             limit: Maximum number of results to return.
             offset: Number of results to skip.
+            exclude_ids: Entity IDs to omit from the result set.
 
         Returns:
             List of entities without multi-vector embeddings.
         """
         stmt = select(self.model_cls).where(self.model_cls.embeddings.is_(None))  # ty: ignore[possibly-missing-attribute]
+        if exclude_ids:
+            stmt = stmt.where(self.model_cls.id.not_in(exclude_ids))  # ty: ignore[possibly-missing-attribute]
         return self._execute_with_offset_limit(stmt, limit, offset)
 
     def get_with_multi_embeddings(self, limit: int | None = None, offset: int | None = None) -> list[T]:
