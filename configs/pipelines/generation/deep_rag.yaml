@@ -1,0 +1,16 @@
+_target_: autorag_research.pipelines.generation.deep_rag.DeepRAGPipelineConfig
+description: "DeepRAG-style adaptive iterative retrieve-or-reason generation pipeline"
+name: deep_rag
+retrieval_pipeline_name: bm25
+llm: mock
+max_steps: 5
+# Per DeepRAG retrieval action, request up to this many chunks.
+# The inherited top_k below remains the global runner cap when it is > 0.
+k_per_retrieval: 5
+evidence_budget: 12
+fallback_to_final_prompt: true
+top_k: 5
+batch_size: 32
+max_concurrency: 4
+max_retries: 3
+retry_delay: 1.0
