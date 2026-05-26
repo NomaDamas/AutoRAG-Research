@@ -7,6 +7,7 @@ Algorithms that take a query and retrieved documents to generate an answer.
 | Pipeline | Algorithm |
 |----------|-----------|
 | [BasicRAG](basic-rag.md) | Single retrieve + generate |
+| [HybridDeepSearcher](hybrid-deep-searcher.md) | Sequential planning with parallel fan-out retrieval |
 | [IRCoT](ircot.md) | Iterative retrieve + chain-of-thought reasoning |
 | [SelfRAG](self-rag.md) | Draft, critique, retrieve, and revise adaptively |
 
