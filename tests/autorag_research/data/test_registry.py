@@ -4,6 +4,8 @@ from enum import Enum
 from typing import Literal
 from unittest.mock import patch
 
+import pytest
+
 from autorag_research.data.registry import (
     IngestorMeta,
     ParamMeta,
@@ -194,6 +196,93 @@ class TestRegisterIngestor:
         # Cleanup
         del registry_module._INGESTOR_REGISTRY["test_ingestor_alias"]
         del registry_module._INGESTOR_ALIASES["test-ingestor-alias"]
+
+    def test_register_ingestor_rejects_alias_that_matches_canonical_name(self):
+        """Aliases should not be allowed to shadow existing canonical ingestors."""
+        import autorag_research.data.registry as registry_module
+
+        @register_ingestor(name="test_canonical_collision_base", description="Test")
+        class TestCanonicalCollisionBaseIngestor:
+            pass
+
+        try:
+            with pytest.raises(ValueError, match="aliases conflict with registered ingestors"):
+
+                @register_ingestor(
+                    name="test_canonical_collision_target",
+                    description="Test",
+                    aliases=("test_canonical_collision_base",),
+                )
+                class TestCanonicalCollisionTargetIngestor:
+                    pass
+
+            base_meta = get_ingestor("test_canonical_collision_base")
+            assert base_meta is not None
+            assert base_meta.name == "test_canonical_collision_base"
+            assert "test_canonical_collision_target" not in registry_module._INGESTOR_REGISTRY
+        finally:
+            registry_module._INGESTOR_REGISTRY.pop("test_canonical_collision_base", None)
+            registry_module._INGESTOR_REGISTRY.pop("test_canonical_collision_target", None)
+
+    def test_register_ingestor_rejects_duplicate_alias(self):
+        """Aliases should be globally unique across registered ingestors."""
+        import autorag_research.data.registry as registry_module
+
+        @register_ingestor(
+            name="test_duplicate_alias_base",
+            description="Test",
+            aliases=("test-duplicate-alias",),
+        )
+        class TestDuplicateAliasBaseIngestor:
+            pass
+
+        try:
+            with pytest.raises(ValueError, match="aliases conflict with existing aliases"):
+
+                @register_ingestor(
+                    name="test_duplicate_alias_target",
+                    description="Test",
+                    aliases=("test-duplicate-alias",),
+                )
+                class TestDuplicateAliasTargetIngestor:
+                    pass
+
+            alias_meta = get_ingestor("test-duplicate-alias")
+            assert alias_meta is not None
+            assert alias_meta.name == "test_duplicate_alias_base"
+            assert "test_duplicate_alias_target" not in registry_module._INGESTOR_REGISTRY
+        finally:
+            registry_module._INGESTOR_REGISTRY.pop("test_duplicate_alias_base", None)
+            registry_module._INGESTOR_REGISTRY.pop("test_duplicate_alias_target", None)
+            registry_module._INGESTOR_ALIASES.pop("test-duplicate-alias", None)
+
+    def test_register_ingestor_rejects_canonical_name_that_matches_alias(self):
+        """Canonical names should not be allowed to shadow existing aliases."""
+        import autorag_research.data.registry as registry_module
+
+        @register_ingestor(
+            name="test_canonical_after_alias_base",
+            description="Test",
+            aliases=("test-canonical-after-alias",),
+        )
+        class TestCanonicalAfterAliasBaseIngestor:
+            pass
+
+        try:
+            with pytest.raises(ValueError, match="canonical name conflicts with an existing alias"):
+
+                @register_ingestor(name="test-canonical-after-alias", description="Test")
+                class TestCanonicalAfterAliasTargetIngestor:
+                    pass
+
+            alias_meta = get_ingestor("test-canonical-after-alias")
+            assert alias_meta is not None
+            assert alias_meta.name == "test_canonical_after_alias_base"
+            assert "test-canonical-after-alias" not in registry_module._INGESTOR_REGISTRY
+        finally:
+            registry_module._INGESTOR_REGISTRY.pop("test_canonical_after_alias_base", None)
+            registry_module._INGESTOR_REGISTRY.pop("test-canonical-after-alias", None)
+            registry_module._INGESTOR_ALIASES.pop("test-canonical-after-alias", None)
 
 
 class TestExtractParamsFromInit:

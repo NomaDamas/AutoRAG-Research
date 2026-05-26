@@ -99,6 +99,7 @@ def register_ingestor(
     """
 
     def decorator(cls):
+        _validate_ingestor_name_and_aliases(name, aliases)
         params = _extract_params_from_init(cls)
         _INGESTOR_REGISTRY[name] = IngestorMeta(
             name=name,
@@ -113,6 +114,28 @@ def register_ingestor(
         return cls
 
     return decorator
+
+
+def _validate_ingestor_name_and_aliases(name: str, aliases: tuple[str, ...]) -> None:
+    """Ensure canonical ingestor names and aliases remain globally unambiguous."""
+    if name in _INGESTOR_ALIASES:
+        msg = f"Ingestor canonical name conflicts with an existing alias: {name}"
+        raise ValueError(msg)
+
+    duplicate_aliases = {alias for alias in aliases if aliases.count(alias) > 1}
+    if duplicate_aliases:
+        msg = f"Ingestor aliases contain duplicates: {sorted(duplicate_aliases)}"
+        raise ValueError(msg)
+
+    registered_name_conflicts = set(aliases) & (set(_INGESTOR_REGISTRY) | {name})
+    if registered_name_conflicts:
+        msg = f"Ingestor aliases conflict with registered ingestors: {sorted(registered_name_conflicts)}"
+        raise ValueError(msg)
+
+    alias_conflicts = set(aliases) & set(_INGESTOR_ALIASES)
+    if alias_conflicts:
+        msg = f"Ingestor aliases conflict with existing aliases: {sorted(alias_conflicts)}"
+        raise ValueError(msg)
 
 
 def _extract_params_from_init(cls) -> list[ParamMeta]:
