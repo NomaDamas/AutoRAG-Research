@@ -15,15 +15,19 @@ def coerce_retrieval_unit(value: object) -> RetrievalUnit | None:
     return None
 
 
+def _invalid_retrieval_unit_message(value: object) -> str:
+    """Return a consistent error message for invalid retrieval-unit values."""
+    valid_values = ", ".join(sorted(VALID_RETRIEVAL_UNITS))
+    return f"Invalid retrieval_unit {value!r}. Expected one of: {valid_values}."
+
+
 def require_retrieval_unit(value: object, *, default: RetrievalUnit | None = None) -> RetrievalUnit | None:
-    """Return a valid retrieval unit, default missing values, and reject invalid explicit strings."""
+    """Return a valid retrieval unit, default only missing values, and reject explicit invalid values."""
     unit = coerce_retrieval_unit(value)
     if unit is not None:
         return unit
     if value is None:
         return default
-    if isinstance(value, str):
-        valid_values = ", ".join(sorted(VALID_RETRIEVAL_UNITS))
-        msg = f"Invalid retrieval_unit '{value}'. Expected one of: {valid_values}."
-        raise ValueError(msg)  # noqa: TRY004 - invalid retrieval_unit strings are invalid values, not types.
-    return default
+
+    msg = _invalid_retrieval_unit_message(value)
+    raise ValueError(msg)

@@ -162,6 +162,16 @@ class TestRetrievalPipelineService:
                 config={"type": "existing", "retrieval_unit": "image_chunks"},
             )
 
+    @pytest.mark.parametrize("invalid_unit", [False, 123, ["image_chunk"], {"unit": "image_chunk"}])
+    def test_get_or_create_pipeline_rejects_malformed_retrieval_unit_config(self, invalid_unit):
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow())
+
+        with pytest.raises(ValueError, match="Invalid retrieval_unit"):
+            service.get_or_create_pipeline(
+                name="malformed-unit",
+                config={"type": "existing", "retrieval_unit": invalid_unit},
+            )
+
     def test_run_image_pipeline_rejects_existing_chunk_results_for_same_pipeline_id(self, mock_retrieval_func):
         service = _FakeRetrievalPipelineService(_FakeRetrievalUow(chunk_results=[SimpleNamespace(id=1)]))
 

@@ -32,9 +32,10 @@ def get_retrieval_pipeline_unit(pipeline: object) -> RetrievalUnit | None:
     persisted config metadata for older or mocked pipeline-like objects.
     """
     retrieval_unit = getattr(pipeline, "retrieval_unit", None)
-    typed_unit = require_retrieval_unit(retrieval_unit)
-    if typed_unit is not None:
-        return typed_unit
+    if retrieval_unit is None or isinstance(retrieval_unit, str):
+        typed_unit = require_retrieval_unit(retrieval_unit)
+        if typed_unit is not None:
+            return typed_unit
 
     config_unit = get_retrieval_pipeline_config(pipeline).get("retrieval_unit")
     return require_retrieval_unit(config_unit)
