@@ -23,11 +23,6 @@ class TestAutoImportDataModules:
 
     def test_auto_import_discovers_modules(self):
         """Auto-import should discover and import modules in autorag_research.data."""
-        # Reset discovery state to force re-discovery
-        import autorag_research.data.registry as registry_module
-
-        registry_module._discovery_done = False
-        registry_module._INGESTOR_REGISTRY.clear()
         discover_ingestors.cache_clear()  # Clear lru_cache to avoid stale cached results
 
         # Run auto-import
@@ -92,6 +87,14 @@ class TestDiscoverIngestors:
         for name, meta in result.items():
             assert isinstance(meta, IngestorMeta), f"Value for '{name}' is not IngestorMeta"
 
+    def test_discover_ingestors_lists_only_canonical_mrtydi_entry(self):
+        """Mr. TyDi aliases should not enumerate as independent ingestors."""
+        result = discover_ingestors()
+
+        assert "mrtydi" in result
+        assert "mr-tydi" not in result
+        assert "mr.tydi" not in result
+
 
 class TestGetIngestor:
     """Tests for get_ingestor function."""
@@ -100,6 +103,22 @@ class TestGetIngestor:
         """get_ingestor should return None for unknown ingestor."""
         result = get_ingestor("nonexistent_ingestor_xyz")
         assert result is None
+
+    def test_mrtydi_common_name_aliases_resolve(self):
+        """Mr. TyDi can be requested with common punctuation variants."""
+        canonical = get_ingestor("mrtydi")
+        hyphen_alias = get_ingestor("mr-tydi")
+        dot_alias = get_ingestor("mr.tydi")
+
+        assert canonical is not None
+        assert hyphen_alias is not None
+        assert dot_alias is not None
+        assert canonical.name == "mrtydi"
+        assert hyphen_alias.name == canonical.name
+        assert dot_alias.name == canonical.name
+        assert hyphen_alias.ingestor_class is canonical.ingestor_class
+        assert dot_alias.ingestor_class is canonical.ingestor_class
+        assert set(canonical.aliases) == {"mr-tydi", "mr.tydi"}
 
 
 class TestRegisterIngestor:
@@ -159,6 +178,22 @@ class TestRegisterIngestor:
         assert meta.hf_repo == "test-dumps"
         # Cleanup
         del registry_module._INGESTOR_REGISTRY["test_ingestor_hf"]
+
+    def test_register_ingestor_with_aliases(self):
+        """register_ingestor should store aliases as lookup-only names."""
+        import autorag_research.data.registry as registry_module
+
+        @register_ingestor(name="test_ingestor_alias", description="Test", aliases=("test-ingestor-alias",))
+        class TestIngestor:
+            pass
+
+        meta = registry_module._INGESTOR_REGISTRY["test_ingestor_alias"]
+        assert meta.aliases == ("test-ingestor-alias",)
+        assert get_ingestor("test-ingestor-alias") is meta
+        assert "test-ingestor-alias" not in discover_ingestors()
+        # Cleanup
+        del registry_module._INGESTOR_REGISTRY["test_ingestor_alias"]
+        del registry_module._INGESTOR_ALIASES["test-ingestor-alias"]
 
 
 class TestExtractParamsFromInit:
@@ -253,6 +288,7 @@ class TestExtractChoices:
             BLUE = "blue"
 
         choices = _extract_choices(Color)
+        assert choices is not None
         assert set(choices) == {"red", "green", "blue"}
 
     def test_extract_choices_returns_none_for_basic_type(self):

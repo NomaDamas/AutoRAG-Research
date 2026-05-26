@@ -58,10 +58,12 @@ class IngestorMeta:
     description: str
     params: list[ParamMeta] = field(default_factory=list)
     hf_repo: str | None = None  # HuggingFace Hub repository name suffix (e.g., "beir-dumps")
+    aliases: tuple[str, ...] = ()
 
 
 # Global registry (populated by @register_ingestor decorators at import time)
 _INGESTOR_REGISTRY: dict[str, IngestorMeta] = {}
+_INGESTOR_ALIASES: dict[str, str] = {}
 
 # Modules in autorag_research.data that are NOT ingestors (skip during auto-discovery)
 _NON_INGESTOR_MODULES = {"base", "registry", "restore", "util", "hf_storage"}
@@ -71,6 +73,7 @@ def register_ingestor(
     name: str,
     description: str = "",
     hf_repo: str | None = None,
+    aliases: tuple[str, ...] = (),
 ):
     """Decorator to register an ingestor class.
 
@@ -81,6 +84,7 @@ def register_ingestor(
         name: CLI command name (e.g., "beir")
         description: Help text for CLI
         hf_repo: HuggingFace Hub repository name suffix (e.g., "beir-dumps")
+        aliases: Alternate lookup names that resolve to this canonical ingestor
 
     Example:
         @register_ingestor(name="beir", description="BEIR benchmark")
@@ -102,7 +106,10 @@ def register_ingestor(
             description=description,
             params=params,
             hf_repo=hf_repo,
+            aliases=aliases,
         )
+        for alias in aliases:
+            _INGESTOR_ALIASES[alias] = name
         return cls
 
     return decorator
@@ -213,7 +220,8 @@ def _is_list_type(hint) -> bool:
 def get_ingestor(name: str) -> IngestorMeta | None:
     """Get ingestor metadata by name."""
     ingestor_registry = discover_ingestors()
-    return ingestor_registry.get(name)
+    canonical_name = _INGESTOR_ALIASES.get(name, name)
+    return ingestor_registry.get(canonical_name)
 
 
 @lru_cache(maxsize=1)
