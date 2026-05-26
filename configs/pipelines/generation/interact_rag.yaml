@@ -1,0 +1,15 @@
+_target_: autorag_research.pipelines.generation.interact_rag.InteractRAGPipelineConfig
+description: "Training-free INTERACT-RAG inference pipeline with prompt-simulated corpus interaction primitives"
+name: interact_rag
+retrieval_pipeline_name: hybrid_rrf
+llm: mock
+max_steps: 6
+initial_scale: 5
+max_scale: 20
+evidence_budget: 12
+fallback_to_final_prompt: true
+top_k: 5
+batch_size: 32
+max_concurrency: 4
+max_retries: 3
+retry_delay: 1.0
