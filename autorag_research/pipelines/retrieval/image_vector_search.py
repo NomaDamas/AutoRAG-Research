@@ -31,7 +31,7 @@ class ImageVectorSearchPipelineConfig(BaseRetrievalPipelineConfig):
     search_mode: Literal["single", "multi"] = field(default="multi")
     embedding_model: SingleVectorMultiModalEmbedding | MultiVectorBaseEmbedding | str | None = field(default=None)
 
-    def get_pipeline_class(self) -> type["ImageVectorSearchRetrievalPipeline"]:
+    def get_pipeline_class(self) -> type[ImageVectorSearchRetrievalPipeline]:
         return ImageVectorSearchRetrievalPipeline
 
     def get_pipeline_kwargs(self) -> dict[str, Any]:
@@ -67,11 +67,11 @@ class ImageVectorSearchRetrievalPipeline(BaseRetrievalPipeline):
         with self._service._create_uow() as uow:
             query = uow.queries.get_by_id(query_id)
             if query is None:
-                raise ValueError(f"Query {query_id} not found")
+                raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
 
             if self.search_mode == "multi":
                 if query.embeddings is None:
-                    raise ValueError(f"Query {query_id} has no multi-vector embeddings")
+                    raise ValueError(f"Query {query_id} has no multi-vector embeddings")  # noqa: TRY003
                 query_vectors = [list(vector) for vector in query.embeddings]
                 n_query_vectors = max(1, len(query_vectors))
                 results = uow.image_chunks.maxsim_search(
@@ -85,11 +85,10 @@ class ImageVectorSearchRetrievalPipeline(BaseRetrievalPipeline):
                 ]
 
             if query.embedding is None:
-                raise ValueError(f"Query {query_id} has no single-vector embedding")
+                raise ValueError(f"Query {query_id} has no single-vector embedding")  # noqa: TRY003
             results = uow.image_chunks.vector_search_with_scores(query_vector=list(query.embedding), limit=top_k)
             return [
-                {"doc_id": image_chunk.id, "score": 1 - distance, "content": None}
-                for image_chunk, distance in results
+                {"doc_id": image_chunk.id, "score": 1 - distance, "content": None} for image_chunk, distance in results
             ]
 
     async def _retrieve_by_text(self, query_text: str, top_k: int) -> list[dict[str, Any]]:
@@ -98,10 +97,10 @@ class ImageVectorSearchRetrievalPipeline(BaseRetrievalPipeline):
 
         with self._service._create_uow() as uow:
             if self.search_mode == "multi":
-                query_vectors = await self._embedding_model.aembed_query(query_text)  # type: ignore[attr-defined]
+                query_vectors = await self._embedding_model.aembed_query(query_text)
                 n_query_vectors = max(1, len(query_vectors))
                 results = uow.image_chunks.maxsim_search(
-                    query_vectors=query_vectors,
+                    query_vectors=query_vectors,  # type: ignore[arg-type]
                     vector_column="embeddings",
                     limit=top_k,
                 )
@@ -110,11 +109,10 @@ class ImageVectorSearchRetrievalPipeline(BaseRetrievalPipeline):
                     for image_chunk, distance in results
                 ]
 
-            query_vector = await self._embedding_model.aembed_query(query_text)  # type: ignore[attr-defined]
+            query_vector = await self._embedding_model.aembed_query(query_text)
             results = uow.image_chunks.vector_search_with_scores(query_vector=query_vector, limit=top_k)
             return [
-                {"doc_id": image_chunk.id, "score": 1 - distance, "content": None}
-                for image_chunk, distance in results
+                {"doc_id": image_chunk.id, "score": 1 - distance, "content": None} for image_chunk, distance in results
             ]
 
     def run(
