@@ -25,5 +25,5 @@ def require_retrieval_unit(value: object, *, default: RetrievalUnit | None = Non
     if isinstance(value, str):
         valid_values = ", ".join(sorted(VALID_RETRIEVAL_UNITS))
         msg = f"Invalid retrieval_unit '{value}'. Expected one of: {valid_values}."
-        raise ValueError(msg)
+        raise ValueError(msg)  # noqa: TRY004 - invalid retrieval_unit strings are invalid values, not types.
     return default

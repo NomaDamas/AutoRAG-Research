@@ -350,6 +350,7 @@ class TestPowerOfNoiseRetrievalPipeline:
         created_pipeline_ids, _ = cleanup_pipeline_results
         underfilled_base = SimpleNamespace(
             name="vector_search",
+            retrieval_unit="chunk",
             _retrieve_by_id=AsyncMock(return_value=[{"doc_id": 2, "score": 0.9, "content": "Chunk 1-2"}]),
             _retrieve_by_text=AsyncMock(return_value=[{"doc_id": 2, "score": 0.9, "content": "Chunk 1-2"}]),
         )
