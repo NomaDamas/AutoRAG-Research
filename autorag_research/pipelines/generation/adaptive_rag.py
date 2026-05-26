@@ -6,6 +6,7 @@ AdaptiveRAG routes each query to a retrieval strategy based on predicted complex
 - multi: iterative retrieval with follow-up query generation
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -194,24 +195,23 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
 
     @staticmethod
     def _parse_complexity_tier(response_text: str) -> Literal["simple", "moderate", "complex"]:
-        """Parse complexity output, defaulting to moderate for unknown outputs."""
+        """Parse complexity output, defaulting to moderate for unknown outputs.
+
+        The classifier prompt asks for one label, but LLMs can still return explanatory text.
+        Match labels as whole tokens and choose the safest mentioned tier when output is ambiguous.
+        """
         normalized = response_text.strip().lower()
+        tier_tokens = {
+            "moderate" if label == "medium" else label
+            for label in re.findall(r"\b(simple|moderate|medium|complex)\b", normalized)
+        }
 
-        if normalized == "simple":
-            return "simple"
-        if normalized == "moderate":
-            return "moderate"
-        if normalized == "complex":
+        if "complex" in tier_tokens:
             return "complex"
-        if normalized == "medium":
+        if "moderate" in tier_tokens:
             return "moderate"
-
-        if "simple" in normalized:
+        if "simple" in tier_tokens:
             return "simple"
-        if "moderate" in normalized or "medium" in normalized:
-            return "moderate"
-        if "complex" in normalized:
-            return "complex"
 
         return "moderate"
 

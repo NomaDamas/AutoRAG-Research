@@ -163,6 +163,16 @@ class TestAdaptiveRAGPipeline:
         mock_retrieval._retrieve_by_id.assert_awaited_once_with(1, 4)
         assert mock_retrieval.retrieve.await_count == 0
 
+    def test_complexity_parser_uses_safest_tier_when_multiple_labels_are_present(self):
+        assert AdaptiveRAGPipeline._parse_complexity_tier("not simple; this is complex") == "complex"
+
+    def test_complexity_parser_accepts_single_label_explanatory_output(self):
+        assert AdaptiveRAGPipeline._parse_complexity_tier("The question is moderate.") == "moderate"
+
+    @pytest.mark.parametrize("response_text", ["simplicity", "simplex", "complexity"])
+    def test_complexity_parser_matches_labels_as_whole_tokens(self, response_text):
+        assert AdaptiveRAGPipeline._parse_complexity_tier(response_text) == "moderate"
+
     def test_config_rejects_invalid_route_values(self, mock_retrieval):
         llm = FakeListLLM(responses=["answer"])
         invalid_route = cast(Any, "singel")
