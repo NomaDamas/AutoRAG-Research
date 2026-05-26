@@ -650,7 +650,13 @@ class TestMAINRAGEdgeCases:
 
         mock_llm = MagicMock()
         call_count = [0]
-        judge_scores = [-0.5, 2.0, 1.0]  # Doc 2 highest, then doc 3, then doc 1
+        # Logprobs that produce relevance scores: score = log P(Yes) - log P(No)
+        # Doc 1: Yes=-3.0, No=-0.1 → score=-2.9 (filtered out)
+        # Doc 2: Yes=-0.05, No=-3.0 → score=2.95 (highest, kept)
+        # Doc 3: Yes=-0.1, No=-2.0 → score=1.9 (kept)
+        # threshold = mean(-2.9, 2.95, 1.9) = 0.65
+        judge_yes_logprobs = [-3.0, -0.05, -0.1]
+        judge_no_logprobs = [-0.1, -3.0, -2.0]
 
         def create_response(idx: int) -> MagicMock:
             response = MagicMock()
@@ -661,19 +667,20 @@ class TestMAINRAGEdgeCases:
             elif idx < 6:
                 # Judge calls
                 doc_idx = idx - 3
-                score = judge_scores[doc_idx]
-                is_yes = score > 0
+                yes_lp = judge_yes_logprobs[doc_idx]
+                no_lp = judge_no_logprobs[doc_idx]
+                is_yes = yes_lp > no_lp
                 response.content = "Yes" if is_yes else "No"
                 response.response_metadata = {
                     "logprobs": {
                         "content": [
                             {
                                 "token": "Yes" if is_yes else "No",
-                                "logprob": -0.1 if is_yes else -2.0,
+                                "logprob": yes_lp if is_yes else no_lp,
                                 "bytes": [89, 101, 115] if is_yes else [78, 111],
                                 "top_logprobs": [
-                                    {"token": "Yes", "logprob": -0.1 if is_yes else -2.0, "bytes": [89, 101, 115]},
-                                    {"token": "No", "logprob": -2.0 + score if is_yes else -0.1, "bytes": [78, 111]},
+                                    {"token": "Yes", "logprob": yes_lp, "bytes": [89, 101, 115]},
+                                    {"token": "No", "logprob": no_lp, "bytes": [78, 111]},
                                 ],
                             }
                         ]
