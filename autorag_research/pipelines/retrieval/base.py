@@ -5,7 +5,8 @@ Provides abstract base class for all retrieval pipelines.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any
+from inspect import getattr_static
+from typing import Any, Protocol, cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -14,6 +15,11 @@ from autorag_research.pipelines.base import BasePipeline
 from autorag_research.retrieval_units import RetrievalUnit, require_retrieval_unit
 
 logger = logging.getLogger("AutoRAG-Research")
+_MISSING_RETRIEVAL_UNIT = object()
+
+
+class _HasRetrievalUnit(Protocol):
+    retrieval_unit: object
 
 
 def get_retrieval_pipeline_config(pipeline: object) -> dict[str, Any]:
@@ -31,9 +37,8 @@ def get_retrieval_pipeline_unit(pipeline: object) -> RetrievalUnit | None:
     Prefer the typed ``retrieval_unit`` interface and only fall back to legacy
     persisted config metadata for older or mocked pipeline-like objects.
     """
-    retrieval_unit = getattr(pipeline, "retrieval_unit", None)
-    if retrieval_unit is None or isinstance(retrieval_unit, str):
-        typed_unit = require_retrieval_unit(retrieval_unit)
+    if getattr_static(pipeline, "retrieval_unit", _MISSING_RETRIEVAL_UNIT) is not _MISSING_RETRIEVAL_UNIT:
+        typed_unit = require_retrieval_unit(cast("_HasRetrievalUnit", pipeline).retrieval_unit)
         if typed_unit is not None:
             return typed_unit
 
