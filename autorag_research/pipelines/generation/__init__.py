@@ -1,3 +1,4 @@
+from autorag_research.pipelines.generation.adaptive_rag import AdaptiveRAGPipeline, AdaptiveRAGPipelineConfig
 from autorag_research.pipelines.generation.autothinkrag import AutoThinkRAGPipeline, AutoThinkRAGPipelineConfig
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.generation.basic_rag import BasicRAGPipeline, BasicRAGPipelineConfig
@@ -25,6 +26,8 @@ from autorag_research.pipelines.generation.visrag_gen import (
 __all__ = [
     "DEFAULT_PROMPT_TEMPLATE",
     "DEFAULT_VISRAG_PROMPT",
+    "AdaptiveRAGPipeline",
+    "AdaptiveRAGPipelineConfig",
     "AutoThinkRAGPipeline",
     "AutoThinkRAGPipelineConfig",
     "BaseGenerationPipeline",

@@ -8,6 +8,7 @@ Algorithms that take a query and return relevant documents.
 |----------|-----------|----------|
 | [BM25](bm25.md) | Sparse (term frequency) | Text |
 | [Hybrid](hybrid.md) | RRF / Convex Combination | Text |
+| [GQR Hybrid](gqr-hybrid.md) | Guided Query Refinement over hybrid candidates | Text |
 | [Vector Search](vector-search.md) | Dense (vector similarity) | Text |
 | [HyDE](hyde.md) | Dense (hypothetical document embeddings) | Text |
 | [Query Rewrite](query-rewrite.md) | Rewrite query text before retrieval | Text |

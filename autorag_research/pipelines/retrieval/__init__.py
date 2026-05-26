@@ -1,5 +1,9 @@
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 from autorag_research.pipelines.retrieval.bm25 import BM25PipelineConfig, BM25RetrievalPipeline
+from autorag_research.pipelines.retrieval.gqr_hybrid import (
+    GQRHybridRetrievalPipeline,
+    GQRHybridRetrievalPipelineConfig,
+)
 from autorag_research.pipelines.retrieval.heaven import (
     HEAVENPipelineConfig,
     HEAVENRetrievalPipeline,
@@ -43,6 +47,8 @@ __all__ = [
     "BM25PipelineConfig",
     "BM25RetrievalPipeline",
     "BaseRetrievalPipeline",
+    "GQRHybridRetrievalPipeline",
+    "GQRHybridRetrievalPipelineConfig",
     "HEAVENPipelineConfig",
     "HEAVENRetrievalPipeline",
     "HyDEPipelineConfig",
