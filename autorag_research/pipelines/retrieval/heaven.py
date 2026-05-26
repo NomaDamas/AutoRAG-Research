@@ -142,6 +142,8 @@ class HEAVENPipelineConfig(BaseRetrievalPipelineConfig):
 class HEAVENRetrievalPipeline(BaseRetrievalPipeline):
     """Two-stage HEAVEN retrieval pipeline over ImageChunk records."""
 
+    retrieval_unit = "image_chunk"
+
     def __init__(
         self,
         session_factory: sessionmaker[Session],
@@ -180,7 +182,7 @@ class HEAVENRetrievalPipeline(BaseRetrievalPipeline):
         """Return HEAVEN pipeline configuration."""
         return {
             "type": "heaven",
-            "retrieval_unit": "image_chunk",
+            "retrieval_unit": self.retrieval_unit,
             "stage1_candidate_count": self.stage1_candidate_count,
             "stage2_refine_ratio": self.stage2_refine_ratio,
             "stage1_weight": self.stage1_weight,

@@ -1,4 +1,4 @@
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline, RetrievalUnit
 from autorag_research.pipelines.retrieval.bm25 import BM25PipelineConfig, BM25RetrievalPipeline
 from autorag_research.pipelines.retrieval.heaven import (
     HEAVENPipelineConfig,
@@ -59,6 +59,7 @@ __all__ = [
     "QuestionDecompositionRetrievalPipelineConfig",
     "RerankRetrievalPipeline",
     "RerankRetrievalPipelineConfig",
+    "RetrievalUnit",
     "RetroStarPipelineConfig",
     "RetroStarRetrievalPipeline",
     "VectorSearchPipelineConfig",

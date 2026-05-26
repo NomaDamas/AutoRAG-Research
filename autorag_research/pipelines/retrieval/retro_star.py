@@ -23,7 +23,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.injection import health_check_llm
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline, get_retrieval_pipeline_config
+from autorag_research.pipelines.retrieval.base import (
+    BaseRetrievalPipeline,
+    RetrievalUnit,
+    get_retrieval_pipeline_unit,
+)
 from autorag_research.util import truncate_texts
 
 DEFAULT_RETRO_STAR_RELEVANCE_DEFINITION = (
@@ -231,16 +235,19 @@ class RetroStarRetrievalPipeline(BaseRetrievalPipeline):
 
         super().__init__(session_factory, name, schema)
 
+    @property
+    def retrieval_unit(self) -> RetrievalUnit | None:
+        """Return the retrieval unit produced by the wrapped pipeline."""
+        return get_retrieval_pipeline_unit(self._retrieval_pipeline)
+
     def _get_pipeline_config(self) -> dict[str, Any]:
         """Return RETRO* pipeline configuration for storage."""
         model_name = getattr(self.llm, "model_name", None)
         if model_name is None or not isinstance(model_name, str):
             model_name = type(self.llm).__name__
-        wrapped_config = get_retrieval_pipeline_config(self._retrieval_pipeline)
-
         return {
             "type": "retro_star",
-            "retrieval_unit": wrapped_config.get("retrieval_unit"),
+            "retrieval_unit": self.retrieval_unit,
             "candidate_top_k": self.candidate_top_k,
             "prompt_template": self.prompt_template,
             "relevance_definition": self.relevance_definition,

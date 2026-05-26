@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline, get_retrieval_pipeline_config
+from autorag_research.pipelines.retrieval.base import (
+    BaseRetrievalPipeline,
+    get_retrieval_pipeline_config,
+    get_retrieval_pipeline_unit,
+)
 from autorag_research.rerankers.base import BaseReranker, RerankResult
 
 TEXT_RETRIEVAL_UNIT = "chunk"
@@ -24,7 +28,7 @@ TEXT_RETRIEVAL_UNIT = "chunk"
 def _validate_text_retrieval_pipeline(pipeline: BaseRetrievalPipeline) -> None:
     """Reject wrapped pipelines whose persisted results are not text chunks."""
     config = get_retrieval_pipeline_config(pipeline)
-    retrieval_unit = config.get("retrieval_unit")
+    retrieval_unit = get_retrieval_pipeline_unit(pipeline)
     pipeline_type = config.get("type", type(pipeline).__name__)
     if retrieval_unit is None:
         msg = (
@@ -81,6 +85,8 @@ class RerankRetrievalPipelineConfig(BaseRetrievalPipelineConfig):
 
 class RerankRetrievalPipeline(BaseRetrievalPipeline):
     """Text chunk retriever → reranker retrieval wrapper."""
+
+    retrieval_unit = TEXT_RETRIEVAL_UNIT
 
     def __init__(
         self,

@@ -5,7 +5,7 @@ Provides abstract base class for all retrieval pipelines.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Literal, cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -13,6 +13,8 @@ from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineSer
 from autorag_research.pipelines.base import BasePipeline
 
 logger = logging.getLogger("AutoRAG-Research")
+
+RetrievalUnit = Literal["chunk", "image_chunk", "mixed"]
 
 
 def get_retrieval_pipeline_config(pipeline: object) -> dict[str, Any]:
@@ -22,6 +24,20 @@ def get_retrieval_pipeline_config(pipeline: object) -> dict[str, Any]:
         return {}
     config = get_config()
     return config if isinstance(config, dict) else {}
+
+
+def get_retrieval_pipeline_unit(pipeline: object) -> RetrievalUnit | None:
+    """Return the first-class retrieval unit exposed by a retrieval pipeline.
+
+    Prefer the typed ``retrieval_unit`` interface and only fall back to legacy
+    persisted config metadata for older or mocked pipeline-like objects.
+    """
+    retrieval_unit = getattr(pipeline, "retrieval_unit", None)
+    if isinstance(retrieval_unit, str):
+        return cast("RetrievalUnit", retrieval_unit)
+
+    config_unit = get_retrieval_pipeline_config(pipeline).get("retrieval_unit")
+    return cast("RetrievalUnit", config_unit) if isinstance(config_unit, str) else None
 
 
 class BaseRetrievalPipeline(BasePipeline, ABC):
@@ -37,6 +53,8 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
     - `_retrieve_by_text()`: Async method for retrieval using raw query text
     - `_get_pipeline_config()`: Return the pipeline configuration dict
     """
+
+    retrieval_unit: RetrievalUnit | None = None
 
     def __init__(
         self,
