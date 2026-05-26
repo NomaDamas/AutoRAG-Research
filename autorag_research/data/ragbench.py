@@ -127,6 +127,8 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
         )
 
         seen_chunk_ids: set[str] = set()
+        # RAGBench-specific merge state: TextDataIngestionService upsert rewrites a query's relations rather than
+        # appending to them, so repeated RAGBench IDs must accumulate the complete evidence set before each rewrite.
         relation_chunk_ids_by_query: dict[str, set[str]] = {}
         query_metadata_by_query: dict[str, tuple[str, str | None]] = {}
         batch: list[dict[str, Any]] = []
@@ -315,6 +317,8 @@ class RAGBenchIngestor(TextEmbeddingDataIngestor):
             ]
 
             if chunk_ids:
+                # Keep relation merging in the RAGBench ingestor. The shared service upsert is overwrite-oriented;
+                # it is not a general append/merge API for future ingestors.
                 stored_chunk_ids = (
                     relation_chunk_ids_by_query.setdefault(query_id, set())
                     if relation_chunk_ids_by_query is not None
