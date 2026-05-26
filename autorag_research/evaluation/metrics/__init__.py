@@ -4,6 +4,7 @@ This module provides evaluation metrics for generation and retrieval tasks.
 """
 
 from autorag_research.evaluation.metrics.generation import (
+    AlignScoreConfig,
     BartScoreF1Config,
     BartScoreFaithfulnessConfig,
     BartScorePrecisionConfig,
@@ -18,6 +19,7 @@ from autorag_research.evaluation.metrics.generation import (
     SemScoreConfig,
     TokenF1Config,
     UniEvalConfig,
+    align_score,
     bart_score_f1,
     bart_score_faithfulness,
     bart_score_precision,
@@ -59,6 +61,7 @@ from autorag_research.evaluation.metrics.util import (
 )
 
 __all__ = [
+    "AlignScoreConfig",
     "BartScoreF1Config",
     "BartScoreFaithfulnessConfig",
     "BartScorePrecisionConfig",
@@ -80,6 +83,7 @@ __all__ = [
     "SemScoreConfig",
     "TokenF1Config",
     "UniEvalConfig",
+    "align_score",
     "bart_score_f1",
     "bart_score_faithfulness",
     "bart_score_precision",
