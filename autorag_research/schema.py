@@ -5,6 +5,25 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+GENERATION_CONTEXT_CHUNK_ID_KEY = "context_chunk_ids"
+"""ExecutorResult metadata key for chunks supplied to the final answer generator."""
+
+GENERATION_CONTEXT_CHUNK_ID_KEYS = (
+    GENERATION_CONTEXT_CHUNK_ID_KEY,
+    "source_chunk_ids",
+    "selected_subset_chunk_ids",
+    "chunk_ids",
+)
+"""Ordered metadata keys that identify final generation evidence.
+
+``context_chunk_ids`` is the canonical contract for new generation pipelines.
+The remaining names are accepted by generation evaluation for compatibility
+with existing pipeline-specific metadata.
+"""
+
+GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS = ("retrieved_chunk_ids", "retrieval_chunk_ids")
+"""Older metadata keys for broader retrieved candidates, used only as fallback evidence."""
+
 
 @dataclass
 class MetricInput:

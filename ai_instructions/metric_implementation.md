@@ -39,13 +39,24 @@ Defined in `autorag_research/schema.py`:
 |-------|------|-------------------|
 | `query` | `str` | Response relevancy |
 | `retrieval_gt_contents` | `list[list[str]]` | Faithfulness metrics |
-| `retrieved_contents` | `list[str]` | Faithfulness metrics |
+| `retrieved_contents` | `list[str]` | Faithfulness metrics; in generation evaluation this is resolved from final generation evidence before retrieval fallbacks |
 | `generated_texts` | `str` | All generation metrics |
 | `generation_gt` | `list[str]` | Reference-based metrics (BLEU, ROUGE, BERTScore, etc.) |
 | `retrieved_ids` / `retrieval_gt` | `list[str]` / `list[list[str]]` | Retrieval metrics |
 | `relevance_scores` | `dict[str, int]` | Graded retrieval metrics (NDCG) |
 
 ---
+
+### Generation evidence metadata contract
+
+Generation pipelines that persist `ExecutorResult.result_metadata` should store chunk IDs that were actually supplied
+to the final answer generator under `context_chunk_ids`. Generation evaluation resolves this canonical key first when
+building `MetricInput.retrieved_contents` for faithfulness/grounding metrics such as MiniCheck.
+
+Backward-compatible metadata keys (`source_chunk_ids`, `selected_subset_chunk_ids`, and `chunk_ids`) are also treated as
+final generation evidence for existing pipelines. Broader retrieval candidate keys (`retrieved_chunk_ids` and
+`retrieval_chunk_ids`) are fallback evidence only and should not be used for new pipelines when the final answer context
+can be recorded.
 
 ## 2. Config Class
 

@@ -769,6 +769,7 @@ class TestVotingSelectsSubset:
         # Verify metadata has subset-related fields
         assert "selected_subset_index" in result.metadata
         assert "selected_subset_chunk_ids" in result.metadata
+        assert result.metadata["context_chunk_ids"] == result.metadata["selected_subset_chunk_ids"]
         assert "num_subsets" in result.metadata
         assert "organization_strategy" in result.metadata
 

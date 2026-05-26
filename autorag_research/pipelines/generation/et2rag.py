@@ -30,6 +30,7 @@ from autorag_research.evaluation.metrics import calculate_cosine_similarity
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.schema import GENERATION_CONTEXT_CHUNK_ID_KEY
 from autorag_research.util import TokenUsageTracker
 
 logger = logging.getLogger("AutoRAG-Research")
@@ -244,6 +245,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
                 text="I don't have enough information to answer this question.",
                 token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
+                    GENERATION_CONTEXT_CHUNK_ID_KEY: [],
                     "retrieval_chunk_ids": [],
                     "organization_strategy": self._organization_strategy.value,
                     "num_subsets": 0,
@@ -265,6 +267,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
                 text="Retrieved documents had no content.",
                 token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
+                    GENERATION_CONTEXT_CHUNK_ID_KEY: [],
                     "retrieval_chunk_ids": chunk_ids,
                     "organization_strategy": self._organization_strategy.value,
                     "num_subsets": 0,
@@ -280,6 +283,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
                 text="Could not create context subsets from retrieved documents.",
                 token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 metadata={
+                    GENERATION_CONTEXT_CHUNK_ID_KEY: [],
                     "retrieval_chunk_ids": chunk_ids,
                     "organization_strategy": self._organization_strategy.value,
                     "num_subsets": 0,
@@ -315,6 +319,7 @@ class ET2RAGPipeline(BaseGenerationPipeline):
 
         # Build metadata
         metadata = {
+            GENERATION_CONTEXT_CHUNK_ID_KEY: [doc[0] for doc in selected_subset],
             "retrieval_chunk_ids": chunk_ids,
             "organization_strategy": self._organization_strategy.value,
             "num_subsets": len(subsets),
