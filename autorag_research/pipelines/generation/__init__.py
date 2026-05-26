@@ -23,6 +23,7 @@ from autorag_research.pipelines.generation.question_decomposition import (
 )
 from autorag_research.pipelines.generation.rag_critic import RAGCriticPipeline, RAGCriticPipelineConfig
 from autorag_research.pipelines.generation.ras import RASGenerationPipeline, RASGenerationPipelineConfig
+from autorag_research.pipelines.generation.search_r1 import SearchR1GenerationPipeline, SearchR1GenerationPipelineConfig
 from autorag_research.pipelines.generation.self_rag import SelfRAGPipeline, SelfRAGPipelineConfig
 from autorag_research.pipelines.generation.spd_rag import SPDRAGPipeline, SPDRAGPipelineConfig
 from autorag_research.pipelines.generation.visrag_gen import (
@@ -63,6 +64,8 @@ __all__ = [
     "RASGenerationPipelineConfig",
     "SPDRAGPipeline",
     "SPDRAGPipelineConfig",
+    "SearchR1GenerationPipeline",
+    "SearchR1GenerationPipelineConfig",
     "SelfRAGPipeline",
     "SelfRAGPipelineConfig",
     "VisRAGGenerationPipeline",
