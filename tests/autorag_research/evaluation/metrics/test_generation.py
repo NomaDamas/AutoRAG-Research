@@ -12,6 +12,7 @@ from langchain_openai import OpenAIEmbeddings
 
 from autorag_research import cli
 from autorag_research.evaluation.metrics.generation import (
+    ALIGNSCORE_MAX_LENGTH,
     ALIGNSCORE_MODEL_NAME,
     ALIGNSCORE_REVISION,
     AlignScoreConfig,
@@ -919,8 +920,13 @@ def test_align_score_shipped_config_pins_revision_and_explicit_trust():
     config = yaml.safe_load(config_path.read_text())
 
     assert config["model_name_or_path"] == ALIGNSCORE_MODEL_NAME
+    assert config["max_length"] == 512
     assert config["trust_remote_code"] is True
     assert config["revision"] == ALIGNSCORE_REVISION
+
+
+def test_align_score_default_max_length_matches_pinned_checkpoint_limit():
+    assert ALIGNSCORE_MAX_LENGTH == 512
 
 
 def test_align_score_default_checkpoint_requires_explicit_remote_code_trust():
@@ -1023,7 +1029,7 @@ def test_align_score_default_huggingface_scorer_uses_alignscore_remote_contract(
         {
             "contexts": ["context 1", "context 2"],
             "claims": ["claim 1", "claim 2"],
-            "max_length": 1024,
+            "max_length": 512,
             "truncation": "only_first",
             "padding": "max_length",
             "return_tensors": "pt",
