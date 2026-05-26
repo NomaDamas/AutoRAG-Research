@@ -118,6 +118,10 @@ def register_ingestor(
 
 def _validate_ingestor_name_and_aliases(name: str, aliases: tuple[str, ...]) -> None:
     """Ensure canonical ingestor names and aliases remain globally unambiguous."""
+    if name in _INGESTOR_REGISTRY:
+        msg = f"Ingestor canonical name conflicts with registered ingestor: {name}"
+        raise ValueError(msg)
+
     if name in _INGESTOR_ALIASES:
         msg = f"Ingestor canonical name conflicts with an existing alias: {name}"
         raise ValueError(msg)

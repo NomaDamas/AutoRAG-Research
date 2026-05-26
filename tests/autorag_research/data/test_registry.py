@@ -284,6 +284,28 @@ class TestRegisterIngestor:
             registry_module._INGESTOR_REGISTRY.pop("test-canonical-after-alias", None)
             registry_module._INGESTOR_ALIASES.pop("test-canonical-after-alias", None)
 
+    def test_register_ingestor_rejects_duplicate_canonical_name(self):
+        """Canonical names should be globally unique and reject overwrites."""
+        import autorag_research.data.registry as registry_module
+
+        @register_ingestor(name="test_duplicate_canonical", description="Test")
+        class TestDuplicateCanonicalBaseIngestor:
+            pass
+
+        try:
+            with pytest.raises(ValueError, match="canonical name conflicts with registered ingestor"):
+
+                @register_ingestor(name="test_duplicate_canonical", description="Test")
+                class TestDuplicateCanonicalTargetIngestor:
+                    pass
+
+            canonical_meta = get_ingestor("test_duplicate_canonical")
+            assert canonical_meta is not None
+            assert canonical_meta.ingestor_class is TestDuplicateCanonicalBaseIngestor
+            assert canonical_meta.ingestor_class.__name__ == "TestDuplicateCanonicalBaseIngestor"
+        finally:
+            registry_module._INGESTOR_REGISTRY.pop("test_duplicate_canonical", None)
+
 
 class TestExtractParamsFromInit:
     """Tests for _extract_params_from_init function."""
