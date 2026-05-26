@@ -104,6 +104,21 @@ class TestRerankRetrievalPipelineConfig:
         with pytest.raises(ValueError, match="only supports text chunk retrieval pipelines"):
             config.inject_retrieval_pipeline(wrapped_retrieval)
 
+    def test_inject_retrieval_pipeline_rejects_missing_retrieval_unit(self):
+        wrapped_retrieval = create_mock_retrieval_pipeline(pipeline_id=77)
+        wrapped_retrieval._get_pipeline_config.return_value = {
+            "type": "query_rewrite",
+            "wrapped_pipeline_type": "HEAVENRetrievalPipeline",
+        }
+        config = RerankRetrievalPipelineConfig(
+            name="rerank",
+            retrieval_pipeline_name="query_rewrite_heaven",
+            reranker=FakeReranker(),
+        )
+
+        with pytest.raises(ValueError, match="must declare retrieval_unit='chunk'"):
+            config.inject_retrieval_pipeline(wrapped_retrieval)
+
     @pytest.mark.api
     def test_string_reranker_conversion(self):
         with (
@@ -185,6 +200,24 @@ class TestRerankRetrievalPipeline:
             RerankRetrievalPipeline(
                 session_factory=session_factory,
                 name="rerank_image_chunk",
+                retrieval_pipeline=wrapped_retrieval,
+                reranker=FakeReranker(),
+            )
+
+    def test_creation_rejects_wrapper_chain_without_explicit_text_retrieval_unit(self, session_factory):
+        wrapped_retrieval = create_mock_retrieval_pipeline()
+        wrapped_retrieval._get_pipeline_config.return_value = {
+            "type": "query_rewrite",
+            "wrapped_pipeline_type": "HEAVENRetrievalPipeline",
+        }
+
+        with (
+            patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None),
+            pytest.raises(ValueError, match="must declare retrieval_unit='chunk'"),
+        ):
+            RerankRetrievalPipeline(
+                session_factory=session_factory,
+                name="rerank_missing_retrieval_unit",
                 retrieval_pipeline=wrapped_retrieval,
                 reranker=FakeReranker(),
             )

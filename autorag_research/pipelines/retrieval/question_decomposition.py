@@ -8,7 +8,7 @@ from langchain_core.language_models import BaseLanguageModel
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline, get_retrieval_pipeline_config
 from autorag_research.rerankers.base import BaseReranker
 
 DEFAULT_DECOMPOSITION_PROMPT = """You are decomposing a question for retrieval-augmented generation.
@@ -101,8 +101,10 @@ class QuestionDecompositionRetrievalPipeline(BaseRetrievalPipeline):
         super().__init__(session_factory, name, schema)
 
     def _get_pipeline_config(self) -> dict[str, Any]:
+        wrapped_config = get_retrieval_pipeline_config(self._inner_retrieval_pipeline)
         return {
             "type": "question_decomposition",
+            "retrieval_unit": wrapped_config.get("retrieval_unit"),
             "max_subquestions": self.max_subquestions,
             "fetch_k_multiplier": self.fetch_k_multiplier,
             "decomposition_prompt_template": self._decomposition_prompt_template,

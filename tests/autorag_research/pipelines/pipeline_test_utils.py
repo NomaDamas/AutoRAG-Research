@@ -433,6 +433,7 @@ def create_mock_retrieval_pipeline(
     """
     mock = MagicMock()
     mock.pipeline_id = pipeline_id
+    mock._get_pipeline_config.return_value = {"type": "mock", "retrieval_unit": "chunk"}
 
     if default_results is not None:
         mock.retrieve = AsyncMock(return_value=default_results)

@@ -148,6 +148,7 @@ class VectorSearchRetrievalPipeline(BaseRetrievalPipeline):
         """
         return {
             "type": "vector_search",
+            "retrieval_unit": "chunk",
             "search_mode": self.search_mode,
         }
 

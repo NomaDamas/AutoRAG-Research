@@ -132,6 +132,7 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
         """Return BM25 pipeline configuration."""
         return {
             "type": "bm25",
+            "retrieval_unit": "chunk",
             "tokenizer": self.tokenizer,
             "index_name": self.index_name,
         }

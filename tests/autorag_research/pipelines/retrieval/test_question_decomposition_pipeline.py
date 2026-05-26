@@ -50,6 +50,7 @@ def mock_inner_pipeline():
     mock._retrieve_by_id = AsyncMock(return_value=[])
     mock._retrieve_by_text = AsyncMock(return_value=[])
     mock.retrieve = AsyncMock(return_value=[])
+    mock._get_pipeline_config.return_value = {"type": "mock", "retrieval_unit": "chunk"}
     return mock
 
 
@@ -206,6 +207,7 @@ class TestQuestionDecompositionRetrievalPipeline:
         config = pipeline._get_pipeline_config()
         assert config == {
             "type": "question_decomposition",
+            "retrieval_unit": "chunk",
             "max_subquestions": 3,
             "fetch_k_multiplier": 2,
             "decomposition_prompt_template": DEFAULT_DECOMPOSITION_PROMPT,

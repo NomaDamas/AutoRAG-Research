@@ -15,7 +15,7 @@ from typing import Any, Literal, cast
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline, get_retrieval_pipeline_config
 from autorag_research.pipelines.retrieval.hybrid import HybridRetrievalPipeline
 
 NoiseOrder = Literal["retrieved_first", "noise_first", "interleave"]
@@ -99,8 +99,10 @@ class PowerOfNoiseRetrievalPipeline(BaseRetrievalPipeline):
 
     def _get_pipeline_config(self) -> dict[str, Any]:
         """Return pipeline configuration for persistence."""
+        wrapped_config = get_retrieval_pipeline_config(self._base_retrieval_pipeline)
         return {
             "type": "power_of_noise",
+            "retrieval_unit": wrapped_config.get("retrieval_unit"),
             "base_retrieval_pipeline": self._base_retrieval_pipeline.name,
             "noise_count": self.noise_count,
             "noise_ratio": self.noise_ratio,

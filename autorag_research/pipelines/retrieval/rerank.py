@@ -15,28 +15,24 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline, get_retrieval_pipeline_config
 from autorag_research.rerankers.base import BaseReranker, RerankResult
 
 TEXT_RETRIEVAL_UNIT = "chunk"
 
 
-def _get_wrapped_pipeline_config(pipeline: BaseRetrievalPipeline) -> dict[str, Any]:
-    """Return the wrapped pipeline config when it is available as a dict."""
-    get_config = getattr(pipeline, "_get_pipeline_config", None)
-    if not callable(get_config):
-        return {}
-
-    config = get_config()
-    return config if isinstance(config, dict) else {}
-
-
 def _validate_text_retrieval_pipeline(pipeline: BaseRetrievalPipeline) -> None:
     """Reject wrapped pipelines whose persisted results are not text chunks."""
-    config = _get_wrapped_pipeline_config(pipeline)
-    retrieval_unit = config.get("retrieval_unit", TEXT_RETRIEVAL_UNIT)
+    config = get_retrieval_pipeline_config(pipeline)
+    retrieval_unit = config.get("retrieval_unit")
+    pipeline_type = config.get("type", type(pipeline).__name__)
+    if retrieval_unit is None:
+        msg = (
+            "RerankRetrievalPipeline only supports text chunk retrieval pipelines; "
+            f"wrapped pipeline {pipeline_type!r} must declare retrieval_unit='chunk'."
+        )
+        raise ValueError(msg)
     if retrieval_unit != TEXT_RETRIEVAL_UNIT:
-        pipeline_type = config.get("type", type(pipeline).__name__)
         msg = (
             "RerankRetrievalPipeline only supports text chunk retrieval pipelines "
             f"(retrieval_unit='chunk'); got retrieval_unit={retrieval_unit!r} from {pipeline_type!r}."
