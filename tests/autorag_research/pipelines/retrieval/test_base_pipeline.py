@@ -63,4 +63,15 @@ def test_get_retrieval_pipeline_unit_rejects_unknown_typed_value():
     pipeline.retrieval_unit = "chunks"
     pipeline._get_pipeline_config.return_value = {"retrieval_unit": "chunk"}
 
-    assert get_retrieval_pipeline_unit(pipeline) is None
+    with pytest.raises(ValueError, match="Invalid retrieval_unit 'chunks'"):
+        get_retrieval_pipeline_unit(pipeline)
+
+
+def test_run_rejects_invalid_explicit_unit_before_persistence_dispatch():
+    pipeline = _pipeline_with_service("image_chunks")
+
+    with pytest.raises(ValueError, match="Invalid retrieval_unit 'image_chunks'"):
+        pipeline.run()
+
+    pipeline._service.run_pipeline.assert_not_called()
+    pipeline._service.run_image_pipeline.assert_not_called()

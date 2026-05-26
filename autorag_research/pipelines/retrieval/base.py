@@ -5,24 +5,15 @@ Provides abstract base class for all retrieval pipelines.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Literal, cast
+from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
 from autorag_research.pipelines.base import BasePipeline
+from autorag_research.retrieval_units import RetrievalUnit, require_retrieval_unit
 
 logger = logging.getLogger("AutoRAG-Research")
-
-RetrievalUnit = Literal["chunk", "image_chunk", "mixed"]
-VALID_RETRIEVAL_UNITS: set[str] = {"chunk", "image_chunk", "mixed"}
-
-
-def _coerce_retrieval_unit(value: object) -> RetrievalUnit | None:
-    """Return a valid retrieval unit or None for unknown values."""
-    if isinstance(value, str) and value in VALID_RETRIEVAL_UNITS:
-        return cast("RetrievalUnit", value)
-    return None
 
 
 def get_retrieval_pipeline_config(pipeline: object) -> dict[str, Any]:
@@ -41,14 +32,12 @@ def get_retrieval_pipeline_unit(pipeline: object) -> RetrievalUnit | None:
     persisted config metadata for older or mocked pipeline-like objects.
     """
     retrieval_unit = getattr(pipeline, "retrieval_unit", None)
-    typed_unit = _coerce_retrieval_unit(retrieval_unit)
+    typed_unit = require_retrieval_unit(retrieval_unit)
     if typed_unit is not None:
         return typed_unit
-    if isinstance(retrieval_unit, str):
-        return None
 
     config_unit = get_retrieval_pipeline_config(pipeline).get("retrieval_unit")
-    return _coerce_retrieval_unit(config_unit)
+    return require_retrieval_unit(config_unit)
 
 
 class BaseRetrievalPipeline(BasePipeline, ABC):
