@@ -7,6 +7,7 @@ __all__ = [
     "BaseReranker",
     "CohereReranker",
     "ColBERTReranker",
+    "DynamicRAGReranker",
     "FlagEmbeddingLLMReranker",
     "FlagEmbeddingReranker",
     "FlashRankReranker",
@@ -27,6 +28,7 @@ __all__ = [
 # Mapping of class names to their module paths for lazy loading
 _RERANKER_MODULES: dict[str, str] = {
     "CohereReranker": "autorag_research.rerankers.cohere",
+    "DynamicRAGReranker": "autorag_research.rerankers.dynamic_rag",
     "ColBERTReranker": "autorag_research.rerankers.colbert",
     "FlagEmbeddingLLMReranker": "autorag_research.rerankers.flag_embedding_llm",
     "FlagEmbeddingReranker": "autorag_research.rerankers.flag_embedding",
