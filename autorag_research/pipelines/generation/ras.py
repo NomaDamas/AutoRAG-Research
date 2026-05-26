@@ -305,6 +305,23 @@ class RASGenerationPipeline(BaseGenerationPipeline):
                 merged.append(triple)
         return merged[-self.triple_budget :]
 
+    def _split_seen_and_new_passages(
+        self,
+        results: list[dict[str, Any]],
+        retrieved_chunk_ids: list[int | str],
+        extracted_chunk_ids: set[int | str],
+    ) -> tuple[list[str], list[str]]:
+        """Record retrieved chunks and return all passages plus extraction-ready new passages."""
+        doc_ids, passages = self._contents_from_results(results)
+        new_passages: list[str] = []
+        for doc_id, passage in zip(doc_ids, passages, strict=False):
+            if doc_id not in retrieved_chunk_ids:
+                retrieved_chunk_ids.append(doc_id)
+            if doc_id not in extracted_chunk_ids:
+                extracted_chunk_ids.add(doc_id)
+                new_passages.append(passage)
+        return passages, new_passages
+
     async def _extract_triples_for_passages(
         self,
         query: str,
@@ -335,14 +352,11 @@ class RASGenerationPipeline(BaseGenerationPipeline):
         extracted_chunk_ids: set[int | str] = set()
 
         initial_results = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
-        doc_ids, passages = self._contents_from_results(initial_results)
-        new_passages: list[str] = []
-        for doc_id, passage in zip(doc_ids, passages, strict=False):
-            if doc_id not in retrieved_chunk_ids:
-                retrieved_chunk_ids.append(doc_id)
-            if doc_id not in extracted_chunk_ids:
-                extracted_chunk_ids.add(doc_id)
-                new_passages.append(passage)
+        passages, new_passages = self._split_seen_and_new_passages(
+            initial_results,
+            retrieved_chunk_ids,
+            extracted_chunk_ids,
+        )
         evidence = self._append_evidence(evidence, passages)
         triples = self._merge_triples(
             triples,
@@ -365,15 +379,14 @@ class RASGenerationPipeline(BaseGenerationPipeline):
 
             subqueries.append(retrieval_query)
             results = await self._retrieval_pipeline.retrieve(retrieval_query, retrieval_k)
-            doc_ids, passages = self._contents_from_results(results)
-            new_passages = []
-            for doc_id, passage in zip(doc_ids, passages, strict=False):
-                if doc_id not in retrieved_chunk_ids:
-                    retrieved_chunk_ids.append(doc_id)
-                if doc_id not in extracted_chunk_ids:
-                    extracted_chunk_ids.add(doc_id)
-                    new_passages.append(passage)
+            passages, new_passages = self._split_seen_and_new_passages(
+                results,
+                retrieved_chunk_ids,
+                extracted_chunk_ids,
+            )
             evidence = self._append_evidence(evidence, passages)
+            if not new_passages:
+                break
             triples = self._merge_triples(
                 triples,
                 await self._extract_triples_for_passages(query_text, new_passages, tracker),

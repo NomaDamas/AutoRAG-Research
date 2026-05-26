@@ -198,7 +198,6 @@ class TestRASGenerationPipeline:
             side_effect=[
                 _mock_response("<triple>Apollo 11 | mission | lunar landing</triple>"),
                 _mock_response("<subquery>apollo 11 crew</subquery>"),
-                _mock_response("<sufficient>enough</sufficient>"),
                 _mock_response("Neil Armstrong commanded Apollo 11."),
             ]
         )
@@ -216,7 +215,8 @@ class TestRASGenerationPipeline:
         result = await pipeline._generate(1, top_k=1)
         metadata = _metadata(result)
 
-        assert llm.ainvoke.await_count == 4
+        assert llm.ainvoke.await_count == 3
+        retrieval_pipeline.retrieve.assert_awaited_once_with("apollo 11 crew", 1)
         assert metadata["retrieved_chunk_ids"] == [9]
         assert metadata["evidence"] == ["Apollo 11 was a lunar landing mission."]
         assert metadata["triples"] == [("Apollo 11", "mission", "lunar landing")]
