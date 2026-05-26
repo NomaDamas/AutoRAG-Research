@@ -272,5 +272,43 @@ class TestHybridDeepSearcherPipeline:
         metadata = _metadata(result)
         assert metadata["evidence"] == ["usable evidence"]
         assert metadata["retrieval_failures"] == [
-            {"query": "broken generated subquery", "error": "retriever unavailable"}
+            {"query": "broken generated subquery", "error": "RuntimeError: retrieval failed"}
         ]
+
+    @pytest.mark.asyncio
+    async def test_partial_retrieval_failure_metadata_sanitizes_backend_exception_details(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<queries>\nleaky generated subquery\n</queries>"),
+                _mock_response("fallback without evidence"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        retrieval_pipeline.retrieve = AsyncMock(
+            side_effect=RuntimeError("dsn=postgres://user:SECRET_PASSWORD@localhost/db")
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(
+            llm,
+            retrieval_pipeline,
+            service,
+            max_turns=1,
+            allow_partial_retrieval_failures=True,
+        )
+
+        result = await pipeline._generate(1, top_k=1)
+
+        metadata = _metadata(result)
+        assert metadata["retrieval_failures"] == [
+            {"query": "leaky generated subquery", "error": "RuntimeError: retrieval failed"}
+        ]
+        assert "SECRET_PASSWORD" not in str(metadata)
+
+    def test_hybrid_deep_searcher_docs_cover_runtime_contract(self):
+        docs = Path("docs/pipelines/generation/hybrid-deep-searcher.md").read_text()
+
+        assert "text-query-capable" in docs
+        assert "inference-only" in docs
+        assert "max_concurrency x retrieval_concurrency" in docs

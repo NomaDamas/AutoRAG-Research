@@ -447,18 +447,16 @@ class BaseIngestionService(BaseService, ABC):
     ) -> list[tuple[int | str, Any]]:
         """Fetch the next batch of entities without embeddings, excluding `failed_ids`.
 
-        Over-fetches by `len(failed_ids)` so already-failed rows do not starve
-        the batch when they appear at the head of the database ordering.
+        Exclusion is pushed into the repository query so permanently failing
+        rows do not force an expanding over-fetch prefix on later iterations.
         """
         with self._create_uow() as uow:
             repository = getattr(uow, repo_attr, None)
             if repository is None:
                 raise RepositoryNotSupportedError(repo_attr, type(uow).__name__)
             fetch_method = getattr(repository, fetch_method_name)
-            entities = fetch_method(limit=batch_size + len(failed_ids))
-            if not entities:
-                return []
-            return [(e.id, getattr(e, data_attr)) for e in entities if e.id not in failed_ids]
+            entities = fetch_method(limit=batch_size, excluded_ids=failed_ids)
+            return [(e.id, getattr(e, data_attr)) for e in entities]
 
     def _embed_batch(
         self,

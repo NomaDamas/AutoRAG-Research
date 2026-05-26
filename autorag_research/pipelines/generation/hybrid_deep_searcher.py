@@ -86,6 +86,16 @@ class HybridDeepSearchRetrievalResult:
     failure: HybridDeepSearchRetrievalFailure | None = None
 
 
+def _sanitize_retrieval_error(exc: Exception) -> str:
+    """Return a persistence-safe retrieval error summary.
+
+    Full backend exceptions remain available in logs via ``logger.exception``.
+    Result metadata is durable and user-visible, so it stores only the exception
+    type plus a controlled message instead of raw DSNs, SQL, payloads, or keys.
+    """
+    return f"{type(exc).__name__}: retrieval failed"
+
+
 def parse_hybrid_deep_search_action(response_text: str, max_queries: int) -> HybridDeepSearchAction:
     """Parse an HDS answer or parallel-query action."""
     answer_match = _ANSWER_RE.search(response_text)
@@ -283,7 +293,7 @@ class HybridDeepSearcherPipeline(BaseGenerationPipeline):
             logger.exception("Hybrid Deep Searcher retrieval failed for generated query: %s", query)
             return HybridDeepSearchRetrievalResult(
                 query=query,
-                failure=HybridDeepSearchRetrievalFailure(query=query, error=str(exc)),
+                failure=HybridDeepSearchRetrievalFailure(query=query, error=_sanitize_retrieval_error(exc)),
             )
 
     async def _retrieve_parallel(
