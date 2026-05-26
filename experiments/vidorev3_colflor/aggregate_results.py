@@ -23,10 +23,23 @@ for path in sorted(base.glob("*/*.json")):
         "num_corpus_scored": data.get("num_corpus_scored"),
         "path": str(path),
     })
-fields = ["model_name","domain","ndcg@5","ndcg@10","recall@1","recall@5","recall@10","num_eval_queries","num_queries","num_corpus_scored","path"]
+fields = [
+    "model_name",
+    "domain",
+    "ndcg@5",
+    "ndcg@10",
+    "recall@1",
+    "recall@5",
+    "recall@10",
+    "num_eval_queries",
+    "num_queries",
+    "num_corpus_scored",
+    "path",
+]
 with out_csv.open("w", newline="") as f:
     w = csv.DictWriter(f, fieldnames=fields)
-    w.writeheader(); w.writerows(rows)
+    w.writeheader()
+    w.writerows(rows)
 print(f"wrote {len(rows)} rows to {out_csv}")
 for row in rows[-20:]:
     print(f"{row['model_name']:<32} {row['domain']:<18} nDCG@5={row['ndcg@5']:.6f} R@10={row['recall@10']:.6f}")

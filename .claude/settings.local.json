@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(uv run python:*)",
+      "Bash(python3:*)",
+      "mcp__plugin_oh-my-claude_sequential-thinking__sequentialthinking",
+      "Bash(make docker-up:*)",
+      "Bash(make:*)",
+      "Skill(implement-pipeline)",
+      "Bash(git remote get-url:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(marsh start:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git fetch:*)",
+      "Bash(git merge:*)",
+      "Bash(git push:*)",
+      "Bash(gh api:*)",
+      "Bash(echo:*)",
+      "Bash(uv pip show:*)",
+      "Bash(pip index:*)",
+      "Bash(python:*)",
+      "Bash(git -C /Users/jeffrey/PycharmProjects/AutoRAG-Research-2 status)",
+      "Bash(git -C /Users/jeffrey/PycharmProjects/AutoRAG-Research-2 diff)",
+      "Bash(git -C /Users/jeffrey/PycharmProjects/AutoRAG-Research-2 branch:*)",
+      "Bash(POSTGRES_PORT=5433 uv run python .agents/skills/autorag-query/scripts/query_executor.py --query \"SELECT pg_read_file\\(''/etc/passwd''\\)\" --format table)",
+      "Bash(gh pr view:*)",
+      "Bash(/usr/bin/python3:*)"
+    ]
+  }
+}
