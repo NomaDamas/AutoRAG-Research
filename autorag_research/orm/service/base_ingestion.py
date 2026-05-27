@@ -445,7 +445,7 @@ class BaseIngestionService(BaseService, ABC):
         batch_size: int,
         failed_ids: set[int | str],
     ) -> list[tuple[int | str, Any]]:
-        """Fetch the next batch of entities without embeddings, excluding `failed_ids`.
+        """Fetch the next batch of entities without embeddings, excluding `failed_ids` in the repository query.
 
         Exclusion is pushed into the repository query so permanently failing
         rows do not force an expanding over-fetch prefix on later iterations.
