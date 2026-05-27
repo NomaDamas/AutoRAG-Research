@@ -1,5 +1,9 @@
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline, RetrievalUnit
 from autorag_research.pipelines.retrieval.bm25 import BM25PipelineConfig, BM25RetrievalPipeline
+from autorag_research.pipelines.retrieval.gqr_hybrid import (
+    GQRHybridRetrievalPipeline,
+    GQRHybridRetrievalPipelineConfig,
+)
 from autorag_research.pipelines.retrieval.heaven import (
     HEAVENPipelineConfig,
     HEAVENRetrievalPipeline,
@@ -26,6 +30,10 @@ from autorag_research.pipelines.retrieval.question_decomposition import (
     QuestionDecompositionRetrievalPipeline,
     QuestionDecompositionRetrievalPipelineConfig,
 )
+from autorag_research.pipelines.retrieval.rerank import (
+    RerankRetrievalPipeline,
+    RerankRetrievalPipelineConfig,
+)
 from autorag_research.pipelines.retrieval.retro_star import (
     RetroStarPipelineConfig,
     RetroStarRetrievalPipeline,
@@ -39,6 +47,8 @@ __all__ = [
     "BM25PipelineConfig",
     "BM25RetrievalPipeline",
     "BaseRetrievalPipeline",
+    "GQRHybridRetrievalPipeline",
+    "GQRHybridRetrievalPipelineConfig",
     "HEAVENPipelineConfig",
     "HEAVENRetrievalPipeline",
     "HyDEPipelineConfig",
@@ -53,6 +63,9 @@ __all__ = [
     "QueryRewriteRetrievalPipeline",
     "QuestionDecompositionRetrievalPipeline",
     "QuestionDecompositionRetrievalPipelineConfig",
+    "RerankRetrievalPipeline",
+    "RerankRetrievalPipelineConfig",
+    "RetrievalUnit",
     "RetroStarPipelineConfig",
     "RetroStarRetrievalPipeline",
     "VectorSearchPipelineConfig",

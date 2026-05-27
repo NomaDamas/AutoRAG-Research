@@ -447,17 +447,15 @@ class BaseIngestionService(BaseService, ABC):
     ) -> list[tuple[int | str, Any]]:
         """Fetch the next batch of entities without embeddings, excluding `failed_ids` in the repository query.
 
-        Repositories used by embedding ingestion must accept the `exclude_ids` keyword so broad per-run embedding
-        failures do not require growing `limit` values and Python-side failed-prefix filtering.
+        Exclusion is pushed into the repository query so permanently failing
+        rows do not force an expanding over-fetch prefix on later iterations.
         """
         with self._create_uow() as uow:
             repository = getattr(uow, repo_attr, None)
             if repository is None:
                 raise RepositoryNotSupportedError(repo_attr, type(uow).__name__)
             fetch_method = getattr(repository, fetch_method_name)
-            entities = fetch_method(limit=batch_size, exclude_ids=failed_ids)
-            if not entities:
-                return []
+            entities = fetch_method(limit=batch_size, excluded_ids=failed_ids)
             return [(e.id, getattr(e, data_attr)) for e in entities]
 
     def _embed_batch(

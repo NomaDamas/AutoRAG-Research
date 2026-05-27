@@ -1,0 +1,11 @@
+_target_: autorag_research.pipelines.retrieval.rerank.RerankRetrievalPipelineConfig
+description: "Text chunk retriever → reranker wrapper retrieval pipeline"
+name: rerank
+retrieval_pipeline_name: bm25
+reranker: sentence_transformer
+candidate_top_k: 50
+top_k: 10
+batch_size: 128
+max_concurrency: 16
+max_retries: 3
+retry_delay: 1.0

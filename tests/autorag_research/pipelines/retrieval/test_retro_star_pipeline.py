@@ -176,6 +176,22 @@ class TestRetroStarRetrievalPipeline:
                 sample_weights=[-0.1, 1.1],
             )
 
+    def test_creation_rejects_image_retrieval_pipeline(self, session_factory):
+        image_retrieval = create_mock_retrieval_pipeline()
+        image_retrieval.retrieval_unit = "image_chunk"
+        image_retrieval._get_pipeline_config.return_value = {"type": "image", "retrieval_unit": "image_chunk"}
+
+        with (
+            patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None),
+            pytest.raises(ValueError, match=r"RETRO\* retrieval requires a text chunk retrieval pipeline"),
+        ):
+            RetroStarRetrievalPipeline(
+                session_factory=session_factory,
+                name="retro_star_image_rejected",
+                llm=FakeListLLM(responses=["<score>80</score>"]),
+                retrieval_pipeline=image_retrieval,
+            )
+
     def test_pipeline_config(self, session_factory, cleanup_pipeline_results: list[int]):
         pipeline = RetroStarRetrievalPipeline(
             session_factory=session_factory,

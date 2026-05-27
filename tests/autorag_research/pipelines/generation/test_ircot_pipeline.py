@@ -518,6 +518,7 @@ class TestIRCoTPipelineIntegration:
 
         assert result.metadata is not None
         assert "chunk_ids" in result.metadata
+        assert result.metadata["context_chunk_ids"] == result.metadata["chunk_ids"]
 
     @pytest.mark.asyncio
     async def test_custom_prompt_templates(self, session_factory, cleanup):

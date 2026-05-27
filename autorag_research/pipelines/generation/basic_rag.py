@@ -13,6 +13,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.schema import GENERATION_CONTEXT_CHUNK_ID_KEY
 from autorag_research.util import TokenUsageTracker
 
 DEFAULT_PROMPT_TEMPLATE = """Context:
@@ -186,6 +187,7 @@ class BasicRAGPipeline(BaseGenerationPipeline):
             text=text,
             token_usage=token_usage,
             metadata={
+                GENERATION_CONTEXT_CHUNK_ID_KEY: chunk_ids,
                 "retrieved_chunk_ids": chunk_ids,
                 "retrieved_scores": [r["score"] for r in retrieved],
             },

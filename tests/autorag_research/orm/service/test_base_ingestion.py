@@ -21,6 +21,47 @@ class ConcreteTestIngestionService(BaseIngestionService):
         }
 
 
+class _FakeEntity:
+    def __init__(self, entity_id: int, contents: str):
+        self.id = entity_id
+        self.contents = contents
+
+
+class _FakeEmbeddingRepository:
+    def __init__(self):
+        self.calls: list[dict[str, object]] = []
+
+    def get_without_embeddings(self, *, limit: int, excluded_ids: set[int | str]):
+        self.calls.append({"limit": limit, "excluded_ids": set(excluded_ids)})
+        return [
+            _FakeEntity(entity_id, f"content {entity_id}")
+            for entity_id in range(1, 101)
+            if entity_id not in excluded_ids
+        ][:limit]
+
+
+class _FakeUow:
+    def __init__(self, repository: _FakeEmbeddingRepository):
+        self.queries = repository
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+class _FakeIngestionService(BaseIngestionService):
+    def __init__(self, repository: _FakeEmbeddingRepository):
+        self.repository = repository
+
+    def _create_uow(self):
+        return _FakeUow(self.repository)
+
+    def _get_schema_classes(self) -> dict[str, type]:
+        return {}
+
+
 class TestBaseIngestionService:
     @pytest.fixture
     def service(self, session_factory):
@@ -343,6 +384,28 @@ class TestBaseIngestionService:
                 uow.commit()
             _restore_unembedded_queries(service, snapshots)
 
+    def test_fetch_unembedded_batch_excludes_failed_ids_without_overfetching(self):
+        """Failed embedding IDs should be excluded by the repository inside a bounded batch query."""
+        repository = _FakeEmbeddingRepository()
+        service = _FakeIngestionService(repository)
+
+        items = service._fetch_unembedded_batch(
+            repo_attr="queries",
+            fetch_method_name="get_without_embeddings",
+            data_attr="contents",
+            batch_size=5,
+            failed_ids=set(range(1, 51)),
+        )
+
+        assert items == [
+            (51, "content 51"),
+            (52, "content 52"),
+            (53, "content 53"),
+            (54, "content 54"),
+            (55, "content 55"),
+        ]
+        assert repository.calls == [{"limit": 5, "excluded_ids": set(range(1, 51))}]
+
     def test_embed_all_queries_uses_bounded_server_side_failed_id_exclusion(self):
         """Broad embedding failures must not grow fetch limits with failed-prefix over-fetching."""
         service = FakeIngestionService([FakeEntity(item_id, f"query {item_id}") for item_id in range(1, 21)])
@@ -410,10 +473,10 @@ class FakeEmbeddingRepository:
         self,
         limit: int | None = None,
         offset: int | None = None,
-        exclude_ids: set[int | str] | None = None,
+        excluded_ids: set[int | str] | None = None,
     ) -> list[FakeEntity]:
         del offset
-        excluded = set() if exclude_ids is None else set(exclude_ids)
+        excluded = set() if excluded_ids is None else set(excluded_ids)
         self.fetch_limits.append(limit)
         self.fetch_excluded_ids.append(excluded)
         entities = [entity for entity in self.entities if entity.id not in excluded]

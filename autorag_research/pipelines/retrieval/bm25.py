@@ -98,6 +98,8 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
         ```
     """
 
+    retrieval_unit = "chunk"
+
     def __init__(
         self,
         session_factory: sessionmaker[Session],
@@ -132,6 +134,7 @@ class BM25RetrievalPipeline(BaseRetrievalPipeline):
         """Return BM25 pipeline configuration."""
         return {
             "type": "bm25",
+            "retrieval_unit": self.retrieval_unit,
             "tokenizer": self.tokenizer,
             "index_name": self.index_name,
         }

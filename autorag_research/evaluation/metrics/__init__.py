@@ -4,6 +4,7 @@ This module provides evaluation metrics for generation and retrieval tasks.
 """
 
 from autorag_research.evaluation.metrics.generation import (
+    AlignScoreConfig,
     BartScoreF1Config,
     BartScoreFaithfulnessConfig,
     BartScorePrecisionConfig,
@@ -12,11 +13,13 @@ from autorag_research.evaluation.metrics.generation import (
     BleuConfig,
     ExactMatchConfig,
     MeteorConfig,
+    MiniCheckConfig,
     ResponseRelevancyConfig,
     RougeConfig,
     SemScoreConfig,
     TokenF1Config,
     UniEvalConfig,
+    align_score,
     bart_score_f1,
     bart_score_faithfulness,
     bart_score_precision,
@@ -26,6 +29,7 @@ from autorag_research.evaluation.metrics.generation import (
     exact_match,
     huggingface_evaluate,
     meteor,
+    mini_check,
     response_relevancy,
     rouge,
     sem_score,
@@ -57,6 +61,7 @@ from autorag_research.evaluation.metrics.util import (
 )
 
 __all__ = [
+    "AlignScoreConfig",
     "BartScoreF1Config",
     "BartScoreFaithfulnessConfig",
     "BartScorePrecisionConfig",
@@ -69,6 +74,7 @@ __all__ = [
     "MAPConfig",
     "MRRConfig",
     "MeteorConfig",
+    "MiniCheckConfig",
     "NDCGConfig",
     "PrecisionConfig",
     "RecallConfig",
@@ -77,6 +83,7 @@ __all__ = [
     "SemScoreConfig",
     "TokenF1Config",
     "UniEvalConfig",
+    "align_score",
     "bart_score_f1",
     "bart_score_faithfulness",
     "bart_score_precision",
@@ -91,6 +98,7 @@ __all__ = [
     "meteor",
     "metric",
     "metric_loop",
+    "mini_check",
     "response_relevancy",
     "retrieval_f1",
     "retrieval_full_recall",

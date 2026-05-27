@@ -90,6 +90,7 @@ class TestBasicRAGPipeline:
         assert result.token_usage["completion_tokens"] == 50
         assert result.metadata is not None
         assert "retrieved_chunk_ids" in result.metadata
+        assert result.metadata["context_chunk_ids"] == result.metadata["retrieved_chunk_ids"]
         assert len(result.metadata["retrieved_chunk_ids"]) == 3
 
         # Verify LLM was called (async ainvoke)

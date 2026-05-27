@@ -1,0 +1,17 @@
+_target_: autorag_research.pipelines.generation.hybrid_deep_searcher.HybridDeepSearcherPipelineConfig
+description: "Hybrid Deep Searcher generation pipeline with parallel fan-out and sequential refinement"
+name: hybrid_deep_searcher
+retrieval_pipeline_name: bm25
+llm: openai-gpt4o-mini
+max_turns: 3
+max_parallel_queries: 4
+k_per_query: 3
+evidence_budget: 12
+retrieval_concurrency: 4
+fallback_to_final_prompt: true
+allow_partial_retrieval_failures: false
+top_k: 3
+batch_size: 32
+max_concurrency: 4
+max_retries: 3
+retry_delay: 1.0

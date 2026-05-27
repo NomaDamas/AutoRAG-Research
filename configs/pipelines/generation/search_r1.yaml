@@ -1,0 +1,14 @@
+_target_: autorag_research.pipelines.generation.search_r1.SearchR1GenerationPipelineConfig
+description: "Inference-only Search-R1-style reason/search/answer generation pipeline"
+name: search_r1
+retrieval_pipeline_name: bm25
+llm: openai-gpt5-mini
+max_searches: 3
+k_per_search: 5
+observation_budget: 12
+fallback_to_final_prompt: true
+top_k: 5
+batch_size: 32
+max_concurrency: 4
+max_retries: 3
+retry_delay: 1.0

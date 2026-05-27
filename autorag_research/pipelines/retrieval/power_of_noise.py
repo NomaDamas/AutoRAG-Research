@@ -15,7 +15,11 @@ from typing import Any, Literal, cast
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.base import (
+    BaseRetrievalPipeline,
+    RetrievalUnit,
+    get_retrieval_pipeline_unit,
+)
 from autorag_research.pipelines.retrieval.hybrid import HybridRetrievalPipeline
 
 NoiseOrder = Literal["retrieved_first", "noise_first", "interleave"]
@@ -94,13 +98,29 @@ class PowerOfNoiseRetrievalPipeline(BaseRetrievalPipeline):
         self.noise_order = noise_order
         self.noise_mode = noise_mode
         self.seed = seed
+        self._validate_noise_retrieval_unit()
 
         super().__init__(session_factory, name, schema)
+
+    @property
+    def retrieval_unit(self) -> RetrievalUnit | None:
+        return get_retrieval_pipeline_unit(self._base_retrieval_pipeline)
+
+    def _has_text_noise_enabled(self) -> bool:
+        """Return whether this wrapper will inject text chunk noise."""
+        return self.noise_count > 0 or (self.noise_ratio is not None and self.noise_ratio > 0)
+
+    def _validate_noise_retrieval_unit(self) -> None:
+        """Fail closed when text noise would be mixed into non-text results."""
+        if self._has_text_noise_enabled() and self.retrieval_unit != "chunk":
+            msg = "PowerOfNoiseRetrievalPipeline with text noise requires a text chunk retrieval pipeline."
+            raise ValueError(msg)
 
     def _get_pipeline_config(self) -> dict[str, Any]:
         """Return pipeline configuration for persistence."""
         return {
             "type": "power_of_noise",
+            "retrieval_unit": self.retrieval_unit,
             "base_retrieval_pipeline": self._base_retrieval_pipeline.name,
             "noise_count": self.noise_count,
             "noise_ratio": self.noise_ratio,

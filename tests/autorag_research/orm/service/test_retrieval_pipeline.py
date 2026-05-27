@@ -1,4 +1,5 @@
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
@@ -6,6 +7,36 @@ from sqlalchemy.orm import Session, sessionmaker
 from autorag_research.orm.repository.query import QueryRepository
 from autorag_research.orm.schema import Chunk
 from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
+
+
+class _FakeRetrievalUow:
+    def __init__(self, *, existing_pipeline=None, chunk_results=None, image_chunk_results=None):
+        self.pipelines = MagicMock()
+        self.pipelines.get_by_name.return_value = existing_pipeline
+        self.pipelines.get_by_id.return_value = existing_pipeline
+        self.chunk_results = MagicMock()
+        self.chunk_results.get_by_pipeline.return_value = chunk_results or []
+        self.image_chunk_results = MagicMock()
+        self.image_chunk_results.get_by_pipeline.return_value = image_chunk_results or []
+        self.queries = MagicMock()
+        self.queries.get_all.return_value = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def commit(self):
+        return None
+
+
+class _FakeRetrievalPipelineService(RetrievalPipelineService):
+    def __init__(self, fake_uow):
+        self._fake_uow = fake_uow
+
+    def _create_uow(self):
+        return self._fake_uow
 
 
 class TestRetrievalPipelineService:
@@ -111,6 +142,61 @@ class TestRetrievalPipelineService:
         with service._create_uow() as uow:
             results_after = uow.image_chunk_results.get_by_pipeline(pipeline_id)
             assert len(results_after) == 0
+
+    def test_get_or_create_pipeline_rejects_retrieval_unit_drift(self):
+        existing_pipeline = SimpleNamespace(id=7, config={"type": "existing", "retrieval_unit": "chunk"})
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow(existing_pipeline=existing_pipeline))
+
+        with pytest.raises(ValueError, match="retrieval_unit changed from 'chunk' to 'image_chunk'"):
+            service.get_or_create_pipeline(
+                name="same-name",
+                config={"type": "existing", "retrieval_unit": "image_chunk"},
+            )
+
+    def test_get_or_create_pipeline_rejects_invalid_retrieval_unit_config(self):
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow())
+
+        with pytest.raises(ValueError, match="Invalid retrieval_unit 'image_chunks'"):
+            service.get_or_create_pipeline(
+                name="invalid-unit",
+                config={"type": "existing", "retrieval_unit": "image_chunks"},
+            )
+
+    @pytest.mark.parametrize("invalid_unit", [False, 123, ["image_chunk"], {"unit": "image_chunk"}])
+    def test_get_or_create_pipeline_rejects_malformed_retrieval_unit_config(self, invalid_unit):
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow())
+
+        with pytest.raises(ValueError, match="Invalid retrieval_unit"):
+            service.get_or_create_pipeline(
+                name="malformed-unit",
+                config={"type": "existing", "retrieval_unit": invalid_unit},
+            )
+
+    def test_run_image_pipeline_rejects_existing_chunk_results_for_same_pipeline_id(self, mock_retrieval_func):
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow(chunk_results=[SimpleNamespace(id=1)]))
+
+        with pytest.raises(ValueError, match="already has chunk results"):
+            service.run_image_pipeline(retrieval_func=mock_retrieval_func, pipeline_id=7)
+
+    def test_run_pipeline_rejects_existing_image_results_for_same_pipeline_id(self, mock_retrieval_func):
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow(image_chunk_results=[SimpleNamespace(id=1)]))
+
+        with pytest.raises(ValueError, match="already has image_chunk results"):
+            service.run_pipeline(retrieval_func=mock_retrieval_func, pipeline_id=7)
+
+    def test_run_pipeline_rejects_image_config_before_chunk_persistence(self, mock_retrieval_func):
+        existing_pipeline = SimpleNamespace(id=7, config={"type": "existing", "retrieval_unit": "image_chunk"})
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow(existing_pipeline=existing_pipeline))
+
+        with pytest.raises(ValueError, match="configured for image_chunk results"):
+            service.run_pipeline(retrieval_func=mock_retrieval_func, pipeline_id=7)
+
+    def test_run_image_pipeline_rejects_chunk_config_before_image_persistence(self, mock_retrieval_func):
+        existing_pipeline = SimpleNamespace(id=7, config={"type": "existing", "retrieval_unit": "chunk"})
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow(existing_pipeline=existing_pipeline))
+
+        with pytest.raises(ValueError, match="configured for chunk results"):
+            service.run_image_pipeline(retrieval_func=mock_retrieval_func, pipeline_id=7)
 
 
 class TestVectorSearchByEmbedding:

@@ -729,3 +729,28 @@ class TestHybridCCRetrievalPipeline:
 
         # With weight=1.0, doc_1 should be first (highest in pipeline_1)
         assert fused[0]["doc_id"] == 1
+
+
+class TestHybridRetrievalUnitValidation:
+    """Tests for fail-closed hybrid retrieval-unit handling."""
+
+    def test_rejects_mixed_text_and_image_units_before_fusion(self):
+        text_pipeline = MagicMock(name="text_pipeline")
+        text_pipeline.name = "text"
+        text_pipeline.retrieval_unit = "chunk"
+        text_pipeline._get_pipeline_config.return_value = {"type": "text", "retrieval_unit": "chunk"}
+        image_pipeline = MagicMock(name="image_pipeline")
+        image_pipeline.name = "image"
+        image_pipeline.retrieval_unit = "image_chunk"
+        image_pipeline._get_pipeline_config.return_value = {"type": "image", "retrieval_unit": "image_chunk"}
+
+        with (
+            patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None),
+            pytest.raises(ValueError, match="Mixed retrieval_unit hybrid pipelines are not supported"),
+        ):
+            HybridRRFRetrievalPipeline(
+                session_factory=MagicMock(),
+                name="mixed_hybrid",
+                retrieval_pipeline_1=text_pipeline,
+                retrieval_pipeline_2=image_pipeline,
+            )

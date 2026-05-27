@@ -17,6 +17,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.schema import GENERATION_CONTEXT_CHUNK_ID_KEY
 from autorag_research.util import TokenUsageTracker
 
 logger = logging.getLogger("AutoRAG-Research")
@@ -462,6 +463,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                     "std_multiplier": self._std_multiplier,
                     "original_doc_count": 0,
                     "filtered_doc_count": 0,
+                    GENERATION_CONTEXT_CHUNK_ID_KEY: [],
                 },
             )
 
@@ -486,6 +488,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                     "original_doc_count": 1,
                     "filtered_doc_count": 1,
                     "threshold": None,
+                    GENERATION_CONTEXT_CHUNK_ID_KEY: chunk_ids,
                     "retrieved_chunk_ids": chunk_ids,
                     "retrieval_scores": retrieval_scores,
                     "relevance_scores": [{"doc_id": chunk_ids[0], "score": None}],
@@ -536,6 +539,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
 
         # Build metadata with filtering statistics
         relevance_scores_metadata = [{"doc_id": doc["doc_id"], "score": doc["score"]} for doc in filtered_docs]
+        context_chunk_ids = [doc["doc_id"] for doc in filtered_docs]
 
         return GenerationResult(
             text=final_answer,
@@ -546,6 +550,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                 "threshold": threshold,
                 "original_doc_count": len(chunk_contents),
                 "filtered_doc_count": len(filtered_docs),
+                GENERATION_CONTEXT_CHUNK_ID_KEY: context_chunk_ids,
                 "retrieved_chunk_ids": chunk_ids,
                 "retrieval_scores": retrieval_scores,
                 "relevance_scores": relevance_scores_metadata,

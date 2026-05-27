@@ -13,7 +13,11 @@ from typing import Any
 
 from autorag_research.orm.service.base_evaluation import BaseEvaluationService
 from autorag_research.orm.uow.evaluation_uow import GenerationEvaluationUnitOfWork
-from autorag_research.schema import MetricInput
+from autorag_research.schema import (
+    GENERATION_CONTEXT_CHUNK_ID_KEYS,
+    GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS,
+    MetricInput,
+)
 
 __all__ = ["GenerationEvaluationService"]
 
@@ -120,8 +124,30 @@ class GenerationEvaluationService(BaseEvaluationService):
         with self._create_uow() as uow:
             result: dict[int | str, dict[str, Any]] = {}
 
-            chunk_results = uow.executor_results.get_by_queries_and_pipeline(query_ids, pipeline_id)
-            generated_texts: dict[int | str, str] = {elem.query_id: elem.generation_result for elem in chunk_results}
+            executor_results = uow.executor_results.get_by_queries_and_pipeline(query_ids, pipeline_id)
+            generated_texts: dict[int | str, str] = {elem.query_id: elem.generation_result for elem in executor_results}
+
+            metadata_context_by_query: dict[int | str, list[int | str]] = {}
+            metadata_legacy_retrieved_by_query: dict[int | str, list[int | str]] = defaultdict(list)
+            metadata_chunk_ids_to_fetch: set[int | str] = set()
+            for executor_result in executor_results:
+                result_metadata = getattr(executor_result, "result_metadata", None)
+                if not isinstance(result_metadata, dict):
+                    continue
+
+                context_chunk_ids = self._get_metadata_chunk_ids(result_metadata, GENERATION_CONTEXT_CHUNK_ID_KEYS)
+                if context_chunk_ids is not None:
+                    metadata_context_by_query[executor_result.query_id] = context_chunk_ids
+                    metadata_chunk_ids_to_fetch.update(context_chunk_ids)
+                    continue
+
+                legacy_chunk_ids = self._get_metadata_chunk_ids(
+                    result_metadata, GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS
+                )
+                if legacy_chunk_ids is None:
+                    continue
+                metadata_legacy_retrieved_by_query[executor_result.query_id].extend(legacy_chunk_ids)
+                metadata_chunk_ids_to_fetch.update(legacy_chunk_ids)
 
             retrieved_by_query: dict[int | str, list[Any]] = defaultdict(list)
             retrieved_chunk_ids: set[int | str] = set()
@@ -132,7 +158,7 @@ class GenerationEvaluationService(BaseEvaluationService):
                 retrieved_chunk_ids.add(retrieved_result.chunk_id)
 
             relations_by_query: dict[int | str, list[Any]] = {}
-            text_chunk_ids: set[int | str] = set(retrieved_chunk_ids)
+            text_chunk_ids: set[int | str] = retrieved_chunk_ids | metadata_chunk_ids_to_fetch
             for query_id in query_ids:
                 relations = uow.retrieval_relations.get_by_query_id(query_id)
                 relations_by_query[query_id] = relations
@@ -161,16 +187,16 @@ class GenerationEvaluationService(BaseEvaluationService):
                         grouped_contents[rel.group_index].append(chunk_content)
 
                 retrieval_gt_contents = [grouped_contents[group_idx] for group_idx in sorted(grouped_contents)]
-                retrieved_contents: list[str] = []
-                seen_chunk_ids: set[int | str] = set()
-                for retrieved_result in retrieved_by_query.get(query_id, []):
-                    chunk_id = retrieved_result.chunk_id
-                    if chunk_id is None or chunk_id in seen_chunk_ids:
-                        continue
-                    seen_chunk_ids.add(chunk_id)
-                    chunk_content = chunk_map.get(chunk_id)
-                    if chunk_content:
-                        retrieved_contents.append(chunk_content)
+                if query_id in metadata_context_by_query:
+                    retrieved_contents = self._resolve_chunk_contents(metadata_context_by_query[query_id], chunk_map)
+                elif query_id in retrieved_by_query:
+                    retrieved_contents = self._resolve_chunk_contents(
+                        [retrieved_result.chunk_id for retrieved_result in retrieved_by_query[query_id]], chunk_map
+                    )
+                else:
+                    retrieved_contents = self._resolve_chunk_contents(
+                        metadata_legacy_retrieved_by_query.get(query_id, []), chunk_map
+                    )
 
                 result[query_id] = {
                     "generated_text": generated_text,
@@ -181,6 +207,46 @@ class GenerationEvaluationService(BaseEvaluationService):
                 }
 
             return result
+
+    @staticmethod
+    def _get_metadata_chunk_ids(metadata: dict[str, Any], keys: tuple[str, ...]) -> list[int | str] | None:
+        """Return de-duplicated chunk IDs from the first present metadata key.
+
+        ``context_chunk_ids`` is the preferred generation-evidence contract: IDs
+        in this field represent chunks actually supplied to the final answer
+        generator. Pipeline-specific keys remain accepted for backward
+        compatibility while older retrieval-only keys are fallback evidence.
+        """
+        for key in keys:
+            if key not in metadata:
+                continue
+            chunk_ids = metadata[key]
+            if not isinstance(chunk_ids, list | tuple):
+                return []
+            return GenerationEvaluationService._deduplicate_chunk_ids(chunk_ids)
+        return None
+
+    @staticmethod
+    def _deduplicate_chunk_ids(chunk_ids: list[Any] | tuple[Any, ...]) -> list[int | str]:
+        """Deduplicate chunk IDs while preserving metadata order."""
+        deduplicated_chunk_ids: list[int | str] = []
+        seen_chunk_ids: set[int | str] = set()
+        for chunk_id in chunk_ids:
+            if chunk_id is None or chunk_id in seen_chunk_ids:
+                continue
+            seen_chunk_ids.add(chunk_id)
+            deduplicated_chunk_ids.append(chunk_id)
+        return deduplicated_chunk_ids
+
+    @staticmethod
+    def _resolve_chunk_contents(chunk_ids: list[int | str], chunk_map: dict[int | str, str]) -> list[str]:
+        """Resolve chunk IDs to text contents while preserving ID order."""
+        retrieved_contents: list[str] = []
+        for chunk_id in chunk_ids:
+            chunk_content = chunk_map.get(chunk_id)
+            if chunk_content:
+                retrieved_contents.append(chunk_content)
+        return retrieved_contents
 
     def _filter_missing_query_ids(
         self, pipeline_id: int | str, metric_id: int | str, query_ids: list[int | str]

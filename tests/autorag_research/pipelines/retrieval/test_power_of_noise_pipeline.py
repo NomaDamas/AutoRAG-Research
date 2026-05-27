@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy import delete
@@ -25,7 +25,7 @@ from tests.autorag_research.pipelines.pipeline_test_utils import (
 
 class _FakeLeafRetrievalPipeline(BaseRetrievalPipeline):
     def _get_pipeline_config(self) -> dict[str, Any]:
-        return {"type": "fake_leaf"}
+        return {"type": "fake_leaf", "retrieval_unit": "chunk"}
 
     async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:
         return []
@@ -48,6 +48,7 @@ class _FakeWrapperRetrievalPipeline(BaseRetrievalPipeline):
     def _get_pipeline_config(self) -> dict[str, Any]:
         return {
             "type": "fake_wrapper",
+            "retrieval_unit": self.inner_retrieval_pipeline._get_pipeline_config().get("retrieval_unit"),
             "inner_pipeline_name": self.inner_retrieval_pipeline.name,
         }
 
@@ -123,6 +124,7 @@ def base_pipeline_stub() -> SimpleNamespace:
                 {"doc_id": 3, "score": 0.8, "content": "Chunk 2-1"},
             ]
         ),
+        _get_pipeline_config=lambda: {"type": "vector_search", "retrieval_unit": "chunk"},
     )
 
 
@@ -296,6 +298,7 @@ class TestPowerOfNoiseRetrievalPipeline:
 
         assert pipeline._get_pipeline_config() == {
             "type": "power_of_noise",
+            "retrieval_unit": "chunk",
             "base_retrieval_pipeline": "vector_search",
             "noise_count": 2,
             "noise_ratio": 0.5,
@@ -347,6 +350,7 @@ class TestPowerOfNoiseRetrievalPipeline:
         created_pipeline_ids, _ = cleanup_pipeline_results
         underfilled_base = SimpleNamespace(
             name="vector_search",
+            retrieval_unit="chunk",
             _retrieve_by_id=AsyncMock(return_value=[{"doc_id": 2, "score": 0.9, "content": "Chunk 1-2"}]),
             _retrieve_by_text=AsyncMock(return_value=[{"doc_id": 2, "score": 0.9, "content": "Chunk 1-2"}]),
         )
@@ -427,3 +431,18 @@ class TestPowerOfNoiseRetrievalPipeline:
             ),
         )
         verifier.verify_all()
+
+    def test_creation_rejects_image_pipeline_when_text_noise_enabled(self):
+        image_pipeline = SimpleNamespace(
+            name="heaven",
+            retrieval_unit="image_chunk",
+            _get_pipeline_config=lambda: {"type": "heaven", "retrieval_unit": "image_chunk"},
+        )
+
+        with pytest.raises(ValueError, match="text chunk retrieval pipeline"):
+            PowerOfNoiseRetrievalPipeline(
+                session_factory=MagicMock(),
+                name="test_power_of_noise_image_with_text_noise",
+                base_retrieval_pipeline=image_pipeline,
+                noise_count=1,
+            )
