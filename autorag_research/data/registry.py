@@ -99,7 +99,7 @@ def register_ingestor(
     """
 
     def decorator(cls):
-        _validate_ingestor_name_and_aliases(name, aliases)
+        _validate_ingestor_name_and_aliases(name, aliases, cls)
         params = _extract_params_from_init(cls)
         _INGESTOR_REGISTRY[name] = IngestorMeta(
             name=name,
@@ -116,9 +116,12 @@ def register_ingestor(
     return decorator
 
 
-def _validate_ingestor_name_and_aliases(name: str, aliases: tuple[str, ...]) -> None:
+def _validate_ingestor_name_and_aliases(name: str, aliases: tuple[str, ...], cls: type | None = None) -> None:
     """Ensure canonical ingestor names and aliases remain globally unambiguous."""
     if name in _INGESTOR_REGISTRY:
+        # Allow idempotent re-registration of the same class (e.g. importlib.reload)
+        if cls is not None and _INGESTOR_REGISTRY[name].ingestor_class is cls:
+            return
         msg = f"Ingestor canonical name conflicts with registered ingestor: {name}"
         raise ValueError(msg)
 
