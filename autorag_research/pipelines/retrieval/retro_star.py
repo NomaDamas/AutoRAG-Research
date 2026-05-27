@@ -220,6 +220,11 @@ class RetroStarRetrievalPipeline(BaseRetrievalPipeline):
                 negative_error_message="sample_weights must not contain negative values",
             )
 
+        wrapped_retrieval_unit = get_retrieval_pipeline_unit(retrieval_pipeline)
+        if wrapped_retrieval_unit != "chunk":
+            msg = "RETRO* retrieval requires a text chunk retrieval pipeline."
+            raise ValueError(msg)
+
         self.llm = llm
         self._retrieval_pipeline = retrieval_pipeline
         self.candidate_top_k = candidate_top_k

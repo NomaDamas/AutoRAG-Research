@@ -215,6 +215,44 @@ class TestQuestionDecompositionRetrievalPipeline:
             "reranker_model": "fake-reranker",
         }
 
+    def test_creation_rejects_image_retrieval_pipeline_when_reranker_is_configured(self, session_factory):
+        image_retrieval = MagicMock()
+        image_retrieval.pipeline_id = 202
+        image_retrieval.retrieval_unit = "image_chunk"
+        image_retrieval._get_pipeline_config.return_value = {"type": "image", "retrieval_unit": "image_chunk"}
+
+        with (
+            patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None),
+            pytest.raises(
+                ValueError, match="Question decomposition reranking requires a text chunk retrieval pipeline"
+            ),
+        ):
+            QuestionDecompositionRetrievalPipeline(
+                session_factory=session_factory,
+                name="test_question_decomposition_image_rerank_rejected",
+                llm=FakeListLLM(responses=["sub-question"]),
+                inner_retrieval_pipeline=image_retrieval,
+                reranker=FakeReranker(),
+            )
+
+    def test_creation_rejects_missing_retrieval_unit_when_reranker_is_configured(self, session_factory):
+        legacy_retrieval = MagicMock()
+        legacy_retrieval.pipeline_id = 303
+        legacy_retrieval.retrieval_unit = None
+        legacy_retrieval._get_pipeline_config.return_value = {"type": "legacy"}
+
+        with (
+            patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None),
+            pytest.raises(ValueError, match="must declare retrieval_unit='chunk'"),
+        ):
+            QuestionDecompositionRetrievalPipeline(
+                session_factory=session_factory,
+                name="test_question_decomposition_missing_unit_rerank_rejected",
+                llm=FakeListLLM(responses=["sub-question"]),
+                inner_retrieval_pipeline=legacy_retrieval,
+                reranker=FakeReranker(),
+            )
+
     @pytest.mark.asyncio
     async def test_retrieve_by_id_decomposes_and_retrieves(self, session_factory, cleanup, mock_inner_pipeline):
         llm = MagicMock()

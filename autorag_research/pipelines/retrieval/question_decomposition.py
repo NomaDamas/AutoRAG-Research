@@ -11,9 +11,12 @@ from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.pipelines.retrieval.base import (
     BaseRetrievalPipeline,
     RetrievalUnit,
+    get_retrieval_pipeline_config,
     get_retrieval_pipeline_unit,
 )
 from autorag_research.rerankers.base import BaseReranker
+
+TEXT_RETRIEVAL_UNIT = "chunk"
 
 DEFAULT_DECOMPOSITION_PROMPT = """You are decomposing a question for retrieval-augmented generation.
 
@@ -29,6 +32,25 @@ _SUBQUESTION_PREFIX_RE = re.compile(
     r"^\s*(?:sub-?question\s*\d*\s*:|question\s*\d*\s*:|[-*•]|\d+[.)]|[A-Za-z][.)])\s*",
     re.IGNORECASE,
 )
+
+
+def _validate_rerankable_text_retrieval_pipeline(pipeline: BaseRetrievalPipeline) -> None:
+    """Reject reranked question-decomposition wrappers for non-text retrieval results."""
+    config = get_retrieval_pipeline_config(pipeline)
+    retrieval_unit = get_retrieval_pipeline_unit(pipeline)
+    pipeline_type = config.get("type", type(pipeline).__name__)
+    if retrieval_unit is None:
+        msg = (
+            "Question decomposition reranking requires a text chunk retrieval pipeline; "
+            f"wrapped pipeline {pipeline_type!r} must declare retrieval_unit='chunk'."
+        )
+        raise ValueError(msg)
+    if retrieval_unit != TEXT_RETRIEVAL_UNIT:
+        msg = (
+            "Question decomposition reranking requires a text chunk retrieval pipeline "
+            f"(retrieval_unit='chunk'); got retrieval_unit={retrieval_unit!r} from {pipeline_type!r}."
+        )
+        raise ValueError(msg)
 
 
 @dataclass(kw_only=True)
@@ -101,6 +123,8 @@ class QuestionDecompositionRetrievalPipeline(BaseRetrievalPipeline):
             self._reranker = load_reranker(reranker)
         else:
             self._reranker = reranker
+        if self._reranker is not None:
+            _validate_rerankable_text_retrieval_pipeline(inner_retrieval_pipeline)
 
         super().__init__(session_factory, name, schema)
 

@@ -19,8 +19,16 @@ class _RunDispatchPipeline(BaseRetrievalPipeline):
         return {"type": "run_dispatch", "retrieval_unit": self.retrieval_unit}
 
 
-def _pipeline_with_service(retrieval_unit: str | None) -> _RunDispatchPipeline:
-    pipeline = _RunDispatchPipeline.__new__(_RunDispatchPipeline)
+class _RunDispatchPipelineWithImageConfig(_RunDispatchPipeline):
+    def _get_pipeline_config(self) -> dict[str, Any]:
+        return {"type": "run_dispatch", "retrieval_unit": "image_chunk"}
+
+
+def _pipeline_with_service(
+    retrieval_unit: object,
+    pipeline_class: type[_RunDispatchPipeline] = _RunDispatchPipeline,
+) -> _RunDispatchPipeline:
+    pipeline = pipeline_class.__new__(pipeline_class)
     pipeline.retrieval_unit = retrieval_unit
     pipeline.pipeline_id = 42
     pipeline._service = MagicMock()
@@ -71,6 +79,17 @@ def test_run_rejects_invalid_explicit_unit_before_persistence_dispatch():
     pipeline = _pipeline_with_service("image_chunks")
 
     with pytest.raises(ValueError, match="Invalid retrieval_unit 'image_chunks'"):
+        pipeline.run()
+
+    pipeline._service.run_pipeline.assert_not_called()
+    pipeline._service.run_image_pipeline.assert_not_called()
+
+
+@pytest.mark.parametrize("retrieval_unit", [False, 123, ["image_chunk"], {"unit": "image_chunk"}])
+def test_run_rejects_malformed_typed_unit_before_config_fallback(retrieval_unit: object):
+    pipeline = _pipeline_with_service(retrieval_unit, _RunDispatchPipelineWithImageConfig)
+
+    with pytest.raises(ValueError, match="Invalid retrieval_unit"):
         pipeline.run()
 
     pipeline._service.run_pipeline.assert_not_called()
