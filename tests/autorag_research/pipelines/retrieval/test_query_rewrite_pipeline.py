@@ -116,6 +116,22 @@ class TestQueryRewriteRetrievalPipeline:
                 prompt_template="Rewrite without placeholder",
             )
 
+    def test_pipeline_config_propagates_typed_retrieval_unit_without_legacy_config(self):
+        wrapped_retrieval = create_mock_retrieval_pipeline()
+        wrapped_retrieval.retrieval_unit = "chunk"
+        wrapped_retrieval._get_pipeline_config.return_value = {"type": "typed_text_wrapper"}
+
+        with patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None):
+            pipeline = QueryRewriteRetrievalPipeline(
+                session_factory=MagicMock(),
+                name="query_rewrite_typed_unit",
+                llm=FakeListLLM(responses=["rewritten query"]),
+                retrieval_pipeline=wrapped_retrieval,
+            )
+
+        assert pipeline.retrieval_unit == "chunk"
+        assert pipeline._get_pipeline_config()["retrieval_unit"] == "chunk"
+
     @pytest.mark.asyncio
     async def test_rewrite_query_uses_prompt_template(self, session_factory, cleanup_pipeline_results: list[int]):
         llm = MagicMock()

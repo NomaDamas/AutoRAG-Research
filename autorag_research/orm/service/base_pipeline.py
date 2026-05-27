@@ -24,6 +24,10 @@ class BasePipelineService(BaseService, ABC):
     The UoW returned by _create_uow() must expose a `pipelines` property (PipelineRepository).
     """
 
+    def _validate_existing_pipeline_config(self, name: str, existing_config: dict, new_config: dict) -> None:
+        """Validate service-specific config invariants before reusing an existing pipeline."""
+        return None
+
     def get_or_create_pipeline(self, name: str, config: dict, *, strict: bool = False) -> tuple[int | str, bool]:
         """Get existing pipeline by name or create a new one.
 
@@ -47,6 +51,7 @@ class BasePipelineService(BaseService, ABC):
         with self._create_uow() as uow:
             existing = uow.pipelines.get_by_name(name)
             if existing is not None:
+                self._validate_existing_pipeline_config(name, existing.config, config)
                 if existing.config != config:
                     if strict:
                         raise ValueError(  # noqa: TRY003

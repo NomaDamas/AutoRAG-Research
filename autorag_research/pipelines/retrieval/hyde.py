@@ -120,6 +120,8 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
         ```
     """
 
+    retrieval_unit = "chunk"
+
     def __init__(
         self,
         session_factory: sessionmaker[Session],
@@ -159,7 +161,7 @@ class HyDERetrievalPipeline(BaseRetrievalPipeline):
         """
         return {
             "type": "hyde",
-            "retrieval_unit": "chunk",
+            "retrieval_unit": self.retrieval_unit,
             "prompt_template": self.prompt_template,
         }
 

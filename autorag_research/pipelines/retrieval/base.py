@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
 from autorag_research.pipelines.base import BasePipeline
+from autorag_research.retrieval_units import RetrievalUnit, require_retrieval_unit
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -22,6 +23,21 @@ def get_retrieval_pipeline_config(pipeline: object) -> dict[str, Any]:
         return {}
     config = get_config()
     return config if isinstance(config, dict) else {}
+
+
+def get_retrieval_pipeline_unit(pipeline: object) -> RetrievalUnit | None:
+    """Return the first-class retrieval unit exposed by a retrieval pipeline.
+
+    Prefer the typed ``retrieval_unit`` interface and only fall back to legacy
+    persisted config metadata for older or mocked pipeline-like objects.
+    """
+    retrieval_unit = getattr(pipeline, "retrieval_unit", None)
+    typed_unit = require_retrieval_unit(retrieval_unit)
+    if typed_unit is not None:
+        return typed_unit
+
+    config_unit = get_retrieval_pipeline_config(pipeline).get("retrieval_unit")
+    return require_retrieval_unit(config_unit)
 
 
 class BaseRetrievalPipeline(BasePipeline, ABC):
@@ -37,6 +53,8 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
     - `_retrieve_by_text()`: Async method for retrieval using raw query text
     - `_get_pipeline_config()`: Return the pipeline configuration dict
     """
+
+    retrieval_unit: RetrievalUnit | None = None
 
     def __init__(
         self,
@@ -155,7 +173,15 @@ class BaseRetrievalPipeline(BasePipeline, ABC):
             - total_results: Number of results stored
             - failed_queries: List of query IDs that failed after all retries
         """
-        return self._service.run_pipeline(
+        retrieval_unit = get_retrieval_pipeline_unit(self) or "chunk"
+        if retrieval_unit == "mixed":
+            msg = "Mixed retrieval_unit persistence is not supported; override run() with an explicit persistence path."
+            raise ValueError(msg)
+
+        run_pipeline = (
+            self._service.run_image_pipeline if retrieval_unit == "image_chunk" else self._service.run_pipeline
+        )
+        return run_pipeline(
             retrieval_func=self._retrieve_by_id,  # Use ID-based for batch processing
             pipeline_id=self.pipeline_id,
             top_k=top_k,

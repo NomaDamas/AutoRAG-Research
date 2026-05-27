@@ -113,6 +113,8 @@ class VectorSearchRetrievalPipeline(BaseRetrievalPipeline):
         ```
     """
 
+    retrieval_unit = "chunk"
+
     def __init__(
         self,
         session_factory: sessionmaker[Session],
@@ -148,7 +150,7 @@ class VectorSearchRetrievalPipeline(BaseRetrievalPipeline):
         """
         return {
             "type": "vector_search",
-            "retrieval_unit": "chunk",
+            "retrieval_unit": self.retrieval_unit,
             "search_mode": self.search_mode,
         }
 

@@ -119,6 +119,33 @@ class TestRerankRetrievalPipelineConfig:
         with pytest.raises(ValueError, match="must declare retrieval_unit='chunk'"):
             config.inject_retrieval_pipeline(wrapped_retrieval)
 
+    def test_inject_retrieval_pipeline_accepts_typed_text_retrieval_unit(self):
+        wrapped_retrieval = create_mock_retrieval_pipeline(pipeline_id=77)
+        wrapped_retrieval.retrieval_unit = "chunk"
+        wrapped_retrieval._get_pipeline_config.return_value = {"type": "mock_without_legacy_unit"}
+        config = RerankRetrievalPipelineConfig(
+            name="rerank",
+            retrieval_pipeline_name="typed_text",
+            reranker=FakeReranker(),
+        )
+
+        config.inject_retrieval_pipeline(wrapped_retrieval)
+
+        assert config.get_pipeline_kwargs()["retrieval_pipeline"] is wrapped_retrieval
+
+    def test_inject_retrieval_pipeline_rejects_typed_image_unit_even_if_config_claims_text(self):
+        wrapped_retrieval = create_mock_retrieval_pipeline(pipeline_id=77)
+        wrapped_retrieval.retrieval_unit = "image_chunk"
+        wrapped_retrieval._get_pipeline_config.return_value = {"type": "conflicting", "retrieval_unit": "chunk"}
+        config = RerankRetrievalPipelineConfig(
+            name="rerank",
+            retrieval_pipeline_name="typed_image",
+            reranker=FakeReranker(),
+        )
+
+        with pytest.raises(ValueError, match=r"retrieval_unit='chunk'\); got retrieval_unit='image_chunk'"):
+            config.inject_retrieval_pipeline(wrapped_retrieval)
+
     @pytest.mark.api
     def test_string_reranker_conversion(self):
         with (
@@ -221,6 +248,21 @@ class TestRerankRetrievalPipeline:
                 retrieval_pipeline=wrapped_retrieval,
                 reranker=FakeReranker(),
             )
+
+    def test_creation_uses_typed_retrieval_unit_when_legacy_config_omits_it(self):
+        wrapped_retrieval = create_mock_retrieval_pipeline()
+        wrapped_retrieval.retrieval_unit = "chunk"
+        wrapped_retrieval._get_pipeline_config.return_value = {"type": "typed_text_wrapper"}
+
+        with patch("autorag_research.pipelines.retrieval.base.BaseRetrievalPipeline.__init__", return_value=None):
+            pipeline = RerankRetrievalPipeline(
+                session_factory=MagicMock(),
+                name="rerank_typed_unit",
+                retrieval_pipeline=wrapped_retrieval,
+                reranker=FakeReranker(),
+            )
+
+        assert pipeline.retrieval_unit == "chunk"
 
     @pytest.mark.asyncio
     async def test_retrieve_by_text_reranks_wrapped_candidates(
