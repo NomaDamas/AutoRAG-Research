@@ -119,8 +119,13 @@ def register_ingestor(
 def _validate_ingestor_name_and_aliases(name: str, aliases: tuple[str, ...], cls: type | None = None) -> None:
     """Ensure canonical ingestor names and aliases remain globally unambiguous."""
     if name in _INGESTOR_REGISTRY:
-        # Allow idempotent re-registration of the same class (e.g. importlib.reload)
-        if cls is not None and _INGESTOR_REGISTRY[name].ingestor_class is cls:
+        # Allow idempotent re-registration of the same class (e.g. importlib.reload).
+        # After reload the class object is new, so compare by qualified name.
+        existing_cls = _INGESTOR_REGISTRY[name].ingestor_class
+        if cls is not None and (
+            existing_cls is cls
+            or f"{existing_cls.__module__}.{existing_cls.__qualname__}" == f"{cls.__module__}.{cls.__qualname__}"
+        ):
             return
         msg = f"Ingestor canonical name conflicts with registered ingestor: {name}"
         raise ValueError(msg)
