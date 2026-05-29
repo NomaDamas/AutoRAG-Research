@@ -48,6 +48,8 @@ class ImageVectorSearchPipelineConfig(BaseRetrievalPipelineConfig):
 class ImageVectorSearchRetrievalPipeline(BaseRetrievalPipeline):
     """Vector search over ``image_chunk`` rows."""
 
+    retrieval_unit = "image_chunk"
+
     def __init__(
         self,
         session_factory: sessionmaker[Session],
@@ -61,7 +63,7 @@ class ImageVectorSearchRetrievalPipeline(BaseRetrievalPipeline):
         super().__init__(session_factory, name, schema)
 
     def _get_pipeline_config(self) -> dict[str, Any]:
-        return {"type": "image_vector_search", "search_mode": self.search_mode}
+        return {"type": "image_vector_search", "retrieval_unit": self.retrieval_unit, "search_mode": self.search_mode}
 
     async def _retrieve_by_id(self, query_id: int | str, top_k: int) -> list[dict[str, Any]]:
         with self._service._create_uow() as uow:
@@ -114,26 +116,6 @@ class ImageVectorSearchRetrievalPipeline(BaseRetrievalPipeline):
             return [
                 {"doc_id": image_chunk.id, "score": 1 - distance, "content": None} for image_chunk, distance in results
             ]
-
-    def run(
-        self,
-        top_k: int = 10,
-        batch_size: int = 128,
-        max_concurrency: int = 16,
-        max_retries: int = 3,
-        retry_delay: float = 1.0,
-        query_limit: int | None = None,
-    ) -> dict[str, Any]:
-        return self._service.run_image_pipeline(
-            retrieval_func=self._retrieve_by_id,
-            pipeline_id=self.pipeline_id,
-            top_k=top_k,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-            max_retries=max_retries,
-            retry_delay=retry_delay,
-            query_limit=query_limit,
-        )
 
 
 __all__ = ["ImageVectorSearchPipelineConfig", "ImageVectorSearchRetrievalPipeline"]
