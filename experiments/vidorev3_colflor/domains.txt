@@ -1,8 +1,0 @@
-hr
-finance_en
-industrial
-pharmaceuticals
-computer_science
-energy
-physics
-finance_fr

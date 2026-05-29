@@ -18,6 +18,10 @@ from autorag_research.pipelines.retrieval.hyde import (
     HyDEPipelineConfig,
     HyDERetrievalPipeline,
 )
+from autorag_research.pipelines.retrieval.image_vector_search import (
+    ImageVectorSearchPipelineConfig,
+    ImageVectorSearchRetrievalPipeline,
+)
 from autorag_research.pipelines.retrieval.power_of_noise import (
     PowerOfNoiseRetrievalPipeline,
     PowerOfNoiseRetrievalPipelineConfig,
@@ -57,6 +61,8 @@ __all__ = [
     "HybridCCRetrievalPipelineConfig",
     "HybridRRFRetrievalPipeline",
     "HybridRRFRetrievalPipelineConfig",
+    "ImageVectorSearchPipelineConfig",
+    "ImageVectorSearchRetrievalPipeline",
     "PowerOfNoiseRetrievalPipeline",
     "PowerOfNoiseRetrievalPipelineConfig",
     "QueryRewritePipelineConfig",
