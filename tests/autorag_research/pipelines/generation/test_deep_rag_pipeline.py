@@ -44,17 +44,29 @@ class TestDeepRAGActionParsing:
         assert action.kind == "retrieve"
         assert action.text == "moon origin"
 
-    def test_parse_reason(self):
-        action = parse_deeprag_action("<reason>Known from prior evidence.</reason>")
+    def test_parse_parametric(self):
+        action = parse_deeprag_action("<parametric>known historical fact</parametric>")
 
-        assert action.kind == "reason"
-        assert action.text == "Known from prior evidence."
+        assert action.kind == "parametric"
+        assert action.text == "known historical fact"
 
     def test_parse_answer_preferred(self):
         action = parse_deeprag_action("<retrieve>x</retrieve><answer>final</answer>")
 
         assert action.kind == "answer"
         assert action.text == "final"
+
+    def test_parse_answer_prefix(self):
+        action = parse_deeprag_action("answer: final")
+
+        assert action.kind == "answer"
+        assert action.text == "final"
+
+    def test_parse_untagged_text_as_invalid(self):
+        action = parse_deeprag_action("standalone but untagged subquery")
+
+        assert action.kind == "invalid"
+        assert action.text == "standalone but untagged subquery"
 
 
 class TestDeepRAGPipelineConfig:
@@ -106,6 +118,7 @@ class TestDeepRAGPipelineConfig:
         assert kwargs["retrieval_pipeline"] is retrieval_pipeline
         assert kwargs["max_steps"] == 4
         assert kwargs["k_per_retrieval"] == 3
+        assert "intermediate_prompt_template" in kwargs
 
 
 class TestDeepRAGPipeline:
@@ -125,34 +138,60 @@ class TestDeepRAGPipeline:
             )
 
     @pytest.mark.asyncio
-    async def test_generate_retrieves_reasons_then_answers(self):
+    async def test_generate_retrieve_parametric_intermediates_then_answers(self):
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
-                _mock_response("<retrieve>apollo 11 date</retrieve>"),
-                _mock_response("<reason>The evidence gives the date.</reason>"),
-                _mock_response("<answer>Apollo 11 landed in July 1969.</answer>"),
+                _mock_response("<retrieve>q1</retrieve>"),
+                _mock_response("ia1"),
+                _mock_response("<parametric>q2</parametric>"),
+                _mock_response("ia2"),
+                _mock_response("<answer>final</answer>"),
             ]
         )
         retrieval_pipeline = create_mock_retrieval_pipeline(
-            default_results=[{"doc_id": 10, "score": 0.9, "content": "Apollo 11 landed in July 1969."}]
+            default_results=[{"doc_id": 10, "score": 0.9, "content": "passage for q1"}]
         )
         service = MagicMock()
-        service.get_query_text.return_value = "When did Apollo 11 land?"
-        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=4, k_per_retrieval=3)
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=5, k_per_retrieval=3)
 
         result = await pipeline._generate(1, top_k=2)
 
-        retrieval_pipeline.retrieve.assert_awaited_once_with("apollo 11 date", 2)
-        assert result.text == "Apollo 11 landed in July 1969."
+        retrieval_pipeline.retrieve.assert_awaited_once_with("q1", 2)
+        prompts = [call.args[0] for call in llm.ainvoke.await_args_list]
+        assert prompts[1].count("Retrieved passages:") == 1
+        assert "passage for q1" in prompts[1]
+        assert "Retrieved passages:" not in prompts[3]
+        assert "Follow up: q1" in prompts[2]
+        assert "Context:" in prompts[2]
+        assert "passage for q1" in prompts[2]
+        assert "Intermediate answer: ia1" in prompts[2]
+        assert result.text == "final"
         assert result.metadata is not None
-        assert result.metadata["follow_up_queries"] == ["apollo 11 date"]
+        assert result.metadata["follow_up_queries"] == ["q1", "q2"]
         assert result.metadata["retrieved_chunk_ids"] == [10]
         assert result.metadata["retrieved_scores"] == [0.9]
-        assert result.metadata["effective_retrieval_k"] == 2
-        assert result.metadata["top_k_cap"] == 2
+        assert result.metadata["trajectory"] == [
+            {
+                "step": 1,
+                "subquery": "q1",
+                "decision": "retrieve",
+                "retrieved_chunk_ids": [10],
+                "retrieved_passages": ["passage for q1"],
+                "intermediate_answer": "ia1",
+            },
+            {
+                "step": 2,
+                "subquery": "q2",
+                "decision": "parametric",
+                "retrieved_chunk_ids": [],
+                "retrieved_passages": [],
+                "intermediate_answer": "ia2",
+            },
+        ]
         assert result.metadata["terminated_by"] == "answer"
-        assert result.token_usage == {"prompt_tokens": 6, "completion_tokens": 9, "total_tokens": 15}
+        assert result.token_usage == {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25}
 
     @pytest.mark.asyncio
     async def test_generate_uses_k_per_retrieval_when_top_k_is_not_positive(self):
@@ -160,6 +199,7 @@ class TestDeepRAGPipeline:
         llm.ainvoke = AsyncMock(
             side_effect=[
                 _mock_response("<retrieve>broad evidence</retrieve>"),
+                _mock_response("intermediate"),
                 _mock_response("<answer>done</answer>"),
             ]
         )
@@ -178,11 +218,12 @@ class TestDeepRAGPipeline:
         assert result.metadata["top_k_cap"] == 0
 
     @pytest.mark.asyncio
-    async def test_generate_falls_back_after_max_steps(self):
+    async def test_generate_falls_back_after_max_steps_with_trajectory(self):
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
-                _mock_response("<reason>Need to think.</reason>"),
+                _mock_response("<parametric>q1</parametric>"),
+                _mock_response("ia1"),
                 _mock_response("fallback answer"),
             ]
         )
@@ -192,9 +233,41 @@ class TestDeepRAGPipeline:
 
         result = await pipeline._generate(1, top_k=5)
 
+        final_prompt = llm.ainvoke.await_args_list[-1].args[0]
+        assert "Follow up: q1" in final_prompt
+        assert "Intermediate answer: ia1" in final_prompt
         assert result.text == "fallback answer"
         assert result.metadata is not None
+        assert result.metadata["trajectory"][0]["subquery"] == "q1"
         assert result.metadata["terminated_by"] == "max_steps_fallback"
+
+    @pytest.mark.asyncio
+    async def test_generate_invalid_controller_output_records_note_then_continues(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("untagged subquery"),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=2)
+
+        result = await pipeline._generate(1, top_k=1)
+
+        retrieval_pipeline.retrieve.assert_not_awaited()
+        assert result.text == "done"
+        assert result.metadata is not None
+        assert result.metadata["trajectory"][0] == {
+            "step": 1,
+            "subquery": "(invalid controller output)",
+            "decision": "parametric",
+            "retrieved_chunk_ids": [],
+            "retrieved_passages": [],
+            "intermediate_answer": "Invalid controller output ignored: untagged subquery",
+        }
 
     @pytest.mark.asyncio
     async def test_generate_backfills_missing_contents(self):
@@ -202,6 +275,7 @@ class TestDeepRAGPipeline:
         llm.ainvoke = AsyncMock(
             side_effect=[
                 _mock_response("<retrieve>missing content</retrieve>"),
+                _mock_response("intermediate"),
                 _mock_response("<answer>done</answer>"),
             ]
         )
@@ -216,3 +290,4 @@ class TestDeepRAGPipeline:
         service.get_chunk_contents.assert_called_once_with([5])
         assert result.metadata is not None
         assert result.metadata["evidence"] == ["Fetched evidence."]
+        assert result.metadata["trajectory"][0]["intermediate_answer"] == "intermediate"
