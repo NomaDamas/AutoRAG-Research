@@ -1,8 +1,9 @@
 # Hybrid Deep Searcher
 
-Hybrid Deep Searcher (HDS) is an inference-only generation baseline that alternates sequential LLM planning with
-parallel fan-out retrieval. At each turn, the LLM proposes subqueries, the configured retrieval pipeline gathers
-evidence for those subqueries, and HDS merges/deduplicates evidence before either continuing or producing an answer.
+Hybrid Deep Searcher (HDS) is an inference-only generation baseline that follows the paper-style loop: the model emits
+`<think>...</think>` reasoning plus parallel query blocks, the environment executes those queries, and query-labelled
+search results are appended to a rolling interaction log before the next reasoning turn. Final answers are read from
+`\boxed{...}`; `<answer>...</answer>` is accepted for provider/model compatibility.
 
 ```yaml
 _target_: autorag_research.pipelines.generation.hybrid_deep_searcher.HybridDeepSearcherPipelineConfig
@@ -11,8 +12,34 @@ retrieval_pipeline_name: bm25
 llm: openai-gpt4o-mini
 max_turns: 3
 max_parallel_queries: 4
+max_search_calls: 8
 retrieval_concurrency: 4
 ```
+
+## Protocol
+
+HDS parses search actions from paper tokens:
+
+```text
+<|begin search queries|> q1; q2
+q3 <|end search queries|>
+```
+
+Queries are split on semicolons and newlines, list prefixes are stripped, duplicates are removed, and fan-out is capped
+by `max_parallel_queries`. Each turn also respects `max_search_calls`: only the first remaining-budget queries are
+executed, and budget exhaustion forces finalization with the final prompt when `fallback_to_final_prompt` is enabled.
+
+Retrieved contents are returned to the model as one query-labelled environment block:
+
+```text
+<|begin search results|>
+q1: joined top contents for q1
+q2: joined top contents for q2
+<|end search results|>
+```
+
+`evidence_budget` caps the number of per-query result contents serialized into each block. Retrieved document IDs are
+deduplicated globally for `retrieved_chunk_ids` metadata, but prompt context preserves the query-to-result pairing.
 
 ## Retrieval backend expectations
 
@@ -33,4 +60,5 @@ databases, then raise the limits only after observing database and provider capa
 ## Scope
 
 This pipeline is meant for inference/evaluation comparisons with other generation baselines such as IRCoT and question
-decomposition. It does not implement HDS-specific training infrastructure or paper-scale benchmark reproduction.
+decomposition. It does not implement HDS-specific training infrastructure, web-search summarization, or paper-scale
+benchmark reproduction.

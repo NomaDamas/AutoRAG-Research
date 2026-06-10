@@ -1,10 +1,10 @@
 """Hybrid Deep Searcher generation pipeline for AutoRAG-Research.
 
-This pipeline implements a practical inference-only Hybrid Deep Searcher (HDS)
-baseline: an LLM alternates sequential reasoning with parallel fan-out query
-proposal, retrieves evidence for those subqueries through an existing retrieval
-pipeline, merges/deduplicates evidence, and either refines the search or emits a
-final answer.
+This pipeline implements the paper-style inference protocol for Hybrid Deep
+Searcher (HDS): the model emits reasoning plus parallel search-query blocks, the
+environment appends query-labelled search-result blocks to a rolling interaction
+log, and the loop stops with a final answer or when turn/search-call budgets are
+exhausted.
 """
 
 from __future__ import annotations
@@ -27,36 +27,32 @@ logger = logging.getLogger("AutoRAG-Research")
 
 DEFAULT_HDS_PLAN_PROMPT = """You are a Hybrid Deep Searcher agent.
 Combine parallel exploration with sequential reasoning. At each turn, either:
-- propose multiple parallel search queries inside <queries>...</queries>, one query per line, or
-- finish with <answer>final answer</answer>.
+- think, then propose parallel search queries inside <|begin search queries|>...<|end search queries|>, separated by semicolons or newlines, or
+- finish with a final answer in \\boxed{{...}}.
 
 Question:
 {query}
 
 Turn: {turn}/{max_turns}
-Evidence gathered so far:
-{evidence}
-
-Reasoning trace:
-{trace}
+Remaining search calls: {remaining_search_calls}
+Interaction log:
+{interaction_log}
 
 Next action:"""
 
-DEFAULT_HDS_FINAL_PROMPT = """Answer the question using the Hybrid Deep Searcher evidence and reasoning trace.
+DEFAULT_HDS_FINAL_PROMPT = """Answer the question using the Hybrid Deep Searcher rolling interaction log.
 
 Question:
 {query}
 
-Evidence:
-{evidence}
-
-Reasoning trace:
-{trace}
+Interaction log:
+{interaction_log}
 
 Final answer:"""
 
+_BOXED_ANSWER_RE = re.compile(r"\\boxed\s*\{(.*?)\}", re.DOTALL)
 _ANSWER_RE = re.compile(r"<answer>\s*(.*?)\s*</answer>", re.IGNORECASE | re.DOTALL)
-_QUERIES_RE = re.compile(r"<queries>\s*(.*?)\s*</queries>", re.IGNORECASE | re.DOTALL)
+_QUERIES_RE = re.compile(r"<\|begin search queries\|>\s*(.*?)\s*<\|end search queries\|>", re.IGNORECASE | re.DOTALL)
 _QUERY_PREFIX_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)]|query\s*\d*\s*:|[A-Za-z][.)])\s*", re.IGNORECASE)
 
 
@@ -97,7 +93,11 @@ def _sanitize_retrieval_error(exc: Exception) -> str:
 
 
 def parse_hybrid_deep_search_action(response_text: str, max_queries: int) -> HybridDeepSearchAction:
-    """Parse an HDS answer or parallel-query action."""
+    """Parse an HDS boxed answer, tolerant answer tag, or paper search-query action."""
+    boxed_match = _BOXED_ANSWER_RE.search(response_text)
+    if boxed_match is not None:
+        return HybridDeepSearchAction(kind="answer", text=boxed_match.group(1).strip())
+
     answer_match = _ANSWER_RE.search(response_text)
     if answer_match is not None:
         return HybridDeepSearchAction(kind="answer", text=answer_match.group(1).strip())
@@ -105,10 +105,12 @@ def parse_hybrid_deep_search_action(response_text: str, max_queries: int) -> Hyb
     queries_match = _QUERIES_RE.search(response_text)
     query_block = queries_match.group(1) if queries_match is not None else response_text
     queries: list[str] = []
-    for line in query_block.splitlines():
-        cleaned = _QUERY_PREFIX_RE.sub("", line).strip()
-        if cleaned and cleaned not in queries:
+    seen: set[str] = set()
+    for raw_query in re.split(r"[;\n]+", query_block):
+        cleaned = _QUERY_PREFIX_RE.sub("", raw_query).strip()
+        if cleaned and cleaned not in seen:
             queries.append(cleaned)
+            seen.add(cleaned)
         if len(queries) >= max_queries:
             break
 
@@ -128,6 +130,7 @@ class HybridDeepSearcherPipelineConfig(BaseGenerationPipelineConfig):
     max_parallel_queries: int = 4
     k_per_query: int = 3
     evidence_budget: int = 12
+    max_search_calls: int = 8
     retrieval_concurrency: int = 4
     fallback_to_final_prompt: bool = True
     allow_partial_retrieval_failures: bool = False
@@ -150,6 +153,7 @@ class HybridDeepSearcherPipelineConfig(BaseGenerationPipelineConfig):
             "max_parallel_queries": self.max_parallel_queries,
             "k_per_query": self.k_per_query,
             "evidence_budget": self.evidence_budget,
+            "max_search_calls": self.max_search_calls,
             "retrieval_concurrency": self.retrieval_concurrency,
             "fallback_to_final_prompt": self.fallback_to_final_prompt,
             "allow_partial_retrieval_failures": self.allow_partial_retrieval_failures,
@@ -171,6 +175,7 @@ class HybridDeepSearcherPipeline(BaseGenerationPipeline):
         max_parallel_queries: int = 4,
         k_per_query: int = 3,
         evidence_budget: int = 12,
+        max_search_calls: int = 8,
         retrieval_concurrency: int = 4,
         fallback_to_final_prompt: bool = True,
         allow_partial_retrieval_failures: bool = False,
@@ -186,8 +191,8 @@ class HybridDeepSearcherPipeline(BaseGenerationPipeline):
         if k_per_query < 1:
             msg = "k_per_query must be >= 1"
             raise ValueError(msg)
-        if evidence_budget < 1 or retrieval_concurrency < 1:
-            msg = "evidence_budget and retrieval_concurrency must be >= 1"
+        if evidence_budget < 1 or max_search_calls < 1 or retrieval_concurrency < 1:
+            msg = "evidence_budget, max_search_calls, and retrieval_concurrency must be >= 1"
             raise ValueError(msg)
 
         self.plan_prompt_template = plan_prompt_template
@@ -196,6 +201,7 @@ class HybridDeepSearcherPipeline(BaseGenerationPipeline):
         self.max_parallel_queries = max_parallel_queries
         self.k_per_query = k_per_query
         self.evidence_budget = evidence_budget
+        self.max_search_calls = max_search_calls
         self.retrieval_concurrency = retrieval_concurrency
         self.fallback_to_final_prompt = fallback_to_final_prompt
         self.allow_partial_retrieval_failures = allow_partial_retrieval_failures
@@ -215,6 +221,7 @@ class HybridDeepSearcherPipeline(BaseGenerationPipeline):
             "max_parallel_queries": self.max_parallel_queries,
             "k_per_query": self.k_per_query,
             "evidence_budget": self.evidence_budget,
+            "max_search_calls": self.max_search_calls,
             "retrieval_concurrency": self.retrieval_concurrency,
             "fallback_to_final_prompt": self.fallback_to_final_prompt,
             "allow_partial_retrieval_failures": self.allow_partial_retrieval_failures,
@@ -228,33 +235,25 @@ class HybridDeepSearcherPipeline(BaseGenerationPipeline):
         return response.content if hasattr(response, "content") else str(response)
 
     @staticmethod
-    def _format_evidence(evidence: list[str]) -> str:
-        """Format evidence list for prompts."""
-        if not evidence:
-            return "(none)"
-        return "\n\n".join(f"[{index + 1}] {item}" for index, item in enumerate(evidence))
+    def _format_interaction_log(interaction_log: list[str]) -> str:
+        """Format the rolling HDS interaction log for prompts."""
+        return "\n".join(interaction_log) if interaction_log else "(none)"
 
-    @staticmethod
-    def _format_trace(trace: list[str]) -> str:
-        """Format search trace for prompts."""
-        return "\n".join(trace) if trace else "(none)"
-
-    def _build_plan_prompt(self, query: str, evidence: list[str], trace: list[str], turn: int) -> str:
+    def _build_plan_prompt(self, query: str, interaction_log: list[str], turn: int, remaining_search_calls: int) -> str:
         """Build one sequential HDS planning prompt."""
         return self.plan_prompt_template.format(
             query=query,
-            evidence=self._format_evidence(evidence),
-            trace=self._format_trace(trace),
+            interaction_log=self._format_interaction_log(interaction_log),
             turn=turn,
             max_turns=self.max_turns,
+            remaining_search_calls=remaining_search_calls,
         )
 
-    def _build_final_prompt(self, query: str, evidence: list[str], trace: list[str]) -> str:
+    def _build_final_prompt(self, query: str, interaction_log: list[str]) -> str:
         """Build fallback final-answer prompt."""
         return self.final_prompt_template.format(
             query=query,
-            evidence=self._format_evidence(evidence),
-            trace=self._format_trace(trace),
+            interaction_log=self._format_interaction_log(interaction_log),
         )
 
     def _contents_from_results(self, results: list[dict[str, Any]]) -> tuple[list[int | str], list[str]]:
@@ -300,30 +299,33 @@ class HybridDeepSearcherPipeline(BaseGenerationPipeline):
         self,
         queries: tuple[str, ...],
         top_k: int,
-    ) -> tuple[list[list[dict[str, Any]]], list[HybridDeepSearchRetrievalFailure]]:
-        """Retrieve multiple fan-out queries with bounded concurrency."""
+    ) -> tuple[list[HybridDeepSearchRetrievalResult], list[HybridDeepSearchRetrievalFailure]]:
+        """Retrieve multiple fan-out queries with bounded concurrency while preserving query pairing."""
         outcomes = await run_with_concurrency_limit(
             [(query, top_k) for query in queries],
             self._retrieve_query,
             max_concurrency=min(self.retrieval_concurrency, len(queries)),
             error_message="Hybrid Deep Searcher retrieval failed",
         )
-        result_sets: list[list[dict[str, Any]]] = []
+        paired_results: list[HybridDeepSearchRetrievalResult] = []
         failures: list[HybridDeepSearchRetrievalFailure] = []
         for query, outcome in zip(queries, outcomes, strict=False):
             if outcome is None:
-                failures.append(HybridDeepSearchRetrievalFailure(query=query, error="unknown retrieval error"))
+                failure = HybridDeepSearchRetrievalFailure(query=query, error="unknown retrieval error")
+                failures.append(failure)
+                paired_results.append(HybridDeepSearchRetrievalResult(query=query, failure=failure))
             elif outcome.failure is not None:
                 failures.append(outcome.failure)
+                paired_results.append(outcome)
             else:
-                result_sets.append(outcome.results)
+                paired_results.append(outcome)
 
         if failures and not self.allow_partial_retrieval_failures:
             failure_summary = "; ".join(f"{failure.query}: {failure.error}" for failure in failures)
             msg = f"Hybrid Deep Searcher retrieval failed for {len(failures)} fan-out query(s): {failure_summary}"
             raise RuntimeError(msg)
 
-        return result_sets, failures
+        return paired_results, failures
 
     @staticmethod
     def _merge_results(result_sets: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -341,48 +343,71 @@ class HybridDeepSearcherPipeline(BaseGenerationPipeline):
                     merged[doc_id] = {**result, "score": score_value}
         return sorted(merged.values(), key=lambda item: (-float(item.get("score", 0.0)), str(item.get("doc_id"))))
 
-    def _append_evidence(self, evidence: list[str], new_contents: list[str]) -> list[str]:
-        """Append deduplicated evidence within evidence budget."""
-        updated = list(evidence)
-        for content in new_contents:
-            if content and content not in updated:
-                updated.append(content)
-        return updated[-self.evidence_budget :]
+    def _format_search_results_block(
+        self, retrieval_results: list[HybridDeepSearchRetrievalResult]
+    ) -> tuple[str, list[int | str], list[str]]:
+        """Format one paper-style query-labelled search results block."""
+        lines = ["<|begin search results|>"]
+        block_doc_ids: list[int | str] = []
+        block_contents: list[str] = []
+        for retrieval_result in retrieval_results:
+            if retrieval_result.failure is not None:
+                lines.append(f"{retrieval_result.query}: [retrieval failed]")
+                continue
+            doc_ids, contents = self._contents_from_results(retrieval_result.results[: self.evidence_budget])
+            block_doc_ids.extend(doc_ids)
+            block_contents.extend([content for content in contents if content])
+            joined_contents = " ".join(content for content in contents[: self.evidence_budget] if content)
+            lines.append(
+                f"{retrieval_result.query}: {joined_contents}" if joined_contents else f"{retrieval_result.query}:"
+            )
+        lines.append("<|end search results|>")
+        return "\n".join(lines), block_doc_ids, block_contents
 
     async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
-        """Generate an answer with parallel fan-out search and sequential refinement."""
+        """Generate an answer with paper-style HDS rolling search context."""
         query_text = self._service.get_query_text(query_id)
         tracker = TokenUsageTracker()
-        evidence: list[str] = []
-        trace: list[str] = []
+        interaction_log: list[str] = []
         retrieved_doc_ids: list[int | str] = []
         retrieval_failures: list[HybridDeepSearchRetrievalFailure] = []
         final_answer = ""
+        search_calls_used = 0
         terminated_by = "max_turns"
         for turn in range(1, self.max_turns + 1):
-            plan_prompt = self._build_plan_prompt(query_text, evidence, trace, turn)
+            remaining_search_calls = self.max_search_calls - search_calls_used
+            if remaining_search_calls <= 0:
+                terminated_by = "max_search_calls"
+                break
+
+            plan_prompt = self._build_plan_prompt(query_text, interaction_log, turn, remaining_search_calls)
             response = await self._llm.ainvoke(plan_prompt)
             tracker.record(response)
-            action = parse_hybrid_deep_search_action(self._extract_text(response), self.max_parallel_queries)
+            response_text = self._extract_text(response)
+            interaction_log.append(response_text)
+            action = parse_hybrid_deep_search_action(response_text, self.max_parallel_queries)
             if action.kind == "answer":
                 final_answer = action.text
-                trace.append(f"answer: {final_answer}")
                 terminated_by = "answer"
                 break
 
-            trace.append(f"turn {turn} queries: {' | '.join(action.queries)}")
+            queries = action.queries[:remaining_search_calls]
             effective_k = max(1, min(top_k, self.k_per_query)) if top_k > 0 else self.k_per_query
-            result_sets, failures = await self._retrieve_parallel(action.queries, effective_k)
+            retrieval_results, failures = await self._retrieve_parallel(queries, effective_k)
+            search_calls_used += len(queries)
             retrieval_failures.extend(failures)
-            merged_results = self._merge_results(result_sets)
-            doc_ids, contents = self._contents_from_results(merged_results)
-            for doc_id in doc_ids:
-                if doc_id not in retrieved_doc_ids:
+            merged_results = self._merge_results([result.results for result in retrieval_results])
+            for doc_id in (result.get("doc_id") for result in merged_results):
+                if doc_id is not None and doc_id not in retrieved_doc_ids:
                     retrieved_doc_ids.append(doc_id)
-            evidence = self._append_evidence(evidence, contents)
+            result_block, _block_doc_ids, _block_contents = self._format_search_results_block(retrieval_results)
+            interaction_log.append(result_block)
+            if search_calls_used >= self.max_search_calls:
+                terminated_by = "max_search_calls"
+                break
 
         if not final_answer and self.fallback_to_final_prompt:
-            final_prompt = self._build_final_prompt(query_text, evidence, trace)
+            final_prompt = self._build_final_prompt(query_text, interaction_log)
             final_response = await self._llm.ainvoke(final_prompt)
             tracker.record(final_response)
             final_answer = self._extract_text(final_response)
@@ -392,12 +417,13 @@ class HybridDeepSearcherPipeline(BaseGenerationPipeline):
             text=final_answer,
             token_usage=tracker.total,
             metadata={
-                "trace": trace,
-                "evidence": evidence,
+                "trace": interaction_log,
+                "interaction_log": interaction_log,
                 "retrieved_chunk_ids": retrieved_doc_ids,
                 "retrieval_failures": [
                     {"query": failure.query, "error": failure.error} for failure in retrieval_failures
                 ],
+                "search_calls_used": search_calls_used,
                 "terminated_by": terminated_by,
             },
         )

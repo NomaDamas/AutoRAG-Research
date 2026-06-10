@@ -49,18 +49,27 @@ def _metadata(result: GenerationResult) -> dict[str, Any]:
 class TestHybridDeepSearchActionParsing:
     """Tests for action parsing."""
 
-    def test_parse_parallel_queries(self):
-        action = parse_hybrid_deep_search_action("<queries>\n1. alpha\n- beta\n</queries>", max_queries=4)
+    def test_parse_paper_parallel_queries_with_semicolons_newlines_and_dedup(self):
+        action = parse_hybrid_deep_search_action(
+            "<think>plan</think><|begin search queries|>1. alpha; - beta\nquery 3: alpha<|end search queries|>",
+            max_queries=4,
+        )
 
         assert action.kind == "queries"
         assert action.queries == ("alpha", "beta")
 
     def test_parse_limits_queries(self):
-        action = parse_hybrid_deep_search_action("<queries>\na\nb\nc\n</queries>", max_queries=2)
+        action = parse_hybrid_deep_search_action("<|begin search queries|>a; b\nc<|end search queries|>", max_queries=2)
 
         assert action.queries == ("a", "b")
 
-    def test_parse_answer(self):
+    def test_parse_boxed_answer(self):
+        action = parse_hybrid_deep_search_action(r"<think>done</think>\boxed{final result}", max_queries=2)
+
+        assert action.kind == "answer"
+        assert action.text == "final result"
+
+    def test_parse_tolerant_answer_tag(self):
         action = parse_hybrid_deep_search_action("<answer>done</answer>", max_queries=2)
 
         assert action.kind == "answer"
@@ -107,6 +116,7 @@ class TestHybridDeepSearcherPipelineConfig:
         assert kwargs["retrieval_pipeline"] is retrieval_pipeline
         assert kwargs["max_turns"] == 4
         assert kwargs["max_parallel_queries"] == 3
+        assert kwargs["max_search_calls"] == 8
 
     def test_default_yaml_config_uses_text_query_capable_retriever(self):
         config_path = Path("configs/pipelines/generation/hybrid_deep_searcher.yaml")
@@ -153,8 +163,10 @@ class TestHybridDeepSearcherPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
-                _mock_response("<queries>\nmoon origin\nmoon composition\n</queries>"),
-                _mock_response("<answer>The Moon likely formed from giant-impact debris.</answer>"),
+                _mock_response(
+                    "<think>Need evidence.</think><|begin search queries|>moon origin;\nmoon composition<|end search queries|>"
+                ),
+                _mock_response(r"<think>Enough.</think>\boxed{The Moon likely formed from giant-impact debris.}"),
             ]
         )
         retrieval_pipeline = create_mock_retrieval_pipeline()
@@ -176,6 +188,8 @@ class TestHybridDeepSearcherPipeline:
         metadata = _metadata(result)
         assert metadata["retrieved_chunk_ids"] == [1, 2]
         assert metadata["terminated_by"] == "answer"
+        assert "moon origin: Giant impact evidence." in llm.ainvoke.await_args_list[1].args[0]
+        assert "moon composition: Moon composition evidence." in llm.ainvoke.await_args_list[1].args[0]
         assert result.token_usage == {"prompt_tokens": 4, "completion_tokens": 6, "total_tokens": 10}
 
     @pytest.mark.asyncio
@@ -183,7 +197,7 @@ class TestHybridDeepSearcherPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
-                _mock_response("<queries>\na\nb\n</queries>"),
+                _mock_response("<|begin search queries|>a; b<|end search queries|>"),
                 _mock_response("fallback answer"),
             ]
         )
@@ -203,7 +217,8 @@ class TestHybridDeepSearcherPipeline:
         assert result.text == "fallback answer"
         metadata = _metadata(result)
         assert metadata["retrieved_chunk_ids"] == [1]
-        assert metadata["evidence"] == ["high"]
+        assert "a: low" in "\n".join(metadata["interaction_log"])
+        assert "b: high" in "\n".join(metadata["interaction_log"])
         assert metadata["terminated_by"] == "max_turns_fallback"
 
     @pytest.mark.asyncio
@@ -211,8 +226,8 @@ class TestHybridDeepSearcherPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
-                _mock_response("<queries>\na\n</queries>"),
-                _mock_response("<answer>done</answer>"),
+                _mock_response("<|begin search queries|>a<|end search queries|>"),
+                _mock_response(r"\boxed{done}"),
             ]
         )
         retrieval_pipeline = create_mock_retrieval_pipeline(default_results=[{"doc_id": 7, "score": 0.9}])
@@ -225,12 +240,14 @@ class TestHybridDeepSearcherPipeline:
 
         service.get_chunk_contents.assert_called_once_with([7])
         metadata = _metadata(result)
-        assert metadata["evidence"] == ["Fetched content."]
+        assert "a: Fetched content." in "\n".join(metadata["interaction_log"])
 
     @pytest.mark.asyncio
     async def test_generate_raises_when_fanout_retrieval_fails_by_default(self):
         llm = MagicMock()
-        llm.ainvoke = AsyncMock(return_value=_mock_response("<queries>\nbroken generated subquery\n</queries>"))
+        llm.ainvoke = AsyncMock(
+            return_value=_mock_response("<|begin search queries|>broken generated subquery<|end search queries|>")
+        )
         retrieval_pipeline = create_mock_retrieval_pipeline()
         retrieval_pipeline.retrieve = AsyncMock(side_effect=RuntimeError("retriever unavailable"))
         service = MagicMock()
@@ -245,7 +262,9 @@ class TestHybridDeepSearcherPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
-                _mock_response("<queries>\nok generated subquery\nbroken generated subquery\n</queries>"),
+                _mock_response(
+                    "<|begin search queries|>ok generated subquery; broken generated subquery<|end search queries|>"
+                ),
                 _mock_response("fallback with partial evidence"),
             ]
         )
@@ -270,7 +289,7 @@ class TestHybridDeepSearcherPipeline:
 
         assert result.text == "fallback with partial evidence"
         metadata = _metadata(result)
-        assert metadata["evidence"] == ["usable evidence"]
+        assert "ok generated subquery: usable evidence" in "\n".join(metadata["interaction_log"])
         assert metadata["retrieval_failures"] == [
             {"query": "broken generated subquery", "error": "RuntimeError: retrieval failed"}
         ]
@@ -280,7 +299,7 @@ class TestHybridDeepSearcherPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
-                _mock_response("<queries>\nleaky generated subquery\n</queries>"),
+                _mock_response("<|begin search queries|>leaky generated subquery<|end search queries|>"),
                 _mock_response("fallback without evidence"),
             ]
         )
@@ -306,9 +325,75 @@ class TestHybridDeepSearcherPipeline:
         ]
         assert "SECRET_PASSWORD" not in str(metadata)
 
+    @pytest.mark.asyncio
+    async def test_generate_three_parallel_queries_then_query_labelled_block_then_boxed_answer(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<think>fan out</think><|begin search queries|>q1; q2; q3<|end search queries|>"),
+                _mock_response(r"<think>synthesize</think>\boxed{final}"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        retrieval_pipeline.retrieve = AsyncMock(
+            side_effect=[
+                [{"doc_id": "d1", "score": 0.9, "content": "c1"}],
+                [{"doc_id": "d2", "score": 0.8, "content": "c2"}],
+                [{"doc_id": "d3", "score": 0.7, "content": "c3"}],
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_turns=2, max_parallel_queries=4)
+
+        result = await pipeline._generate(1, top_k=2)
+
+        assert retrieval_pipeline.retrieve.await_count == 3
+        second_prompt = llm.ainvoke.await_args_list[1].args[0]
+        assert "<|begin search results|>" in second_prompt
+        assert "q1: c1" in second_prompt
+        assert "q2: c2" in second_prompt
+        assert "q3: c3" in second_prompt
+        assert result.text == "final"
+        assert _metadata(result)["search_calls_used"] == 3
+
+    @pytest.mark.asyncio
+    async def test_generate_truncates_fanout_to_search_call_budget_and_forces_finalization(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<think>fan out</think><|begin search queries|>q1; q2; q3<|end search queries|>"),
+                _mock_response("final after budget"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        retrieval_pipeline.retrieve = AsyncMock(
+            side_effect=[
+                [{"doc_id": "d1", "score": 0.9, "content": "c1"}],
+                [{"doc_id": "d2", "score": 0.8, "content": "c2"}],
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(
+            llm, retrieval_pipeline, service, max_turns=3, max_parallel_queries=4, max_search_calls=2
+        )
+
+        result = await pipeline._generate(1, top_k=2)
+
+        assert retrieval_pipeline.retrieve.await_count == 2
+        retrieval_pipeline.retrieve.assert_any_await("q1", 2)
+        retrieval_pipeline.retrieve.assert_any_await("q2", 2)
+        assert result.text == "final after budget"
+        metadata = _metadata(result)
+        assert metadata["search_calls_used"] == 2
+        assert metadata["terminated_by"] == "max_search_calls_fallback"
+
     def test_hybrid_deep_searcher_docs_cover_runtime_contract(self):
         docs = Path("docs/pipelines/generation/hybrid-deep-searcher.md").read_text()
 
         assert "text-query-capable" in docs
         assert "inference-only" in docs
         assert "max_concurrency x retrieval_concurrency" in docs
+        assert "<|begin search queries|>" in docs
+        assert "max_search_calls" in docs

@@ -7,6 +7,7 @@ max_turns: 3
 max_parallel_queries: 4
 k_per_query: 3
 evidence_budget: 12
+max_search_calls: 8
 retrieval_concurrency: 4
 fallback_to_final_prompt: true
 allow_partial_retrieval_failures: false
