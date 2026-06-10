@@ -83,6 +83,8 @@
 | `vector_search_by_embedding(embedding, top_k)` | Vector search with raw embedding |
 | `fetch_query_texts(query_ids)` | Batch fetch query texts |
 | `find_query_by_text(query_text)` | Find query by text content |
+| `get_query_embedding(query_id)` | Stored single-vector query embedding or None |
+| `get_chunk_embeddings(chunk_ids)` | Map of chunk ID → stored single-vector embedding |
 | `get_or_create_pipeline(name, config)` | Get or create pipeline, return (ID, is_new) |
 | `run_pipeline(retrieval_func, pipeline_id, top_k)` | Batch retrieval with retry |
 

@@ -3,20 +3,21 @@
 This module adapts the GQR test-time optimization workflow to AutoRAG-Research
 without adding new dependencies:
 
-1. Retrieve first-pass candidates from a primary retriever.
-2. Build complementary guidance scores from another retriever.
-3. Optimize the primary query representation over the candidate pool so the
-   primary score distribution approaches the hybrid guidance distribution.
-4. Rerank the candidate pool with the optimized query representation.
+1. Retrieve a candidate pool from the union of primary and complementary retrievers.
+2. Build primary and complementary distributions from raw native retriever scores.
+3. Recompute the per-step consensus target from the current primary distribution
+   and the fixed complementary distribution, then optimize the primary query representation.
+4. Rerank the candidate pool with the optimized single-vector cosine scores.
 
-When embedding-level refinement cannot be executed (for example, missing
-query/chunk embeddings), the pipeline falls back to a score-space refinement
-loop that preserves the same optimization objective.
+When single-vector embedding refinement cannot be executed (for example, missing
+query/chunk embeddings or a multi-vector primary retriever without chunk vectors),
+the pipeline falls back to a score-space refinement loop. That fallback preserves
+the per-step consensus objective but is a degraded AutoRAG-Research adaptation.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import numpy as np
 from sqlalchemy.orm import Session, sessionmaker
@@ -25,7 +26,6 @@ from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.exceptions import EmbeddingError
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 from autorag_research.pipelines.retrieval.hybrid import HybridRetrievalPipeline
-from autorag_research.util import normalize_zscore
 
 CandidatePoolMode = Literal["primary", "union"]
 
@@ -57,12 +57,6 @@ def _missing_score_floor(score_map: dict[int | str, float]) -> float:
     max_score = max(values)
     spread = max_score - min_score
     return min_score - max(1.0, spread)
-
-
-def _normalize_scores(scores: list[float]) -> np.ndarray:
-    """Normalize score vectors with z-score normalization."""
-    normalized = normalize_zscore(cast(list[float | None], scores))
-    return np.asarray([0.0 if value is None else float(value) for value in normalized], dtype=np.float64)
 
 
 def _cosine_scores(query_vector: np.ndarray, candidate_matrix: np.ndarray) -> np.ndarray:
@@ -247,10 +241,9 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
 
     @staticmethod
     def _build_score_vector(candidate_ids: list[int | str], score_map: dict[int | str, float]) -> np.ndarray:
-        """Build a normalized score vector aligned to candidate_ids."""
+        """Build a raw score vector aligned to candidate_ids."""
         missing_floor = _missing_score_floor(score_map)
-        raw_scores = [score_map.get(doc_id, missing_floor) for doc_id in candidate_ids]
-        return _normalize_scores(raw_scores)
+        return np.asarray([score_map.get(doc_id, missing_floor) for doc_id in candidate_ids], dtype=np.float64)
 
     @staticmethod
     def _sort_results(score_map: dict[int | str, float], top_k: int) -> list[dict[str, Any]]:
@@ -260,11 +253,10 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
 
     def _get_query_embedding_by_id(self, query_id: int | str) -> np.ndarray | None:
         """Fetch stored query embedding for optimization."""
-        with self._service._create_uow() as uow:
-            query = uow.queries.get_by_id(query_id)
-            if query is None or query.embedding is None:
-                return None
-            return np.asarray(list(query.embedding), dtype=np.float64)
+        query_embedding = self._service.get_query_embedding(query_id)
+        if query_embedding is None:
+            return None
+        return np.asarray(query_embedding, dtype=np.float64)
 
     async def _get_query_embedding_by_text(self, query_text: str) -> np.ndarray | None:
         """Build query embedding for ad-hoc text when the primary pipeline supports it."""
@@ -279,38 +271,29 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
         self,
         candidate_ids: list[int | str],
     ) -> tuple[list[int | str], np.ndarray]:
-        """Load candidate chunk embeddings from the database."""
+        """Load candidate chunk embeddings through the retrieval service."""
         if not candidate_ids:
             return [], np.empty((0, 0), dtype=np.float64)
 
-        with self._service._create_uow() as uow:
-            chunks = uow.chunks.get_by_ids(candidate_ids)
-
-        chunk_by_id = {chunk.id: chunk for chunk in chunks}
-        embedding_ids: list[int | str] = []
-        embedding_rows: list[list[float]] = []
-        for doc_id in candidate_ids:
-            chunk = chunk_by_id.get(doc_id)
-            if chunk is None or chunk.embedding is None:
-                continue
-            embedding_ids.append(doc_id)
-            embedding_rows.append(list(chunk.embedding))
-
-        if not embedding_rows:
+        embeddings_by_id = self._service.get_chunk_embeddings(candidate_ids)
+        embedding_ids = [doc_id for doc_id in candidate_ids if doc_id in embeddings_by_id]
+        if not embedding_ids:
             return [], np.empty((0, 0), dtype=np.float64)
 
+        embedding_rows = [embeddings_by_id[doc_id] for doc_id in embedding_ids]
         return embedding_ids, np.asarray(embedding_rows, dtype=np.float64)
 
     def _optimize_in_score_space(
         self,
         primary_scores: np.ndarray,
-        target_distribution: np.ndarray,
+        complementary_distribution: np.ndarray,
     ) -> np.ndarray:
-        """Fallback optimization directly over primary score logits."""
+        """Fallback optimization directly over primary score logits with per-step consensus guidance."""
         logits = primary_scores.astype(np.float64, copy=True)
         temperature = max(self.temperature, _EPSILON)
         for _ in range(self.n_steps):
             probs = _softmax(logits, temperature)
+            target_distribution = (1 - self.mixture_alpha) * probs + self.mixture_alpha * complementary_distribution
             grad_logits = (probs - target_distribution) / temperature
             logits -= self.learning_rate * grad_logits
         return logits
@@ -319,15 +302,16 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
         self,
         query_embedding: np.ndarray,
         candidate_embeddings: np.ndarray,
-        target_distribution: np.ndarray,
+        complementary_distribution: np.ndarray,
     ) -> np.ndarray:
-        """Optimize the primary query embedding with KL guidance."""
+        """Optimize the primary query embedding with per-step KL consensus guidance."""
         refined_query = query_embedding.astype(np.float64, copy=True)
         temperature = max(self.temperature, _EPSILON)
 
         for _ in range(self.n_steps):
             cosine_scores = _cosine_scores(refined_query, candidate_embeddings)
             probs = _softmax(cosine_scores, temperature)
+            target_distribution = (1 - self.mixture_alpha) * probs + self.mixture_alpha * complementary_distribution
             grad_logits = (probs - target_distribution) / temperature
             grad_scores = _cosine_gradients(refined_query, candidate_embeddings, cosine_scores)
             grad_query = np.sum(grad_logits[:, None] * grad_scores, axis=0)
@@ -354,11 +338,7 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
         primary_scores = self._build_score_vector(candidate_ids, primary_score_map)
         complementary_scores = self._build_score_vector(candidate_ids, complementary_score_map)
 
-        primary_distribution = _softmax(primary_scores, self.temperature)
         complementary_distribution = _softmax(complementary_scores, self.temperature)
-        target_distribution = (
-            1 - self.mixture_alpha
-        ) * primary_distribution + self.mixture_alpha * complementary_distribution
 
         final_score_map: dict[int | str, float] = {
             doc_id: float(primary_scores[index]) for index, doc_id in enumerate(candidate_ids)
@@ -369,17 +349,17 @@ class GQRHybridRetrievalPipeline(BaseRetrievalPipeline):
         if query_embedding is not None and all_candidates_have_embeddings and candidate_embeddings.size > 0:
             id_to_index = {doc_id: idx for idx, doc_id in enumerate(candidate_ids)}
             distribution_indices = [id_to_index[doc_id] for doc_id in embedding_ids]
-            embedding_target = target_distribution[distribution_indices]
-            embedding_target = embedding_target / max(float(embedding_target.sum()), _EPSILON)
+            embedding_complementary = complementary_distribution[distribution_indices]
+            embedding_complementary = embedding_complementary / max(float(embedding_complementary.sum()), _EPSILON)
             optimized_scores = self._optimize_query_embedding(
                 query_embedding=query_embedding,
                 candidate_embeddings=candidate_embeddings,
-                target_distribution=embedding_target,
+                complementary_distribution=embedding_complementary,
             )
             for doc_id, score in zip(embedding_ids, optimized_scores, strict=True):
                 final_score_map[doc_id] = float(score)
         else:
-            optimized_scores = self._optimize_in_score_space(primary_scores, target_distribution)
+            optimized_scores = self._optimize_in_score_space(primary_scores, complementary_distribution)
             final_score_map = {doc_id: float(optimized_scores[index]) for index, doc_id in enumerate(candidate_ids)}
 
         return self._sort_results(final_score_map, top_k)

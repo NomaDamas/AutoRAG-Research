@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 import numpy as np
 import pytest
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.exceptions import EmbeddingError
@@ -86,6 +88,16 @@ class TestGQRHybridRetrievalPipelineConfig:
             "mixture_alpha": 0.2,
             "candidate_pool_mode": "union",
         }
+
+    def test_shipped_yaml_config_instantiates(self):
+        config = OmegaConf.load("configs/pipelines/retrieval/gqr_hybrid.yaml")
+
+        instantiated = instantiate(config)
+
+        assert isinstance(instantiated, GQRHybridRetrievalPipelineConfig)
+        assert instantiated.primary_retrieval_pipeline_name == "vector_search"
+        assert instantiated.complementary_retrieval_pipeline_name == "bm25"
+        assert instantiated.candidate_pool_mode == "union"
 
 
 class TestGQRHybridRetrievalPipeline:
@@ -297,6 +309,57 @@ class TestGQRHybridRetrievalPipeline:
 
         assert len(results) == 2
         assert {results[0]["doc_id"], results[1]["doc_id"]} == {1, 2}
+
+    def test_score_space_target_moves_with_primary_distribution_each_step(
+        self,
+        session_factory: sessionmaker[Session],
+    ):
+        primary = _make_stub_pipeline("vector_search", by_id_results=[], by_text_results=[])
+        complementary = _make_stub_pipeline("bm25", by_id_results=[], by_text_results=[])
+        pipeline = GQRHybridRetrievalPipeline(
+            session_factory=session_factory,
+            name="gqr_per_step_target",
+            primary_retrieval_pipeline=primary,
+            complementary_retrieval_pipeline=complementary,
+            mixture_alpha=0.5,
+            n_steps=600,
+            learning_rate=1.0,
+            temperature=1.0,
+        )
+        primary_scores = np.asarray([4.0, 0.0], dtype=np.float64)
+        complementary_distribution = np.asarray([0.1, 0.9], dtype=np.float64)
+        initial_primary_distribution = np.exp(primary_scores) / np.exp(primary_scores).sum()
+        fixed_initial_blend = 0.5 * initial_primary_distribution + 0.5 * complementary_distribution
+
+        optimized_logits = pipeline._optimize_in_score_space(primary_scores, complementary_distribution)
+        optimized_distribution = np.exp(optimized_logits) / np.exp(optimized_logits).sum()
+
+        assert np.linalg.norm(optimized_distribution - complementary_distribution) < 0.05
+        assert np.linalg.norm(optimized_distribution - fixed_initial_blend) > 0.25
+
+    def test_raw_score_scale_changes_softmax_distribution(
+        self,
+        session_factory: sessionmaker[Session],
+    ):
+        primary = _make_stub_pipeline("vector_search", by_id_results=[], by_text_results=[])
+        complementary = _make_stub_pipeline("bm25", by_id_results=[], by_text_results=[])
+        pipeline = GQRHybridRetrievalPipeline(
+            session_factory=session_factory,
+            name="gqr_raw_scores",
+            primary_retrieval_pipeline=primary,
+            complementary_retrieval_pipeline=complementary,
+            temperature=1.0,
+        )
+        low_scale_scores = pipeline._build_score_vector([1, 2], {1: 2.0, 2: 1.0})
+        high_scale_scores = pipeline._build_score_vector([1, 2], {1: 20.0, 2: 10.0})
+
+        low_scale_distribution = np.exp(low_scale_scores) / np.exp(low_scale_scores).sum()
+        high_scale_distribution = np.exp(high_scale_scores) / np.exp(high_scale_scores).sum()
+
+        assert low_scale_scores.tolist() == [2.0, 1.0]
+        assert high_scale_scores.tolist() == [20.0, 10.0]
+        assert not np.allclose(low_scale_distribution, high_scale_distribution)
+        assert high_scale_distribution[0] > low_scale_distribution[0]
 
     @pytest.mark.asyncio
     async def test_retrieve_by_text_falls_back_to_complementary_when_primary_needs_embedding(

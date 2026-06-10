@@ -1,6 +1,6 @@
 # GQR Hybrid Retrieval
 
-Guided Query Refinement (GQR) is a hybrid retrieval wrapper that uses one primary retriever for the first-pass candidate scores and one complementary retriever as guidance. It then optimizes the primary query representation, or a score-space fallback, so the final ranking moves toward the hybrid guidance distribution.
+Guided Query Refinement (GQR) is a hybrid retrieval wrapper that uses one primary retriever for the first-pass candidate scores and one complementary retriever as fixed guidance. At every optimization step, it recomputes the current primary distribution, blends that live distribution with the complementary distribution, and updates the primary query representation so the final ranking moves toward consensus.
 
 ## When to use
 
@@ -34,18 +34,20 @@ candidate_pool_mode: union
 | `fetch_k_multiplier` | int | `2` | Fetches `top_k * fetch_k_multiplier` from each child before reranking. |
 | `n_steps` | int | `25` | Optimization steps for embedding-level or score-space refinement. |
 | `learning_rate` | float | `0.1` | Step size for refinement. |
-| `temperature` | float | `1.0` | Softmax temperature used for primary, complementary, and target distributions. |
+| `temperature` | float | `1.0` | Softmax temperature used for raw primary and complementary score distributions. |
 | `mixture_alpha` | float | `0.5` | Guidance weight: `0.0` follows primary scores, `1.0` follows complementary scores. |
 | `candidate_pool_mode` | `union` or `primary` | `union` | `union` includes candidates from both retrievers; `primary` keeps only primary candidates. |
 
 ## Scoring contract
 
-GQR result scores are **ranking scores**: higher is better within the returned list, but the numeric magnitude is not calibrated across execution modes or against other pipelines.
+GQR result scores are **ranking scores**: higher is better within the returned list, but the numeric magnitude is not calibrated across execution modes or against other pipelines. Distribution construction uses the child retrievers' raw native scores plus a conservative missing-candidate floor for union candidates absent from one child result set; scores are not z-score normalized before softmax.
 
 GQR has two scoring paths:
 
-1. **Embedding-level refinement** runs when a query embedding exists and every selected candidate has a chunk embedding. Scores are cosine-derived values from the refined query embedding.
-2. **Score-space fallback** runs when query embeddings are unavailable or when any selected candidate lacks an embedding. In partial-embedding pools, GQR falls back for the entire pool so one result list does not mix cosine scores with normalized primary-score values.
+1. **Embedding-level refinement** runs when a query embedding exists and every selected candidate has a chunk embedding. Scores are single-vector cosine-derived values from the refined query embedding. This is the supported embedding scope; primary retrievers that require multi-vector or MaxSim native scoring use the fallback path unless single-vector chunk embeddings are available.
+2. **Score-space fallback** runs when query embeddings are unavailable or when any selected candidate lacks an embedding. In partial-embedding pools, GQR falls back for the entire pool so one result list does not mix cosine scores with raw primary-score values. This is a documented degraded path that preserves the per-step consensus objective without a full primary scorer API.
+
+For both paths, the complementary distribution is fixed for the candidate pool, while the primary distribution and consensus target are recomputed every optimization step.
 
 Use ordering and retrieval metrics for evaluation. Do not compare raw GQR score magnitudes across embedding-backed and fallback-backed runs.
 

@@ -569,3 +569,37 @@ class RetrievalPipelineService(BasePipelineService):
                     raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
                 query_texts.append(query.contents)
         return query_texts
+
+    def get_query_embedding(self, query_id: int | str) -> list[float] | None:
+        """Fetch the stored single-vector embedding for a query.
+
+        Args:
+            query_id: Query ID to fetch.
+
+        Returns:
+            The stored query embedding as a list of floats, or None when the query
+            does not exist or has no stored embedding.
+        """
+        with self._create_uow() as uow:
+            query = uow.queries.get_by_id(query_id)
+            if query is None or query.embedding is None:
+                return None
+            return [float(value) for value in query.embedding]
+
+    def get_chunk_embeddings(self, chunk_ids: list[int | str]) -> dict[int | str, list[float]]:
+        """Batch fetch stored single-vector chunk embeddings.
+
+        Args:
+            chunk_ids: Chunk IDs to fetch.
+
+        Returns:
+            Mapping of chunk ID to embedding for every requested chunk that exists
+            and has a stored embedding; chunks without embeddings are omitted.
+        """
+        if not chunk_ids:
+            return {}
+        with self._create_uow() as uow:
+            chunks = uow.chunks.get_by_ids(chunk_ids)
+            return {
+                chunk.id: [float(value) for value in chunk.embedding] for chunk in chunks if chunk.embedding is not None
+            }

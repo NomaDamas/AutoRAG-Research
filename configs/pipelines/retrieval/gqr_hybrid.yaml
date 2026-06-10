@@ -1,9 +1,9 @@
 # GQR Hybrid Retrieval Pipeline Configuration
 #
 # Guided Query Refinement (GQR) performs test-time optimization of a primary
-# retriever's query representation using guidance signals from a complementary
-# retriever. Optimization is bounded to the candidate pool (no second full-index
-# search required).
+# retriever's query representation using a fixed complementary distribution and
+# a per-step consensus target recomputed from the current primary distribution.
+# Optimization is bounded to the candidate pool (no second full-index search required).
 #
 # Parameters:
 #   primary_retrieval_pipeline_name: Primary pipeline to optimize (usually dense)
@@ -11,7 +11,7 @@
 #   fetch_k_multiplier: Retrieves top_k * multiplier from each pipeline first
 #   n_steps: Number of test-time optimization steps
 #   learning_rate: Query update step size
-#   temperature: Softmax temperature for retrieval distributions
+#   temperature: Softmax temperature for raw retrieval score distributions
 #   mixture_alpha: Guidance weight from complementary distribution (0-1)
 #   candidate_pool_mode: "union" (true hybrid pool) or "primary" (primary-bounded reranker)
 #

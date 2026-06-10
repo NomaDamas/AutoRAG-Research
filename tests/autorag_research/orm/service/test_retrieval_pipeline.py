@@ -426,3 +426,54 @@ class TestRetrievalPipelineResume:
         assert result["total_queries"] == query_count
 
         service.delete_pipeline_results(pipeline_id)
+
+
+class TestStoredEmbeddingAccessors:
+    """Tests for get_query_embedding and get_chunk_embeddings."""
+
+    @pytest.fixture
+    def service(self, session_factory):
+        return RetrievalPipelineService(session_factory)
+
+    def test_get_query_embedding_returns_stored_vector(self, service, session_factory):
+        embedding = [0.5] * 768
+        with session_factory() as session:
+            query = QueryRepository(session).get_by_id(1)
+            query.embedding = embedding
+            session.commit()
+        try:
+            stored_embedding = service.get_query_embedding(1)
+
+            assert stored_embedding is not None
+            assert len(stored_embedding) == 768
+            assert stored_embedding[0] == pytest.approx(0.5)
+        finally:
+            with session_factory() as session:
+                query = QueryRepository(session).get_by_id(1)
+                query.embedding = None
+                session.commit()
+
+    def test_get_query_embedding_returns_none_for_missing_embedding(self, service):
+        assert service.get_query_embedding(2) is None
+        assert service.get_query_embedding(999999) is None
+
+    def test_get_chunk_embeddings_returns_only_chunks_with_embeddings(self, service, session_factory):
+        embedding = [0.25] * 768
+        with session_factory() as session:
+            chunk = session.get(Chunk, 1)
+            chunk.embedding = embedding
+            session.commit()
+        try:
+            embeddings_by_id = service.get_chunk_embeddings([1, 2, 999999])
+
+            assert set(embeddings_by_id) == {1}
+            assert len(embeddings_by_id[1]) == 768
+            assert embeddings_by_id[1][0] == pytest.approx(0.25)
+        finally:
+            with session_factory() as session:
+                chunk = session.get(Chunk, 1)
+                chunk.embedding = None
+                session.commit()
+
+    def test_get_chunk_embeddings_empty_input(self, service):
+        assert service.get_chunk_embeddings([]) == {}
