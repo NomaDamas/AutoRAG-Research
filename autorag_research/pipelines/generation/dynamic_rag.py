@@ -1,9 +1,9 @@
 """DynamicRAG generation pipeline.
 
 This pipeline implements the inference/evaluation slice of DynamicRAG: retrieve a
-candidate pool, dynamically rerank and truncate it, and generate from only the
-selected evidence. Training the original DynamicRAG policy with generator
-feedback is outside this repo-native baseline.
+candidate pool, prompt an LLM reranker to generate the ordered subset of document
+IDs to use, and answer from exactly that dynamic subset. A zero-document reranker
+decision is valid and answers from the model's own knowledge.
 """
 
 from __future__ import annotations
@@ -22,12 +22,12 @@ from autorag_research.rerankers.base import BaseReranker, RerankResult
 from autorag_research.rerankers.dynamic_rag import DynamicRAGReranker
 from autorag_research.util import TokenUsageTracker
 
-DEFAULT_DYNAMIC_RAG_PROMPT = """Answer the question using only the dynamically selected evidence.
+DEFAULT_DYNAMIC_RAG_PROMPT = """Answer the question using the retrieved content when it is present. If the retrieved content is None, answer from your own knowledge.
 
 Question:
 {query}
 
-Evidence:
+Retrieved content:
 {context}
 
 Answer:"""
@@ -90,6 +90,8 @@ class DynamicRAGPipeline(BaseGenerationPipeline):
             raise ValueError(msg)
 
         self.reranker = reranker or DynamicRAGReranker()
+        if isinstance(self.reranker, DynamicRAGReranker) and self.reranker.llm is None:
+            self.reranker.llm = llm
         self.prompt_template = prompt_template
         self.candidate_top_k = candidate_top_k
 
@@ -111,7 +113,7 @@ class DynamicRAGPipeline(BaseGenerationPipeline):
     @staticmethod
     def _reranker_config(reranker: BaseReranker) -> dict[str, Any]:
         """Return JSON-safe reranker identity/config for experiment provenance."""
-        excluded_runtime_fields = {"api_key", "base_reranker", "results"}
+        excluded_runtime_fields = {"api_key", "results"}
         config: dict[str, Any] = {"type": type(reranker).__name__}
         for field_name in type(reranker).model_fields:
             if field_name in excluded_runtime_fields:
@@ -121,11 +123,11 @@ class DynamicRAGPipeline(BaseGenerationPipeline):
                 config[field_name] = value
 
         if isinstance(reranker, DynamicRAGReranker):
-            config["base_reranker"] = (
-                DynamicRAGPipeline._reranker_config(reranker.base_reranker)
-                if reranker.base_reranker is not None
-                else None
-            )
+            llm = reranker.llm
+            llm_model = getattr(llm, "model_name", None) if llm is not None else None
+            if llm_model is None and llm is not None:
+                llm_model = type(llm).__name__
+            config["llm"] = llm_model
 
         return config
 
@@ -193,7 +195,7 @@ class DynamicRAGPipeline(BaseGenerationPipeline):
     def _build_prompt(self, query: str, selected_contents: list[str]) -> str:
         """Build the final DynamicRAG prompt."""
         context = "\n\n".join(f"[{index + 1}] {content}" for index, content in enumerate(selected_contents))
-        return self.prompt_template.format(query=query, context=context or "(no evidence selected)")
+        return self.prompt_template.format(query=query, context=context or "None")
 
     async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate with dynamic reranking and truncation."""

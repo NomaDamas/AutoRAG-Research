@@ -106,65 +106,31 @@ class TestDynamicRAGPipeline:
                 candidate_top_k=0,
             )
 
-    def test_pipeline_config_distinguishes_dynamic_rag_cut_policy(self):
+    def test_initialization_injects_pipeline_llm_into_dynamic_rag_reranker_when_unset(self):
+        llm = FakeListLLM(responses=["answer"])
+        reranker = DynamicRAGReranker()
+        pipeline = _build_unit_pipeline(llm, create_mock_retrieval_pipeline(), MagicMock(), reranker=reranker)
+
+        assert pipeline.reranker is reranker
+        assert reranker.llm is llm
+
+    def test_pipeline_config_records_dynamic_rag_llm_name_not_object(self):
         llm = FakeListLLM(responses=["answer"])
         retrieval_pipeline = create_mock_retrieval_pipeline(pipeline_id=77)
         service = MagicMock()
-        conservative = _build_unit_pipeline(
-            llm,
-            retrieval_pipeline,
-            service,
-            reranker=DynamicRAGReranker(score_drop_threshold=0.10, min_top_k=1, max_top_k=8),
-        )
-        permissive = _build_unit_pipeline(
-            llm,
-            retrieval_pipeline,
-            service,
-            reranker=DynamicRAGReranker(score_drop_threshold=0.90, min_top_k=1, max_top_k=8),
-        )
-
-        conservative_config = conservative._get_pipeline_config()
-        permissive_config = permissive._get_pipeline_config()
-
-        assert conservative_config != permissive_config
-        assert conservative_config["reranker"]["score_drop_threshold"] == 0.10
-        assert permissive_config["reranker"]["score_drop_threshold"] == 0.90
-
-    def test_pipeline_config_records_dynamic_rag_base_reranker_identity(self):
-        llm = FakeListLLM(responses=["answer"])
-        retrieval_pipeline = create_mock_retrieval_pipeline(pipeline_id=77)
-        service = MagicMock()
-        base_reranker = FixedAsyncReranker(model_name="fixed-scorer", batch_size=7, results=[])
-        pipeline = _build_unit_pipeline(
-            llm,
-            retrieval_pipeline,
-            service,
-            reranker=DynamicRAGReranker(
-                base_reranker=base_reranker,
-                min_top_k=2,
-                max_top_k=6,
-                score_drop_threshold=0.30,
-                min_score=0.40,
-            ),
-        )
+        reranker = DynamicRAGReranker(llm=None, max_doc_chars=500)
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, reranker=reranker)
 
         config = pipeline._get_pipeline_config()
 
         assert config["reranker"] == {
             "type": "DynamicRAGReranker",
             "model_name": "dynamic-rag",
+            "prompt_template": reranker.prompt_template,
+            "max_doc_chars": 500,
             "batch_size": 64,
             "max_concurrency": 10,
-            "base_reranker": {
-                "type": "FixedAsyncReranker",
-                "model_name": "fixed-scorer",
-                "batch_size": 7,
-                "max_concurrency": 10,
-            },
-            "min_top_k": 2,
-            "max_top_k": 6,
-            "score_drop_threshold": 0.30,
-            "min_score": 0.40,
+            "llm": "FakeListLLM",
         }
 
     @pytest.mark.asyncio
@@ -199,6 +165,68 @@ class TestDynamicRAGPipeline:
         assert metadata["selected_chunk_ids"] == [2]
         assert metadata["selected_scores"] == [0.95]
         assert metadata["effective_top_k"] == 1
+
+    @pytest.mark.asyncio
+    async def test_generate_uses_dynamic_rag_llm_subset_length_and_candidate_mapping(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(side_effect=[_mock_response("3, 1"), _mock_response("final answer")])
+        retrieval_pipeline = create_mock_retrieval_pipeline(
+            default_results=[
+                {"doc_id": 10, "score": 0.9, "content": "first"},
+                {"doc_id": 20, "score": 0.8, "content": "second"},
+                {"doc_id": 30, "score": 0.7, "content": "third"},
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(
+            llm,
+            retrieval_pipeline,
+            service,
+            reranker=DynamicRAGReranker(),
+            candidate_top_k=3,
+        )
+
+        result = await pipeline._generate(1, top_k=3)
+
+        reranker_prompt = llm.ainvoke.await_args_list[0].args[0]
+        generator_prompt = llm.ainvoke.await_args_list[1].args[0]
+        assert "[3] third" in reranker_prompt
+        assert "[1] third" in generator_prompt
+        assert "[2] first" in generator_prompt
+        assert result.metadata is not None
+        assert result.metadata["selected_chunk_ids"] == [30, 10]
+        assert result.metadata["selected_scores"] == [2.0, 1.0]
+        assert result.metadata["effective_top_k"] == 2
+
+    @pytest.mark.asyncio
+    async def test_generate_zero_document_path_passes_none_context_for_model_knowledge(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(side_effect=[_mock_response("None"), _mock_response("knowledge answer")])
+        retrieval_pipeline = create_mock_retrieval_pipeline(
+            default_results=[{"doc_id": 5, "score": 0.7, "content": "unused"}]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(
+            llm,
+            retrieval_pipeline,
+            service,
+            reranker=DynamicRAGReranker(),
+            candidate_top_k=1,
+        )
+
+        result = await pipeline._generate(1, top_k=1)
+
+        generator_prompt = llm.ainvoke.await_args_list[1].args[0]
+        assert "If the retrieved content is None, answer from your own knowledge" in generator_prompt
+        assert "Retrieved content:\nNone" in generator_prompt
+        assert "(no evidence selected)" not in generator_prompt
+        assert result.text == "knowledge answer"
+        assert result.metadata is not None
+        assert result.metadata["selected_chunk_ids"] == []
+        assert result.metadata["selected_scores"] == []
+        assert result.metadata["effective_top_k"] == 0
 
     @pytest.mark.asyncio
     async def test_generate_backfills_missing_contents(self):

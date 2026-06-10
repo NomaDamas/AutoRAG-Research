@@ -1,8 +1,6 @@
 _target_: autorag_research.rerankers.dynamic_rag.DynamicRAGReranker
 model_name: dynamic-rag
-min_top_k: 1
-max_top_k: 8
-score_drop_threshold: null
-min_score: null
+llm: null
+max_doc_chars: 2000
 batch_size: 64
 max_concurrency: 10
