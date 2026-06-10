@@ -14,6 +14,7 @@ from autorag_research.pipelines.generation.interact_rag import (
     InteractRAGState,
     parse_doc_ids,
     parse_interact_rag_action,
+    parse_interact_rag_actions,
 )
 from tests.autorag_research.pipelines.pipeline_test_utils import create_mock_retrieval_pipeline
 
@@ -43,6 +44,8 @@ def _build_unit_pipeline(
     pipeline._retrieval_pipeline = retrieval_pipeline
     pipeline._service = service
     pipeline.pipeline_id = 1
+    if "exact_retrieval_pipeline" in kwargs:
+        pipeline._exact_retrieval_pipeline = kwargs["exact_retrieval_pipeline"]
     return pipeline
 
 
@@ -76,6 +79,14 @@ class TestInteractRAGParsing:
 
         assert action.kind == "answer"
         assert action.text == "final"
+
+    def test_parse_multiple_actions_in_order(self):
+        actions = parse_interact_rag_actions(
+            "reason <exclude_docs>2</exclude_docs> then <semantic_search>apollo</semantic_search>"
+        )
+
+        assert [action.kind for action in actions] == ["exclude_docs", "semantic_search"]
+        assert [action.text for action in actions] == ["2", "apollo"]
 
     def test_parse_doc_ids(self):
         assert parse_doc_ids("IDs: 3, 7 and 12") == [3, 7, 12]
@@ -130,6 +141,23 @@ class TestInteractRAGPipelineConfig:
         assert kwargs["retrieval_pipeline"] is retrieval_pipeline
         assert kwargs["max_steps"] == 4
         assert kwargs["initial_scale"] == 6
+        assert kwargs["exact_retrieval_pipeline"] is None
+
+    def test_get_pipeline_kwargs_passes_exact_pipeline_name_without_injection(self):
+        retrieval_pipeline = create_mock_retrieval_pipeline(pipeline_id=77)
+        llm = FakeListLLM(responses=["<answer>ok</answer>"])
+        config = InteractRAGPipelineConfig(
+            name="interact_rag",
+            llm=llm,
+            retrieval_pipeline_name="vector_search",
+            exact_retrieval_pipeline_name="bm25",
+        )
+
+        config.inject_retrieval_pipeline(retrieval_pipeline)
+        kwargs = config.get_pipeline_kwargs()
+
+        assert kwargs["retrieval_pipeline"] is retrieval_pipeline
+        assert kwargs["exact_retrieval_pipeline"] == "bm25"
 
 
 class TestInteractRAGPipeline:
@@ -242,6 +270,7 @@ class TestInteractRAGPipeline:
         assert result.metadata["evidence"] == ["Apollo 11 landed in July 1969."]
         assert result.metadata["terminated_by"] == "answer"
         assert result.token_usage == {"prompt_tokens": 4, "completion_tokens": 6, "total_tokens": 10}
+        assert result.metadata["exact_engine"] is False
 
     @pytest.mark.asyncio
     async def test_generate_applies_scale_and_exclude_controls(self):
@@ -281,6 +310,169 @@ class TestInteractRAGPipeline:
         assert result.metadata["retrieved_chunk_ids"] == [3]
         assert result.metadata["evidence"] == ["kept"]
         assert result.metadata["terminated_by"] == "max_steps_fallback"
+
+    @pytest.mark.asyncio
+    async def test_exact_search_routes_to_exact_pipeline_with_raw_keywords(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<exact_search>target terms</exact_search>"),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline(default_results=[])
+        exact_pipeline = create_mock_retrieval_pipeline(
+            default_results=[{"doc_id": 11, "score": 1.0, "content": "exact evidence"}]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(
+            llm, retrieval_pipeline, service, max_steps=2, initial_scale=4, exact_retrieval_pipeline=exact_pipeline
+        )
+
+        result = await pipeline._generate(1, top_k=4)
+
+        retrieval_pipeline.retrieve.assert_not_awaited()
+        exact_pipeline.retrieve.assert_awaited_once_with("target terms", 4)
+        assert result.metadata["evidence"] == ["exact evidence"]
+        assert result.metadata["retrieval_action_mode"] == "engine"
+        assert result.metadata["exact_engine"] is True
+        assert result.metadata["degraded_actions"] == []
+
+    @pytest.mark.asyncio
+    async def test_entity_match_uses_exact_pipeline_and_returns_top_three_snippets(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<entity_match>Marie Curie</entity_match>"),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline(default_results=[])
+        exact_pipeline = create_mock_retrieval_pipeline(
+            default_results=[
+                {"doc_id": 1, "score": 0.9, "content": "one"},
+                {"doc_id": 2, "score": 0.8, "content": "two"},
+                {"doc_id": 3, "score": 0.7, "content": "three"},
+                {"doc_id": 4, "score": 0.6, "content": "four"},
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(
+            llm, retrieval_pipeline, service, max_steps=2, initial_scale=5, exact_retrieval_pipeline=exact_pipeline
+        )
+
+        result = await pipeline._generate(1, top_k=5)
+
+        exact_pipeline.retrieve.assert_awaited_once_with("Marie Curie", 5)
+        assert result.metadata["retrieved_chunk_ids"] == [1, 2, 3]
+        assert result.metadata["evidence"] == ["one", "two", "three"]
+
+    @pytest.mark.asyncio
+    async def test_weighted_fusion_normalizes_and_fuses_both_engines(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response('<weighted_fusion semantic="0.25" exact="0.75">apollo</weighted_fusion>'),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        retrieval_pipeline.retrieve = AsyncMock(
+            return_value=[
+                {"doc_id": "a", "score": 0.9, "content": "semantic best"},
+                {"doc_id": "b", "score": 0.5, "content": "shared"},
+                {"doc_id": "c", "score": 0.1, "content": "semantic worst"},
+            ]
+        )
+        exact_pipeline = create_mock_retrieval_pipeline()
+        exact_pipeline.retrieve = AsyncMock(
+            return_value=[
+                {"doc_id": "c", "score": 100.0, "content": "semantic worst"},
+                {"doc_id": "b", "score": 60.0, "content": "shared"},
+                {"doc_id": "a", "score": 20.0, "content": "semantic best"},
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(
+            llm, retrieval_pipeline, service, max_steps=2, initial_scale=3, exact_retrieval_pipeline=exact_pipeline
+        )
+
+        result = await pipeline._generate(1, top_k=3)
+
+        retrieval_pipeline.retrieve.assert_awaited_once_with("apollo", 20)
+        exact_pipeline.retrieve.assert_awaited_once_with("apollo", 20)
+        assert result.metadata["retrieved_chunk_ids"] == ["c", "b", "a"]
+        assert result.metadata["semantic_weight"] == 0.25
+        assert result.metadata["exact_weight"] == 0.75
+
+    @pytest.mark.asyncio
+    async def test_multi_action_applies_exclude_before_same_step_semantic_retrieval(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<semantic_search>first</semantic_search>"),
+                _mock_response("<exclude_docs>2</exclude_docs><semantic_search>second</semantic_search>"),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        retrieval_pipeline.retrieve = AsyncMock(
+            side_effect=[
+                [
+                    {"doc_id": 2, "score": 0.9, "content": "excluded"},
+                    {"doc_id": 3, "score": 0.8, "content": "kept"},
+                ],
+                [
+                    {"doc_id": 2, "score": 0.95, "content": "excluded again"},
+                    {"doc_id": 4, "score": 0.7, "content": "new kept"},
+                ],
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=3, initial_scale=2)
+
+        result = await pipeline._generate(1, top_k=2)
+
+        assert result.metadata["excluded_doc_ids"] == [2]
+        assert result.metadata["retrieved_chunk_ids"] == [3, 4]
+        assert result.metadata["evidence"] == ["kept", "new kept"]
+        assert "exclude_docs: 2" in result.metadata["trace"]
+        assert "semantic_search: second" in result.metadata["trace"]
+
+    @pytest.mark.asyncio
+    async def test_answer_with_same_step_state_action_applies_state_then_terminates(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("<semantic_search>first</semantic_search>"),
+                _mock_response(
+                    "<exclude_docs>2</exclude_docs><semantic_search>moot</semantic_search><answer>done</answer>"
+                ),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline()
+        retrieval_pipeline.retrieve = AsyncMock(
+            return_value=[
+                {"doc_id": 2, "score": 0.9, "content": "excluded"},
+                {"doc_id": 3, "score": 0.8, "content": "kept"},
+            ]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=3, initial_scale=2)
+
+        result = await pipeline._generate(1, top_k=2)
+
+        assert result.text == "done"
+        assert result.metadata["terminated_by"] == "answer"
+        assert result.metadata["excluded_doc_ids"] == [2]
+        assert result.metadata["evidence"] == ["kept"]
+        assert retrieval_pipeline.retrieve.await_count == 1
+        assert any("skipped same-step retrieval actions" in entry for entry in result.metadata["trace"])
 
     @pytest.mark.asyncio
     async def test_generate_applies_include_docs_for_exposed_ids_and_backfills_content(self):

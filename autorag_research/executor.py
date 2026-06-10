@@ -4,6 +4,7 @@ This module provides the Executor class that orchestrates pipeline execution
 and metric evaluation with retry logic, completion verification, and logging.
 """
 
+import inspect
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -291,6 +292,19 @@ class Executor:
             f"{total_queries} queries processed, {len(metric_results)} metrics evaluated"
         )
 
+    def _pipeline_kwargs_with_config_dir(self, config: BasePipelineConfig) -> dict[str, Any]:
+        """Return pipeline kwargs, forwarding the active config_dir when the constructor accepts it.
+
+        Mirrors RetrievalPipelineLoader._instantiate_pipeline so pipelines that lazily load
+        dependency pipelines by name (e.g. INTERACT-RAG's exact retrieval engine) resolve them
+        from the same experiment config directory as the rest of the run.
+        """
+        pipeline_kwargs = config.get_pipeline_kwargs()
+        pipeline_class = config.get_pipeline_class()
+        if self._config_dir is not None and "config_dir" in inspect.signature(pipeline_class.__init__).parameters:
+            pipeline_kwargs.setdefault("config_dir", self._config_dir)
+        return pipeline_kwargs
+
     def _health_check_pipeline(self, config: BasePipelineConfig) -> None:
         """Run a health check by executing N queries through the full pipeline flow.
 
@@ -317,7 +331,7 @@ class Executor:
                 session_factory=self.session_factory,
                 name=health_check_name,
                 schema=self._schema,
-                **config.get_pipeline_kwargs(),
+                **self._pipeline_kwargs_with_config_dir(config),
             )
 
             run_kwargs = config.get_run_kwargs()
@@ -391,7 +405,7 @@ class Executor:
                     session_factory=self.session_factory,
                     name=config.name,
                     schema=self._schema,
-                    **config.get_pipeline_kwargs(),
+                    **self._pipeline_kwargs_with_config_dir(config),
                 )
                 pipeline_id = pipeline.pipeline_id
 

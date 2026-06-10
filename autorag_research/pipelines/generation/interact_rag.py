@@ -1,11 +1,12 @@
 """INTERACT-RAG-style inference pipeline for AutoRAG-Research.
 
-The ICLR 2026 INTERACT-RAG paper equips an agent with corpus-interaction
-primitives beyond black-box query issuing: semantic/exact search, weighted
-fusion, entity matching, include/exclude document controls, and retrieval-scale
-adjustment. This module implements the training-free inference slice that fits
-AutoRAG-Research by mapping those primitives onto an existing retrieval pipeline
-and preserving rich interaction traces for evaluation.
+The ICLR 2026 INTERACT-RAG paper equips an agent with real corpus-interaction
+primitives beyond black-box query issuing: semantic dense search, exact sparse
+search, score-normalized weighted fusion, entity matching, include/exclude
+document controls, and retrieval-scale adjustment. This module implements the
+training-free inference slice that fits AutoRAG-Research by routing exact
+primitives through an optional sparse retrieval engine while preserving rich
+interaction traces for evaluation.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.language_models import BaseLanguageModel
@@ -23,7 +25,8 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.util import TokenUsageTracker
+from autorag_research.pipelines.retrieval.hybrid import HybridRetrievalPipeline
+from autorag_research.util import TokenUsageTracker, normalize_minmax
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -39,15 +42,14 @@ InteractActionKind = Literal[
 ]
 
 DEFAULT_INTERACT_RAG_STEP_PROMPT = """You are an INTERACT-RAG agent that can reason and interact with the retrieval corpus.
-Use exactly one XML-like action per step. Retrieval actions are prompt-simulated through the configured
-retrieval pipeline query boundary:
-- <semantic_search>query</semantic_search>: evidence search
-- <exact_search>keywords</exact_search>: prompt-simulated lexical/exact intent search
-- <weighted_fusion semantic="0.6" exact="0.4">query</weighted_fusion>: prompt-simulated semantic/exact intent
-- <entity_match>entity name</entity_match>: prompt-simulated entity-focused retrieval
+You may combine several XML-like actions in one step; they will be executed in order after state controls are applied:
+- <semantic_search>query</semantic_search>: dense semantic search over the primary retrieval engine
+- <exact_search>keywords</exact_search>: exact/sparse search over the exact retrieval engine when available
+- <weighted_fusion semantic="0.6" exact="0.4">query</weighted_fusion>: run semantic and exact engines, normalize scores, and fuse by weighted sum when available
+- <entity_match>entity name</entity_match>: exact engine entity lookup returning the three most query-related snippets
 - <include_docs>chunk_id</include_docs>: force known useful chunk IDs from displayed evidence into context
-- <exclude_docs>chunk_id</exclude_docs>: remove noisy chunk IDs from displayed evidence and future context
-- <adjust_scale>8</adjust_scale>: change retrieval scale for later searches
+- <exclude_docs>chunk_id</exclude_docs>: remove noisy chunk IDs from displayed evidence and future context before retrieval
+- <adjust_scale>8</adjust_scale>: change retrieval scale for this and later searches
 - <answer>final answer</answer>: finish
 
 Question:
@@ -61,7 +63,7 @@ Excluded doc IDs: {excluded_doc_ids}
 Interaction trace and evidence:
 {scratchpad}
 
-Next action:"""
+Next action(s):"""
 
 DEFAULT_INTERACT_RAG_FINAL_PROMPT = """Answer the question using the INTERACT-RAG interaction trace and gathered evidence.
 
@@ -92,6 +94,9 @@ _WEIGHTED_FUSION_ATTR_RE = re.compile(
 )
 _DOC_ID_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
 
+# Paper Appendix C.2: weighted fusion normalizes the top-20 chunks from each strategy before the weighted sum.
+_FUSION_FETCH_K = 20
+
 
 @dataclass(frozen=True)
 class InteractRAGAction:
@@ -103,34 +108,46 @@ class InteractRAGAction:
     exact_weight: float | None = None
 
 
-def parse_interact_rag_action(response_text: str) -> InteractRAGAction:
-    """Parse the first supported INTERACT-RAG action from an LLM response."""
+def parse_interact_rag_actions(response_text: str) -> list[InteractRAGAction]:
+    """Parse all supported INTERACT-RAG actions in order of appearance."""
+    matches: list[tuple[int, InteractRAGAction]] = []
     for action_kind, pattern in _ACTION_PATTERNS:
-        match = pattern.search(response_text)
-        if match is None:
-            continue
-        semantic_weight = None
-        exact_weight = None
-        if action_kind == "weighted_fusion":
-            weight_match = _WEIGHTED_FUSION_ATTR_RE.search(response_text)
-            if weight_match is not None:
-                try:
-                    semantic_weight = float(weight_match.group(1))
-                    exact_weight = float(weight_match.group(2))
-                except ValueError:
-                    semantic_weight = None
-                    exact_weight = None
-        return InteractRAGAction(
-            kind=action_kind,
-            text=match.group(1).strip(),
-            semantic_weight=semantic_weight,
-            exact_weight=exact_weight,
-        )
+        for match in pattern.finditer(response_text):
+            semantic_weight = None
+            exact_weight = None
+            if action_kind == "weighted_fusion":
+                weight_match = _WEIGHTED_FUSION_ATTR_RE.search(match.group(0))
+                if weight_match is not None:
+                    try:
+                        semantic_weight = float(weight_match.group(1))
+                        exact_weight = float(weight_match.group(2))
+                    except ValueError:
+                        semantic_weight = None
+                        exact_weight = None
+            matches.append((
+                match.start(),
+                InteractRAGAction(
+                    kind=action_kind,
+                    text=match.group(1).strip(),
+                    semantic_weight=semantic_weight,
+                    exact_weight=exact_weight,
+                ),
+            ))
+
+    if matches:
+        return [action for _, action in sorted(matches, key=lambda item: item[0])]
 
     stripped_response = response_text.strip()
     if stripped_response.lower().startswith("answer:"):
-        return InteractRAGAction(kind="answer", text=stripped_response.split(":", 1)[1].strip())
-    return InteractRAGAction(kind="answer", text=stripped_response)
+        return [InteractRAGAction(kind="answer", text=stripped_response.split(":", 1)[1].strip())]
+    return [InteractRAGAction(kind="answer", text=stripped_response)]
+
+
+def parse_interact_rag_action(response_text: str) -> InteractRAGAction:
+    """Parse the first supported INTERACT-RAG action from an LLM response."""
+    actions = parse_interact_rag_actions(response_text)
+    answer_action = next((action for action in actions if action.kind == "answer"), None)
+    return answer_action or actions[0]
 
 
 def parse_doc_ids(text: str) -> list[int | str]:
@@ -169,6 +186,7 @@ class InteractRAGPipelineConfig(BaseGenerationPipelineConfig):
     max_scale: int = 20
     evidence_budget: int = 12
     fallback_to_final_prompt: bool = True
+    exact_retrieval_pipeline_name: str | None = None
 
     def get_pipeline_class(self) -> type[InteractRAGPipeline]:
         """Return the InteractRAGPipeline class."""
@@ -182,6 +200,7 @@ class InteractRAGPipelineConfig(BaseGenerationPipelineConfig):
         return {
             "llm": self.llm,
             "retrieval_pipeline": self._retrieval_pipeline,
+            "exact_retrieval_pipeline": self.exact_retrieval_pipeline_name,
             "step_prompt_template": self.step_prompt_template,
             "final_prompt_template": self.final_prompt_template,
             "max_steps": self.max_steps,
@@ -201,6 +220,7 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         name: str,
         llm: BaseLanguageModel,
         retrieval_pipeline: BaseRetrievalPipeline,
+        exact_retrieval_pipeline: BaseRetrievalPipeline | str | None = None,
         step_prompt_template: str = DEFAULT_INTERACT_RAG_STEP_PROMPT,
         final_prompt_template: str = DEFAULT_INTERACT_RAG_FINAL_PROMPT,
         max_steps: int = 6,
@@ -209,6 +229,7 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         evidence_budget: int = 12,
         fallback_to_final_prompt: bool = True,
         schema: Any | None = None,
+        config_dir: Path | None = None,
     ):
         """Initialize the INTERACT-RAG pipeline."""
         if max_steps < 1:
@@ -228,6 +249,16 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         self.max_scale = max_scale
         self.evidence_budget = evidence_budget
         self.fallback_to_final_prompt = fallback_to_final_prompt
+        exact_retrieval_pipeline_name = exact_retrieval_pipeline if isinstance(exact_retrieval_pipeline, str) else None
+        if isinstance(exact_retrieval_pipeline, str):
+            exact_retrieval_pipeline = HybridRetrievalPipeline._load_pipeline(
+                exact_retrieval_pipeline,
+                session_factory,
+                schema,
+                config_dir,
+            )
+        self._exact_retrieval_pipeline = exact_retrieval_pipeline
+        self._exact_retrieval_pipeline_name = exact_retrieval_pipeline_name
 
         super().__init__(session_factory, name, llm, retrieval_pipeline, schema)
 
@@ -245,6 +276,8 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             "max_scale": self.max_scale,
             "evidence_budget": self.evidence_budget,
             "fallback_to_final_prompt": self.fallback_to_final_prompt,
+            "exact_retrieval_pipeline_id": getattr(self._exact_retrieval_pipeline, "pipeline_id", None),
+            "exact_retrieval_pipeline_name": self._exact_retrieval_pipeline_name,
             "retrieval_pipeline_id": self._retrieval_pipeline.pipeline_id,
             "llm_model": model_name,
         }
@@ -393,12 +426,15 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         return True
 
     @staticmethod
-    def _apply_weight_action(action: InteractRAGAction, state: InteractRAGState) -> bool:
-        """Store weighted-fusion hint values for metadata."""
+    def _apply_weight_action(action: InteractRAGAction, state: InteractRAGState, trace: list[str]) -> bool:
+        """Store weighted-fusion hint values for retrieval and metadata."""
         if action.semantic_weight is not None and action.exact_weight is not None:
             state.semantic_weight = action.semantic_weight
             state.exact_weight = action.exact_weight
-        return False
+            trace.append(
+                f"weighted_fusion weights: semantic={state.semantic_weight:.2f} exact={state.exact_weight:.2f}"
+            )
+        return True
 
     def _apply_state_action(
         self,
@@ -412,8 +448,8 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             return self._apply_doc_id_action(action, state, trace, exposed_doc_ids)
         if action.kind == "adjust_scale":
             return self._apply_scale_action(action, state, trace)
-        if action.kind == "weighted_fusion":
-            return self._apply_weight_action(action, state)
+        if action.kind == "weighted_fusion" and self._exact_retrieval_pipeline is not None:
+            return self._apply_weight_action(action, state, trace)
         return False
 
     def _build_retrieval_query(self, action: InteractRAGAction) -> str:
@@ -483,6 +519,11 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         return action.kind in {"exact_search", "weighted_fusion", "entity_match"}
 
     @staticmethod
+    def _is_retrieval_action(action: InteractRAGAction) -> bool:
+        """Return True when an action triggers a retrieval engine call."""
+        return action.kind in {"semantic_search", "exact_search", "weighted_fusion", "entity_match"}
+
+    @staticmethod
     def _drop_excluded_docs(
         evidence: list[dict[str, Any]],
         retrieved_doc_ids: list[int | str],
@@ -492,6 +533,53 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         excluded_doc_ids = set(state.excluded_doc_ids)
         retrieved_doc_ids[:] = [doc_id for doc_id in retrieved_doc_ids if doc_id not in excluded_doc_ids]
         return [item for item in evidence if item.get("doc_id") not in excluded_doc_ids]
+
+    @staticmethod
+    def _normalize_result_scores(results: list[dict[str, Any]]) -> dict[int | str, float]:
+        """Return min-max normalized scores keyed by document ID."""
+        normalized_scores = normalize_minmax([float(result.get("score") or 0.0) for result in results])
+        return {
+            result["doc_id"]: float(normalized_score or 0.0)
+            for result, normalized_score in zip(results, normalized_scores, strict=False)
+            if result.get("doc_id") is not None
+        }
+
+    async def _retrieve_for_action(self, action: InteractRAGAction, state: InteractRAGState) -> list[dict[str, Any]]:
+        """Run the paper-correct retrieval primitive when an exact engine is configured."""
+        if self._exact_retrieval_pipeline is None:
+            retrieval_query = self._build_retrieval_query(action)
+            return await self._retrieval_pipeline.retrieve(retrieval_query, state.current_scale)
+        if action.kind == "exact_search":
+            return await self._exact_retrieval_pipeline.retrieve(action.text, state.current_scale)
+        if action.kind == "entity_match":
+            entity_results = await self._exact_retrieval_pipeline.retrieve(action.text, state.current_scale)
+            return entity_results[: min(3, state.current_scale)]
+        if action.kind == "weighted_fusion":
+            semantic_weight = action.semantic_weight if action.semantic_weight is not None else state.semantic_weight
+            exact_weight = action.exact_weight if action.exact_weight is not None else state.exact_weight
+            state.semantic_weight = semantic_weight
+            state.exact_weight = exact_weight
+            fusion_fetch_k = max(_FUSION_FETCH_K, state.current_scale)
+            semantic_results = await self._retrieval_pipeline.retrieve(action.text, fusion_fetch_k)
+            exact_results = await self._exact_retrieval_pipeline.retrieve(action.text, fusion_fetch_k)
+            semantic_scores = self._normalize_result_scores(semantic_results)
+            exact_scores = self._normalize_result_scores(exact_results)
+            by_doc_id: dict[int | str, dict[str, Any]] = {}
+            for result in [*semantic_results, *exact_results]:
+                doc_id = result.get("doc_id")
+                if doc_id is not None and doc_id not in by_doc_id:
+                    by_doc_id[doc_id] = dict(result)
+            fused_results: list[dict[str, Any]] = []
+            for doc_id, result in by_doc_id.items():
+                fused_result = dict(result)
+                fused_result["score"] = semantic_weight * semantic_scores.get(
+                    doc_id, 0.0
+                ) + exact_weight * exact_scores.get(doc_id, 0.0)
+                fused_results.append(fused_result)
+            return sorted(fused_results, key=lambda result: float(result.get("score") or 0.0), reverse=True)[
+                : state.current_scale
+            ]
+        return await self._retrieval_pipeline.retrieve(action.text, state.current_scale)
 
     async def _execute_retrieval_action(
         self,
@@ -503,11 +591,14 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         degraded_actions: list[str],
     ) -> list[dict[str, Any]]:
         """Run one retrieval-like action and update evidence."""
-        retrieval_query = self._build_retrieval_query(action)
-        if self._is_prompt_simulated_action(action) and action.kind not in degraded_actions:
+        if (
+            self._exact_retrieval_pipeline is None
+            and self._is_prompt_simulated_action(action)
+            and action.kind not in degraded_actions
+        ):
             degraded_actions.append(action.kind)
             trace.append(f"degraded {action.kind}: prompt-simulated via retrieval query")
-        retrieval_results = await self._retrieval_pipeline.retrieve(retrieval_query, state.current_scale)
+        retrieval_results = await self._retrieve_for_action(action, state)
         filtered_results = self._filter_results(retrieval_results, state)
         new_evidence = self._evidence_from_results(filtered_results)
         doc_ids = [item["doc_id"] for item in new_evidence]
@@ -533,24 +624,34 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             prompt = self._build_step_prompt(query_text, state, trace, evidence, step_index)
             response = await self._llm.ainvoke(prompt)
             tracker.record(response)
-            action = parse_interact_rag_action(self._extract_text(response))
-            if action.kind == "answer":
-                final_answer = action.text
+            actions = parse_interact_rag_actions(self._extract_text(response))
+            answer_action = next((action for action in actions if action.kind == "answer"), None)
+            for action in actions:
+                if (
+                    self._apply_state_action(action, state, trace, set(retrieved_doc_ids))
+                    and action.kind == "exclude_docs"
+                ):
+                    evidence = self._drop_excluded_docs(evidence, retrieved_doc_ids, state)
+            if answer_action is not None:
+                skipped_retrievals = [action.kind for action in actions if self._is_retrieval_action(action)]
+                if skipped_retrievals:
+                    trace.append(
+                        f"answer present; skipped same-step retrieval actions: {', '.join(skipped_retrievals)}"
+                    )
+                final_answer = answer_action.text
                 trace.append(f"answer: {final_answer}")
                 terminated_by = "answer"
                 break
-            if self._apply_state_action(action, state, trace, set(retrieved_doc_ids)):
-                if action.kind == "exclude_docs":
-                    evidence = self._drop_excluded_docs(evidence, retrieved_doc_ids, state)
-                continue
-            evidence = await self._execute_retrieval_action(
-                action,
-                state,
-                trace,
-                evidence,
-                retrieved_doc_ids,
-                degraded_actions,
-            )
+            for action in actions:
+                if self._is_retrieval_action(action):
+                    evidence = await self._execute_retrieval_action(
+                        action,
+                        state,
+                        trace,
+                        evidence,
+                        retrieved_doc_ids,
+                        degraded_actions,
+                    )
 
         if not final_answer and self.fallback_to_final_prompt:
             final_prompt = self._build_final_prompt(query_text, trace, evidence)
@@ -571,7 +672,8 @@ class InteractRAGPipeline(BaseGenerationPipeline):
                 "current_scale": state.current_scale,
                 "semantic_weight": state.semantic_weight,
                 "exact_weight": state.exact_weight,
-                "retrieval_action_mode": "prompt_simulated",
+                "retrieval_action_mode": "engine" if self._exact_retrieval_pipeline is not None else "prompt_simulated",
+                "exact_engine": self._exact_retrieval_pipeline is not None,
                 "degraded_actions": degraded_actions,
                 "terminated_by": terminated_by,
             },
@@ -587,4 +689,5 @@ __all__ = [
     "InteractRAGState",
     "parse_doc_ids",
     "parse_interact_rag_action",
+    "parse_interact_rag_actions",
 ]
