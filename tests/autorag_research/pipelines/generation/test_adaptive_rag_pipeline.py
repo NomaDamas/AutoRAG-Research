@@ -77,8 +77,8 @@ class TestAdaptiveRAGPipeline:
         assert mock_retrieval.retrieve.await_count == 0
 
     @pytest.mark.asyncio
-    async def test_multi_route_performs_iterative_retrieval(self, session_factory, mock_retrieval, cleanup):
-        llm = FakeListLLM(responses=["complex", "follow up query", "STOP", "Complex answer"])
+    async def test_multi_route_performs_ircot_interleaved_retrieval(self, session_factory, mock_retrieval, cleanup):
+        llm = FakeListLLM(responses=["complex", "Thought about X.", "So the answer is: 42", "Complex answer"])
         mock_retrieval._retrieve_by_id = AsyncMock(
             return_value=[{"doc_id": 1, "score": 0.8}, {"doc_id": 2, "score": 0.7}]
         )
@@ -99,11 +99,12 @@ class TestAdaptiveRAGPipeline:
         assert result.metadata is not None
         assert result.metadata["complexity_tier"] == "complex"
         assert result.metadata["route"] == "multi"
-        assert result.metadata["follow_up_queries"] == ["follow up query"]
-        assert result.metadata["retrieved_chunk_ids"] == [4, 1, 2]
-        assert result.metadata["retrieved_scores"] == [0.95, 0.8, 0.7]
+        assert result.metadata["cot_sentences"] == ["Thought about X.", "So the answer is: 42"]
+        assert result.metadata["steps_completed"] == 2
+        assert result.metadata["retrieved_chunk_ids"] == [1, 2, 4]
+        assert result.metadata["retrieved_scores"] == [0.8, 0.7, 0.95]
         mock_retrieval._retrieve_by_id.assert_awaited_once_with(1, 4)
-        mock_retrieval.retrieve.assert_awaited_once_with("follow up query", 4)
+        mock_retrieval.retrieve.assert_awaited_once_with("Thought about X.", 4)
 
     @pytest.mark.asyncio
     async def test_unknown_complexity_falls_back_to_single_route(self, session_factory, mock_retrieval, cleanup):
@@ -126,7 +127,7 @@ class TestAdaptiveRAGPipeline:
         assert mock_retrieval.retrieve.await_count == 0
 
     @pytest.mark.asyncio
-    async def test_multi_route_uses_configured_stop_query_signal_in_prompt(self, mock_retrieval):
+    async def test_multi_route_uses_answer_signal_and_final_prompt_cot_history(self, mock_retrieval):
         class StubService:
             def get_query_text(self, query_id: int | str) -> str:
                 return f"query {query_id}"
@@ -134,7 +135,7 @@ class TestAdaptiveRAGPipeline:
             def get_chunk_contents(self, chunk_ids: list[int | str]) -> list[str]:
                 return [f"chunk {chunk_id}" for chunk_id in chunk_ids]
 
-        llm = FakeListLLM(responses=["complex", "DONE", "Complex answer"])
+        llm = FakeListLLM(responses=["complex", "Done: 42", "Complex answer"])
         mock_retrieval._retrieve_by_id = AsyncMock(return_value=[{"doc_id": 1, "score": 0.8}])
         mock_retrieval.retrieve = AsyncMock(return_value=[{"doc_id": 4, "score": 0.95}])
         pipeline = AdaptiveRAGPipeline.__new__(AdaptiveRAGPipeline)
@@ -144,24 +145,104 @@ class TestAdaptiveRAGPipeline:
         pipeline._complexity_prompt_template = "{query}"
         pipeline._zero_retrieval_prompt_template = "{query}"
         pipeline._single_retrieval_prompt_template = "{context} {query}"
-        pipeline._multi_retrieval_query_prompt_template = (
-            "Question: {query}\nContext: {context}\nPrevious: {follow_up_queries}\n"
-            "Respond with {stop_query_signal} when enough evidence is available."
+        pipeline._multi_reasoning_prompt_template = (
+            "Question: {query}\nParagraphs: {paragraphs}\nThoughts: {cot_history}"
         )
-        pipeline._multi_retrieval_answer_prompt_template = "{query} {context} {follow_up_queries}"
+        pipeline._multi_retrieval_answer_prompt_template = "{query} {context} {cot_history}"
         pipeline._route_for_simple = "zero"
         pipeline._route_for_moderate = "single"
         pipeline._route_for_complex = "multi"
         pipeline._max_multi_steps = 2
-        pipeline._stop_query_signal = "DONE"
+        pipeline._answer_signal = "done:"
+        pipeline._paragraph_budget = 15
 
         result = await pipeline._generate(query_id=1, top_k=4)
 
         assert result.text == "Complex answer"
         assert result.metadata is not None
-        assert result.metadata["follow_up_queries"] == []
+        assert result.metadata["cot_sentences"] == ["Done: 42"]
+        assert result.metadata["steps_completed"] == 1
         mock_retrieval._retrieve_by_id.assert_awaited_once_with(1, 4)
         assert mock_retrieval.retrieve.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_multi_route_dedups_and_applies_fifo_paragraph_budget(self, mock_retrieval):
+        class StubService:
+            def get_query_text(self, query_id: int | str) -> str:
+                return f"query {query_id}"
+
+            def get_chunk_contents(self, chunk_ids: list[int | str]) -> list[str]:
+                return [f"chunk {chunk_id}" for chunk_id in chunk_ids]
+
+        llm = FakeListLLM(responses=["complex", "Thought one.", "Thought two.", "Final answer"])
+        mock_retrieval._retrieve_by_id = AsyncMock(
+            return_value=[{"doc_id": 1, "score": 0.1}, {"doc_id": 2, "score": 0.2}]
+        )
+        mock_retrieval.retrieve = AsyncMock(
+            side_effect=[
+                [{"doc_id": 2, "score": 0.9}, {"doc_id": 3, "score": 0.3}, {"doc_id": 4, "score": 0.4}],
+                [{"doc_id": 4, "score": 0.8}, {"doc_id": 5, "score": 0.5}],
+            ]
+        )
+        pipeline = AdaptiveRAGPipeline.__new__(AdaptiveRAGPipeline)
+        pipeline._service = StubService()
+        pipeline._llm = llm
+        pipeline._retrieval_pipeline = mock_retrieval
+        pipeline._complexity_prompt_template = "{query}"
+        pipeline._zero_retrieval_prompt_template = "{query}"
+        pipeline._single_retrieval_prompt_template = "{context} {query}"
+        pipeline._multi_reasoning_prompt_template = "{query} {paragraphs} {cot_history}"
+        pipeline._multi_retrieval_answer_prompt_template = "{query} {context} {cot_history}"
+        pipeline._route_for_simple = "zero"
+        pipeline._route_for_moderate = "single"
+        pipeline._route_for_complex = "multi"
+        pipeline._max_multi_steps = 2
+        pipeline._answer_signal = "answer is:"
+        pipeline._paragraph_budget = 3
+
+        result = await pipeline._generate(query_id=1, top_k=3)
+
+        assert result.metadata is not None
+        assert result.metadata["retrieved_chunk_ids"] == [3, 4, 5]
+        assert result.metadata["retrieved_scores"] == [0.3, 0.4, 0.5]
+        assert result.metadata["cot_sentences"] == ["Thought one.", "Thought two."]
+        assert mock_retrieval.retrieve.await_args_list[0].args == ("Thought one.", 3)
+        assert mock_retrieval.retrieve.await_args_list[1].args == ("Thought two.", 3)
+
+    @pytest.mark.asyncio
+    async def test_multi_route_dedups_duplicate_chunk_ids_within_one_retrieval(self, mock_retrieval):
+        class StubService:
+            def get_query_text(self, query_id: int | str) -> str:
+                return f"query {query_id}"
+
+            def get_chunk_contents(self, chunk_ids: list[int | str]) -> list[str]:
+                return [f"chunk {chunk_id}" for chunk_id in chunk_ids]
+
+        llm = FakeListLLM(responses=["complex", "Thought one.", "Final answer"])
+        duplicate_results = [{"doc_id": 1, "score": 0.9}, {"doc_id": 1, "score": 0.8}]
+        mock_retrieval._retrieve_by_id = AsyncMock(return_value=duplicate_results)
+        mock_retrieval.retrieve = AsyncMock(return_value=duplicate_results)
+        pipeline = AdaptiveRAGPipeline.__new__(AdaptiveRAGPipeline)
+        pipeline._service = StubService()
+        pipeline._llm = llm
+        pipeline._retrieval_pipeline = mock_retrieval
+        pipeline._complexity_prompt_template = "{query}"
+        pipeline._zero_retrieval_prompt_template = "{query}"
+        pipeline._single_retrieval_prompt_template = "{context} {query}"
+        pipeline._multi_reasoning_prompt_template = "{query} {paragraphs} {cot_history}"
+        pipeline._multi_retrieval_answer_prompt_template = "{query} {context} {cot_history}"
+        pipeline._route_for_simple = "zero"
+        pipeline._route_for_moderate = "single"
+        pipeline._route_for_complex = "multi"
+        pipeline._max_multi_steps = 1
+        pipeline._answer_signal = "answer is:"
+        pipeline._paragraph_budget = 5
+
+        result = await pipeline._generate(query_id=1, top_k=3)
+
+        assert result.metadata is not None
+        assert result.metadata["retrieved_chunk_ids"] == [1]
+        assert result.metadata["retrieved_scores"] == [0.9]
 
     def test_complexity_parser_uses_safest_tier_when_multiple_labels_are_present(self):
         assert AdaptiveRAGPipeline._parse_complexity_tier("not simple; this is complex") == "complex"
@@ -197,7 +278,8 @@ class TestAdaptiveRAGPipeline:
             route_for_moderate="multi",
             route_for_complex="zero",
             max_multi_steps=4,
-            stop_query_signal="DONE",
+            answer_signal="DONE",
+            paragraph_budget=7,
         )
         config.inject_retrieval_pipeline(mock_retrieval)
 
@@ -210,7 +292,8 @@ class TestAdaptiveRAGPipeline:
         assert kwargs["route_for_moderate"] == "multi"
         assert kwargs["route_for_complex"] == "zero"
         assert kwargs["max_multi_steps"] == 4
-        assert kwargs["stop_query_signal"] == "DONE"
+        assert kwargs["answer_signal"] == "DONE"
+        assert kwargs["paragraph_budget"] == 7
 
     def test_pipeline_config_output(self, session_factory, mock_retrieval, cleanup):
         llm = FakeListLLM(responses=["simple", "answer"])
@@ -223,7 +306,8 @@ class TestAdaptiveRAGPipeline:
             route_for_moderate="single",
             route_for_complex="multi",
             max_multi_steps=3,
-            stop_query_signal="HALT",
+            answer_signal="HALT",
+            paragraph_budget=9,
         )
         cleanup.append(pipeline.pipeline_id)
 
@@ -235,11 +319,12 @@ class TestAdaptiveRAGPipeline:
         assert config["route_for_moderate"] == "single"
         assert config["route_for_complex"] == "multi"
         assert config["max_multi_steps"] == 3
-        assert config["stop_query_signal"] == "HALT"
+        assert config["answer_signal"] == "HALT"
+        assert config["paragraph_budget"] == 9
         assert "complexity_prompt_template" in config
         assert "zero_retrieval_prompt_template" in config
         assert "single_retrieval_prompt_template" in config
-        assert "multi_retrieval_query_prompt_template" in config
+        assert "multi_reasoning_prompt_template" in config
         assert "multi_retrieval_answer_prompt_template" in config
 
     def test_run_pipeline(self, session_factory, cleanup):

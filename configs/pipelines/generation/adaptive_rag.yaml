@@ -7,7 +7,8 @@ route_for_simple: zero
 route_for_moderate: single
 route_for_complex: multi
 max_multi_steps: 2
-stop_query_signal: STOP
+answer_signal: "answer is:"
+paragraph_budget: 15
 top_k: 10
 batch_size: 128
 max_concurrency: 8

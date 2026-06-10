@@ -3,7 +3,7 @@
 AdaptiveRAG routes each query to a retrieval strategy based on predicted complexity:
 - zero: answer directly without retrieval
 - single: single-pass retrieval then generation
-- multi: iterative retrieval with follow-up query generation
+- multi: IRCoT-style interleaved reasoning and retrieval
 """
 
 import re
@@ -44,20 +44,21 @@ Question: {query}
 
 Answer:"""
 
-DEFAULT_MULTI_RETRIEVAL_QUERY_PROMPT_TEMPLATE = """You are performing iterative retrieval for a complex question.
+DEFAULT_MULTI_REASONING_PROMPT_TEMPLATE = """You are answering a multi-step question using chain-of-thought reasoning.
 
 Question: {query}
 
-Current Context:
-{context}
+Available Paragraphs:
+{paragraphs}
 
-Previous Follow-up Queries:
-{follow_up_queries}
+Previous Thoughts:
+{cot_history}
 
-Generate the next short retrieval query to gather missing evidence.
-If enough evidence is already available, respond exactly with {stop_query_signal}.
+Generate the next reasoning step. Think step-by-step about what information you need or what conclusion you can draw.
 
-Next Retrieval Query:"""
+If you have enough information to answer the question, write: "The answer is: [your answer]"
+
+Next Thought:"""
 
 DEFAULT_MULTI_RETRIEVAL_ANSWER_PROMPT_TEMPLATE = """Answer the question using the collected evidence.
 
@@ -66,8 +67,8 @@ Question: {query}
 Collected Context:
 {context}
 
-Follow-up Queries Used:
-{follow_up_queries}
+Chain-of-Thought History:
+{cot_history}
 
 Answer:"""
 
@@ -79,13 +80,14 @@ class AdaptiveRAGPipelineConfig(BaseGenerationPipelineConfig):
     complexity_prompt_template: str = field(default=DEFAULT_COMPLEXITY_PROMPT_TEMPLATE)
     zero_retrieval_prompt_template: str = field(default=DEFAULT_ZERO_RETRIEVAL_PROMPT_TEMPLATE)
     single_retrieval_prompt_template: str = field(default=DEFAULT_SINGLE_RETRIEVAL_PROMPT_TEMPLATE)
-    multi_retrieval_query_prompt_template: str = field(default=DEFAULT_MULTI_RETRIEVAL_QUERY_PROMPT_TEMPLATE)
+    multi_reasoning_prompt_template: str = field(default=DEFAULT_MULTI_REASONING_PROMPT_TEMPLATE)
     multi_retrieval_answer_prompt_template: str = field(default=DEFAULT_MULTI_RETRIEVAL_ANSWER_PROMPT_TEMPLATE)
     route_for_simple: Literal["zero", "single", "multi"] = "zero"
     route_for_moderate: Literal["zero", "single", "multi"] = "single"
     route_for_complex: Literal["zero", "single", "multi"] = "multi"
     max_multi_steps: int = 2
-    stop_query_signal: str = "STOP"
+    answer_signal: str = "answer is:"
+    paragraph_budget: int = 15
 
     def get_pipeline_class(self) -> type["AdaptiveRAGPipeline"]:
         """Return the AdaptiveRAGPipeline class."""
@@ -109,13 +111,14 @@ class AdaptiveRAGPipelineConfig(BaseGenerationPipelineConfig):
             "complexity_prompt_template": self.complexity_prompt_template,
             "zero_retrieval_prompt_template": self.zero_retrieval_prompt_template,
             "single_retrieval_prompt_template": self.single_retrieval_prompt_template,
-            "multi_retrieval_query_prompt_template": self.multi_retrieval_query_prompt_template,
+            "multi_reasoning_prompt_template": self.multi_reasoning_prompt_template,
             "multi_retrieval_answer_prompt_template": self.multi_retrieval_answer_prompt_template,
             "route_for_simple": route_map["simple"],
             "route_for_moderate": route_map["moderate"],
             "route_for_complex": route_map["complex"],
             "max_multi_steps": self.max_multi_steps,
-            "stop_query_signal": self.stop_query_signal,
+            "answer_signal": self.answer_signal,
+            "paragraph_budget": self.paragraph_budget,
         }
 
 
@@ -131,20 +134,21 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
         complexity_prompt_template: str = DEFAULT_COMPLEXITY_PROMPT_TEMPLATE,
         zero_retrieval_prompt_template: str = DEFAULT_ZERO_RETRIEVAL_PROMPT_TEMPLATE,
         single_retrieval_prompt_template: str = DEFAULT_SINGLE_RETRIEVAL_PROMPT_TEMPLATE,
-        multi_retrieval_query_prompt_template: str = DEFAULT_MULTI_RETRIEVAL_QUERY_PROMPT_TEMPLATE,
+        multi_reasoning_prompt_template: str = DEFAULT_MULTI_REASONING_PROMPT_TEMPLATE,
         multi_retrieval_answer_prompt_template: str = DEFAULT_MULTI_RETRIEVAL_ANSWER_PROMPT_TEMPLATE,
         route_for_simple: Literal["zero", "single", "multi"] = "zero",
         route_for_moderate: Literal["zero", "single", "multi"] = "single",
         route_for_complex: Literal["zero", "single", "multi"] = "multi",
         max_multi_steps: int = 2,
-        stop_query_signal: str = "STOP",
+        answer_signal: str = "answer is:",
+        paragraph_budget: int = 15,
         schema: Any | None = None,
     ):
         """Initialize AdaptiveRAG pipeline."""
         self._complexity_prompt_template = complexity_prompt_template
         self._zero_retrieval_prompt_template = zero_retrieval_prompt_template
         self._single_retrieval_prompt_template = single_retrieval_prompt_template
-        self._multi_retrieval_query_prompt_template = multi_retrieval_query_prompt_template
+        self._multi_reasoning_prompt_template = multi_reasoning_prompt_template
         self._multi_retrieval_answer_prompt_template = multi_retrieval_answer_prompt_template
         route_map = self._validate_route_map(
             route_for_simple=route_for_simple,
@@ -155,7 +159,8 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
         self._route_for_moderate = route_map["moderate"]
         self._route_for_complex = route_map["complex"]
         self._max_multi_steps = max_multi_steps
-        self._stop_query_signal = stop_query_signal
+        self._answer_signal = answer_signal
+        self._paragraph_budget = paragraph_budget
 
         super().__init__(session_factory, name, llm, retrieval_pipeline, schema)
 
@@ -170,13 +175,14 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
             "complexity_prompt_template": self._complexity_prompt_template,
             "zero_retrieval_prompt_template": self._zero_retrieval_prompt_template,
             "single_retrieval_prompt_template": self._single_retrieval_prompt_template,
-            "multi_retrieval_query_prompt_template": self._multi_retrieval_query_prompt_template,
+            "multi_reasoning_prompt_template": self._multi_reasoning_prompt_template,
             "multi_retrieval_answer_prompt_template": self._multi_retrieval_answer_prompt_template,
             "route_for_simple": self._route_for_simple,
             "route_for_moderate": self._route_for_moderate,
             "route_for_complex": self._route_for_complex,
             "max_multi_steps": self._max_multi_steps,
-            "stop_query_signal": self._stop_query_signal,
+            "answer_signal": self._answer_signal,
+            "paragraph_budget": self._paragraph_budget,
             "retrieval_pipeline_id": self._retrieval_pipeline.pipeline_id,
             "llm_model": model_name,
         }
@@ -256,28 +262,31 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
         return route_map[complexity_tier]
 
     @staticmethod
-    def _merge_retrieval_results(result_sets: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
-        """Merge retrieval results by doc_id, keeping the highest score per document."""
-        merged: dict[int | str, dict[str, Any]] = {}
+    def _extract_first_sentence(text: str) -> str:
+        """Extract the first sentence from generated text."""
+        text = text.strip()
+        if not text:
+            return text
 
-        for result_set in result_sets:
-            for result in result_set:
-                doc_id = result.get("doc_id")
-                if doc_id is None:
-                    continue
+        for delimiter in [". ", "! ", "? "]:
+            if delimiter in text:
+                return text.split(delimiter, 1)[0] + delimiter[0]
 
-                score = AdaptiveRAGPipeline._normalize_score(result.get("score"))
-                existing = merged.get(doc_id)
-                if existing is None or score > AdaptiveRAGPipeline._normalize_score(existing.get("score")):
-                    merged[doc_id] = {
-                        "doc_id": doc_id,
-                        "score": score,
-                    }
+        return text
 
-        return sorted(
-            merged.values(),
-            key=lambda item: (-AdaptiveRAGPipeline._normalize_score(item.get("score")), str(item.get("doc_id"))),
-        )
+    @staticmethod
+    def _format_numbered_paragraphs(paragraphs: list[str]) -> str:
+        """Format ordered paragraphs for prompts."""
+        if not paragraphs:
+            return "(No paragraphs available)"
+        return "\n\n".join(f"[{index + 1}] {paragraph}" for index, paragraph in enumerate(paragraphs))
+
+    @staticmethod
+    def _format_cot_history(cot_sentences: list[str]) -> str:
+        """Format chain-of-thought history for prompts."""
+        if not cot_sentences:
+            return "(No previous thoughts)"
+        return "\n".join(f"Thought {index + 1}: {sentence}" for index, sentence in enumerate(cot_sentences))
 
     def _build_context(self, chunk_ids: list[int | str]) -> str:
         """Build context text from chunk IDs."""
@@ -285,6 +294,40 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
             return ""
         chunk_contents = self._service.get_chunk_contents(chunk_ids)
         return "\n\n".join(content for content in chunk_contents if content)
+
+    def _append_ordered_paragraphs(
+        self,
+        retrieved_results: list[dict[str, Any]],
+        chunk_ids: list[int | str],
+        scores: list[float],
+        paragraphs: list[str],
+    ) -> None:
+        """Append newly retrieved paragraphs in retrieval order, deduping by chunk ID and applying FIFO budget."""
+        seen_chunk_ids: set[int | str] = set(chunk_ids)
+        new_results: list[dict[str, Any]] = []
+        for result in retrieved_results:
+            doc_id = result.get("doc_id")
+            if doc_id is None or doc_id in seen_chunk_ids:
+                continue
+            seen_chunk_ids.add(doc_id)
+            new_results.append(result)
+        new_chunk_ids = [result["doc_id"] for result in new_results]
+        if not new_chunk_ids:
+            return
+
+        new_contents = self._service.get_chunk_contents(new_chunk_ids)
+        for result, content in zip(new_results, new_contents, strict=False):
+            if not content:
+                continue
+            chunk_ids.append(result["doc_id"])
+            scores.append(self._normalize_score(result.get("score")))
+            paragraphs.append(content)
+
+        overflow = len(paragraphs) - self._paragraph_budget
+        if overflow > 0:
+            del chunk_ids[:overflow]
+            del scores[:overflow]
+            del paragraphs[:overflow]
 
     async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
         """Generate answer using adaptive route selection."""
@@ -336,41 +379,38 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
                 },
             )
 
-        # multi route
-        retrieved_sets: list[list[dict[str, Any]]] = [
-            await self._retrieval_pipeline._retrieve_by_id(query_id, top_k),
-        ]
-        follow_up_queries: list[str] = []
+        # multi route: Adaptive-RAG route C follows IRCoT-style interleaved reasoning and retrieval.
+        retrieved_results = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
+        chunk_ids: list[int | str] = []
+        retrieved_scores: list[float] = []
+        paragraphs: list[str] = []
+        cot_sentences: list[str] = []
+        steps_completed = 0
+        self._append_ordered_paragraphs(retrieved_results, chunk_ids, retrieved_scores, paragraphs)
 
-        for _ in range(self._max_multi_steps):
-            merged_so_far = self._merge_retrieval_results(retrieved_sets)[:top_k]
-            context = self._build_context([item["doc_id"] for item in merged_so_far])
-            previous_queries = "\n".join(follow_up_queries) if follow_up_queries else "(none)"
-            next_query_prompt = self._multi_retrieval_query_prompt_template.format(
+        for step in range(self._max_multi_steps):
+            steps_completed = step + 1
+            reasoning_prompt = self._multi_reasoning_prompt_template.format(
                 query=query_text,
-                context=context,
-                follow_up_queries=previous_queries,
-                stop_query_signal=self._stop_query_signal,
+                paragraphs=self._format_numbered_paragraphs(paragraphs),
+                cot_history=self._format_cot_history(cot_sentences),
             )
+            reasoning_response = await self._llm.ainvoke(reasoning_prompt)
+            tracker.record(reasoning_response)
+            reasoning_text = self._extract_text(reasoning_response)
+            cot_sentence = self._extract_first_sentence(reasoning_text)
+            cot_sentences.append(cot_sentence)
 
-            next_query_response = await self._llm.ainvoke(next_query_prompt)
-            tracker.record(next_query_response)
-            next_query = self._extract_text(next_query_response).strip()
-
-            if not next_query or next_query.upper() == self._stop_query_signal.upper():
+            if self._answer_signal.lower() in reasoning_text.lower():
                 break
 
-            follow_up_queries.append(next_query)
-            retrieved_sets.append(await self._retrieval_pipeline.retrieve(next_query, top_k))
+            cot_results = await self._retrieval_pipeline.retrieve(cot_sentence, top_k)
+            self._append_ordered_paragraphs(cot_results, chunk_ids, retrieved_scores, paragraphs)
 
-        merged_results = self._merge_retrieval_results(retrieved_sets)[:top_k]
-        merged_chunk_ids = [item["doc_id"] for item in merged_results]
-        final_context = self._build_context(merged_chunk_ids)
-        final_follow_ups = "\n".join(follow_up_queries) if follow_up_queries else "(none)"
         answer_prompt = self._multi_retrieval_answer_prompt_template.format(
             query=query_text,
-            context=final_context,
-            follow_up_queries=final_follow_ups,
+            context="\n\n".join(paragraphs),
+            cot_history=self._format_cot_history(cot_sentences),
         )
         answer_response = await self._llm.ainvoke(answer_prompt)
         tracker.record(answer_response)
@@ -382,8 +422,9 @@ class AdaptiveRAGPipeline(BaseGenerationPipeline):
             metadata={
                 "complexity_tier": complexity_tier,
                 "route": route,
-                "retrieved_chunk_ids": merged_chunk_ids,
-                "retrieved_scores": [self._normalize_score(item.get("score")) for item in merged_results],
-                "follow_up_queries": follow_up_queries,
+                "retrieved_chunk_ids": chunk_ids,
+                "retrieved_scores": retrieved_scores,
+                "cot_sentences": cot_sentences,
+                "steps_completed": steps_completed,
             },
         )
