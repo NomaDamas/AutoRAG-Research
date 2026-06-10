@@ -1,10 +1,11 @@
 """RAS (Retrieval-And-Structuring) generation pipeline.
 
-This module implements an AutoRAG-compatible, inference-time RAS baseline: plan
-retrieval needs, retrieve passages, extract triples into a question-specific
-structured graph, and answer from that graph plus supporting evidence. Heavy
-GraphLLM/GNN training components from the paper are out of scope for this
-pipeline implementation.
+This module implements the paper-faithful inference loop for RAS: plan before any
+retrieval, optionally answer from parametric knowledge with [NO_RETRIEVAL],
+iteratively retrieve planner-selected subqueries, extract triples into an evolving
+question-specific graph, preserve per-subquery graph history, and answer from the
+serialized graph plus history. Heavy trained GraphLLM/GNN components from the
+paper are out of scope for this pipeline implementation.
 """
 
 from __future__ import annotations
@@ -25,23 +26,25 @@ from autorag_research.util import TokenUsageTracker
 
 logger = logging.getLogger("AutoRAG-Research")
 
-RASPlanKind = Literal["retrieve", "sufficient", "invalid"]
+RASPlanKind = Literal["retrieve", "sufficient", "no_retrieval", "invalid"]
 
 DEFAULT_RAS_PLAN_PROMPT = """You are a Retrieval-And-Structuring (RAS) planner.
-Decide whether more retrieval is needed before building the structured answer graph.
-Return exactly one action:
-- <subquery>standalone retrieval query</subquery>
-- <sufficient>brief reason evidence is sufficient</sufficient>
+Decide the next paper-protocol action for answering the question from an evolving graph.
+Return exactly one action token:
+- [NO_RETRIEVAL] when the question should be answered directly from parametric knowledge.
+- [SUBQ] standalone retrieval subquery when more evidence is needed.
+- [SUFFICIENT] when the graph and history are sufficient to answer.
 
 Question:
 {query}
 
 Step: {step}/{max_steps}
-Current triples:
-{triples}
 
-Evidence:
-{evidence}
+Current graph G_Q:
+{graph}
+
+Iteration history:
+{history}
 
 Next action:"""
 
@@ -57,21 +60,29 @@ Passage:
 
 Triples:"""
 
-DEFAULT_RAS_ANSWER_PROMPT = """Answer the question using the structured triples and supporting evidence.
+DEFAULT_RAS_ANSWER_PROMPT = """Answer the question using only the structured graph and subquery history.
 
 Question:
 {query}
 
-Structured triples:
-{triples}
+Structured graph G_Q:
+{graph}
 
-Supporting evidence:
-{evidence}
+Subquery-to-triples history:
+{history}
 
 Answer:"""
 
-_SUBQUERY_RE = re.compile(r"<subquery>\s*(.*?)\s*</subquery>", re.IGNORECASE | re.DOTALL)
-_SUFFICIENT_RE = re.compile(r"<sufficient>\s*(.*?)\s*</sufficient>", re.IGNORECASE | re.DOTALL)
+DEFAULT_RAS_NO_RETRIEVAL_PROMPT = """Answer the question directly from parametric knowledge. Do not cite retrieved evidence.
+
+Question:
+{query}
+
+Answer:"""
+
+_SUBQ_TOKEN_RE = re.compile(r"\[\s*SUBQ\s*\]\s*(.*)", re.IGNORECASE | re.DOTALL)
+_NO_RETRIEVAL_TOKEN_RE = re.compile(r"\[\s*NO_RETRIEVAL\s*\]", re.IGNORECASE)
+_SUFFICIENT_TOKEN_RE = re.compile(r"\[\s*SUFFICIENT\s*\]", re.IGNORECASE)
 _TRIPLE_RE = re.compile(r"<triple>\s*(.*?)\s*</triple>", re.IGNORECASE | re.DOTALL)
 
 
@@ -100,23 +111,42 @@ class RASTriple:
         return f"({self.subject}) -[{self.predicate}]-> ({self.object})"
 
 
-def parse_ras_plan_action(response_text: str) -> RASPlanAction:
-    """Parse RAS planner output."""
-    sufficient_match = _SUFFICIENT_RE.search(response_text)
-    if sufficient_match is not None:
-        text = sufficient_match.group(1).strip()
-        if text:
-            return RASPlanAction(kind="sufficient", text=text)
-        return RASPlanAction(kind="invalid", text=response_text.strip())
+@dataclass(frozen=True)
+class RASIterationRecord:
+    """Serializable per-subquery RAS history record."""
 
-    subquery_match = _SUBQUERY_RE.search(response_text)
+    subquery: str
+    triples: tuple[RASTriple, ...]
+    note: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a serializable representation."""
+        payload: dict[str, Any] = {
+            "subquery": self.subquery,
+            "triples": [triple.as_tuple() for triple in self.triples],
+        }
+        if self.note is not None:
+            payload["note"] = self.note
+        return payload
+
+
+def parse_ras_plan_action(response_text: str) -> RASPlanAction:
+    """Parse paper-token RAS planner output."""
+    stripped_response = response_text.strip()
+
+    subquery_match = _SUBQ_TOKEN_RE.search(response_text)
     if subquery_match is not None:
         text = subquery_match.group(1).strip()
         if text:
             return RASPlanAction(kind="retrieve", text=text)
-        return RASPlanAction(kind="invalid", text=response_text.strip())
+        return RASPlanAction(kind="invalid", text=stripped_response)
 
-    stripped_response = response_text.strip()
+    if _NO_RETRIEVAL_TOKEN_RE.search(response_text) is not None:
+        return RASPlanAction(kind="no_retrieval", text="")
+
+    if _SUFFICIENT_TOKEN_RE.search(response_text) is not None:
+        return RASPlanAction(kind="sufficient", text="")
+
     return RASPlanAction(kind="invalid", text=stripped_response)
 
 
@@ -140,6 +170,7 @@ class RASGenerationPipelineConfig(BaseGenerationPipelineConfig):
     plan_prompt_template: str = field(default=DEFAULT_RAS_PLAN_PROMPT)
     triple_prompt_template: str = field(default=DEFAULT_RAS_TRIPLE_PROMPT)
     answer_prompt_template: str = field(default=DEFAULT_RAS_ANSWER_PROMPT)
+    no_retrieval_prompt_template: str = field(default=DEFAULT_RAS_NO_RETRIEVAL_PROMPT)
     max_steps: int = 3
     k_per_step: int = 4
     evidence_budget: int = 12
@@ -160,6 +191,7 @@ class RASGenerationPipelineConfig(BaseGenerationPipelineConfig):
             "plan_prompt_template": self.plan_prompt_template,
             "triple_prompt_template": self.triple_prompt_template,
             "answer_prompt_template": self.answer_prompt_template,
+            "no_retrieval_prompt_template": self.no_retrieval_prompt_template,
             "max_steps": self.max_steps,
             "k_per_step": self.k_per_step,
             "evidence_budget": self.evidence_budget,
@@ -179,6 +211,7 @@ class RASGenerationPipeline(BaseGenerationPipeline):
         plan_prompt_template: str = DEFAULT_RAS_PLAN_PROMPT,
         triple_prompt_template: str = DEFAULT_RAS_TRIPLE_PROMPT,
         answer_prompt_template: str = DEFAULT_RAS_ANSWER_PROMPT,
+        no_retrieval_prompt_template: str = DEFAULT_RAS_NO_RETRIEVAL_PROMPT,
         max_steps: int = 3,
         k_per_step: int = 4,
         evidence_budget: int = 12,
@@ -199,6 +232,7 @@ class RASGenerationPipeline(BaseGenerationPipeline):
         self.plan_prompt_template = plan_prompt_template
         self.triple_prompt_template = triple_prompt_template
         self.answer_prompt_template = answer_prompt_template
+        self.no_retrieval_prompt_template = no_retrieval_prompt_template
         self.max_steps = max_steps
         self.k_per_step = k_per_step
         self.evidence_budget = evidence_budget
@@ -216,6 +250,7 @@ class RASGenerationPipeline(BaseGenerationPipeline):
             "plan_prompt_template": self.plan_prompt_template,
             "triple_prompt_template": self.triple_prompt_template,
             "answer_prompt_template": self.answer_prompt_template,
+            "no_retrieval_prompt_template": self.no_retrieval_prompt_template,
             "max_steps": self.max_steps,
             "k_per_step": self.k_per_step,
             "evidence_budget": self.evidence_budget,
@@ -230,40 +265,64 @@ class RASGenerationPipeline(BaseGenerationPipeline):
         return response.content if hasattr(response, "content") else str(response)
 
     @staticmethod
-    def _format_evidence(evidence: list[str]) -> str:
-        """Format evidence for prompts."""
-        if not evidence:
-            return "(none)"
-        return "\n\n".join(f"[{index + 1}] {item}" for index, item in enumerate(evidence))
-
-    @staticmethod
-    def _format_triples(triples: list[RASTriple]) -> str:
-        """Format triples for prompts."""
+    def _format_graph(triples: list[RASTriple]) -> str:
+        """Format graph triples for prompts."""
         if not triples:
-            return "(none)"
+            return "(empty)"
         return "\n".join(f"[{index + 1}] {triple.as_text()}" for index, triple in enumerate(triples))
 
-    def _build_plan_prompt(self, query: str, evidence: list[str], triples: list[RASTriple], step: int) -> str:
+    @staticmethod
+    def _format_iteration_history(iteration_history: list[RASIterationRecord]) -> str:
+        """Format per-subquery graph history for prompts."""
+        if not iteration_history:
+            return "(none)"
+        blocks: list[str] = []
+        for index, record in enumerate(iteration_history, start=1):
+            if record.triples:
+                triple_lines = "\n".join(f"  - {triple.as_text()}" for triple in record.triples)
+            else:
+                triple_lines = "  - (no new triples)"
+            note = f"\n  note: {record.note}" if record.note else ""
+            blocks.append(f"[{index}] subquery: {record.subquery}\n{triple_lines}{note}")
+        return "\n".join(blocks)
+
+    def _build_plan_prompt(
+        self,
+        query: str,
+        graph: list[RASTriple],
+        iteration_history: list[RASIterationRecord],
+        step: int,
+        corrective_suffix: str = "",
+    ) -> str:
         """Build a retrieval planning prompt."""
-        return self.plan_prompt_template.format(
+        prompt = self.plan_prompt_template.format(
             query=query,
-            evidence=self._format_evidence(evidence),
-            triples=self._format_triples(triples),
+            graph=self._format_graph(graph),
+            history=self._format_iteration_history(iteration_history),
             step=step,
             max_steps=self.max_steps,
         )
+        if corrective_suffix:
+            prompt = f"{prompt}\n\n{corrective_suffix}"
+        return prompt
 
     def _build_triple_prompt(self, query: str, passage: str) -> str:
         """Build a triple extraction prompt."""
         return self.triple_prompt_template.format(query=query, passage=passage)
 
-    def _build_answer_prompt(self, query: str, evidence: list[str], triples: list[RASTriple]) -> str:
+    def _build_answer_prompt(
+        self, query: str, graph: list[RASTriple], iteration_history: list[RASIterationRecord]
+    ) -> str:
         """Build final answer prompt."""
         return self.answer_prompt_template.format(
             query=query,
-            evidence=self._format_evidence(evidence),
-            triples=self._format_triples(triples),
+            graph=self._format_graph(graph),
+            history=self._format_iteration_history(iteration_history),
         )
+
+    def _build_no_retrieval_answer_prompt(self, query: str) -> str:
+        """Build no-retrieval answer prompt."""
+        return self.no_retrieval_prompt_template.format(query=query)
 
     def _contents_from_results(self, results: list[dict[str, Any]]) -> tuple[list[int | str], list[str]]:
         """Extract IDs and passage text from retrieval results."""
@@ -337,48 +396,95 @@ class RASGenerationPipeline(BaseGenerationPipeline):
             extracted = self._merge_triples(extracted, parse_ras_triples(self._extract_text(response)))
         return extracted
 
+    async def _plan_with_retry(
+        self,
+        query_text: str,
+        graph: list[RASTriple],
+        iteration_history: list[RASIterationRecord],
+        step: int,
+        tracker: TokenUsageTracker,
+        plan_trace: list[str],
+        malformed_plans: list[str],
+    ) -> RASPlanAction:
+        """Invoke planner with one bounded retry for malformed output."""
+        plan_prompt = self._build_plan_prompt(query_text, graph, iteration_history, step)
+        plan_response = await self._llm.ainvoke(plan_prompt)
+        tracker.record(plan_response)
+        response_text = self._extract_text(plan_response)
+        action = parse_ras_plan_action(response_text)
+        plan_trace.append(f"{action.kind}: {action.text}".rstrip())
+        if action.kind != "invalid":
+            return action
+
+        malformed_plans.append(action.text)
+        retry_prompt = self._build_plan_prompt(
+            query_text,
+            graph,
+            iteration_history,
+            step,
+            "Your previous action was malformed. Return exactly one of [NO_RETRIEVAL], [SUBQ] <query>, or "
+            "[SUFFICIENT]. [SUBQ] must include a non-empty query.",
+        )
+        retry_response = await self._llm.ainvoke(retry_prompt)
+        tracker.record(retry_response)
+        retry_text = self._extract_text(retry_response)
+        retry_action = parse_ras_plan_action(retry_text)
+        plan_trace.append(f"retry {retry_action.kind}: {retry_action.text}".rstrip())
+        if retry_action.kind == "invalid":
+            malformed_plans.append(retry_action.text)
+            return RASPlanAction(kind="sufficient", text="malformed planner output")
+        return retry_action
+
     async def _generate(self, query_id: int | str, top_k: int) -> GenerationResult:
-        """Generate an answer using retrieval-and-structuring."""
+        """Generate an answer using plan-first retrieval-and-structuring."""
         query_text = self._service.get_query_text(query_id)
         retrieval_k = max(1, min(top_k, self.k_per_step)) if top_k > 0 else self.k_per_step
         tracker = TokenUsageTracker()
         evidence: list[str] = []
-        triples: list[RASTriple] = []
+        graph: list[RASTriple] = []
+        iteration_history: list[RASIterationRecord] = []
         subqueries: list[str] = []
         retrieved_chunk_ids: list[int | str] = []
         plan_trace: list[str] = []
         malformed_plans: list[str] = []
-
+        route = "graph"
         extracted_chunk_ids: set[int | str] = set()
 
-        initial_results = await self._retrieval_pipeline._retrieve_by_id(query_id, top_k)
-        passages, new_passages = self._split_seen_and_new_passages(
-            initial_results,
-            retrieved_chunk_ids,
-            extracted_chunk_ids,
-        )
-        evidence = self._append_evidence(evidence, passages)
-        triples = self._merge_triples(
-            triples,
-            await self._extract_triples_for_passages(query_text, new_passages, tracker),
-        )
-
         for step in range(1, self.max_steps + 1):
-            plan_prompt = self._build_plan_prompt(query_text, evidence, triples, step)
-            plan_response = await self._llm.ainvoke(plan_prompt)
-            tracker.record(plan_response)
-            action = parse_ras_plan_action(self._extract_text(plan_response))
-            plan_trace.append(f"{action.kind}: {action.text}")
-            if action.kind == "sufficient":
+            action = await self._plan_with_retry(
+                query_text,
+                graph,
+                iteration_history,
+                step,
+                tracker,
+                plan_trace,
+                malformed_plans,
+            )
+            if action.kind == "no_retrieval" and step == 1:
+                route = "no_retrieval"
+                answer_prompt = self._build_no_retrieval_answer_prompt(query_text)
+                answer_response = await self._llm.ainvoke(answer_prompt)
+                tracker.record(answer_response)
+                return GenerationResult(
+                    text=self._extract_text(answer_response),
+                    token_usage=tracker.total,
+                    metadata={
+                        "route": route,
+                        "subqueries": subqueries,
+                        "retrieved_chunk_ids": retrieved_chunk_ids,
+                        "triples": [triple.as_tuple() for triple in graph],
+                        "triple_texts": [triple.as_text() for triple in graph],
+                        "iteration_history": [record.as_dict() for record in iteration_history],
+                        "plan_trace": plan_trace,
+                        "malformed_plans": malformed_plans,
+                        "evidence": evidence,
+                    },
+                )
+            if action.kind in {"sufficient", "no_retrieval"}:
                 break
 
-            retrieval_query = action.text
-            if action.kind == "invalid":
-                malformed_plans.append(action.text)
-                retrieval_query = query_text
-
-            subqueries.append(retrieval_query)
-            results = await self._retrieval_pipeline.retrieve(retrieval_query, retrieval_k)
+            subqueries.append(action.text)
+            results = await self._retrieval_pipeline.retrieve(action.text, retrieval_k)
             passages, new_passages = self._split_seen_and_new_passages(
                 results,
                 retrieved_chunk_ids,
@@ -386,34 +492,38 @@ class RASGenerationPipeline(BaseGenerationPipeline):
             )
             evidence = self._append_evidence(evidence, passages)
             if not new_passages:
-                break
-            triples = self._merge_triples(
-                triples,
-                await self._extract_triples_for_passages(query_text, new_passages, tracker),
-            )
+                iteration_history.append(RASIterationRecord(subquery=action.text, triples=(), note="no new passages"))
+                plan_trace.append(f"note: no new passages for {action.text}")
+                continue
 
-        answer_prompt = self._build_answer_prompt(query_text, evidence, triples)
+            new_triples = await self._extract_triples_for_passages(query_text, new_passages, tracker)
+            graph = self._merge_triples(graph, new_triples)
+            iteration_history.append(RASIterationRecord(subquery=action.text, triples=tuple(new_triples)))
+
+        answer_prompt = self._build_answer_prompt(query_text, graph, iteration_history)
         answer_response = await self._llm.ainvoke(answer_prompt)
         tracker.record(answer_response)
-        answer_text = self._extract_text(answer_response)
 
         return GenerationResult(
-            text=answer_text,
+            text=self._extract_text(answer_response),
             token_usage=tracker.total,
             metadata={
+                "route": route,
                 "subqueries": subqueries,
                 "retrieved_chunk_ids": retrieved_chunk_ids,
-                "triples": [triple.as_tuple() for triple in triples],
-                "triple_texts": [triple.as_text() for triple in triples],
-                "evidence": evidence,
+                "triples": [triple.as_tuple() for triple in graph],
+                "triple_texts": [triple.as_text() for triple in graph],
+                "iteration_history": [record.as_dict() for record in iteration_history],
                 "plan_trace": plan_trace,
                 "malformed_plans": malformed_plans,
+                "evidence": evidence,
             },
         )
 
 
 __all__ = [
     "DEFAULT_RAS_ANSWER_PROMPT",
+    "DEFAULT_RAS_NO_RETRIEVAL_PROMPT",
     "DEFAULT_RAS_PLAN_PROMPT",
     "DEFAULT_RAS_TRIPLE_PROMPT",
     "RASGenerationPipeline",

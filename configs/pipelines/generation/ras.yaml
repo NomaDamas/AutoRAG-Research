@@ -1,5 +1,5 @@
 _target_: autorag_research.pipelines.generation.ras.RASGenerationPipelineConfig
-description: "RAS retrieval-and-structuring generation pipeline with question-specific triples"
+description: "RAS plan-first retrieval-and-structuring generation pipeline with an evolving question graph"
 name: ras
 retrieval_pipeline_name: bm25
 llm: openai-gpt5-mini
@@ -7,8 +7,8 @@ max_steps: 3
 k_per_step: 4
 evidence_budget: 12
 triple_budget: 40
-# RAS seeds retrieval with top_k chunks for the original stored query, then each
-# planner-generated subquery retrieves up to min(top_k, k_per_step) more chunks.
+# RAS plans before any retrieval. The planner emits [NO_RETRIEVAL], [SUBQ] <query>,
+# or [SUFFICIENT]; retrieval occurs only for planned [SUBQ] actions.
 top_k: 4
 batch_size: 32
 max_concurrency: 4
