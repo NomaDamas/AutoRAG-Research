@@ -19,7 +19,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.injection import health_check_llm
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.base import (
+    BaseRetrievalPipeline,
+    RetrievalUnit,
+    get_retrieval_pipeline_unit,
+)
 
 logger = logging.getLogger("AutoRAG-Research")
 
@@ -92,14 +96,19 @@ class QueryRewriteRetrievalPipeline(BaseRetrievalPipeline):
 
         super().__init__(session_factory, name, schema)
 
+    @property
+    def retrieval_unit(self) -> RetrievalUnit | None:
+        """Return the retrieval unit produced by the wrapped pipeline."""
+        return get_retrieval_pipeline_unit(self._retrieval_pipeline)
+
     def _get_pipeline_config(self) -> dict[str, Any]:
         """Return query rewrite pipeline configuration for storage."""
         model_name = getattr(self.llm, "model_name", None)
         if model_name is None or not isinstance(model_name, str):
             model_name = type(self.llm).__name__
-
         return {
             "type": "query_rewrite",
+            "retrieval_unit": self.retrieval_unit,
             "prompt_template": self.prompt_template,
             "retrieval_pipeline_id": getattr(self._retrieval_pipeline, "pipeline_id", None),
             "wrapped_pipeline_type": type(self._retrieval_pipeline).__name__,

@@ -70,6 +70,34 @@ BARTSCORE_DEPENDENCY_MESSAGE = (
 )
 UNIEVAL_MODEL_NAME = "MingZhong/unieval-sum"
 UNIEVAL_DIMENSIONS = ("coherence", "consistency", "fluency", "relevance")
+ALIGNSCORE_MODEL_NAME = "liuyanyi/AlignScore-large-hf"
+ALIGNSCORE_REVISION = "cc13dc572fce8aa32778a437fb66a02d39a5b8e3"
+ALIGNSCORE_BATCH_SIZE = 8
+ALIGNSCORE_MAX_LENGTH = 512
+ALIGNSCORE_DEVICE = "cpu"
+ALIGNSCORE_TRUST_REMOTE_CODE = False
+ALIGNSCORE_AGGREGATIONS = ("mean", "min")
+ALIGNSCORE_CONTEXT_WINDOW_SENTENCES = 5
+ALIGNSCORE_CONTEXT_TOKEN_OVERLAP = 32
+ALIGNSCORE_PAIR_SPECIAL_TOKENS = 3
+ALIGNSCORE_DEPENDENCY_MESSAGE = (
+    "AlignScore requires the optional `torch` and `transformers` dependencies. "
+    "Install them with `pip install 'autorag-research[gpu]'` or run "
+    "`uv sync --all-extras --all-groups` in a development checkout."
+)
+MINICHECK_MODEL_NAME = "lytang/MiniCheck-Flan-T5-Large"
+MINICHECK_BATCH_SIZE = 8
+MINICHECK_MAX_LENGTH = 2048
+MINICHECK_DEVICE = "cpu"
+MINICHECK_CONTEXT_STRATEGIES = ("max", "concat")
+MINICHECK_AGGREGATIONS = ("mean", "min")
+MINICHECK_SUPPORT_TOKEN_ID = 209
+MINICHECK_UNSUPPORT_TOKEN_ID = 3
+MINICHECK_DEPENDENCY_MESSAGE = (
+    "MiniCheck requires the optional `torch` and `transformers` dependencies. "
+    "Install them with `pip install 'autorag-research[gpu]'` or run "
+    "`uv sync --all-extras --all-groups` in a development checkout."
+)
 
 
 def _get_normalized_tokens(text: str) -> list[str]:
@@ -287,6 +315,518 @@ def _aggregate_unieval_scores(dimension: str, scores: list[float]) -> float:
     if dimension == "relevance":
         return max(scores)
     return scores[0]
+
+
+def _validate_alignscore_aggregation(aggregation: str) -> str:
+    """Validate and normalize AlignScore claim aggregation."""
+    normalized = aggregation.strip().lower()
+    if normalized not in ALIGNSCORE_AGGREGATIONS:
+        msg = f"Unsupported AlignScore aggregation: {aggregation}"
+        raise ValueError(msg)
+    return normalized
+
+
+def _validate_minicheck_context_strategy(context_strategy: str) -> str:
+    """Validate and normalize MiniCheck retrieved-context handling."""
+    normalized = context_strategy.strip().lower()
+    if normalized not in MINICHECK_CONTEXT_STRATEGIES:
+        msg = f"Unsupported MiniCheck context_strategy: {context_strategy}"
+        raise ValueError(msg)
+    return normalized
+
+
+def _validate_minicheck_aggregation(aggregation: str) -> str:
+    """Validate and normalize MiniCheck claim aggregation."""
+    normalized = aggregation.strip().lower()
+    if normalized not in MINICHECK_AGGREGATIONS:
+        msg = f"Unsupported MiniCheck aggregation: {aggregation}"
+        raise ValueError(msg)
+    return normalized
+
+
+def _split_alignscore_claims(text: str) -> list[str]:
+    """Split generated text into claim-sized sentence units for AlignScore."""
+    stripped_text = text.strip()
+    if not stripped_text:
+        return []
+    try:
+        sentences = [sentence.strip() for sentence in nltk.sent_tokenize(stripped_text) if sentence.strip()]
+    except LookupError:
+        sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", stripped_text) if sentence.strip()]
+    return sentences or [stripped_text]
+
+
+def _split_minicheck_claims(text: str) -> list[str]:
+    """Split generated text into claim-sized sentence units for MiniCheck."""
+    stripped_text = text.strip()
+    if not stripped_text:
+        return []
+    try:
+        sentences = [sentence.strip() for sentence in nltk.sent_tokenize(stripped_text) if sentence.strip()]
+    except LookupError:
+        sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", stripped_text) if sentence.strip()]
+    return sentences or [stripped_text]
+
+
+def _get_alignscore_tokenizer(scorer: "AlignScoreScorer") -> Any | None:
+    """Return the scorer tokenizer when available."""
+    return getattr(scorer, "tokenizer", None)
+
+
+def _count_alignscore_tokens(tokenizer: Any, text: str) -> int:
+    """Count tokenizer tokens excluding special tokens."""
+    if hasattr(tokenizer, "encode"):
+        return len(tokenizer.encode(text, add_special_tokens=False))
+    encoded = tokenizer(text, add_special_tokens=False)
+    input_ids = encoded["input_ids"] if isinstance(encoded, dict) else encoded.input_ids
+    if input_ids and isinstance(input_ids[0], list):
+        return len(input_ids[0])
+    return len(input_ids)
+
+
+def _get_alignscore_pair_special_token_count(tokenizer: Any) -> int:
+    """Return tokenizer special-token overhead for a sequence pair."""
+    if hasattr(tokenizer, "num_special_tokens_to_add"):
+        return int(tokenizer.num_special_tokens_to_add(pair=True))
+    return ALIGNSCORE_PAIR_SPECIAL_TOKENS
+
+
+def _decode_alignscore_tokens(tokenizer: Any, token_ids: list[int]) -> str:
+    """Decode context token chunks for overlong AlignScore sentences."""
+    if hasattr(tokenizer, "decode"):
+        return str(tokenizer.decode(token_ids, skip_special_tokens=True)).strip()
+    return " ".join(str(token_id) for token_id in token_ids).strip()
+
+
+def _split_alignscore_context_to_token_windows(
+    tokenizer: Any,
+    text: str,
+    token_budget: int,
+    token_overlap: int = ALIGNSCORE_CONTEXT_TOKEN_OVERLAP,
+) -> list[str]:
+    """Split one overlong context sentence into token windows with overlap."""
+    if token_budget <= 0:
+        return []
+    token_ids = tokenizer.encode(text, add_special_tokens=False)
+    if not token_ids:
+        return []
+
+    stride = max(1, token_budget - min(token_overlap, max(0, token_budget - 1)))
+    windows = []
+    for start in range(0, len(token_ids), stride):
+        window = _decode_alignscore_tokens(tokenizer, token_ids[start : start + token_budget])
+        if window:
+            windows.append(window)
+        if start + token_budget >= len(token_ids):
+            break
+    return windows
+
+
+def _build_alignscore_context_windows(
+    retrieved_contents: list[str],
+    tokenizer: Any | None = None,
+    claim: str | None = None,
+    max_length: int = ALIGNSCORE_MAX_LENGTH,
+) -> list[str]:
+    """Build independently scored retrieved-context windows for AlignScore."""
+    if tokenizer is None or claim is None:
+        return _build_alignscore_sentence_context_windows(retrieved_contents)
+
+    special_token_count = _get_alignscore_pair_special_token_count(tokenizer)
+    claim_token_count = _count_alignscore_tokens(tokenizer, claim)
+    max_claim_tokens = max_length - special_token_count
+    if claim_token_count > max_claim_tokens:
+        msg = (
+            f"AlignScore claim exceeds the model token budget: claim has {claim_token_count} tokens, "
+            f"but max_length={max_length} leaves at most {max_claim_tokens} claim tokens after reserving "
+            f"{special_token_count} special tokens. Split the generated claim before scoring."
+        )
+        raise ValueError(msg)
+
+    context_token_budget = max_length - claim_token_count - special_token_count
+    context_windows: list[str] = []
+    for content in retrieved_contents:
+        stripped_content = content.strip()
+        if not stripped_content:
+            continue
+        current_sentences: list[str] = []
+        current_token_count = 0
+        for sentence in _split_alignscore_claims(stripped_content):
+            sentence_token_count = _count_alignscore_tokens(tokenizer, sentence)
+            if sentence_token_count > context_token_budget:
+                if current_sentences:
+                    context_windows.append(" ".join(current_sentences))
+                    current_sentences = []
+                    current_token_count = 0
+                context_windows.extend(
+                    _split_alignscore_context_to_token_windows(tokenizer, sentence, context_token_budget)
+                )
+                continue
+
+            if current_sentences and current_token_count + sentence_token_count > context_token_budget:
+                context_windows.append(" ".join(current_sentences))
+                current_sentences = []
+                current_token_count = 0
+
+            current_sentences.append(sentence)
+            current_token_count += sentence_token_count
+
+        if current_sentences:
+            context_windows.append(" ".join(current_sentences))
+    return context_windows
+
+
+def _build_alignscore_sentence_context_windows(retrieved_contents: list[str]) -> list[str]:
+    """Build independently scored retrieved-context windows by sentence count."""
+    context_windows: list[str] = []
+    for content in retrieved_contents:
+        stripped_content = content.strip()
+        if not stripped_content:
+            continue
+        sentences = _split_alignscore_claims(stripped_content)
+        if len(sentences) <= ALIGNSCORE_CONTEXT_WINDOW_SENTENCES:
+            context_windows.append(stripped_content)
+            continue
+        for start in range(0, len(sentences), ALIGNSCORE_CONTEXT_WINDOW_SENTENCES):
+            context_windows.append(" ".join(sentences[start : start + ALIGNSCORE_CONTEXT_WINDOW_SENTENCES]))
+    return context_windows
+
+
+def _aggregate_alignscore_scores(scores: list[float], aggregation: str) -> float:
+    """Aggregate claim-level AlignScore outputs into one sample-level score."""
+    normalized_aggregation = _validate_alignscore_aggregation(aggregation)
+    if normalized_aggregation == "min":
+        return min(scores)
+    return float(sum(scores) / len(scores))
+
+
+def _prepare_minicheck_contexts(retrieved_contents: list[str], context_strategy: str) -> list[str]:
+    """Prepare source contexts for MiniCheck scoring."""
+    contexts = [content.strip() for content in retrieved_contents if content.strip()]
+    if not contexts:
+        return []
+    if _validate_minicheck_context_strategy(context_strategy) == "concat":
+        return ["\n\n".join(contexts)]
+    return contexts
+
+
+def _aggregate_minicheck_claim_scores(scores: list[float], aggregation: str) -> float:
+    """Aggregate claim-level MiniCheck support scores into one query score."""
+    normalized_aggregation = _validate_minicheck_aggregation(aggregation)
+    if normalized_aggregation == "min":
+        return min(scores)
+    return float(sum(scores) / len(scores))
+
+
+def _resolve_alignscore_device(device: str) -> str:
+    """Resolve a concrete torch device string for AlignScore."""
+    if device != "auto":
+        return device
+
+    torch = _import_alignscore_torch()
+    if torch.cuda.is_available():
+        return "cuda"
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    if mps_backend is not None and mps_backend.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _resolve_minicheck_device(device: str) -> str:
+    """Resolve a concrete torch device string for MiniCheck."""
+    if device != "auto":
+        return device
+
+    torch = _import_minicheck_torch()
+    if torch.cuda.is_available():
+        return "cuda"
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    if mps_backend is not None and mps_backend.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _import_alignscore_torch() -> Any:
+    """Import torch with an AlignScore-specific dependency error message."""
+    try:
+        return importlib.import_module("torch")
+    except ImportError as e:
+        raise ImportError(ALIGNSCORE_DEPENDENCY_MESSAGE) from e
+
+
+def _requires_alignscore_remote_code(model_name_or_path: str) -> bool:
+    """Return whether the known AlignScore checkpoint requires remote code."""
+    return model_name_or_path == ALIGNSCORE_MODEL_NAME
+
+
+def _is_pinned_commit_revision(revision: str | None) -> bool:
+    """Return whether a Hugging Face revision is pinned to an immutable commit SHA."""
+    return revision is not None and re.fullmatch(r"[0-9a-f]{40}", revision) is not None
+
+
+def _validate_alignscore_remote_code_trust(
+    model_name_or_path: str,
+    trust_remote_code: bool,
+    revision: str | None,
+) -> None:
+    """Fail clearly before loading known remote-code AlignScore checkpoints without a trust boundary."""
+    if not _requires_alignscore_remote_code(model_name_or_path):
+        return
+    if not trust_remote_code:
+        msg = (
+            f"AlignScore checkpoint {model_name_or_path!r} requires trust_remote_code=True. "
+            f"Enable trust_remote_code explicitly and pin revision={ALIGNSCORE_REVISION!r} before loading it."
+        )
+        raise ValueError(msg)
+    if not _is_pinned_commit_revision(revision):
+        msg = (
+            f"AlignScore checkpoint {model_name_or_path!r} executes remote code and requires a pinned commit revision. "
+            f"Set revision={ALIGNSCORE_REVISION!r} or another immutable 40-character commit SHA."
+        )
+        raise ValueError(msg)
+
+
+def _import_alignscore_runtime() -> tuple[Any, Any, Any]:
+    """Import AlignScore runtime dependencies lazily."""
+    torch = _import_alignscore_torch()
+    try:
+        transformers = importlib.import_module("transformers")
+    except ImportError as e:
+        raise ImportError(ALIGNSCORE_DEPENDENCY_MESSAGE) from e
+    return torch, transformers.AutoModelForSequenceClassification, transformers.AutoTokenizer
+
+
+def _import_minicheck_torch() -> Any:
+    """Import torch with a MiniCheck-specific dependency error message."""
+    try:
+        return importlib.import_module("torch")
+    except ImportError as e:
+        raise ImportError(MINICHECK_DEPENDENCY_MESSAGE) from e
+
+
+def _import_minicheck_runtime() -> tuple[Any, Any, Any]:
+    """Import MiniCheck runtime dependencies lazily."""
+    torch = _import_minicheck_torch()
+    try:
+        transformers = importlib.import_module("transformers")
+    except ImportError as e:
+        raise ImportError(MINICHECK_DEPENDENCY_MESSAGE) from e
+    return torch, transformers.AutoModelForSeq2SeqLM, transformers.AutoTokenizer
+
+
+class AlignScoreScorer:
+    """Protocol-like base for AlignScore scorers used by generation metrics."""
+
+    def score(self, contexts: list[str], claims: list[str], batch_size: int = ALIGNSCORE_BATCH_SIZE) -> list[float]:
+        """Return one support score per context/claim pair."""
+        raise NotImplementedError
+
+
+class HuggingFaceAlignScoreScorer(AlignScoreScorer):
+    """Thin wrapper around a Hugging Face-format AlignScore sequence classifier."""
+
+    def __init__(
+        self,
+        model_name_or_path: str = ALIGNSCORE_MODEL_NAME,
+        max_length: int = ALIGNSCORE_MAX_LENGTH,
+        device: str = ALIGNSCORE_DEVICE,
+        cache_dir: str | None = None,
+        trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE,
+        revision: str | None = None,
+    ) -> None:
+        _validate_alignscore_remote_code_trust(model_name_or_path, trust_remote_code, revision)
+        torch, AutoModelForSequenceClassification, AutoTokenizer = _import_alignscore_runtime()
+        self._torch = torch
+        self.device = _resolve_alignscore_device(device)
+        self.max_length = max_length
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name_or_path,
+            cache_dir=cache_dir,
+            trust_remote_code=trust_remote_code,
+            revision=revision,
+        )
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            model_name_or_path,
+            cache_dir=cache_dir,
+            trust_remote_code=trust_remote_code,
+            revision=revision,
+        )
+        self.model.eval()
+        self.model.to(self.device)
+        self.positive_label_id = self._resolve_positive_label_id()
+
+    def _resolve_positive_label_id(self) -> int:
+        """Find the factual-consistency/entailment class id from model config labels."""
+        id2label = getattr(self.model.config, "id2label", {}) or {}
+        for label_id, label in id2label.items():
+            if any(token in str(label).strip().lower() for token in ("entail", "support", "positive", "consistent")):
+                return int(label_id)
+        return max(0, int(getattr(self.model.config, "num_labels", 2)) - 1)
+
+    def _extract_alignment_probabilities(self, model_output: Any) -> Any:
+        """Convert AlignScore or generic classifier outputs into support probabilities."""
+        if hasattr(model_output, "tri_label_logits"):
+            return self._torch.softmax(model_output.tri_label_logits, dim=-1)[:, 0]
+        if hasattr(model_output, "seq_relationship_logits"):
+            return self._torch.softmax(model_output.seq_relationship_logits, dim=-1)[:, 1]
+        if hasattr(model_output, "reg_label_logits"):
+            return model_output.reg_label_logits.reshape(-1)
+
+        logits = model_output.logits
+        if logits.shape[-1] == 1:
+            return self._torch.sigmoid(logits).reshape(-1)
+        return self._torch.softmax(logits, dim=-1)[:, self.positive_label_id]
+
+    def score(self, contexts: list[str], claims: list[str], batch_size: int = ALIGNSCORE_BATCH_SIZE) -> list[float]:
+        """Compute factual consistency probabilities for aligned context/claim pairs."""
+        if len(contexts) != len(claims):
+            msg = f"AlignScore received {len(contexts)} contexts for {len(claims)} claims"
+            raise ValueError(msg)
+        if not contexts:
+            return []
+
+        scores: list[float] = []
+        for start in range(0, len(contexts), batch_size):
+            batch_contexts = contexts[start : start + batch_size]
+            batch_claims = claims[start : start + batch_size]
+            with self._torch.no_grad():
+                encoded = self.tokenizer(
+                    batch_contexts,
+                    batch_claims,
+                    max_length=self.max_length,
+                    truncation="only_first",
+                    padding="max_length",
+                    return_tensors="pt",
+                )
+                encoded = {key: value.to(self.device) for key, value in encoded.items()}
+                probabilities = self._extract_alignment_probabilities(self.model(**encoded))
+                scores.extend(float(score) for score in probabilities.tolist())
+        return scores
+
+
+class MiniCheckScorer:
+    """Protocol-like base for MiniCheck scorers used by generation metrics."""
+
+    def score(self, documents: list[str], claims: list[str], batch_size: int = MINICHECK_BATCH_SIZE) -> list[float]:
+        """Return one support probability per document/claim pair."""
+        raise NotImplementedError
+
+
+class HuggingFaceMiniCheckScorer(MiniCheckScorer):
+    """Thin wrapper around the official MiniCheck Flan-T5 style scorer.
+
+    The default label token IDs are tied to ``lytang/MiniCheck-Flan-T5-Large``:
+    token 209 means support and token 3 means unsupported. Custom checkpoints
+    must use the same label-token contract or pass compatible token IDs.
+    """
+
+    def __init__(
+        self,
+        model_name_or_path: str = MINICHECK_MODEL_NAME,
+        max_length: int = MINICHECK_MAX_LENGTH,
+        device: str = MINICHECK_DEVICE,
+        cache_dir: str | None = None,
+        support_token_id: int = MINICHECK_SUPPORT_TOKEN_ID,
+        unsupported_token_id: int = MINICHECK_UNSUPPORT_TOKEN_ID,
+    ) -> None:
+        torch, AutoModelForSeq2SeqLM, AutoTokenizer = _import_minicheck_runtime()
+        self._torch = torch
+        self.device = _resolve_minicheck_device(device)
+        self.max_length = max_length
+        self.support_token_id = support_token_id
+        self.unsupported_token_id = unsupported_token_id
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=cache_dir)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, cache_dir=cache_dir)
+        self.model.eval()
+        self.model.to(self.device)
+
+    def _build_inputs(self, documents: list[str], claims: list[str]) -> list[str]:
+        """Build MiniCheck source inputs using the official predict/eos contract."""
+        separator = self.tokenizer.eos_token or "</s>"
+        return [f"predict: {document}{separator}{claim}" for document, claim in zip(documents, claims, strict=True)]
+
+    def score(self, documents: list[str], claims: list[str], batch_size: int = MINICHECK_BATCH_SIZE) -> list[float]:
+        """Compute support probabilities for aligned document/claim pairs."""
+        if len(documents) != len(claims):
+            msg = f"MiniCheck received {len(documents)} documents for {len(claims)} claims"
+            raise ValueError(msg)
+        if not documents:
+            return []
+
+        scores: list[float] = []
+        for start in range(0, len(documents), batch_size):
+            batch_documents = documents[start : start + batch_size]
+            batch_claims = claims[start : start + batch_size]
+            with self._torch.no_grad():
+                encoded = self.tokenizer(
+                    self._build_inputs(batch_documents, batch_claims),
+                    max_length=self.max_length,
+                    truncation=True,
+                    padding=True,
+                    return_tensors="pt",
+                )
+                encoded = {key: value.to(self.device) for key, value in encoded.items()}
+                decoder_input_ids = self._torch.zeros((len(batch_documents), 1), dtype=self._torch.long).to(self.device)
+                logits = self.model(**encoded, decoder_input_ids=decoder_input_ids).logits[:, 0, :]
+                support_logits = logits[:, [self.unsupported_token_id, self.support_token_id]]
+                probabilities = self._torch.softmax(support_logits, dim=-1)[:, 1]
+                scores.extend(float(score) for score in probabilities.tolist())
+        return scores
+
+
+@lru_cache(maxsize=4)
+def get_alignscore_scorer(
+    model_name_or_path: str = ALIGNSCORE_MODEL_NAME,
+    max_length: int = ALIGNSCORE_MAX_LENGTH,
+    device: str = ALIGNSCORE_DEVICE,
+    cache_dir: str | None = None,
+    trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE,
+    revision: str | None = None,
+) -> AlignScoreScorer:
+    """Return a cached AlignScore scorer instance."""
+    logger.debug(
+        "Loading AlignScore scorer model_name_or_path=%s max_length=%s device=%s cache_dir=%s revision=%s",
+        model_name_or_path,
+        max_length,
+        device,
+        cache_dir,
+        revision,
+    )
+    return HuggingFaceAlignScoreScorer(
+        model_name_or_path=model_name_or_path,
+        max_length=max_length,
+        device=device,
+        cache_dir=cache_dir,
+        trust_remote_code=trust_remote_code,
+        revision=revision,
+    )
+
+
+@lru_cache(maxsize=4)
+def get_minicheck_scorer(
+    model_name_or_path: str = MINICHECK_MODEL_NAME,
+    max_length: int = MINICHECK_MAX_LENGTH,
+    device: str = MINICHECK_DEVICE,
+    cache_dir: str | None = None,
+    support_token_id: int = MINICHECK_SUPPORT_TOKEN_ID,
+    unsupported_token_id: int = MINICHECK_UNSUPPORT_TOKEN_ID,
+) -> MiniCheckScorer:
+    """Return a cached MiniCheck scorer instance."""
+    logger.debug(
+        "Loading MiniCheck scorer model_name_or_path=%s max_length=%s device=%s cache_dir=%s",
+        model_name_or_path,
+        max_length,
+        device,
+        cache_dir,
+    )
+    return HuggingFaceMiniCheckScorer(
+        model_name_or_path=model_name_or_path,
+        max_length=max_length,
+        device=device,
+        cache_dir=cache_dir,
+        support_token_id=support_token_id,
+        unsupported_token_id=unsupported_token_id,
+    )
 
 
 @convert_inputs_to_list
@@ -896,6 +1436,159 @@ def unieval(
     return results
 
 
+@convert_inputs_to_list
+def align_score(
+    metric_inputs: list[MetricInput],
+    model_name_or_path: str = ALIGNSCORE_MODEL_NAME,
+    batch_size: int = ALIGNSCORE_BATCH_SIZE,
+    max_length: int = ALIGNSCORE_MAX_LENGTH,
+    device: str = ALIGNSCORE_DEVICE,
+    cache_dir: str | None = None,
+    trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE,
+    revision: str | None = None,
+    aggregation: str = "mean",
+    scorer: AlignScoreScorer | None = None,
+) -> list[float | None]:
+    """Compute AlignScore factual consistency against retrieved source context.
+
+    AlignScore (Zha et al., ACL 2023) estimates information alignment between a
+    source context and generated text. The wrapper follows the RAG faithfulness
+    use case by splitting each generated answer into sentence-level claims,
+    scoring every claim against each retrieved passage/window, taking the best
+    support score per claim, then aggregating claim scores into one
+    higher-is-better query score.
+    """
+    normalized_aggregation = _validate_alignscore_aggregation(aggregation)
+    prepared_contexts: list[str] = []
+    prepared_claims: list[str] = []
+    claim_counts: list[tuple[int, int, int]] = []
+    results: list[float | None] = [None] * len(metric_inputs)
+
+    effective_scorer = scorer or get_alignscore_scorer(
+        model_name_or_path=model_name_or_path,
+        max_length=max_length,
+        device=device,
+        cache_dir=cache_dir,
+        trust_remote_code=trust_remote_code,
+        revision=revision,
+    )
+    tokenizer = _get_alignscore_tokenizer(effective_scorer)
+
+    for index, metric_input in enumerate(metric_inputs):
+        if not metric_input.is_fields_notnone(["retrieved_contents", "generated_texts"]):
+            continue
+        claims = _split_alignscore_claims(cast(str, metric_input.generated_texts))
+        if not claims:
+            continue
+        for claim in claims:
+            context_windows = _build_alignscore_context_windows(
+                cast(list[str], metric_input.retrieved_contents),
+                tokenizer=tokenizer,
+                claim=claim,
+                max_length=max_length,
+            )
+            if not context_windows:
+                continue
+            prepared_contexts.extend(context_windows)
+            prepared_claims.extend([claim] * len(context_windows))
+            claim_counts.append((index, 1, len(context_windows)))
+
+    if not prepared_claims:
+        return results
+
+    claim_scores = effective_scorer.score(prepared_contexts, prepared_claims, batch_size=batch_size)
+    if len(claim_scores) != len(prepared_claims):
+        msg = f"AlignScore scorer returned {len(claim_scores)} scores for {len(prepared_claims)} claims"
+        raise ValueError(msg)
+
+    score_offset = 0
+    grouped_claim_scores: dict[int, list[float]] = {}
+    for index, claim_count, context_window_count in claim_counts:
+        current_scores = claim_scores[score_offset : score_offset + (claim_count * context_window_count)]
+        claim_support_scores = [
+            max(current_scores[start : start + context_window_count])
+            for start in range(0, len(current_scores), context_window_count)
+        ]
+        grouped_claim_scores.setdefault(index, []).extend(claim_support_scores)
+        score_offset += claim_count * context_window_count
+
+    for index, claim_support_scores in grouped_claim_scores.items():
+        results[index] = _aggregate_alignscore_scores(claim_support_scores, normalized_aggregation)
+
+    return results
+
+
+@convert_inputs_to_list
+def mini_check(
+    metric_inputs: list[MetricInput],
+    model_name_or_path: str = MINICHECK_MODEL_NAME,
+    batch_size: int = MINICHECK_BATCH_SIZE,
+    max_length: int = MINICHECK_MAX_LENGTH,
+    device: str = MINICHECK_DEVICE,
+    cache_dir: str | None = None,
+    context_strategy: str = "max",
+    aggregation: str = "mean",
+    support_token_id: int = MINICHECK_SUPPORT_TOKEN_ID,
+    unsupported_token_id: int = MINICHECK_UNSUPPORT_TOKEN_ID,
+    scorer: MiniCheckScorer | None = None,
+) -> list[float | None]:
+    """Compute MiniCheck claim grounding against retrieved source context.
+
+    MiniCheck (Tang et al., EMNLP 2024) is a claim-level grounding verifier.
+    This wrapper uses sentence-level claims from the generated answer and scores
+    each claim against retrieved passages. With the default ``context_strategy``
+    of ``max``, each claim receives the maximum support score over retrieved
+    passages, mirroring document-chunk max pooling used by grounding verifiers.
+    """
+    normalized_context_strategy = _validate_minicheck_context_strategy(context_strategy)
+    normalized_aggregation = _validate_minicheck_aggregation(aggregation)
+    prepared_documents: list[str] = []
+    prepared_claims: list[str] = []
+    claim_context_counts: list[tuple[int, int, int]] = []
+    results: list[float | None] = [None] * len(metric_inputs)
+
+    for index, metric_input in enumerate(metric_inputs):
+        if not metric_input.is_fields_notnone(["retrieved_contents", "generated_texts"]):
+            continue
+        contexts = _prepare_minicheck_contexts(
+            cast(list[str], metric_input.retrieved_contents), normalized_context_strategy
+        )
+        claims = _split_minicheck_claims(cast(str, metric_input.generated_texts))
+        if not contexts or not claims:
+            continue
+        for claim in claims:
+            prepared_documents.extend(contexts)
+            prepared_claims.extend([claim] * len(contexts))
+        claim_context_counts.append((index, len(claims), len(contexts)))
+
+    if not prepared_claims:
+        return results
+
+    effective_scorer = scorer or get_minicheck_scorer(
+        model_name_or_path=model_name_or_path,
+        max_length=max_length,
+        device=device,
+        cache_dir=cache_dir,
+        support_token_id=support_token_id,
+        unsupported_token_id=unsupported_token_id,
+    )
+    pair_scores = effective_scorer.score(prepared_documents, prepared_claims, batch_size=batch_size)
+    if len(pair_scores) != len(prepared_claims):
+        msg = f"MiniCheck scorer returned {len(pair_scores)} scores for {len(prepared_claims)} document/claim pairs"
+        raise ValueError(msg)
+
+    score_offset = 0
+    for index, claim_count, context_count in claim_context_counts:
+        claim_scores: list[float] = []
+        for _ in range(claim_count):
+            current_scores = pair_scores[score_offset : score_offset + context_count]
+            claim_scores.append(max(current_scores))
+            score_offset += context_count
+        results[index] = _aggregate_minicheck_claim_scores(claim_scores, normalized_aggregation)
+
+    return results
+
+
 # Metric Configurations
 @dataclass
 class BleuConfig(BaseGenerationMetricConfig):
@@ -1058,6 +1751,92 @@ class ResponseRelevancyConfig(BaseGenerationMetricConfig):
             "llm": self.llm,
             "embedding_model": self.embedding_model,
             "prompt_template": self.prompt_template,
+        }
+
+
+@dataclass
+class AlignScoreConfig(BaseGenerationMetricConfig):
+    """Configuration for AlignScore factual consistency metric."""
+
+    model_name_or_path: str = ALIGNSCORE_MODEL_NAME
+    batch_size: int = ALIGNSCORE_BATCH_SIZE
+    max_length: int = ALIGNSCORE_MAX_LENGTH
+    device: str = ALIGNSCORE_DEVICE
+    cache_dir: str | None = None
+    trust_remote_code: bool = ALIGNSCORE_TRUST_REMOTE_CODE
+    revision: str | None = None
+    aggregation: str = "mean"
+
+    def __post_init__(self) -> None:
+        """Validate AlignScore configuration."""
+        self.aggregation = _validate_alignscore_aggregation(self.aggregation)
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "align_score"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return align_score
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "model_name_or_path": self.model_name_or_path,
+            "batch_size": self.batch_size,
+            "max_length": self.max_length,
+            "device": self.device,
+            "cache_dir": self.cache_dir,
+            "trust_remote_code": self.trust_remote_code,
+            "revision": self.revision,
+            "aggregation": self.aggregation,
+        }
+
+
+@dataclass
+class MiniCheckConfig(BaseGenerationMetricConfig):
+    """Configuration for MiniCheck claim-grounding metric.
+
+    Default label token IDs match ``lytang/MiniCheck-Flan-T5-Large``. Override
+    ``support_token_id`` and ``unsupported_token_id`` for checkpoints with a
+    different label-token contract.
+    """
+
+    model_name_or_path: str = MINICHECK_MODEL_NAME
+    batch_size: int = MINICHECK_BATCH_SIZE
+    max_length: int = MINICHECK_MAX_LENGTH
+    device: str = MINICHECK_DEVICE
+    cache_dir: str | None = None
+    context_strategy: str = "max"
+    aggregation: str = "mean"
+    support_token_id: int = MINICHECK_SUPPORT_TOKEN_ID
+    unsupported_token_id: int = MINICHECK_UNSUPPORT_TOKEN_ID
+
+    def __post_init__(self) -> None:
+        """Validate MiniCheck configuration."""
+        self.context_strategy = _validate_minicheck_context_strategy(self.context_strategy)
+        self.aggregation = _validate_minicheck_aggregation(self.aggregation)
+
+    def get_metric_name(self) -> str:
+        """Return the metric name."""
+        return "mini_check"
+
+    def get_metric_func(self) -> Callable:
+        """Return the metric function."""
+        return mini_check
+
+    def get_metric_kwargs(self) -> dict[str, Any]:
+        """Return kwargs for the metric function."""
+        return {
+            "model_name_or_path": self.model_name_or_path,
+            "batch_size": self.batch_size,
+            "max_length": self.max_length,
+            "device": self.device,
+            "cache_dir": self.cache_dir,
+            "context_strategy": self.context_strategy,
+            "aggregation": self.aggregation,
+            "support_token_id": self.support_token_id,
+            "unsupported_token_id": self.unsupported_token_id,
         }
 
 

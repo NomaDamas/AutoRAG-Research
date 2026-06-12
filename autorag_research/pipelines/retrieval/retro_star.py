@@ -23,7 +23,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from autorag_research.config import BaseRetrievalPipelineConfig
 from autorag_research.injection import health_check_llm
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.base import (
+    BaseRetrievalPipeline,
+    RetrievalUnit,
+    get_retrieval_pipeline_unit,
+)
 from autorag_research.util import truncate_texts
 
 DEFAULT_RETRO_STAR_RELEVANCE_DEFINITION = (
@@ -216,6 +220,11 @@ class RetroStarRetrievalPipeline(BaseRetrievalPipeline):
                 negative_error_message="sample_weights must not contain negative values",
             )
 
+        wrapped_retrieval_unit = get_retrieval_pipeline_unit(retrieval_pipeline)
+        if wrapped_retrieval_unit != "chunk":
+            msg = "RETRO* retrieval requires a text chunk retrieval pipeline."
+            raise ValueError(msg)
+
         self.llm = llm
         self._retrieval_pipeline = retrieval_pipeline
         self.candidate_top_k = candidate_top_k
@@ -231,14 +240,19 @@ class RetroStarRetrievalPipeline(BaseRetrievalPipeline):
 
         super().__init__(session_factory, name, schema)
 
+    @property
+    def retrieval_unit(self) -> RetrievalUnit | None:
+        """Return the retrieval unit produced by the wrapped pipeline."""
+        return get_retrieval_pipeline_unit(self._retrieval_pipeline)
+
     def _get_pipeline_config(self) -> dict[str, Any]:
         """Return RETRO* pipeline configuration for storage."""
         model_name = getattr(self.llm, "model_name", None)
         if model_name is None or not isinstance(model_name, str):
             model_name = type(self.llm).__name__
-
         return {
             "type": "retro_star",
+            "retrieval_unit": self.retrieval_unit,
             "candidate_top_k": self.candidate_top_k,
             "prompt_template": self.prompt_template,
             "relevance_definition": self.relevance_definition,

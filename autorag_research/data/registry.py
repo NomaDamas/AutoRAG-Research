@@ -58,10 +58,12 @@ class IngestorMeta:
     description: str
     params: list[ParamMeta] = field(default_factory=list)
     hf_repo: str | None = None  # HuggingFace Hub repository name suffix (e.g., "beir-dumps")
+    aliases: tuple[str, ...] = ()
 
 
 # Global registry (populated by @register_ingestor decorators at import time)
 _INGESTOR_REGISTRY: dict[str, IngestorMeta] = {}
+_INGESTOR_ALIASES: dict[str, str] = {}
 
 # Modules in autorag_research.data that are NOT ingestors (skip during auto-discovery)
 _NON_INGESTOR_MODULES = {"base", "registry", "restore", "util", "hf_storage"}
@@ -71,6 +73,7 @@ def register_ingestor(
     name: str,
     description: str = "",
     hf_repo: str | None = None,
+    aliases: tuple[str, ...] = (),
 ):
     """Decorator to register an ingestor class.
 
@@ -81,6 +84,7 @@ def register_ingestor(
         name: CLI command name (e.g., "beir")
         description: Help text for CLI
         hf_repo: HuggingFace Hub repository name suffix (e.g., "beir-dumps")
+        aliases: Alternate lookup names that resolve to this canonical ingestor
 
     Example:
         @register_ingestor(name="beir", description="BEIR benchmark")
@@ -95,6 +99,7 @@ def register_ingestor(
     """
 
     def decorator(cls):
+        _validate_ingestor_name_and_aliases(name, aliases, cls)
         params = _extract_params_from_init(cls)
         _INGESTOR_REGISTRY[name] = IngestorMeta(
             name=name,
@@ -102,10 +107,47 @@ def register_ingestor(
             description=description,
             params=params,
             hf_repo=hf_repo,
+            aliases=aliases,
         )
+        for alias in aliases:
+            _INGESTOR_ALIASES[alias] = name
         return cls
 
     return decorator
+
+
+def _validate_ingestor_name_and_aliases(name: str, aliases: tuple[str, ...], cls: type | None = None) -> None:
+    """Ensure canonical ingestor names and aliases remain globally unambiguous."""
+    if name in _INGESTOR_REGISTRY:
+        # Allow idempotent re-registration of the same class (e.g. importlib.reload).
+        # After reload the class object is new, so compare by qualified name.
+        existing_cls = _INGESTOR_REGISTRY[name].ingestor_class
+        if cls is not None and (
+            existing_cls is cls
+            or f"{existing_cls.__module__}.{existing_cls.__qualname__}" == f"{cls.__module__}.{cls.__qualname__}"
+        ):
+            return
+        msg = f"Ingestor canonical name conflicts with registered ingestor: {name}"
+        raise ValueError(msg)
+
+    if name in _INGESTOR_ALIASES:
+        msg = f"Ingestor canonical name conflicts with an existing alias: {name}"
+        raise ValueError(msg)
+
+    duplicate_aliases = {alias for alias in aliases if aliases.count(alias) > 1}
+    if duplicate_aliases:
+        msg = f"Ingestor aliases contain duplicates: {sorted(duplicate_aliases)}"
+        raise ValueError(msg)
+
+    registered_name_conflicts = set(aliases) & (set(_INGESTOR_REGISTRY) | {name})
+    if registered_name_conflicts:
+        msg = f"Ingestor aliases conflict with registered ingestors: {sorted(registered_name_conflicts)}"
+        raise ValueError(msg)
+
+    alias_conflicts = set(aliases) & set(_INGESTOR_ALIASES)
+    if alias_conflicts:
+        msg = f"Ingestor aliases conflict with existing aliases: {sorted(alias_conflicts)}"
+        raise ValueError(msg)
 
 
 def _extract_params_from_init(cls) -> list[ParamMeta]:
@@ -213,7 +255,8 @@ def _is_list_type(hint) -> bool:
 def get_ingestor(name: str) -> IngestorMeta | None:
     """Get ingestor metadata by name."""
     ingestor_registry = discover_ingestors()
-    return ingestor_registry.get(name)
+    canonical_name = _INGESTOR_ALIASES.get(name, name)
+    return ingestor_registry.get(canonical_name)
 
 
 @lru_cache(maxsize=1)

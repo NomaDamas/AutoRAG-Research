@@ -25,6 +25,12 @@ class TestGetRepoId:
         result = get_repo_id("beir")
         assert result == f"{HF_ORG}/beir-dumps"
 
+    @pytest.mark.parametrize("alias", ["mr-tydi", "mr.tydi"])
+    def test_get_repo_id_resolves_mrtydi_aliases(self, alias: str):
+        """Test that Mr. TyDi aliases resolve to the canonical dump repository."""
+        result = get_repo_id(alias)
+        assert result == f"{HF_ORG}/mrtydi-dumps"
+
     def test_get_repo_id_all_ingestors_with_hf_repo(self):
         """Test that all registered ingestors with hf_repo return valid repo IDs."""
         from autorag_research.data.registry import discover_ingestors

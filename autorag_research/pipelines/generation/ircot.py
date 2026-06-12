@@ -18,6 +18,7 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.schema import GENERATION_CONTEXT_CHUNK_ID_KEY
 from autorag_research.util import TokenUsageTracker
 
 logger = logging.getLogger("AutoRAG-Research")
@@ -349,6 +350,7 @@ class IRCoTGenerationPipeline(BaseGenerationPipeline):
         # 4. Build metadata
         metadata = {
             "cot_sentences": cot_sentences,
+            GENERATION_CONTEXT_CHUNK_ID_KEY: chunk_ids,
             "chunk_ids": chunk_ids,
             "steps": steps_completed,
         }

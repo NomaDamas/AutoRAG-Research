@@ -1,0 +1,16 @@
+_target_: autorag_research.pipelines.generation.adaptive_rag.AdaptiveRAGPipelineConfig
+description: "AdaptiveRAG: route queries across zero/single/multi retrieval by predicted complexity"
+name: adaptive_rag
+retrieval_pipeline_name: bm25
+llm: gpt-4o-mini
+route_for_simple: zero
+route_for_moderate: single
+route_for_complex: multi
+max_multi_steps: 2
+answer_signal: "answer is:"
+paragraph_budget: 15
+top_k: 10
+batch_size: 128
+max_concurrency: 8
+max_retries: 3
+retry_delay: 1.0

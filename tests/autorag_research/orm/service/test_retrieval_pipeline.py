@@ -1,4 +1,5 @@
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
@@ -6,6 +7,36 @@ from sqlalchemy.orm import Session, sessionmaker
 from autorag_research.orm.repository.query import QueryRepository
 from autorag_research.orm.schema import Chunk
 from autorag_research.orm.service.retrieval_pipeline import RetrievalPipelineService
+
+
+class _FakeRetrievalUow:
+    def __init__(self, *, existing_pipeline=None, chunk_results=None, image_chunk_results=None):
+        self.pipelines = MagicMock()
+        self.pipelines.get_by_name.return_value = existing_pipeline
+        self.pipelines.get_by_id.return_value = existing_pipeline
+        self.chunk_results = MagicMock()
+        self.chunk_results.get_by_pipeline.return_value = chunk_results or []
+        self.image_chunk_results = MagicMock()
+        self.image_chunk_results.get_by_pipeline.return_value = image_chunk_results or []
+        self.queries = MagicMock()
+        self.queries.get_all.return_value = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def commit(self):
+        return None
+
+
+class _FakeRetrievalPipelineService(RetrievalPipelineService):
+    def __init__(self, fake_uow):
+        self._fake_uow = fake_uow
+
+    def _create_uow(self):
+        return self._fake_uow
 
 
 class TestRetrievalPipelineService:
@@ -111,6 +142,61 @@ class TestRetrievalPipelineService:
         with service._create_uow() as uow:
             results_after = uow.image_chunk_results.get_by_pipeline(pipeline_id)
             assert len(results_after) == 0
+
+    def test_get_or_create_pipeline_rejects_retrieval_unit_drift(self):
+        existing_pipeline = SimpleNamespace(id=7, config={"type": "existing", "retrieval_unit": "chunk"})
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow(existing_pipeline=existing_pipeline))
+
+        with pytest.raises(ValueError, match="retrieval_unit changed from 'chunk' to 'image_chunk'"):
+            service.get_or_create_pipeline(
+                name="same-name",
+                config={"type": "existing", "retrieval_unit": "image_chunk"},
+            )
+
+    def test_get_or_create_pipeline_rejects_invalid_retrieval_unit_config(self):
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow())
+
+        with pytest.raises(ValueError, match="Invalid retrieval_unit 'image_chunks'"):
+            service.get_or_create_pipeline(
+                name="invalid-unit",
+                config={"type": "existing", "retrieval_unit": "image_chunks"},
+            )
+
+    @pytest.mark.parametrize("invalid_unit", [False, 123, ["image_chunk"], {"unit": "image_chunk"}])
+    def test_get_or_create_pipeline_rejects_malformed_retrieval_unit_config(self, invalid_unit):
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow())
+
+        with pytest.raises(ValueError, match="Invalid retrieval_unit"):
+            service.get_or_create_pipeline(
+                name="malformed-unit",
+                config={"type": "existing", "retrieval_unit": invalid_unit},
+            )
+
+    def test_run_image_pipeline_rejects_existing_chunk_results_for_same_pipeline_id(self, mock_retrieval_func):
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow(chunk_results=[SimpleNamespace(id=1)]))
+
+        with pytest.raises(ValueError, match="already has chunk results"):
+            service.run_image_pipeline(retrieval_func=mock_retrieval_func, pipeline_id=7)
+
+    def test_run_pipeline_rejects_existing_image_results_for_same_pipeline_id(self, mock_retrieval_func):
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow(image_chunk_results=[SimpleNamespace(id=1)]))
+
+        with pytest.raises(ValueError, match="already has image_chunk results"):
+            service.run_pipeline(retrieval_func=mock_retrieval_func, pipeline_id=7)
+
+    def test_run_pipeline_rejects_image_config_before_chunk_persistence(self, mock_retrieval_func):
+        existing_pipeline = SimpleNamespace(id=7, config={"type": "existing", "retrieval_unit": "image_chunk"})
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow(existing_pipeline=existing_pipeline))
+
+        with pytest.raises(ValueError, match="configured for image_chunk results"):
+            service.run_pipeline(retrieval_func=mock_retrieval_func, pipeline_id=7)
+
+    def test_run_image_pipeline_rejects_chunk_config_before_image_persistence(self, mock_retrieval_func):
+        existing_pipeline = SimpleNamespace(id=7, config={"type": "existing", "retrieval_unit": "chunk"})
+        service = _FakeRetrievalPipelineService(_FakeRetrievalUow(existing_pipeline=existing_pipeline))
+
+        with pytest.raises(ValueError, match="configured for chunk results"):
+            service.run_image_pipeline(retrieval_func=mock_retrieval_func, pipeline_id=7)
 
 
 class TestVectorSearchByEmbedding:
@@ -340,3 +426,101 @@ class TestRetrievalPipelineResume:
         assert result["total_queries"] == query_count
 
         service.delete_pipeline_results(pipeline_id)
+
+
+class TestStoredEmbeddingAccessors:
+    """Tests for get_query_embedding and get_chunk_embeddings."""
+
+    @pytest.fixture
+    def service(self, session_factory):
+        return RetrievalPipelineService(session_factory)
+
+    def test_get_query_embedding_returns_stored_vector(self, service, session_factory):
+        embedding = [0.5] * 768
+        with session_factory() as session:
+            query = QueryRepository(session).get_by_id(1)
+            query.embedding = embedding
+            session.commit()
+        try:
+            stored_embedding = service.get_query_embedding(1)
+
+            assert stored_embedding is not None
+            assert len(stored_embedding) == 768
+            assert stored_embedding[0] == pytest.approx(0.5)
+        finally:
+            with session_factory() as session:
+                query = QueryRepository(session).get_by_id(1)
+                query.embedding = None
+                session.commit()
+
+    def test_get_query_embedding_returns_none_for_missing_embedding(self, service):
+        assert service.get_query_embedding(2) is None
+        assert service.get_query_embedding(999999) is None
+
+    def test_get_query_multi_embedding_returns_stored_matrix(self, service, session_factory):
+        embeddings = [[0.5] * 768, [0.25] * 768]
+        with session_factory() as session:
+            query = QueryRepository(session).get_by_id(1)
+            query.embeddings = embeddings
+            session.commit()
+        try:
+            stored_embeddings = service.get_query_multi_embedding(1)
+
+            assert stored_embeddings is not None
+            assert len(stored_embeddings) == 2
+            assert len(stored_embeddings[0]) == 768
+            assert stored_embeddings[0][0] == pytest.approx(0.5)
+            assert stored_embeddings[1][0] == pytest.approx(0.25)
+        finally:
+            with session_factory() as session:
+                query = QueryRepository(session).get_by_id(1)
+                query.embeddings = None
+                session.commit()
+
+    def test_get_query_multi_embedding_returns_none_for_missing_embedding(self, service):
+        assert service.get_query_multi_embedding(2) is None
+        assert service.get_query_multi_embedding(999999) is None
+
+    def test_get_chunk_embeddings_returns_only_chunks_with_embeddings(self, service, session_factory):
+        embedding = [0.25] * 768
+        with session_factory() as session:
+            chunk = session.get(Chunk, 1)
+            chunk.embedding = embedding
+            session.commit()
+        try:
+            embeddings_by_id = service.get_chunk_embeddings([1, 2, 999999])
+
+            assert set(embeddings_by_id) == {1}
+            assert len(embeddings_by_id[1]) == 768
+            assert embeddings_by_id[1][0] == pytest.approx(0.25)
+        finally:
+            with session_factory() as session:
+                chunk = session.get(Chunk, 1)
+                chunk.embedding = None
+                session.commit()
+
+    def test_get_chunk_multi_embeddings_returns_only_chunks_with_embeddings(self, service, session_factory):
+        embeddings = [[0.75] * 768, [0.125] * 768]
+        with session_factory() as session:
+            chunk = session.get(Chunk, 1)
+            chunk.embeddings = embeddings
+            session.commit()
+        try:
+            embeddings_by_id = service.get_chunk_multi_embeddings([1, 2, 999999])
+
+            assert set(embeddings_by_id) == {1}
+            assert len(embeddings_by_id[1]) == 2
+            assert len(embeddings_by_id[1][0]) == 768
+            assert embeddings_by_id[1][0][0] == pytest.approx(0.75)
+            assert embeddings_by_id[1][1][0] == pytest.approx(0.125)
+        finally:
+            with session_factory() as session:
+                chunk = session.get(Chunk, 1)
+                chunk.embeddings = None
+                session.commit()
+
+    def test_get_chunk_embeddings_empty_input(self, service):
+        assert service.get_chunk_embeddings([]) == {}
+
+    def test_get_chunk_multi_embeddings_empty_input(self, service):
+        assert service.get_chunk_multi_embeddings([]) == {}

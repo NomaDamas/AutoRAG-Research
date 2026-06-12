@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from autorag_research.orm.service.base_pipeline import BasePipelineService
 from autorag_research.orm.uow.retrieval_uow import RetrievalUnitOfWork
+from autorag_research.retrieval_units import RetrievalUnit, require_retrieval_unit
 
 __all__ = ["RetrievalFunc", "RetrievalPipelineService"]
 
@@ -83,6 +84,69 @@ class RetrievalPipelineService(BasePipelineService):
     def _create_uow(self) -> RetrievalUnitOfWork:
         """Create a new RetrievalUnitOfWork instance."""
         return RetrievalUnitOfWork(self.session_factory, self._schema)
+
+    def _get_config_retrieval_unit(self, config: dict) -> RetrievalUnit:
+        """Return the persisted retrieval unit, defaulting legacy configs to text chunks."""
+        return require_retrieval_unit(config.get("retrieval_unit"), default="chunk") or "chunk"
+
+    def _validate_existing_pipeline_config(self, name: str, existing_config: dict, new_config: dict) -> None:
+        """Prevent one retrieval pipeline identity from changing persistence namespaces."""
+        existing_unit = self._get_config_retrieval_unit(existing_config)
+        new_unit = self._get_config_retrieval_unit(new_config)
+        if existing_unit != new_unit:
+            msg = (
+                f"Pipeline '{name}' retrieval_unit changed from '{existing_unit}' to '{new_unit}'. "
+                "Create a new pipeline name or clear old results before changing retrieval result namespaces."
+            )
+            raise ValueError(msg)
+
+    def get_or_create_pipeline(self, name: str, config: dict, *, strict: bool = False) -> tuple[int | str, bool]:
+        """Get or create a retrieval pipeline after validating its result namespace."""
+        self._get_config_retrieval_unit(config)
+        return super().get_or_create_pipeline(name=name, config=config, strict=strict)
+
+    def _reject_opposite_result_namespace(
+        self,
+        uow: RetrievalUnitOfWork,
+        pipeline_id: int | str,
+        result_repo_name: Literal["chunk_results", "image_chunk_results"],
+    ) -> None:
+        """Reject persistence when the same pipeline already has rows in the opposite result table."""
+        opposite_repo_name: Literal["chunk_results", "image_chunk_results"] = (
+            "image_chunk_results" if result_repo_name == "chunk_results" else "chunk_results"
+        )
+        opposite_results = getattr(uow, opposite_repo_name).get_by_pipeline(pipeline_id, limit=1)
+        if opposite_results:
+            opposite_unit = "image_chunk" if opposite_repo_name == "image_chunk_results" else "chunk"
+            target_unit = "image_chunk" if result_repo_name == "image_chunk_results" else "chunk"
+            msg = (
+                f"Pipeline {pipeline_id!r} already has {opposite_unit} results; "
+                f"refusing to persist {target_unit} results into the same pipeline identity."
+            )
+            raise ValueError(msg)
+
+    def _validate_pipeline_result_namespace(
+        self,
+        uow: RetrievalUnitOfWork,
+        pipeline_id: int | str,
+        result_repo_name: Literal["chunk_results", "image_chunk_results"],
+    ) -> None:
+        """Validate that persisted pipeline config matches the selected result namespace."""
+        pipeline = uow.pipelines.get_by_id(pipeline_id)
+        if pipeline is None:
+            return
+
+        configured_unit = self._get_config_retrieval_unit(pipeline.config)
+        target_unit = "image_chunk" if result_repo_name == "image_chunk_results" else "chunk"
+        if configured_unit == "mixed":
+            msg = f"Pipeline {pipeline_id!r} is configured for mixed results, which cannot be persisted directly."
+            raise ValueError(msg)
+        if configured_unit != target_unit:
+            msg = (
+                f"Pipeline {pipeline_id!r} is configured for {configured_unit} results; "
+                f"refusing to persist {target_unit} results into the same pipeline identity."
+            )
+            raise ValueError(msg)
 
     def _collect_retrieval_results(
         self,
@@ -194,6 +258,8 @@ class RetrievalPipelineService(BasePipelineService):
             )
 
             with self._create_uow() as uow:
+                self._validate_pipeline_result_namespace(uow, pipeline_id, result_repo_name)
+                self._reject_opposite_result_namespace(uow, pipeline_id, result_repo_name)
                 queries = uow.queries.get_all(limit=effective_batch_size, offset=offset)
                 if not queries:
                     break
@@ -503,3 +569,73 @@ class RetrievalPipelineService(BasePipelineService):
                     raise ValueError(f"Query {query_id} not found")  # noqa: TRY003
                 query_texts.append(query.contents)
         return query_texts
+
+    def get_query_embedding(self, query_id: int | str) -> list[float] | None:
+        """Fetch the stored single-vector embedding for a query.
+
+        Args:
+            query_id: Query ID to fetch.
+
+        Returns:
+            The stored query embedding as a list of floats, or None when the query
+            does not exist or has no stored embedding.
+        """
+        with self._create_uow() as uow:
+            query = uow.queries.get_by_id(query_id)
+            if query is None or query.embedding is None:
+                return None
+            return [float(value) for value in query.embedding]
+
+    def get_query_multi_embedding(self, query_id: int | str) -> list[list[float]] | None:
+        """Fetch the stored multi-vector embedding for a query.
+
+        Args:
+            query_id: Query ID to fetch.
+
+        Returns:
+            The stored query embedding matrix as lists of floats, or None when the
+            query does not exist or has no stored multi-vector embedding.
+        """
+        with self._create_uow() as uow:
+            query = uow.queries.get_by_id(query_id)
+            if query is None or query.embeddings is None:
+                return None
+            return [[float(value) for value in vector] for vector in query.embeddings]
+
+    def get_chunk_embeddings(self, chunk_ids: list[int | str]) -> dict[int | str, list[float]]:
+        """Batch fetch stored single-vector chunk embeddings.
+
+        Args:
+            chunk_ids: Chunk IDs to fetch.
+
+        Returns:
+            Mapping of chunk ID to embedding for every requested chunk that exists
+            and has a stored embedding; chunks without embeddings are omitted.
+        """
+        if not chunk_ids:
+            return {}
+        with self._create_uow() as uow:
+            chunks = uow.chunks.get_by_ids(chunk_ids)
+            return {
+                chunk.id: [float(value) for value in chunk.embedding] for chunk in chunks if chunk.embedding is not None
+            }
+
+    def get_chunk_multi_embeddings(self, chunk_ids: list[int | str]) -> dict[int | str, list[list[float]]]:
+        """Batch fetch stored multi-vector chunk embeddings.
+
+        Args:
+            chunk_ids: Chunk IDs to fetch.
+
+        Returns:
+            Mapping of chunk ID to multi-vector embeddings for requested chunks
+            that exist and have stored embeddings; chunks without embeddings are omitted.
+        """
+        if not chunk_ids:
+            return {}
+        with self._create_uow() as uow:
+            chunks = uow.chunks.get_by_ids(chunk_ids)
+            return {
+                chunk.id: [[float(value) for value in vector] for vector in chunk.embeddings]
+                for chunk in chunks
+                if chunk.embeddings is not None
+            }

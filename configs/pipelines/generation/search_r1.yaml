@@ -1,0 +1,13 @@
+_target_: autorag_research.pipelines.generation.search_r1.SearchR1GenerationPipelineConfig
+description: "Paper-faithful Search-R1 rolling rollout generation pipeline"
+name: search_r1
+retrieval_pipeline_name: bm25
+llm: openai-gpt5-mini
+max_actions: 4
+k_per_search: 3
+fallback_to_final_prompt: false
+top_k: 5
+batch_size: 32
+max_concurrency: 4
+max_retries: 3
+retry_delay: 1.0

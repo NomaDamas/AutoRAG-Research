@@ -11,7 +11,7 @@ from autorag_research.cli.commands.ingest import (
     _validate_required_params,
     generate_db_name,
 )
-from autorag_research.data.registry import IngestorMeta, ParamMeta, discover_ingestors
+from autorag_research.data.registry import IngestorMeta, ParamMeta, discover_ingestors, get_ingestor
 
 
 @pytest.fixture
@@ -215,18 +215,18 @@ class TestGenerateDbName:
         assert "-" not in result
         assert "_" in result
 
-    def test_preserves_case_from_params(self) -> None:
-        """Preserves case from parameter values (lowercase recommended by convention)."""
+    def test_lowercases_params_for_safe_db_names(self) -> None:
+        """Lowercases parameter values while generating safe DB names."""
         result = generate_db_name(
             ingestor_name="beir",
-            params={"dataset_name": "scifact"},
+            params={"dataset_name": "SciFact"},
             subset="test",
             embedding_model="bge-small",
         )
 
-        # Function preserves case; users should provide lowercase
         assert "beir" in result
         assert "scifact" in result
+        assert "SciFact" not in result
 
     def test_list_params_joined(self) -> None:
         """List parameters are joined."""
@@ -263,3 +263,32 @@ class TestGenerateDbName:
         # Should have underscores separating parts
         parts = result.split("_")
         assert len(parts) >= 3
+
+    @pytest.mark.parametrize("ingestor_name", ["mr.tydi", "mr-tydi"])
+    def test_sanitizes_ingestor_name_with_common_dataset_punctuation(self, ingestor_name: str) -> None:
+        """Generated DB names are safe for raw aliases such as mr.tydi and mr-tydi."""
+        result = generate_db_name(
+            ingestor_name=ingestor_name,
+            params={"language": "english"},
+            subset="test",
+            embedding_model="openai-small",
+        )
+
+        assert result == "mr_tydi_english_test_openai_small"
+        assert "." not in result
+        assert "-" not in result
+
+    @pytest.mark.parametrize("alias", ["mr.tydi", "mr-tydi"])
+    def test_alias_resolution_uses_canonical_mrtydi_name_for_default_db_name(self, alias: str) -> None:
+        """CLI default DB names should use canonical metadata after resolving aliases."""
+        meta = get_ingestor(alias)
+
+        assert meta is not None
+        result = generate_db_name(
+            ingestor_name=meta.name,
+            params={"language": "english"},
+            subset="test",
+            embedding_model="openai-small",
+        )
+
+        assert result == "mrtydi_english_test_openai_small"

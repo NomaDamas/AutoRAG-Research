@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
 
 from datasets import load_dataset
 from langchain_core.embeddings import Embeddings
@@ -12,6 +12,15 @@ from autorag_research.exceptions import ServiceNotSetError, UnsupportedLanguageE
 logger = logging.getLogger("AutoRAG-Research")
 
 RANDOM_SEED = 42
+DEFAULT_BATCH_SIZE = 1000
+
+
+class InvalidMrTyDiIngestionBoundError(ValueError):
+    """Raised when Mr. TyDi ingestion receives an invalid numeric bound."""
+
+    def __init__(self, name: str, expected: str):
+        super().__init__(f"{name} must be {expected}")
+
 
 # Mr. TyDi supported languages
 MRTYDI_LANGUAGES = Literal[
@@ -36,6 +45,7 @@ MRTYDI_CORPUS_BASE_URL = "https://huggingface.co/datasets/castorini/mr-tydi-corp
     name="mrtydi",
     description="Mr. TyDi multilingual retrieval benchmark",
     hf_repo="mrtydi-dumps",
+    aliases=("mr-tydi", "mr.tydi"),
 )
 class MrTyDiIngestor(TextEmbeddingDataIngestor):
     """Ingestor for Mr. TyDi multilingual retrieval benchmark dataset.
@@ -47,20 +57,28 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
     Corpus: https://huggingface.co/datasets/castorini/mr-tydi-corpus
     """
 
-    def __init__(self, embedding_model: Embeddings, language: MRTYDI_LANGUAGES = "english"):
+    def __init__(
+        self,
+        embedding_model: Embeddings,
+        language: MRTYDI_LANGUAGES = "english",
+        batch_size: int = DEFAULT_BATCH_SIZE,
+    ):
         """Initialize Mr. TyDi ingestor.
 
         Args:
             embedding_model: Embedding model for vectorization.
             language: Language to ingest. One of: arabic, bengali, english, finnish,
                      indonesian, japanese, korean, russian, swahili, telugu, thai.
+            batch_size: Maximum number of rows to send to database insertion in one call.
         """
         super().__init__(embedding_model)
         valid_languages = get_args(MRTYDI_LANGUAGES)
         if language.lower() not in valid_languages:
             raise UnsupportedLanguageError(language.lower(), list(valid_languages))
+        self._validate_positive_bound("batch_size", batch_size)
         self.language = language.lower()
         self.language_dir = f"mrtydi-v1.1-{self.language}"
+        self.batch_size = batch_size
 
     def detect_primary_key_type(self) -> Literal["bigint", "string"]:
         """Mr. TyDi uses string primary keys (e.g., '26569#0')."""
@@ -81,6 +99,9 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
             min_corpus_cnt: Maximum number of corpus items to ingest.
                          Gold passages are always included.
         """
+        self._validate_non_negative_limit("query_limit", query_limit)
+        self._validate_non_negative_limit("min_corpus_cnt", min_corpus_cnt)
+
         if self.service is None:
             raise ServiceNotSetError
 
@@ -89,21 +110,19 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         # Step 1: Load queries and extract gold docids
         logger.info(f"Loading Mr. TyDi queries ({self.language}, {subset} split)...")
         queries_url = f"{MRTYDI_BASE_URL}/{self.language_dir}/{subset}.jsonl.gz"
-        queries_dataset = load_dataset("json", data_files=queries_url, split="train")
+        queries_dataset = load_dataset("json", data_files=queries_url, split="train", streaming=True)
 
         queries, qrels, gold_docids = self._process_queries(queries_dataset, query_limit, rng)
 
         # Step 2: Load corpus
         logger.info(f"Loading Mr. TyDi corpus ({self.language})...")
         corpus_url = f"{MRTYDI_CORPUS_BASE_URL}/{self.language_dir}/corpus.jsonl.gz"
-        corpus_dataset = load_dataset("json", data_files=corpus_url, split="train")
+        corpus_dataset = load_dataset("json", data_files=corpus_url, split="train", streaming=True)
 
-        corpus = self._process_corpus(corpus_dataset, gold_docids, min_corpus_cnt, rng)
-
-        # Step 3: Ingest data
+        # Step 3: Ingest data with bounded corpus memory
         self._ingest_queries(queries)
-        self._ingest_corpus(corpus)
-        self._ingest_qrels(qrels, set(corpus.keys()))
+        corpus_ids_set = self._ingest_corpus_streaming(corpus_dataset, gold_docids, min_corpus_cnt, rng)
+        self._ingest_qrels(qrels, corpus_ids_set)
 
         self.service.clean()
 
@@ -123,18 +142,13 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         Returns:
             Tuple of (queries, qrels, gold_docids).
         """
-        data_list = list(dataset)
-
-        # Sample queries if limit specified
-        if query_limit is not None and query_limit < len(data_list):
-            data_list = rng.sample(data_list, query_limit)
-            logger.info(f"Sampled {len(data_list)} queries from {len(dataset)} total")
+        rows = self._iter_limited_or_sampled_rows(dataset, query_limit, rng)
 
         queries: dict[str, str] = {}
         qrels: dict[str, dict[str, int]] = {}
         gold_docids: set[str] = set()
 
-        for row in data_list:
+        for row in rows:
             qid = str(row["query_id"])
             queries[qid] = row["query"]
             qrels[qid] = {}
@@ -148,57 +162,143 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
         logger.info(f"Extracted {len(queries)} queries with {len(gold_docids)} unique gold docids")
         return queries, qrels, gold_docids
 
-    def _process_corpus(
+    def _iter_limited_or_sampled_rows(
+        self,
+        dataset,
+        query_limit: int | None,
+        rng: random.Random,
+    ) -> list[dict[str, Any]]:
+        """Return all rows or a bounded reservoir sample without materializing unlimited streams."""
+        self._validate_non_negative_limit("query_limit", query_limit)
+        if query_limit is None:
+            return list(dataset)
+
+        reservoir: list[dict[str, Any]] = []
+        for seen_count, row in enumerate(dataset, start=1):
+            row_dict: dict[str, Any] = row
+            if len(reservoir) < query_limit:
+                reservoir.append(row_dict)
+                continue
+            replacement_index = rng.randrange(seen_count)
+            if replacement_index < query_limit:
+                reservoir[replacement_index] = row_dict
+
+        logger.info(f"Sampled {len(reservoir)} queries from streaming Mr. TyDi queries")
+        return reservoir
+
+    def _ingest_corpus_streaming(
         self,
         dataset,
         gold_docids: set[str],
         min_corpus_cnt: int | None,
         rng: random.Random,
-    ) -> dict[str, dict[str, str]]:
-        """Process corpus dataset to extract documents.
+    ) -> set[str]:
+        """Stream corpus documents into the database with bounded memory.
 
-        Args:
-            dataset: HuggingFace dataset with corpus.
-            gold_docids: Set of gold docids that must be included.
-            min_corpus_cnt: Maximum corpus size.
-            rng: Random number generator for sampling.
-
-        Returns:
-            Corpus dictionary mapping docid to {title, text}.
+        Gold documents are always inserted. When ``min_corpus_cnt`` is set,
+        non-gold documents are selected with reservoir sampling so the candidate
+        pool does not grow with corpus size. When no limit is set, every corpus
+        row is inserted in database batches instead of first building a full
+        in-memory dictionary.
         """
-        # Build corpus dict - only include gold docids + random samples if limit is set
-        corpus: dict[str, dict[str, str]] = {}
-        non_gold_docs: list[dict] = []
+        self._validate_non_negative_limit("min_corpus_cnt", min_corpus_cnt)
+
+        if self.service is None:
+            raise ServiceNotSetError
+
+        corpus_ids_set: set[str] = set()
+        batch: list[dict[str, str | int | None]] = []
+        non_gold_sample: list[dict[str, str | int | None]] = []
+        non_gold_seen = 0
+        additional_needed = None if min_corpus_cnt is None else max(0, min_corpus_cnt - len(gold_docids))
 
         for row in dataset:
             docid = row["docid"]
-            doc_data = {"title": row["title"], "text": row["text"]}
+            chunk = self._make_chunk(row)
+            if docid in gold_docids or min_corpus_cnt is None:
+                if docid in gold_docids:
+                    corpus_ids_set.add(docid)
+                batch.append(chunk)
+                batch = self._flush_chunk_batch_if_full(batch)
+            elif additional_needed and additional_needed > 0:
+                non_gold_seen = self._update_reservoir_sample(
+                    non_gold_sample, chunk, additional_needed, non_gold_seen, rng
+                )
 
-            if docid in gold_docids:
-                corpus[docid] = doc_data
-            elif min_corpus_cnt is None:
-                # No limit - include all docs
-                corpus[docid] = doc_data
-            else:
-                # Limit specified - collect non-gold for later sampling
-                non_gold_docs.append({"docid": docid, **doc_data})
+        self._flush_chunk_batch(batch)
 
-        # If min_corpus_cnt is set, add random non-gold docs up to the threshold
-        if min_corpus_cnt is not None:
-            additional_needed = min_corpus_cnt - len(corpus)
-            if additional_needed > 0 and non_gold_docs:
-                sampled = rng.sample(non_gold_docs, min(additional_needed, len(non_gold_docs)))
-                for doc in sampled:
-                    corpus[doc["docid"]] = {"title": doc["title"], "text": doc["text"]}
+        for start in range(0, len(non_gold_sample), self.batch_size):
+            sampled_batch = non_gold_sample[start : start + self.batch_size]
+            self.service.add_chunks(sampled_batch)
+            corpus_ids_set.update(str(chunk["id"]) for chunk in sampled_batch)
 
-            logger.info(
-                f"Corpus subset: {len(gold_docids)} gold IDs + "
-                f"{len(corpus) - len(gold_docids)} random = {len(corpus)} total"
-            )
-        else:
-            logger.info(f"Loaded full corpus: {len(corpus)} documents")
+        logger.info(
+            "Mr. TyDi corpus ingested with %s gold IDs and %s retrieval-eligible inserted chunks",
+            len(gold_docids),
+            len(corpus_ids_set),
+        )
+        return corpus_ids_set
 
-        return corpus
+    def _flush_chunk_batch_if_full(
+        self,
+        batch: list[dict[str, str | int | None]],
+    ) -> list[dict[str, str | int | None]]:
+        """Flush and reset a chunk batch when it reaches the configured size."""
+        if len(batch) < self.batch_size:
+            return batch
+        self._flush_chunk_batch(batch)
+        return []
+
+    def _flush_chunk_batch(self, batch: list[dict[str, str | int | None]]) -> None:
+        """Send one non-empty chunk batch to the ingestion service."""
+        if self.service is None:
+            raise ServiceNotSetError
+        if batch:
+            self.service.add_chunks(batch)
+
+    @staticmethod
+    def _update_reservoir_sample(
+        reservoir: list[dict[str, str | int | None]],
+        chunk: dict[str, str | int | None],
+        capacity: int,
+        seen_count: int,
+        rng: random.Random,
+    ) -> int:
+        """Update a fixed-size reservoir sample and return the new seen count."""
+        next_seen_count = seen_count + 1
+        if len(reservoir) < capacity:
+            reservoir.append(chunk)
+            return next_seen_count
+        replacement_index = rng.randrange(next_seen_count)
+        if replacement_index < capacity:
+            reservoir[replacement_index] = chunk
+        return next_seen_count
+
+    @staticmethod
+    def _make_chunk(row: dict[str, Any]) -> dict[str, str | int | None]:
+        """Build one text chunk row from a Mr. TyDi corpus row."""
+        return {
+            "id": row["docid"],
+            "contents": (row.get("title", "") + " " + row["text"]).strip(),
+        }
+
+    @staticmethod
+    def _validate_positive_bound(name: str, value: int) -> None:
+        """Reject non-integer and non-positive required bounds before work starts."""
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise InvalidMrTyDiIngestionBoundError(name, "an integer greater than 0")
+        if value <= 0:
+            raise InvalidMrTyDiIngestionBoundError(name, "greater than 0")
+
+    @staticmethod
+    def _validate_non_negative_limit(name: str, value: int | None) -> None:
+        """Reject non-integer and negative optional row limits before streaming work starts."""
+        if value is None:
+            return
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise InvalidMrTyDiIngestionBoundError(name, "an integer greater than or equal to 0")
+        if value < 0:
+            raise InvalidMrTyDiIngestionBoundError(name, "greater than or equal to 0")
 
     def _ingest_queries(self, queries: dict[str, str]) -> None:
         """Ingest queries into the database."""
@@ -206,19 +306,6 @@ class MrTyDiIngestor(TextEmbeddingDataIngestor):
             raise ServiceNotSetError
         logger.info(f"Ingesting {len(queries)} queries from Mr. TyDi ({self.language})...")
         self.service.add_queries([{"id": qid, "contents": text} for qid, text in queries.items()])
-
-    def _ingest_corpus(self, corpus: dict[str, dict[str, str]]) -> None:
-        """Ingest corpus documents into the database."""
-        if self.service is None:
-            raise ServiceNotSetError
-        logger.info(f"Ingesting {len(corpus)} corpus documents from Mr. TyDi ({self.language})...")
-        self.service.add_chunks([
-            {
-                "id": cid,
-                "contents": (doc.get("title", "") + " " + doc["text"]).strip(),
-            }
-            for cid, doc in corpus.items()
-        ])
 
     def _ingest_qrels(self, qrels: dict[str, dict[str, int]], corpus_ids_set: set[str]) -> None:
         """Ingest query-document relevance relations."""

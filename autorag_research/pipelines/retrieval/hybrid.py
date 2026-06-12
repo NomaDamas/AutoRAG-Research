@@ -14,7 +14,11 @@ from typing import Any, Literal
 from sqlalchemy.orm import Session, sessionmaker
 
 from autorag_research.config import BaseRetrievalPipelineConfig
-from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
+from autorag_research.pipelines.retrieval.base import (
+    BaseRetrievalPipeline,
+    RetrievalUnit,
+    get_retrieval_pipeline_unit,
+)
 from autorag_research.pipelines.retrieval.loader import RetrievalPipelineLoader
 from autorag_research.util import (
     normalize_dbsf,
@@ -324,6 +328,7 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
         self._retrieval_pipeline_1 = retrieval_pipeline_1
         self._retrieval_pipeline_2 = retrieval_pipeline_2
         self.fetch_k_multiplier = fetch_k_multiplier
+        self._validate_supported_retrieval_units()
 
         super().__init__(session_factory, name, schema)
 
@@ -357,6 +362,22 @@ class HybridRetrievalPipeline(BaseRetrievalPipeline, ABC):
         ).load_pipeline(
             name,
         )
+
+    @property
+    def retrieval_unit(self) -> RetrievalUnit | None:
+        """Return the shared retrieval unit when both wrapped pipelines declare the same one."""
+        retrieval_unit_1 = get_retrieval_pipeline_unit(self._retrieval_pipeline_1)
+        retrieval_unit_2 = get_retrieval_pipeline_unit(self._retrieval_pipeline_2)
+        if retrieval_unit_1 == retrieval_unit_2:
+            return retrieval_unit_1
+        return "mixed"
+
+    def _validate_supported_retrieval_units(self) -> None:
+        """Reject mixed namespaces before raw doc_id fusion can collide IDs."""
+        retrieval_unit = self.retrieval_unit
+        if retrieval_unit == "mixed":
+            msg = "Mixed retrieval_unit hybrid pipelines are not supported until fused results carry entity namespaces."
+            raise ValueError(msg)
 
     @abstractmethod
     def _fuse_results(
@@ -495,6 +516,7 @@ class HybridRRFRetrievalPipeline(HybridRetrievalPipeline):
         """Return Hybrid RRF pipeline configuration."""
         return {
             "type": "hybrid_rrf",
+            "retrieval_unit": self.retrieval_unit,
             "retrieval_pipeline_1": self._retrieval_pipeline_1.name,
             "retrieval_pipeline_2": self._retrieval_pipeline_2.name,
             "rrf_k": self.rrf_k,
@@ -588,6 +610,7 @@ class HybridCCRetrievalPipeline(HybridRetrievalPipeline):
         """Return Hybrid CC pipeline configuration."""
         config = {
             "type": "hybrid_cc",
+            "retrieval_unit": self.retrieval_unit,
             "retrieval_pipeline_1": self._retrieval_pipeline_1.name,
             "retrieval_pipeline_2": self._retrieval_pipeline_2.name,
             "weight": self.weight,

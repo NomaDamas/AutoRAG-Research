@@ -72,6 +72,10 @@ def health_check_reranker(model: BaseReranker) -> None:
         RerankerError: If health check fails.
     """
     from autorag_research.exceptions import RerankerError
+    from autorag_research.rerankers.dynamic_rag import DynamicRAGReranker
+
+    if isinstance(model, DynamicRAGReranker) and model.llm is None:
+        return
 
     try:
         model.rerank("test query", ["document 1", "document 2"], top_k=1)

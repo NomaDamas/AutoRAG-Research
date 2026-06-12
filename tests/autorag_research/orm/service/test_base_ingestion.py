@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from autorag_research.exceptions import DuplicateRetrievalGTError, LengthMismatchError
@@ -17,6 +19,47 @@ class ConcreteTestIngestionService(BaseIngestionService):
             "Chunk": Chunk,
             "RetrievalRelation": RetrievalRelation,
         }
+
+
+class _FakeEntity:
+    def __init__(self, entity_id: int, contents: str):
+        self.id = entity_id
+        self.contents = contents
+
+
+class _FakeEmbeddingRepository:
+    def __init__(self):
+        self.calls: list[dict[str, object]] = []
+
+    def get_without_embeddings(self, *, limit: int, excluded_ids: set[int | str]):
+        self.calls.append({"limit": limit, "excluded_ids": set(excluded_ids)})
+        return [
+            _FakeEntity(entity_id, f"content {entity_id}")
+            for entity_id in range(1, 101)
+            if entity_id not in excluded_ids
+        ][:limit]
+
+
+class _FakeUow:
+    def __init__(self, repository: _FakeEmbeddingRepository):
+        self.queries = repository
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+class _FakeIngestionService(BaseIngestionService):
+    def __init__(self, repository: _FakeEmbeddingRepository):
+        self.repository = repository
+
+    def _create_uow(self):
+        return _FakeUow(self.repository)
+
+    def _get_schema_classes(self) -> dict[str, type]:
+        return {}
 
 
 class TestBaseIngestionService:
@@ -234,3 +277,230 @@ class TestBaseIngestionService:
             uow.retrieval_relations.add(original_rel_3)
             uow.retrieval_relations.add(original_rel_4)
             uow.commit()
+
+    def test_embed_all_queries_skips_failed_items_without_infinite_loop(self, service, caplog):
+        """Regression for #239: failing embeddings must not cause an infinite loop.
+
+        The previous implementation re-fetched rows whose embed call returned
+        None forever, since the SQL filter is "embedding IS NULL". This test
+        proves the loop terminates, the good row gets embedded, the bad row
+        stays unembedded, and the summary log surfaces the skip count.
+        """
+        snapshots = _snapshot_unembedded_queries(service)
+        added_ids = service.add_queries([
+            {"contents": "embed-fail-test good query", "generation_gt": None},
+            {"contents": "embed-fail-test BAD query", "generation_gt": None},
+        ])
+        good_id, bad_id = added_ids
+
+        try:
+            with service._create_uow() as uow:
+                uow.queries.get_by_id(good_id).embedding = None
+                uow.queries.get_by_id(bad_id).embedding = None
+                uow.commit()
+
+            async def flaky_embed(text_value: str) -> list[float]:
+                if "BAD" in text_value:
+                    msg = "simulated embedding failure"
+                    raise RuntimeError(msg)
+                return [0.42] * 768
+
+            with caplog.at_level(logging.INFO, logger="AutoRAG-Research"):
+                embedded = service.embed_all_queries(
+                    flaky_embed,
+                    batch_size=10,
+                    max_concurrency=2,
+                    bm25_tokenizer=None,
+                )
+
+            assert embedded >= 1
+
+            with service._create_uow() as uow:
+                good = uow.queries.get_by_id(good_id)
+                bad = uow.queries.get_by_id(bad_id)
+                assert good.embedding is not None, "good query must have been embedded"
+                assert bad.embedding is None, "bad query must have been skipped, not embedded"
+
+            summary_messages = [r.message for r in caplog.records if "skipped_failed=" in r.message]
+            assert summary_messages, "expected final summary log with skipped_failed counter"
+            assert any("skipped_failed=1" in msg for msg in summary_messages), (
+                f"expected skipped_failed=1 in summary log, got: {summary_messages}"
+            )
+
+            warn_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+            assert any("failed to embed" in msg for msg in warn_messages), (
+                f"expected per-batch failure warning, got: {warn_messages}"
+            )
+
+        finally:
+            with service._create_uow() as uow:
+                for qid in added_ids:
+                    entity = uow.queries.get_by_id(qid)
+                    if entity is not None:
+                        uow.queries.delete(entity)
+                uow.commit()
+            _restore_unembedded_queries(service, snapshots)
+
+    def test_embed_all_queries_terminates_when_every_item_fails(self, service, caplog):
+        """All-failure case: loop must terminate (not spin) when nothing can be embedded."""
+        snapshots = _snapshot_unembedded_queries(service)
+        added_ids = service.add_queries([
+            {"contents": "all-fail-test query A", "generation_gt": None},
+            {"contents": "all-fail-test query B", "generation_gt": None},
+        ])
+
+        try:
+            with service._create_uow() as uow:
+                for qid in added_ids:
+                    uow.queries.get_by_id(qid).embedding = None
+                uow.commit()
+
+            async def always_fail(_text: str) -> list[float]:
+                msg = "simulated total failure"
+                raise RuntimeError(msg)
+
+            with caplog.at_level(logging.INFO, logger="AutoRAG-Research"):
+                embedded = service.embed_all_queries(
+                    always_fail,
+                    batch_size=10,
+                    max_concurrency=2,
+                    bm25_tokenizer=None,
+                )
+
+            assert embedded == 0
+            with service._create_uow() as uow:
+                for qid in added_ids:
+                    assert uow.queries.get_by_id(qid).embedding is None
+
+            summary_messages = [r.message for r in caplog.records if "skipped_failed=" in r.message]
+            assert summary_messages, "expected final summary log with skipped_failed counter"
+
+        finally:
+            with service._create_uow() as uow:
+                for qid in added_ids:
+                    entity = uow.queries.get_by_id(qid)
+                    if entity is not None:
+                        uow.queries.delete(entity)
+                uow.commit()
+            _restore_unembedded_queries(service, snapshots)
+
+    def test_fetch_unembedded_batch_excludes_failed_ids_without_overfetching(self):
+        """Failed embedding IDs should be excluded by the repository inside a bounded batch query."""
+        repository = _FakeEmbeddingRepository()
+        service = _FakeIngestionService(repository)
+
+        items = service._fetch_unembedded_batch(
+            repo_attr="queries",
+            fetch_method_name="get_without_embeddings",
+            data_attr="contents",
+            batch_size=5,
+            failed_ids=set(range(1, 51)),
+        )
+
+        assert items == [
+            (51, "content 51"),
+            (52, "content 52"),
+            (53, "content 53"),
+            (54, "content 54"),
+            (55, "content 55"),
+        ]
+        assert repository.calls == [{"limit": 5, "excluded_ids": set(range(1, 51))}]
+
+    def test_embed_all_queries_uses_bounded_server_side_failed_id_exclusion(self):
+        """Broad embedding failures must not grow fetch limits with failed-prefix over-fetching."""
+        service = FakeIngestionService([FakeEntity(item_id, f"query {item_id}") for item_id in range(1, 21)])
+
+        async def always_fail(_text: str) -> list[float]:
+            msg = "simulated provider outage"
+            raise RuntimeError(msg)
+
+        embedded = service.embed_all_queries(
+            always_fail,
+            batch_size=5,
+            max_concurrency=2,
+            bm25_tokenizer=None,
+        )
+
+        assert embedded == 0
+        assert service.repository.fetch_limits == [5, 5, 5, 5, 5]
+        assert service.repository.fetch_excluded_ids == [
+            set(),
+            {1, 2, 3, 4, 5},
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+        ]
+
+
+def _snapshot_unembedded_queries(service: BaseIngestionService) -> list[int]:
+    """Capture IDs of seed queries whose embedding is None.
+
+    Because `embed_all_queries()` is a global operation against the entire
+    database, our tests would otherwise embed seed rows that other tests
+    rely on staying un-embedded (see test_retrieval_pipeline_vector.py).
+    Snapshot + restore keeps the shared seed state intact.
+    """
+    with service._create_uow() as uow:
+        return [q.id for q in uow.queries.get_without_embeddings(limit=10_000)]
+
+
+def _restore_unembedded_queries(service: BaseIngestionService, ids: list[int]) -> None:
+    """Reset previously-unembedded seed queries back to embedding=None."""
+    with service._create_uow() as uow:
+        for qid in ids:
+            entity = uow.queries.get_by_id(qid)
+            if entity is not None:
+                entity.embedding = None
+        uow.commit()
+
+
+class FakeEntity:
+    def __init__(self, item_id: int, contents: str):
+        self.id = item_id
+        self.contents = contents
+
+
+class FakeEmbeddingRepository:
+    def __init__(self, entities: list[FakeEntity]):
+        self.entities = entities
+        self.fetch_limits: list[int | None] = []
+        self.fetch_excluded_ids: list[set[int | str]] = []
+
+    def count_without_embeddings(self) -> int:
+        return len(self.entities)
+
+    def get_without_embeddings(
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+        excluded_ids: set[int | str] | None = None,
+    ) -> list[FakeEntity]:
+        del offset
+        excluded = set() if excluded_ids is None else set(excluded_ids)
+        self.fetch_limits.append(limit)
+        self.fetch_excluded_ids.append(excluded)
+        entities = [entity for entity in self.entities if entity.id not in excluded]
+        return entities if limit is None else entities[:limit]
+
+
+class FakeUnitOfWork:
+    def __init__(self, repository: FakeEmbeddingRepository):
+        self.queries = repository
+
+    def __enter__(self) -> "FakeUnitOfWork":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+
+class FakeIngestionService(BaseIngestionService):
+    def __init__(self, entities: list[FakeEntity]):
+        super().__init__(session_factory=None)  # type: ignore[arg-type]
+        self.repository = FakeEmbeddingRepository(entities)
+
+    def _create_uow(self) -> FakeUnitOfWork:
+        return FakeUnitOfWork(self.repository)
+
+    def _get_schema_classes(self) -> dict[str, type]:
+        return {}

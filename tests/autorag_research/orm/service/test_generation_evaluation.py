@@ -3,7 +3,12 @@ from uuid import uuid4
 import pytest
 
 from autorag_research.orm.service.generation_evaluation import GenerationEvaluationService
-from autorag_research.schema import MetricInput
+from autorag_research.schema import (
+    GENERATION_CONTEXT_CHUNK_ID_KEY,
+    GENERATION_CONTEXT_CHUNK_ID_KEYS,
+    GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS,
+    MetricInput,
+)
 
 
 class TestGenerationEvaluationService:
@@ -82,6 +87,16 @@ class TestGenerationEvaluationService:
         results = service._get_execution_results(pipeline_id=1, query_ids=[3])
         assert 3 not in results
 
+    def test_generation_context_metadata_contract_is_shared_with_evaluator(self):
+        assert GENERATION_CONTEXT_CHUNK_ID_KEY == "context_chunk_ids"
+        assert GENERATION_CONTEXT_CHUNK_ID_KEYS == (
+            "context_chunk_ids",
+            "source_chunk_ids",
+            "selected_subset_chunk_ids",
+            "chunk_ids",
+        )
+        assert GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS == ("retrieved_chunk_ids", "retrieval_chunk_ids")
+
     def test_get_execution_results_includes_retrieved_contents_from_pipeline_results(self, service, monkeypatch):
         class Obj:
             def __init__(self, **kwargs):
@@ -119,6 +134,166 @@ class TestGenerationEvaluationService:
 
         results = service._get_execution_results(pipeline_id=1, query_ids=[1])
         assert results[1]["retrieved_contents"] == ["chunk two", "chunk one"]
+
+    def test_get_execution_results_includes_retrieved_contents_from_executor_metadata(self, service, monkeypatch):
+        class Obj:
+            def __init__(self, **kwargs):
+                self.__dict__.update(kwargs)
+
+        class FakeUow:
+            def __init__(self):
+                self.executor_results = Obj(
+                    get_by_queries_and_pipeline=lambda query_ids, pipeline_id: [
+                        Obj(
+                            query_id=1,
+                            generation_result="Generated answer",
+                            result_metadata={"retrieved_chunk_ids": [2, 1, 2]},
+                        )
+                    ]
+                )
+                self.chunk_results = Obj(get_by_query_and_pipeline=lambda query_ids, pipeline_id: [])
+                self.retrieval_relations = Obj(get_by_query_id=lambda query_id: [])
+                self.chunks = Obj(
+                    get_by_ids=lambda chunk_ids: [
+                        Obj(id=1, contents="chunk one"),
+                        Obj(id=2, contents="chunk two"),
+                    ]
+                )
+                self.queries = Obj(get_by_id=lambda query_id: Obj(contents="q1", generation_gt=["gt"]))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        monkeypatch.setattr(service, "_create_uow", lambda: FakeUow())
+
+        results = service._get_execution_results(pipeline_id=1, query_ids=[1])
+        assert results[1]["retrieved_contents"] == ["chunk two", "chunk one"]
+
+    def test_get_execution_results_prefers_context_chunk_ids_as_final_generation_evidence(self, service, monkeypatch):
+        class Obj:
+            def __init__(self, **kwargs):
+                self.__dict__.update(kwargs)
+
+        class FakeUow:
+            def __init__(self):
+                self.executor_results = Obj(
+                    get_by_queries_and_pipeline=lambda query_ids, pipeline_id: [
+                        Obj(
+                            query_id=1,
+                            generation_result="Generated answer",
+                            result_metadata={
+                                "context_chunk_ids": [3, 2, 3],
+                                "retrieved_chunk_ids": [1, 2, 3],
+                            },
+                        )
+                    ]
+                )
+                self.chunk_results = Obj(
+                    get_by_query_and_pipeline=lambda query_ids, pipeline_id: [
+                        Obj(query_id=1, chunk_id=1, rel_score=0.9)
+                    ]
+                )
+                self.retrieval_relations = Obj(get_by_query_id=lambda query_id: [])
+                self.chunks = Obj(
+                    get_by_ids=lambda chunk_ids: [
+                        Obj(id=1, contents="retrieved but not final"),
+                        Obj(id=2, contents="final context two"),
+                        Obj(id=3, contents="final context three"),
+                    ]
+                )
+                self.queries = Obj(get_by_id=lambda query_id: Obj(contents="q1", generation_gt=["gt"]))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        monkeypatch.setattr(service, "_create_uow", lambda: FakeUow())
+
+        results = service._get_execution_results(pipeline_id=1, query_ids=[1])
+        assert results[1]["retrieved_contents"] == ["final context three", "final context two"]
+
+    def test_get_execution_results_uses_selected_subset_chunk_ids_before_retrieval_fallback(self, service, monkeypatch):
+        class Obj:
+            def __init__(self, **kwargs):
+                self.__dict__.update(kwargs)
+
+        class FakeUow:
+            def __init__(self):
+                self.executor_results = Obj(
+                    get_by_queries_and_pipeline=lambda query_ids, pipeline_id: [
+                        Obj(
+                            query_id=1,
+                            generation_result="Generated answer",
+                            result_metadata={
+                                "retrieval_chunk_ids": [1, 2, 3],
+                                "selected_subset_chunk_ids": [2, 3],
+                            },
+                        )
+                    ]
+                )
+                self.chunk_results = Obj(get_by_query_and_pipeline=lambda query_ids, pipeline_id: [])
+                self.retrieval_relations = Obj(get_by_query_id=lambda query_id: [])
+                self.chunks = Obj(
+                    get_by_ids=lambda chunk_ids: [
+                        Obj(id=1, contents="retrieved only"),
+                        Obj(id=2, contents="selected two"),
+                        Obj(id=3, contents="selected three"),
+                    ]
+                )
+                self.queries = Obj(get_by_id=lambda query_id: Obj(contents="q1", generation_gt=["gt"]))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        monkeypatch.setattr(service, "_create_uow", lambda: FakeUow())
+
+        results = service._get_execution_results(pipeline_id=1, query_ids=[1])
+        assert results[1]["retrieved_contents"] == ["selected two", "selected three"]
+
+    def test_get_execution_results_uses_ircot_chunk_ids_as_generation_context(self, service, monkeypatch):
+        class Obj:
+            def __init__(self, **kwargs):
+                self.__dict__.update(kwargs)
+
+        class FakeUow:
+            def __init__(self):
+                self.executor_results = Obj(
+                    get_by_queries_and_pipeline=lambda query_ids, pipeline_id: [
+                        Obj(
+                            query_id=1,
+                            generation_result="Generated answer",
+                            result_metadata={"chunk_ids": [4, 5]},
+                        )
+                    ]
+                )
+                self.chunk_results = Obj(get_by_query_and_pipeline=lambda query_ids, pipeline_id: [])
+                self.retrieval_relations = Obj(get_by_query_id=lambda query_id: [])
+                self.chunks = Obj(
+                    get_by_ids=lambda chunk_ids: [
+                        Obj(id=4, contents="ircot paragraph four"),
+                        Obj(id=5, contents="ircot paragraph five"),
+                    ]
+                )
+                self.queries = Obj(get_by_id=lambda query_id: Obj(contents="q1", generation_gt=["gt"]))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        monkeypatch.setattr(service, "_create_uow", lambda: FakeUow())
+
+        results = service._get_execution_results(pipeline_id=1, query_ids=[1])
+        assert results[1]["retrieved_contents"] == ["ircot paragraph four", "ircot paragraph five"]
 
     def test_filter_missing_query_ids(self, service):
         missing = service._filter_missing_query_ids(pipeline_id=1, metric_id=2, query_ids=[1, 2, 3])

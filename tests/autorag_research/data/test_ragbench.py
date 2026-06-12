@@ -4,6 +4,8 @@ Unit tests for helper functions (TDD - tests written before implementation).
 Integration tests use real data subsets against PostgreSQL.
 """
 
+import logging
+
 import pytest
 from langchain_core.embeddings.fake import FakeEmbeddings
 
@@ -13,6 +15,7 @@ from autorag_research.data.ragbench import (
     compute_chunk_id,
     extract_relevant_doc_indices,
 )
+from autorag_research.orm.models.retrieval_gt import RetrievalGT, normalize_gt
 from autorag_research.orm.service.text_ingestion import TextDataIngestionService
 from tests.autorag_research.data.ingestor_test_utils import (
     IngestorTestConfig,
@@ -135,11 +138,11 @@ RAGBENCH_INTEGRATION_CONFIG = IngestorTestConfig(
 class TestRAGBenchIngestorIntegration:
     def test_ingest_covidqa_subset(self, mock_embedding_model):
         with create_test_database(RAGBENCH_INTEGRATION_CONFIG) as db:
-            service = TextDataIngestionService(db.session_factory, schema=db.schema)
+            service = TextDataIngestionService(db.session_factory, schema=db.schema)  # ty: ignore[invalid-argument-type]
 
             ingestor = RAGBenchIngestor(
                 mock_embedding_model,
-                configs=["covidqa"],
+                config="covidqa",
             )
             ingestor.set_service(service)
             ingestor.ingest(
@@ -149,3 +152,257 @@ class TestRAGBenchIngestorIntegration:
 
             verifier = IngestorTestVerifier(service, db.schema, RAGBENCH_INTEGRATION_CONFIG)
             verifier.verify_all()
+
+
+class FakeRAGBenchService:
+    def __init__(self):
+        self.chunks: list[list[dict[str, str | int | None]]] = []
+        self.queries: list[list[dict[str, str | list[str] | None]]] = []
+        self.persisted_queries: dict[str, tuple[str, list[str] | None]] = {}
+        self.retrieval_gt_calls: list[tuple[str, RetrievalGT, str, bool]] = []
+
+    def add_chunks(self, chunks: list[dict[str, str | int | None]]) -> None:
+        self.chunks.append(chunks)
+
+    def add_queries(self, queries: list[dict[str, str | list[str] | None]]) -> None:
+        self.queries.append(queries)
+        for query in queries:
+            query_id = str(query["id"])
+            if query_id not in self.persisted_queries:
+                generation_gt = query["generation_gt"]
+                assert generation_gt is None or isinstance(generation_gt, list)
+                self.persisted_queries[query_id] = (str(query["contents"]), generation_gt)
+
+    def add_retrieval_gt(self, query_id: str, gt: RetrievalGT, chunk_type: str = "mixed", upsert: bool = False) -> None:
+        self.retrieval_gt_calls.append((query_id, gt, chunk_type, upsert))
+
+
+def _extract_or_gt_ids(gt: RetrievalGT) -> list[str]:
+    normalized_gt = normalize_gt(gt, chunk_type="text")
+    assert len(normalized_gt.groups) == 1
+    return [str(item.id) for item in normalized_gt.groups[0].items]
+
+
+def test_process_batch_upserts_duplicate_ragbench_query_relations_across_batches(mock_embedding_model):
+    service = FakeRAGBenchService()
+    ingestor = RAGBenchIngestor(mock_embedding_model, config="covidqa", batch_size=1)
+    ingestor.set_service(service)  # ty: ignore[invalid-argument-type]
+    seen_chunk_ids: set[str] = set()
+    relation_chunk_ids_by_query: dict[str, set[str]] = {}
+
+    first_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "First response",
+        "documents": ["First supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+    second_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "First response",
+        "documents": ["Second supporting document.", "Shared supporting document."],
+        "all_relevant_sentence_keys": ["0a", "1b"],
+    }
+
+    ingestor._process_batch("covidqa", "test", [first_example], seen_chunk_ids, relation_chunk_ids_by_query)
+    ingestor._process_batch("covidqa", "test", [second_example], seen_chunk_ids, relation_chunk_ids_by_query)
+
+    query_id = _make_query_id("covidqa", "test", "dup")
+    first_chunk_id = compute_chunk_id("First supporting document.", "covidqa")
+    second_chunk_id = compute_chunk_id("Second supporting document.", "covidqa")
+    shared_chunk_id = compute_chunk_id("Shared supporting document.", "covidqa")
+
+    assert [call[0] for call in service.retrieval_gt_calls] == [query_id, query_id]
+    assert [call[2] for call in service.retrieval_gt_calls] == ["text", "text"]
+    assert [call[3] for call in service.retrieval_gt_calls] == [True, True]
+    assert _extract_or_gt_ids(service.retrieval_gt_calls[0][1]) == [first_chunk_id]
+    assert _extract_or_gt_ids(service.retrieval_gt_calls[1][1]) == sorted([
+        first_chunk_id,
+        second_chunk_id,
+        shared_chunk_id,
+    ])
+
+
+def test_process_batch_warns_on_duplicate_ragbench_query_metadata_mismatch_across_batches(
+    mock_embedding_model,
+    caplog,
+):
+    service = FakeRAGBenchService()
+    ingestor = RAGBenchIngestor(mock_embedding_model, config="covidqa", batch_size=1)
+    ingestor.set_service(service)  # ty: ignore[invalid-argument-type]
+    seen_chunk_ids: set[str] = set()
+    relation_chunk_ids_by_query: dict[str, set[str]] = {}
+    query_metadata_by_query: dict[str, tuple[str, str | None]] = {}
+
+    first_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "First response",
+        "documents": ["First supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+    second_example = {
+        "id": "dup",
+        "question": "What changed?",
+        "response": "Different response",
+        "documents": ["Second supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+
+    with caplog.at_level(logging.WARNING, logger="AutoRAG-Research"):
+        ingestor._process_batch(
+            "covidqa",
+            "test",
+            [first_example],
+            seen_chunk_ids,
+            relation_chunk_ids_by_query,
+            query_metadata_by_query,
+        )
+        ingestor._process_batch(
+            "covidqa",
+            "test",
+            [second_example],
+            seen_chunk_ids,
+            relation_chunk_ids_by_query,
+            query_metadata_by_query,
+        )
+
+    query_id = _make_query_id("covidqa", "test", "dup")
+    assert query_metadata_by_query[query_id] == ("What is duplicated?", "First response")
+    assert service.persisted_queries[query_id] == ("What is duplicated?", ["First response"])
+    assert any(
+        "Duplicate RAGBench query id" in record.message
+        and query_id in record.message
+        and "different question/response metadata" in record.message
+        for record in caplog.records
+    )
+
+
+def test_process_batch_warns_on_duplicate_ragbench_query_metadata_mismatch_within_same_batch(
+    mock_embedding_model,
+    caplog,
+):
+    service = FakeRAGBenchService()
+    ingestor = RAGBenchIngestor(mock_embedding_model, config="covidqa")
+    ingestor.set_service(service)  # ty: ignore[invalid-argument-type]
+    seen_chunk_ids: set[str] = set()
+    relation_chunk_ids_by_query: dict[str, set[str]] = {}
+    query_metadata_by_query: dict[str, tuple[str, str | None]] = {}
+
+    first_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "Same response",
+        "documents": ["First supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+    second_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "Changed response",
+        "documents": ["Second supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+
+    with caplog.at_level(logging.WARNING, logger="AutoRAG-Research"):
+        ingestor._process_batch(
+            "covidqa",
+            "test",
+            [first_example, second_example],
+            seen_chunk_ids,
+            relation_chunk_ids_by_query,
+            query_metadata_by_query,
+        )
+
+    query_id = _make_query_id("covidqa", "test", "dup")
+    assert query_metadata_by_query[query_id] == ("What is duplicated?", "Same response")
+    assert service.persisted_queries[query_id] == ("What is duplicated?", ["Same response"])
+    assert any(
+        "Duplicate RAGBench query id" in record.message
+        and query_id in record.message
+        and "different question/response metadata" in record.message
+        for record in caplog.records
+    )
+
+
+def test_ingest_relations_without_ragbench_accumulator_keeps_service_upsert_overwrite_boundary(mock_embedding_model):
+    service = FakeRAGBenchService()
+    ingestor = RAGBenchIngestor(mock_embedding_model, config="covidqa")
+    ingestor.set_service(service)  # ty: ignore[invalid-argument-type]
+    examples = [
+        {
+            "id": "dup",
+            "question": "What is duplicated?",
+            "response": "Same response",
+            "documents": ["First supporting document."],
+            "all_relevant_sentence_keys": ["0a"],
+        },
+        {
+            "id": "dup",
+            "question": "What is duplicated?",
+            "response": "Same response",
+            "documents": ["Second supporting document."],
+            "all_relevant_sentence_keys": ["0a"],
+        },
+    ]
+    row_doc_to_chunk_mapping = {
+        (0, 0): compute_chunk_id("First supporting document.", "covidqa"),
+        (1, 0): compute_chunk_id("Second supporting document.", "covidqa"),
+    }
+
+    ingestor._ingest_relations("covidqa", "test", examples, row_doc_to_chunk_mapping)
+
+    assert [call[0] for call in service.retrieval_gt_calls] == [_make_query_id("covidqa", "test", "dup")] * 2
+    assert _extract_or_gt_ids(service.retrieval_gt_calls[0][1]) == [
+        compute_chunk_id("First supporting document.", "covidqa")
+    ]
+    assert _extract_or_gt_ids(service.retrieval_gt_calls[1][1]) == [
+        compute_chunk_id("Second supporting document.", "covidqa")
+    ]
+
+
+def test_process_batch_preserves_duplicate_ragbench_query_relations_within_same_batch(mock_embedding_model):
+    service = FakeRAGBenchService()
+    ingestor = RAGBenchIngestor(mock_embedding_model, config="covidqa")
+    ingestor.set_service(service)  # ty: ignore[invalid-argument-type]
+    seen_chunk_ids: set[str] = set()
+    relation_chunk_ids_by_query: dict[str, set[str]] = {}
+
+    first_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "Same response",
+        "documents": ["First supporting document."],
+        "all_relevant_sentence_keys": ["0a"],
+    }
+    second_example = {
+        "id": "dup",
+        "question": "What is duplicated?",
+        "response": "Same response",
+        "documents": ["Second supporting document.", "Shared supporting document."],
+        "all_relevant_sentence_keys": ["0a", "1b"],
+    }
+
+    ingestor._process_batch(
+        "covidqa",
+        "test",
+        [first_example, second_example],
+        seen_chunk_ids,
+        relation_chunk_ids_by_query,
+    )
+
+    query_id = _make_query_id("covidqa", "test", "dup")
+    first_chunk_id = compute_chunk_id("First supporting document.", "covidqa")
+    second_chunk_id = compute_chunk_id("Second supporting document.", "covidqa")
+    shared_chunk_id = compute_chunk_id("Shared supporting document.", "covidqa")
+
+    assert [call[0] for call in service.retrieval_gt_calls] == [query_id, query_id]
+    assert [call[2] for call in service.retrieval_gt_calls] == ["text", "text"]
+    assert [call[3] for call in service.retrieval_gt_calls] == [True, True]
+    assert _extract_or_gt_ids(service.retrieval_gt_calls[0][1]) == [first_chunk_id]
+    assert _extract_or_gt_ids(service.retrieval_gt_calls[1][1]) == sorted([
+        first_chunk_id,
+        second_chunk_id,
+        shared_chunk_id,
+    ])
