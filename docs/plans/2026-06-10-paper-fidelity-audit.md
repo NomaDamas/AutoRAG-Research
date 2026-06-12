@@ -123,7 +123,7 @@ concurrent actions per step; engine returns one consolidated response.
 | Finding | Verdict |
 |---|---|
 | SFT/RL-trained end-to-end agent omitted (prompted LLM instead) | ALLOWED-3 |
-| Global-Planner/Adaptive-Reasoner/Executor 3-module training-free workflow absent | ACCEPTED — the unified single-loop agent mirrors the paper's trained end-to-end agent inference protocol (§3.3), which is the paper's primary method; the 3-module workflow is its bootstrap for training-data synthesis. Documented. |
+| Global-Planner/Adaptive-Reasoner/Executor 3-module training-free workflow absent | FIXED — default workflow now runs one planner call, per-iteration reasoner directives, and executor action emission with plan/directives metadata. |
 | exact_search prompt-simulated by prefixing "exact:" into the same retriever | **CORE-MISMATCH** (repo has BM25 — not an architecture limit) |
 | weighted_fusion only embeds weights into a query string; no dual retrieval + score fusion | **CORE-MISMATCH** |
 | entity_match prompt-simulated via "entity:" prefix | **CORE-MISMATCH** |

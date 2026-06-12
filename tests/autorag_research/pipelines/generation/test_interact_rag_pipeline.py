@@ -94,6 +94,14 @@ class TestInteractRAGParsing:
     def test_parse_doc_ids_preserves_string_chunk_ids(self):
         assert parse_doc_ids("chunk-alpha, abc-123, alpha") == ["chunk-alpha", "abc-123", "alpha"]
 
+    def test_parse_untagged_reasoner_output_as_proceed(self):
+        from autorag_research.pipelines.generation.interact_rag import parse_interact_rag_directive
+
+        directive = parse_interact_rag_directive("try searching for X")
+
+        assert directive.kind == "proceed"
+        assert directive.text == "try searching for X"
+
 
 class TestInteractRAGPipelineConfig:
     """Tests for InteractRAGPipelineConfig."""
@@ -107,7 +115,7 @@ class TestInteractRAGPipelineConfig:
     def test_get_pipeline_class(self):
         config = InteractRAGPipelineConfig(
             name="interact_rag",
-            llm=FakeListLLM(responses=["<answer>ok</answer>"]),
+            llm=FakeListLLM(responses=["plan", "<finish>ok</finish>", "<answer>ok</answer>"]),
             retrieval_pipeline_name="hybrid_rrf",
         )
 
@@ -116,7 +124,7 @@ class TestInteractRAGPipelineConfig:
     def test_get_pipeline_kwargs_requires_injected_retrieval_pipeline(self):
         config = InteractRAGPipelineConfig(
             name="interact_rag",
-            llm=FakeListLLM(responses=["<answer>ok</answer>"]),
+            llm=FakeListLLM(responses=["plan", "<finish>ok</finish>", "<answer>ok</answer>"]),
             retrieval_pipeline_name="hybrid_rrf",
         )
 
@@ -125,7 +133,7 @@ class TestInteractRAGPipelineConfig:
 
     def test_get_pipeline_kwargs_after_injection(self):
         retrieval_pipeline = create_mock_retrieval_pipeline(pipeline_id=77)
-        llm = FakeListLLM(responses=["<answer>ok</answer>"])
+        llm = FakeListLLM(responses=["plan", "<finish>ok</finish>", "<answer>ok</answer>"])
         config = InteractRAGPipelineConfig(
             name="interact_rag",
             llm=llm,
@@ -145,7 +153,7 @@ class TestInteractRAGPipelineConfig:
 
     def test_get_pipeline_kwargs_passes_exact_pipeline_name_without_injection(self):
         retrieval_pipeline = create_mock_retrieval_pipeline(pipeline_id=77)
-        llm = FakeListLLM(responses=["<answer>ok</answer>"])
+        llm = FakeListLLM(responses=["plan", "<finish>ok</finish>", "<answer>ok</answer>"])
         config = InteractRAGPipelineConfig(
             name="interact_rag",
             llm=llm,
@@ -174,7 +182,7 @@ class TestInteractRAGPipeline:
 
     def test_apply_include_docs_rejects_unexposed_ordinal_ids(self):
         pipeline = _build_unit_pipeline(
-            FakeListLLM(responses=["<answer>ok</answer>"]),
+            FakeListLLM(responses=["plan", "<finish>ok</finish>", "<answer>ok</answer>"]),
             create_mock_retrieval_pipeline(),
             MagicMock(),
         )
@@ -194,7 +202,7 @@ class TestInteractRAGPipeline:
 
     def test_apply_include_docs_accepts_exposed_chunk_ids(self):
         pipeline = _build_unit_pipeline(
-            FakeListLLM(responses=["<answer>ok</answer>"]),
+            FakeListLLM(responses=["plan", "<finish>ok</finish>", "<answer>ok</answer>"]),
             create_mock_retrieval_pipeline(),
             MagicMock(),
         )
@@ -214,7 +222,7 @@ class TestInteractRAGPipeline:
 
     def test_apply_include_docs_accepts_exposed_string_chunk_ids(self):
         pipeline = _build_unit_pipeline(
-            FakeListLLM(responses=["<answer>ok</answer>"]),
+            FakeListLLM(responses=["plan", "<finish>ok</finish>", "<answer>ok</answer>"]),
             create_mock_retrieval_pipeline(),
             MagicMock(),
         )
@@ -240,7 +248,7 @@ class TestInteractRAGPipeline:
             InteractRAGPipeline(
                 session_factory=MagicMock(),
                 name="invalid_interact_rag",
-                llm=FakeListLLM(responses=["<answer>ok</answer>"]),
+                llm=FakeListLLM(responses=["plan", "<finish>ok</finish>", "<answer>ok</answer>"]),
                 retrieval_pipeline=create_mock_retrieval_pipeline(),
                 max_steps=0,
             )
@@ -250,7 +258,10 @@ class TestInteractRAGPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("1. Find landing date."),
+                _mock_response("<proceed>search landing date</proceed>"),
                 _mock_response("<semantic_search>apollo 11 landing</semantic_search>"),
+                _mock_response("<finish>enough evidence</finish>"),
                 _mock_response("<answer>Apollo 11 landed in 1969.</answer>"),
             ]
         )
@@ -269,17 +280,78 @@ class TestInteractRAGPipeline:
         assert result.metadata["retrieved_chunk_ids"] == [10]
         assert result.metadata["evidence"] == ["Apollo 11 landed in July 1969."]
         assert result.metadata["terminated_by"] == "answer"
-        assert result.token_usage == {"prompt_tokens": 4, "completion_tokens": 6, "total_tokens": 10}
+        assert result.token_usage == {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25}
         assert result.metadata["exact_engine"] is False
+
+    @pytest.mark.asyncio
+    async def test_planner_reasoner_executor_workflow_sequence_records_plan_and_directives(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("1. Search for X."),
+                _mock_response("<proceed>search for X</proceed>"),
+                _mock_response("<semantic_search>X</semantic_search>"),
+                _mock_response("<finish>enough</finish>"),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline(
+            default_results=[{"doc_id": 1, "score": 1.0, "content": "X evidence"}]
+        )
+        service = MagicMock()
+        service.get_query_text.return_value = "Question about X?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=3, initial_scale=1)
+
+        result = await pipeline._generate(1, top_k=1)
+
+        prompts = [call.args[0] for call in llm.ainvoke.await_args_list]
+        assert "Global-Planner" in prompts[0]
+        assert "Adaptive-Reasoner" in prompts[1]
+        assert "Executor" in prompts[2]
+        assert "Adaptive-Reasoner" in prompts[3]
+        assert "Executor" in prompts[4]
+        retrieval_pipeline.retrieve.assert_awaited_once_with("X", 1)
+        assert result.text == "done"
+        assert result.metadata["plan"] == "1. Search for X."
+        assert result.metadata["directives"] == ["proceed: search for X", "finish: enough"]
+        assert result.metadata["workflow"] == "planner_reasoner_executor"
+
+    @pytest.mark.asyncio
+    async def test_reflect_directive_recorded_and_passed_to_executor(self):
+        llm = MagicMock()
+        llm.ainvoke = AsyncMock(
+            side_effect=[
+                _mock_response("plan"),
+                _mock_response("<reflect>refine query</reflect>"),
+                _mock_response("<semantic_search>refined query</semantic_search>"),
+                _mock_response("<finish>done</finish>"),
+                _mock_response("<answer>done</answer>"),
+            ]
+        )
+        retrieval_pipeline = create_mock_retrieval_pipeline(default_results=[])
+        service = MagicMock()
+        service.get_query_text.return_value = "Question?"
+        pipeline = _build_unit_pipeline(llm, retrieval_pipeline, service, max_steps=2, initial_scale=2)
+
+        result = await pipeline._generate(1, top_k=2)
+
+        assert "reasoner reflect: refine query" in result.metadata["trace"]
+        assert "reflect: refine query" in llm.ainvoke.await_args_list[2].args[0]
+        retrieval_pipeline.retrieve.assert_awaited_once_with("refined query", 2)
 
     @pytest.mark.asyncio
     async def test_generate_applies_scale_and_exclude_controls(self):
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("plan"),
+                _mock_response("<proceed>scale</proceed>"),
                 _mock_response("<adjust_scale>4</adjust_scale>"),
+                _mock_response("<proceed>search</proceed>"),
                 _mock_response("<exact_search>target terms</exact_search>"),
+                _mock_response("<proceed>exclude</proceed>"),
                 _mock_response("<exclude_docs>2</exclude_docs>"),
+                _mock_response("<proceed>search again</proceed>"),
                 _mock_response("<exact_search>target terms</exact_search>"),
                 _mock_response("fallback answer"),
             ]
@@ -316,7 +388,10 @@ class TestInteractRAGPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("plan"),
+                _mock_response("<proceed>search</proceed>"),
                 _mock_response("<exact_search>target terms</exact_search>"),
+                _mock_response("<finish>done</finish>"),
                 _mock_response("<answer>done</answer>"),
             ]
         )
@@ -344,7 +419,10 @@ class TestInteractRAGPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("plan"),
+                _mock_response("<proceed>entity</proceed>"),
                 _mock_response("<entity_match>Marie Curie</entity_match>"),
+                _mock_response("<finish>done</finish>"),
                 _mock_response("<answer>done</answer>"),
             ]
         )
@@ -374,7 +452,10 @@ class TestInteractRAGPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("plan"),
+                _mock_response("<proceed>fusion</proceed>"),
                 _mock_response('<weighted_fusion semantic="0.25" exact="0.75">apollo</weighted_fusion>'),
+                _mock_response("<finish>done</finish>"),
                 _mock_response("<answer>done</answer>"),
             ]
         )
@@ -413,8 +494,12 @@ class TestInteractRAGPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("plan"),
+                _mock_response("<proceed>first</proceed>"),
                 _mock_response("<semantic_search>first</semantic_search>"),
+                _mock_response("<proceed>second</proceed>"),
                 _mock_response("<exclude_docs>2</exclude_docs><semantic_search>second</semantic_search>"),
+                _mock_response("<finish>done</finish>"),
                 _mock_response("<answer>done</answer>"),
             ]
         )
@@ -448,7 +533,10 @@ class TestInteractRAGPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("plan"),
+                _mock_response("<proceed>first</proceed>"),
                 _mock_response("<semantic_search>first</semantic_search>"),
+                _mock_response("<finish>done</finish>"),
                 _mock_response(
                     "<exclude_docs>2</exclude_docs><semantic_search>moot</semantic_search><answer>done</answer>"
                 ),
@@ -479,9 +567,14 @@ class TestInteractRAGPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("plan"),
+                _mock_response("<proceed>search</proceed>"),
                 _mock_response("<semantic_search>Curie</semantic_search>"),
+                _mock_response("<proceed>include</proceed>"),
                 _mock_response("<include_docs>5</include_docs>"),
+                _mock_response("<proceed>entity</proceed>"),
                 _mock_response("<entity_match>Curie</entity_match>"),
+                _mock_response("<finish>answer</finish>"),
                 _mock_response("<answer>Curie answer.</answer>"),
             ]
         )
@@ -502,15 +595,18 @@ class TestInteractRAGPipeline:
         assert result.metadata["included_doc_ids"] == [5]
         assert result.metadata["retrieved_chunk_ids"] == [5, 6]
         assert result.metadata["evidence"] == ["Forced evidence.", "Fetched evidence."]
-        second_prompt = llm.ainvoke.await_args_list[1].args[0]
-        assert "[chunk_id=5 score=0.9] Forced evidence." in second_prompt
+        include_executor_prompt = llm.ainvoke.await_args_list[4].args[0]
+        assert "[chunk_id=5 score=0.9] Forced evidence." in include_executor_prompt
 
     @pytest.mark.asyncio
     async def test_generate_records_prompt_simulated_degradation_for_weighted_fusion(self):
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("plan"),
+                _mock_response("<proceed>fusion</proceed>"),
                 _mock_response('<weighted_fusion semantic="0.8" exact="0.2">apollo</weighted_fusion>'),
+                _mock_response("<finish>done</finish>"),
                 _mock_response("<answer>done</answer>"),
             ]
         )
@@ -529,16 +625,21 @@ class TestInteractRAGPipeline:
         )
         assert result.metadata["retrieval_action_mode"] == "prompt_simulated"
         assert result.metadata["degraded_actions"] == ["weighted_fusion"]
-        assert "degraded weighted_fusion" in result.metadata["trace"][0]
+        assert any("degraded weighted_fusion" in entry for entry in result.metadata["trace"])
 
     @pytest.mark.asyncio
     async def test_generate_keeps_included_doc_within_evidence_budget(self):
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("plan"),
+                _mock_response("<proceed>first</proceed>"),
                 _mock_response("<semantic_search>first</semantic_search>"),
+                _mock_response("<proceed>include</proceed>"),
                 _mock_response("<include_docs>5</include_docs>"),
+                _mock_response("<proceed>second</proceed>"),
                 _mock_response("<semantic_search>second</semantic_search>"),
+                _mock_response("<finish>done</finish>"),
                 _mock_response("<answer>done</answer>"),
             ]
         )
@@ -570,10 +671,16 @@ class TestInteractRAGPipeline:
         llm = MagicMock()
         llm.ainvoke = AsyncMock(
             side_effect=[
+                _mock_response("plan"),
+                _mock_response("<proceed>first</proceed>"),
                 _mock_response("<semantic_search>first</semantic_search>"),
+                _mock_response("<proceed>include</proceed>"),
                 _mock_response("<include_docs>chunk-alpha</include_docs>"),
+                _mock_response("<proceed>exclude</proceed>"),
                 _mock_response("<exclude_docs>abc-123</exclude_docs>"),
+                _mock_response("<proceed>second</proceed>"),
                 _mock_response("<semantic_search>second</semantic_search>"),
+                _mock_response("<finish>done</finish>"),
                 _mock_response("<answer>done</answer>"),
             ]
         )

@@ -1,9 +1,48 @@
 _target_: autorag_research.pipelines.generation.interact_rag.InteractRAGPipelineConfig
-description: "Training-free INTERACT-RAG inference pipeline with dense semantic and exact sparse corpus interaction engines"
+description: "Training-free INTERACT-RAG inference pipeline with Global-Planner, Adaptive-Reasoner, Executor, and corpus interaction engines"
 name: interact_rag
 retrieval_pipeline_name: vector_search
 exact_retrieval_pipeline_name: bm25
 llm: mock
+planner_prompt_template: |
+  Plan a concise numbered INTERACT-RAG roadmap for the question.
+
+  Question:
+  {query}
+reasoner_prompt_template: |
+  Review the plan, trace, and evidence. Return <proceed>guidance</proceed>, <reflect>refinement</reflect>, or <finish>reason</finish>.
+
+  Question:
+  {query}
+
+  Plan:
+  {plan}
+
+  Iteration: {steps_used}/{max_steps}
+  Current retrieval scale: {current_scale}
+  Included doc IDs: {included_doc_ids}
+  Excluded doc IDs: {excluded_doc_ids}
+
+  Trace and evidence:
+  {scratchpad}
+executor_prompt_template: |
+  Follow the directive and emit INTERACT-RAG action tags. If directive is finish, emit final <answer>.
+
+  Question:
+  {query}
+
+  Plan:
+  {plan}
+
+  Directive:
+  {directive}
+
+  Current retrieval scale: {current_scale}
+  Included doc IDs: {included_doc_ids}
+  Excluded doc IDs: {excluded_doc_ids}
+
+  Trace and evidence:
+  {scratchpad}
 max_steps: 6
 initial_scale: 5
 max_scale: 20

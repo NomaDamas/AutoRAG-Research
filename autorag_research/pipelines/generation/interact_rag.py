@@ -41,8 +41,40 @@ InteractActionKind = Literal[
     "answer",
 ]
 
-DEFAULT_INTERACT_RAG_STEP_PROMPT = """You are an INTERACT-RAG agent that can reason and interact with the retrieval corpus.
-You may combine several XML-like actions in one step; they will be executed in order after state controls are applied:
+DEFAULT_INTERACT_RAG_PLANNER_PROMPT = """You are the Global-Planner module for training-free INTERACT-RAG.
+Decompose the question into a concise numbered roadmap of sub-problems or evidence-gathering steps.
+Do not answer yet and do not emit corpus interaction tags.
+
+Question:
+{query}
+
+Numbered roadmap:"""
+
+DEFAULT_INTERACT_RAG_REASONER_PROMPT = """You are the Adaptive-Reasoner module for training-free INTERACT-RAG.
+Review the global plan, trace, and evidence, then decide whether to proceed, reflect, or finish.
+Return exactly one directive:
+- <proceed>guidance for the next executor action(s)</proceed>
+- <reflect>what went wrong and how to refine</reflect>
+- <finish>reason the question is answerable</finish>
+
+Question:
+{query}
+
+Global plan:
+{plan}
+
+Interaction budget: {steps_used}/{max_steps} iterations used.
+Current retrieval scale: {current_scale}
+Included doc IDs: {included_doc_ids}
+Excluded doc IDs: {excluded_doc_ids}
+
+Interaction trace and evidence:
+{scratchpad}
+
+Directive:"""
+
+DEFAULT_INTERACT_RAG_EXECUTOR_PROMPT = """You are the Executor module for training-free INTERACT-RAG.
+Follow the reasoner directive and emit one or several XML-like actions; they will be executed in order after state controls are applied:
 - <semantic_search>query</semantic_search>: dense semantic search over the primary retrieval engine
 - <exact_search>keywords</exact_search>: exact/sparse search over the exact retrieval engine when available
 - <weighted_fusion semantic="0.6" exact="0.4">query</weighted_fusion>: run semantic and exact engines, normalize scores, and fuse by weighted sum when available
@@ -52,10 +84,17 @@ You may combine several XML-like actions in one step; they will be executed in o
 - <adjust_scale>8</adjust_scale>: change retrieval scale for this and later searches
 - <answer>final answer</answer>: finish
 
+If the directive is a finish directive, return the final <answer> directly.
+
 Question:
 {query}
 
-Interaction budget: {steps_used}/{max_steps} steps used.
+Global plan:
+{plan}
+
+Reasoner directive:
+{directive}
+
 Current retrieval scale: {current_scale}
 Included doc IDs: {included_doc_ids}
 Excluded doc IDs: {excluded_doc_ids}
@@ -96,6 +135,25 @@ _DOC_ID_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
 
 # Paper Appendix C.2: weighted fusion normalizes the top-20 chunks from each strategy before the weighted sum.
 _FUSION_FETCH_K = 20
+
+
+@dataclass(frozen=True)
+class InteractRAGDirective:
+    """Parsed Adaptive-Reasoner directive."""
+
+    kind: Literal["proceed", "reflect", "finish"]
+    text: str
+
+
+def parse_interact_rag_directive(response_text: str) -> InteractRAGDirective:
+    """Parse a reasoner directive, treating untagged output as proceed guidance."""
+    for directive_kind in ("proceed", "reflect", "finish"):
+        match = re.search(
+            rf"<{directive_kind}>\s*(.*?)\s*</{directive_kind}>", response_text, re.IGNORECASE | re.DOTALL
+        )
+        if match is not None:
+            return InteractRAGDirective(kind=directive_kind, text=match.group(1).strip())
+    return InteractRAGDirective(kind="proceed", text=response_text.strip())
 
 
 @dataclass(frozen=True)
@@ -179,7 +237,9 @@ class InteractRAGState:
 class InteractRAGPipelineConfig(BaseGenerationPipelineConfig):
     """Configuration for the INTERACT-RAG inference pipeline."""
 
-    step_prompt_template: str = field(default=DEFAULT_INTERACT_RAG_STEP_PROMPT)
+    planner_prompt_template: str = field(default=DEFAULT_INTERACT_RAG_PLANNER_PROMPT)
+    reasoner_prompt_template: str = field(default=DEFAULT_INTERACT_RAG_REASONER_PROMPT)
+    executor_prompt_template: str = field(default=DEFAULT_INTERACT_RAG_EXECUTOR_PROMPT)
     final_prompt_template: str = field(default=DEFAULT_INTERACT_RAG_FINAL_PROMPT)
     max_steps: int = 6
     initial_scale: int = 5
@@ -201,7 +261,9 @@ class InteractRAGPipelineConfig(BaseGenerationPipelineConfig):
             "llm": self.llm,
             "retrieval_pipeline": self._retrieval_pipeline,
             "exact_retrieval_pipeline": self.exact_retrieval_pipeline_name,
-            "step_prompt_template": self.step_prompt_template,
+            "planner_prompt_template": self.planner_prompt_template,
+            "reasoner_prompt_template": self.reasoner_prompt_template,
+            "executor_prompt_template": self.executor_prompt_template,
             "final_prompt_template": self.final_prompt_template,
             "max_steps": self.max_steps,
             "initial_scale": self.initial_scale,
@@ -221,7 +283,9 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         llm: BaseLanguageModel,
         retrieval_pipeline: BaseRetrievalPipeline,
         exact_retrieval_pipeline: BaseRetrievalPipeline | str | None = None,
-        step_prompt_template: str = DEFAULT_INTERACT_RAG_STEP_PROMPT,
+        planner_prompt_template: str = DEFAULT_INTERACT_RAG_PLANNER_PROMPT,
+        reasoner_prompt_template: str = DEFAULT_INTERACT_RAG_REASONER_PROMPT,
+        executor_prompt_template: str = DEFAULT_INTERACT_RAG_EXECUTOR_PROMPT,
         final_prompt_template: str = DEFAULT_INTERACT_RAG_FINAL_PROMPT,
         max_steps: int = 6,
         initial_scale: int = 5,
@@ -242,7 +306,9 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             msg = "evidence_budget must be >= 1"
             raise ValueError(msg)
 
-        self.step_prompt_template = step_prompt_template
+        self.planner_prompt_template = planner_prompt_template
+        self.reasoner_prompt_template = reasoner_prompt_template
+        self.executor_prompt_template = executor_prompt_template
         self.final_prompt_template = final_prompt_template
         self.max_steps = max_steps
         self.initial_scale = min(initial_scale, max_scale)
@@ -269,7 +335,9 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             model_name = type(self._llm).__name__
         return {
             "type": "interact_rag",
-            "step_prompt_template": self.step_prompt_template,
+            "planner_prompt_template": self.planner_prompt_template,
+            "reasoner_prompt_template": self.reasoner_prompt_template,
+            "executor_prompt_template": self.executor_prompt_template,
             "final_prompt_template": self.final_prompt_template,
             "max_steps": self.max_steps,
             "initial_scale": self.initial_scale,
@@ -317,20 +385,46 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             sections.append("Evidence:\n" + "\n\n".join(cls._format_evidence_item(item) for item in evidence))
         return "\n\n".join(sections) if sections else "(empty)"
 
-    def _build_step_prompt(
+    def _build_planner_prompt(self, query: str) -> str:
+        """Build the Global-Planner prompt."""
+        return self.planner_prompt_template.format(query=query)
+
+    def _build_reasoner_prompt(
         self,
         query: str,
+        plan: str,
         state: InteractRAGState,
         trace: list[str],
         evidence: list[dict[str, Any]],
         steps_used: int,
     ) -> str:
-        """Build one interaction prompt."""
-        return self.step_prompt_template.format(
+        """Build one Adaptive-Reasoner prompt."""
+        return self.reasoner_prompt_template.format(
             query=query,
+            plan=plan,
             scratchpad=self._format_scratchpad(trace, evidence),
             steps_used=steps_used,
             max_steps=self.max_steps,
+            current_scale=state.current_scale,
+            included_doc_ids=self._format_doc_ids(state.included_doc_ids),
+            excluded_doc_ids=self._format_doc_ids(state.excluded_doc_ids),
+        )
+
+    def _build_executor_prompt(
+        self,
+        query: str,
+        plan: str,
+        directive: str,
+        state: InteractRAGState,
+        trace: list[str],
+        evidence: list[dict[str, Any]],
+    ) -> str:
+        """Build one Executor prompt."""
+        return self.executor_prompt_template.format(
+            query=query,
+            plan=plan,
+            directive=directive,
+            scratchpad=self._format_scratchpad(trace, evidence),
             current_scale=state.current_scale,
             included_doc_ids=self._format_doc_ids(state.included_doc_ids),
             excluded_doc_ids=self._format_doc_ids(state.excluded_doc_ids),
@@ -620,11 +714,24 @@ class InteractRAGPipeline(BaseGenerationPipeline):
         final_answer = ""
         terminated_by = "max_steps"
 
+        planner_response = await self._llm.ainvoke(self._build_planner_prompt(query_text))
+        tracker.record(planner_response)
+        plan = self._extract_text(planner_response)
+        directives: list[str] = []
+
         for step_index in range(self.max_steps):
-            prompt = self._build_step_prompt(query_text, state, trace, evidence, step_index)
-            response = await self._llm.ainvoke(prompt)
-            tracker.record(response)
-            actions = parse_interact_rag_actions(self._extract_text(response))
+            reasoner_prompt = self._build_reasoner_prompt(query_text, plan, state, trace, evidence, step_index)
+            reasoner_response = await self._llm.ainvoke(reasoner_prompt)
+            tracker.record(reasoner_response)
+            directive = parse_interact_rag_directive(self._extract_text(reasoner_response))
+            directive_text = f"{directive.kind}: {directive.text}"
+            directives.append(directive_text)
+            trace.append(f"reasoner {directive_text}")
+
+            executor_prompt = self._build_executor_prompt(query_text, plan, directive_text, state, trace, evidence)
+            executor_response = await self._llm.ainvoke(executor_prompt)
+            tracker.record(executor_response)
+            actions = parse_interact_rag_actions(self._extract_text(executor_response))
             answer_action = next((action for action in actions if action.kind == "answer"), None)
             for action in actions:
                 if (
@@ -665,6 +772,9 @@ class InteractRAGPipeline(BaseGenerationPipeline):
             token_usage=tracker.total,
             metadata={
                 "trace": trace,
+                "plan": plan,
+                "directives": directives,
+                "workflow": "planner_reasoner_executor",
                 "evidence": [item.get("content", "") for item in evidence],
                 "retrieved_chunk_ids": retrieved_doc_ids,
                 "included_doc_ids": state.included_doc_ids,
@@ -681,13 +791,17 @@ class InteractRAGPipeline(BaseGenerationPipeline):
 
 
 __all__ = [
+    "DEFAULT_INTERACT_RAG_EXECUTOR_PROMPT",
     "DEFAULT_INTERACT_RAG_FINAL_PROMPT",
-    "DEFAULT_INTERACT_RAG_STEP_PROMPT",
+    "DEFAULT_INTERACT_RAG_PLANNER_PROMPT",
+    "DEFAULT_INTERACT_RAG_REASONER_PROMPT",
     "InteractRAGAction",
+    "InteractRAGDirective",
     "InteractRAGPipeline",
     "InteractRAGPipelineConfig",
     "InteractRAGState",
     "parse_doc_ids",
     "parse_interact_rag_action",
     "parse_interact_rag_actions",
+    "parse_interact_rag_directive",
 ]
