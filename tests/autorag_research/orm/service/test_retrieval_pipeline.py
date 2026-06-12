@@ -457,6 +457,30 @@ class TestStoredEmbeddingAccessors:
         assert service.get_query_embedding(2) is None
         assert service.get_query_embedding(999999) is None
 
+    def test_get_query_multi_embedding_returns_stored_matrix(self, service, session_factory):
+        embeddings = [[0.5] * 768, [0.25] * 768]
+        with session_factory() as session:
+            query = QueryRepository(session).get_by_id(1)
+            query.embeddings = embeddings
+            session.commit()
+        try:
+            stored_embeddings = service.get_query_multi_embedding(1)
+
+            assert stored_embeddings is not None
+            assert len(stored_embeddings) == 2
+            assert len(stored_embeddings[0]) == 768
+            assert stored_embeddings[0][0] == pytest.approx(0.5)
+            assert stored_embeddings[1][0] == pytest.approx(0.25)
+        finally:
+            with session_factory() as session:
+                query = QueryRepository(session).get_by_id(1)
+                query.embeddings = None
+                session.commit()
+
+    def test_get_query_multi_embedding_returns_none_for_missing_embedding(self, service):
+        assert service.get_query_multi_embedding(2) is None
+        assert service.get_query_multi_embedding(999999) is None
+
     def test_get_chunk_embeddings_returns_only_chunks_with_embeddings(self, service, session_factory):
         embedding = [0.25] * 768
         with session_factory() as session:
@@ -475,5 +499,28 @@ class TestStoredEmbeddingAccessors:
                 chunk.embedding = None
                 session.commit()
 
+    def test_get_chunk_multi_embeddings_returns_only_chunks_with_embeddings(self, service, session_factory):
+        embeddings = [[0.75] * 768, [0.125] * 768]
+        with session_factory() as session:
+            chunk = session.get(Chunk, 1)
+            chunk.embeddings = embeddings
+            session.commit()
+        try:
+            embeddings_by_id = service.get_chunk_multi_embeddings([1, 2, 999999])
+
+            assert set(embeddings_by_id) == {1}
+            assert len(embeddings_by_id[1]) == 2
+            assert len(embeddings_by_id[1][0]) == 768
+            assert embeddings_by_id[1][0][0] == pytest.approx(0.75)
+            assert embeddings_by_id[1][1][0] == pytest.approx(0.125)
+        finally:
+            with session_factory() as session:
+                chunk = session.get(Chunk, 1)
+                chunk.embeddings = None
+                session.commit()
+
     def test_get_chunk_embeddings_empty_input(self, service):
         assert service.get_chunk_embeddings([]) == {}
+
+    def test_get_chunk_multi_embeddings_empty_input(self, service):
+        assert service.get_chunk_multi_embeddings([]) == {}

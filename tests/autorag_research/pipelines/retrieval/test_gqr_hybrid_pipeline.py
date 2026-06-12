@@ -14,6 +14,8 @@ from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 from autorag_research.pipelines.retrieval.gqr_hybrid import (
     GQRHybridRetrievalPipeline,
     GQRHybridRetrievalPipelineConfig,
+    _maxsim_gradients,
+    _maxsim_scores,
 )
 
 
@@ -53,6 +55,44 @@ def _make_stub_pipeline(
     return StubRetrievalPipeline(name=name, by_id_results=by_id_results, by_text_results=by_text_results)
 
 
+def _kl_divergence(p: np.ndarray, q: np.ndarray) -> float:
+    return float(np.sum(p * np.log(p / q)))
+
+
+class TestMaxSimScoring:
+    """Tests for GQR multi-vector MaxSim helpers."""
+
+    def test_maxsim_scores_hand_computed_example(self):
+        query_matrix = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+        candidates = [
+            np.asarray([[1.0, 0.0], [0.5, 0.5]], dtype=np.float64),
+            np.asarray([[0.0, 0.25], [0.2, 0.8], [0.4, 0.1]], dtype=np.float64),
+        ]
+
+        scores = _maxsim_scores(query_matrix, candidates)
+
+        assert scores.tolist() == pytest.approx([0.75, 0.6])
+
+    def test_maxsim_gradient_matches_finite_difference_away_from_ties(self):
+        query_matrix = np.asarray([[0.8, 0.1], [0.2, 0.9]], dtype=np.float64)
+        candidates = [np.asarray([[0.9, 0.0], [0.0, 0.7]], dtype=np.float64)]
+        analytic_gradient = _maxsim_gradients(query_matrix, candidates)[0]
+        numeric_gradient = np.zeros_like(query_matrix)
+        epsilon = 1e-6
+
+        for row in range(query_matrix.shape[0]):
+            for col in range(query_matrix.shape[1]):
+                plus = query_matrix.copy()
+                minus = query_matrix.copy()
+                plus[row, col] += epsilon
+                minus[row, col] -= epsilon
+                numeric_gradient[row, col] = (
+                    _maxsim_scores(plus, candidates)[0] - _maxsim_scores(minus, candidates)[0]
+                ) / (2 * epsilon)
+
+        assert numeric_gradient == pytest.approx(analytic_gradient, abs=1e-5)
+
+
 class TestGQRHybridRetrievalPipelineConfig:
     """Tests for GQRHybridRetrievalPipelineConfig."""
 
@@ -87,6 +127,7 @@ class TestGQRHybridRetrievalPipelineConfig:
             "temperature": 0.8,
             "mixture_alpha": 0.2,
             "candidate_pool_mode": "union",
+            "scorer_mode": "auto",
         }
 
     def test_shipped_yaml_config_instantiates(self):
@@ -98,6 +139,7 @@ class TestGQRHybridRetrievalPipelineConfig:
         assert instantiated.primary_retrieval_pipeline_name == "vector_search"
         assert instantiated.complementary_retrieval_pipeline_name == "bm25"
         assert instantiated.candidate_pool_mode == "union"
+        assert instantiated.scorer_mode == "auto"
 
 
 class TestGQRHybridRetrievalPipeline:
@@ -336,6 +378,152 @@ class TestGQRHybridRetrievalPipeline:
 
         assert np.linalg.norm(optimized_distribution - complementary_distribution) < 0.05
         assert np.linalg.norm(optimized_distribution - fixed_initial_blend) > 0.25
+
+    def test_maxsim_optimization_moves_distribution_toward_complementary(
+        self,
+        session_factory: sessionmaker[Session],
+    ):
+        primary = _make_stub_pipeline("vector_search", by_id_results=[], by_text_results=[])
+        complementary = _make_stub_pipeline("bm25", by_id_results=[], by_text_results=[])
+        pipeline = GQRHybridRetrievalPipeline(
+            session_factory=session_factory,
+            name="gqr_maxsim_optimization",
+            primary_retrieval_pipeline=primary,
+            complementary_retrieval_pipeline=complementary,
+            scorer_mode="multi",
+            mixture_alpha=1.0,
+            n_steps=300,
+            learning_rate=0.8,
+            temperature=1.0,
+        )
+        query_matrix = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+        candidates = [
+            np.asarray([[1.0, 0.0], [0.0, 0.1]]),
+            np.asarray([[0.1, 0.0], [0.0, 1.0]]),
+        ]
+        complementary_distribution = np.asarray([0.1, 0.9], dtype=np.float64)
+        initial_distribution = np.exp(_maxsim_scores(query_matrix, candidates))
+        initial_distribution = initial_distribution / initial_distribution.sum()
+
+        optimized_scores = pipeline._optimize_query_multi_embedding(
+            query_matrix,
+            candidates,
+            complementary_distribution,
+        )
+        optimized_distribution = np.exp(optimized_scores) / np.exp(optimized_scores).sum()
+
+        assert _kl_divergence(complementary_distribution, optimized_distribution) < _kl_divergence(
+            complementary_distribution,
+            initial_distribution,
+        )
+
+    @pytest.mark.asyncio
+    async def test_auto_mode_uses_multi_path_for_multi_primary(
+        self,
+        session_factory: sessionmaker[Session],
+    ):
+        primary = _make_stub_pipeline(
+            "vector_search",
+            by_id_results=[{"doc_id": 1, "score": 0.9}, {"doc_id": 2, "score": 0.1}],
+            by_text_results=[],
+        )
+        primary.search_mode = "multi"
+        complementary = _make_stub_pipeline(
+            "bm25",
+            by_id_results=[{"doc_id": 2, "score": 10.0}, {"doc_id": 1, "score": 0.1}],
+            by_text_results=[],
+        )
+        pipeline = GQRHybridRetrievalPipeline(
+            session_factory=session_factory,
+            name="gqr_auto_multi",
+            primary_retrieval_pipeline=primary,
+            complementary_retrieval_pipeline=complementary,
+            scorer_mode="auto",
+            candidate_pool_mode="primary",
+        )
+        with (
+            patch.object(pipeline, "_get_query_embedding_by_id", return_value=None),
+            patch.object(
+                pipeline,
+                "_get_query_multi_embedding_by_id",
+                return_value=np.asarray([[1.0, 0.0]]),
+            ),
+            patch.object(
+                pipeline,
+                "_get_candidate_multi_embeddings",
+                return_value=(
+                    [1, 2],
+                    [np.asarray([[1.0, 0.0]]), np.asarray([[0.0, 1.0]])],
+                ),
+            ) as multi_embeddings,
+            patch.object(
+                pipeline,
+                "_optimize_query_multi_embedding",
+                return_value=np.asarray([0.2, 0.8]),
+            ) as optimize_multi,
+            patch.object(
+                pipeline,
+                "_optimize_in_score_space",
+                side_effect=AssertionError("expected MaxSim path"),
+            ),
+        ):
+            results = await pipeline._retrieve_by_id(query_id=1, top_k=2)
+
+        multi_embeddings.assert_called_once_with([1, 2])
+        optimize_multi.assert_called_once()
+        assert [result["doc_id"] for result in results] == [2, 1]
+
+    @pytest.mark.asyncio
+    async def test_multi_mode_missing_candidate_embeddings_falls_back_to_score_space(
+        self,
+        session_factory: sessionmaker[Session],
+    ):
+        primary = _make_stub_pipeline(
+            "vector_search",
+            by_id_results=[{"doc_id": 1, "score": 0.9}, {"doc_id": 2, "score": 0.1}],
+            by_text_results=[],
+        )
+        primary.search_mode = "multi"
+        complementary = _make_stub_pipeline(
+            "bm25",
+            by_id_results=[{"doc_id": 2, "score": 10.0}, {"doc_id": 1, "score": 0.1}],
+            by_text_results=[],
+        )
+        pipeline = GQRHybridRetrievalPipeline(
+            session_factory=session_factory,
+            name="gqr_multi_missing_embeddings",
+            primary_retrieval_pipeline=primary,
+            complementary_retrieval_pipeline=complementary,
+            scorer_mode="auto",
+            candidate_pool_mode="primary",
+        )
+        with (
+            patch.object(pipeline, "_get_query_embedding_by_id", return_value=None),
+            patch.object(
+                pipeline,
+                "_get_query_multi_embedding_by_id",
+                return_value=np.asarray([[1.0, 0.0]]),
+            ),
+            patch.object(
+                pipeline,
+                "_get_candidate_multi_embeddings",
+                return_value=([1], [np.asarray([[1.0, 0.0]])]),
+            ),
+            patch.object(
+                pipeline,
+                "_optimize_query_multi_embedding",
+                side_effect=AssertionError("partial MaxSim pool"),
+            ),
+            patch.object(
+                pipeline,
+                "_optimize_in_score_space",
+                return_value=np.asarray([0.1, 0.9]),
+            ) as score_space,
+        ):
+            results = await pipeline._retrieve_by_id(query_id=1, top_k=2)
+
+        score_space.assert_called_once()
+        assert [result["doc_id"] for result in results] == [2, 1]
 
     def test_raw_score_scale_changes_softmax_distribution(
         self,

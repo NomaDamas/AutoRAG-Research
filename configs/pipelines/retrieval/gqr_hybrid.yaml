@@ -14,6 +14,7 @@
 #   temperature: Softmax temperature for raw retrieval score distributions
 #   mixture_alpha: Guidance weight from complementary distribution (0-1)
 #   candidate_pool_mode: "union" (true hybrid pool) or "primary" (primary-bounded reranker)
+#   scorer_mode: "auto" uses multi-vector MaxSim when primary search_mode is "multi"; otherwise single-vector cosine
 #
 _target_: autorag_research.pipelines.retrieval.gqr_hybrid.GQRHybridRetrievalPipelineConfig
 description: "Guided Query Refinement hybrid retrieval"
@@ -26,6 +27,7 @@ learning_rate: 0.1
 temperature: 1.0
 mixture_alpha: 0.5
 candidate_pool_mode: union
+scorer_mode: auto
 top_k: 10
 batch_size: 128
 max_concurrency: 16

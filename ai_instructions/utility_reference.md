@@ -85,6 +85,8 @@
 | `find_query_by_text(query_text)` | Find query by text content |
 | `get_query_embedding(query_id)` | Stored single-vector query embedding or None |
 | `get_chunk_embeddings(chunk_ids)` | Map of chunk ID → stored single-vector embedding |
+| `get_query_multi_embedding(query_id)` | Stored multi-vector query embedding or None |
+| `get_chunk_multi_embeddings(chunk_ids)` | Map of chunk ID → stored multi-vector embeddings |
 | `get_or_create_pipeline(name, config)` | Get or create pipeline, return (ID, is_new) |
 | `run_pipeline(retrieval_func, pipeline_id, top_k)` | Batch retrieval with retry |
 

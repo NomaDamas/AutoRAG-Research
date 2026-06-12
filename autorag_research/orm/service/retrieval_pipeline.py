@@ -586,6 +586,22 @@ class RetrievalPipelineService(BasePipelineService):
                 return None
             return [float(value) for value in query.embedding]
 
+    def get_query_multi_embedding(self, query_id: int | str) -> list[list[float]] | None:
+        """Fetch the stored multi-vector embedding for a query.
+
+        Args:
+            query_id: Query ID to fetch.
+
+        Returns:
+            The stored query embedding matrix as lists of floats, or None when the
+            query does not exist or has no stored multi-vector embedding.
+        """
+        with self._create_uow() as uow:
+            query = uow.queries.get_by_id(query_id)
+            if query is None or query.embeddings is None:
+                return None
+            return [[float(value) for value in vector] for vector in query.embeddings]
+
     def get_chunk_embeddings(self, chunk_ids: list[int | str]) -> dict[int | str, list[float]]:
         """Batch fetch stored single-vector chunk embeddings.
 
@@ -602,4 +618,24 @@ class RetrievalPipelineService(BasePipelineService):
             chunks = uow.chunks.get_by_ids(chunk_ids)
             return {
                 chunk.id: [float(value) for value in chunk.embedding] for chunk in chunks if chunk.embedding is not None
+            }
+
+    def get_chunk_multi_embeddings(self, chunk_ids: list[int | str]) -> dict[int | str, list[list[float]]]:
+        """Batch fetch stored multi-vector chunk embeddings.
+
+        Args:
+            chunk_ids: Chunk IDs to fetch.
+
+        Returns:
+            Mapping of chunk ID to multi-vector embeddings for requested chunks
+            that exist and have stored embeddings; chunks without embeddings are omitted.
+        """
+        if not chunk_ids:
+            return {}
+        with self._create_uow() as uow:
+            chunks = uow.chunks.get_by_ids(chunk_ids)
+            return {
+                chunk.id: [[float(value) for value in vector] for vector in chunk.embeddings]
+                for chunk in chunks
+                if chunk.embeddings is not None
             }

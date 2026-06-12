@@ -25,6 +25,7 @@ learning_rate: 0.1
 temperature: 1.0
 mixture_alpha: 0.5
 candidate_pool_mode: union
+scorer_mode: auto
 ```
 
 | Field | Type | Default | Description |
@@ -37,25 +38,26 @@ candidate_pool_mode: union
 | `temperature` | float | `1.0` | Softmax temperature used for raw primary and complementary score distributions. |
 | `mixture_alpha` | float | `0.5` | Guidance weight: `0.0` follows primary scores, `1.0` follows complementary scores. |
 | `candidate_pool_mode` | `union` or `primary` | `union` | `union` includes candidates from both retrievers; `primary` keeps only primary candidates. |
+| `scorer_mode` | `auto`, `single`, or `multi` | `auto` | Primary scorer used for embedding-level refinement. `auto` uses multi-vector MaxSim when the primary pipeline exposes `search_mode: multi`; otherwise it uses single-vector cosine. |
 
 ## Scoring contract
 
 GQR result scores are **ranking scores**: higher is better within the returned list, but the numeric magnitude is not calibrated across execution modes or against other pipelines. Distribution construction uses the child retrievers' raw native scores plus a conservative missing-candidate floor for union candidates absent from one child result set; scores are not z-score normalized before softmax.
 
-GQR has two scoring paths:
+GQR has three scoring paths:
 
-1. **Embedding-level refinement** runs when a query embedding exists and every selected candidate has a chunk embedding. Scores are single-vector cosine-derived values from the refined query embedding. This is the supported embedding scope; primary retrievers that require multi-vector or MaxSim native scoring use the fallback path unless single-vector chunk embeddings are available.
-2. **Score-space fallback** runs when query embeddings are unavailable or when any selected candidate lacks an embedding. In partial-embedding pools, GQR falls back for the entire pool so one result list does not mix cosine scores with raw primary-score values. This is a documented degraded path that preserves the per-step consensus objective without a full primary scorer API.
-
+1. **Single-vector embedding-level refinement** runs when `scorer_mode` resolves to `single`, a query embedding exists, and every selected candidate has a chunk embedding. Scores are dense cosine values from the refined query embedding, matching the Eq. 3 dense primary scorer scope.
+2. **Multi-vector embedding-level refinement** runs when `scorer_mode` resolves to `multi`, a stored query multi-vector embedding exists, and every selected candidate has chunk multi-vector embeddings. Scores are normalized MaxSim values, `(1 / n_query_vectors) * sum_i max_k z_i · d_jk`, matching the Eq. 4 late-interaction primary scorer scope and the service's `multi` score convention.
+3. **Score-space fallback** runs when query embeddings are unavailable or when any selected candidate lacks the required embedding representation. In partial-embedding pools, GQR falls back for the entire pool so one result list does not mix embedding scores with raw primary-score values. This is the documented ALLOWED-2 degraded path that preserves the per-step consensus objective without a full primary scorer API.
 For both paths, the complementary distribution is fixed for the candidate pool, while the primary distribution and consensus target are recomputed every optimization step.
 
 Use ordering and retrieval metrics for evaluation. Do not compare raw GQR score magnitudes across embedding-backed and fallback-backed runs.
 
 ## Text-query behavior
 
-For ad-hoc text queries, GQR first asks its child retrievers for text results. If the primary vector retriever cannot embed raw text, GQR falls back to text-capable complementary results and then applies score-space refinement.
+For ad-hoc text queries, GQR first asks its child retrievers for text results. If the primary vector retriever cannot embed raw text, GQR falls back to text-capable complementary results and then applies score-space refinement. Multi-vector by-text queries also use score-space refinement because AutoRAG-Research has no standard text-to-query-matrix interface across embedding models.
 
-For ID/batch retrieval, stored query and chunk embeddings enable the embedding-level path when all selected candidates are embedded.
+For ID/batch retrieval, stored query and chunk single-vector or multi-vector embeddings enable the embedding-level path when all selected candidates have the representation required by the resolved scorer mode.
 
 ## Dependency loading note
 
