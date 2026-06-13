@@ -20,6 +20,7 @@ from autorag_research.util import load_image
 
 # Model type registry for Col* models: maps model_type to (model_class, processor_class)
 COL_MODEL_REGISTRY: dict[str, tuple[str, str]] = {
+    "flor": ("ColFlor", "ColFlorProcessor"),
     "modernvbert": ("ColModernVBert", "ColModernVBertProcessor"),
     "smolvlm": ("ColIdefics3", "ColIdefics3Processor"),
     "pali": ("ColPali", "ColPaliProcessor"),
@@ -119,7 +120,10 @@ class ColPaliEmbeddings(MultiVectorMultiModalEmbedding):
         """
         import torch
 
-        text_inputs = self._processor.process_texts([text])
+        if hasattr(self._processor, "process_queries"):
+            text_inputs = self._processor.process_queries([text])
+        else:
+            text_inputs = self._processor.process_texts([text])
         text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
 
         with torch.no_grad():
