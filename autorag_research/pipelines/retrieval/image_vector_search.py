@@ -117,5 +117,26 @@ class ImageVectorSearchRetrievalPipeline(BaseRetrievalPipeline):
                 {"doc_id": image_chunk.id, "score": 1 - distance, "content": None} for image_chunk, distance in results
             ]
 
+    def run(
+        self,
+        top_k: int = 10,
+        batch_size: int = 128,
+        max_concurrency: int = 16,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        query_limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Run image vector search over stored queries and persist image retrieval results."""
+        return self._service.run_image_pipeline(
+            retrieval_func=self._retrieve_by_id,
+            pipeline_id=self.pipeline_id,
+            top_k=top_k,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            query_limit=query_limit,
+        )
+
 
 __all__ = ["ImageVectorSearchPipelineConfig", "ImageVectorSearchRetrievalPipeline"]
