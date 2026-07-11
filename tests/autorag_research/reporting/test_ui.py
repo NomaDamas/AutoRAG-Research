@@ -7,9 +7,11 @@ import pandas as pd
 import pytest
 
 from autorag_research.reporting.ui import (
+    LeaderboardScope,
     create_leaderboard_app,
     format_dataset_stats,
     get_service,
+    load_leaderboard_scope,
     on_dataset_change,
     on_datasets_select_for_metrics,
     on_datasets_select_for_pipelines,
@@ -17,6 +19,20 @@ from autorag_research.reporting.ui import (
     on_refresh_leaderboard,
     reset_service,
 )
+
+
+class TestLeaderboardScope:
+    """Tests for experiment-scoped leaderboard configuration."""
+
+    def test_load_screencast_scope(self):
+        """Test the screencast config resolves its database, pipelines, and metrics."""
+        scope = load_leaderboard_scope("experiment_screencast")
+
+        assert scope.db_name == "emnlp_demo_scifact"
+        assert scope.pipeline_names["retrieval"] == ("bm25", "vector_search", "hyde")
+        assert scope.pipeline_names["generation"] == ()
+        assert scope.metric_names["retrieval"] == ("retrieval_ndcg", "retrieval_recall", "retrieval_mrr")
+        assert scope.metric_names["generation"] == ()
 
 
 class TestServiceManagement:
@@ -117,6 +133,32 @@ class TestUIUpdateHandlers:
 
         pd.testing.assert_frame_equal(df, expected_df)
         assert "100 queries" in stats_update["value"]
+
+    def test_on_dataset_change_applies_experiment_scope(self):
+        """Test scoped leaderboard handlers pass pipeline and metric allowlists."""
+        self.mock_service.get_all_metrics_leaderboard.return_value = pd.DataFrame()
+        self.mock_service.get_dataset_stats.return_value = {
+            "query_count": 300,
+            "chunk_count": 5183,
+            "document_count": 0,
+        }
+        scope = LeaderboardScope(
+            db_name="emnlp_demo_scifact",
+            pipeline_names={"retrieval": ("bm25", "vector_search", "hyde"), "generation": ()},
+            metric_names={
+                "retrieval": ("retrieval_ndcg", "retrieval_recall", "retrieval_mrr"),
+                "generation": (),
+            },
+        )
+
+        on_dataset_change("emnlp_demo_scifact", "retrieval", scope)
+
+        self.mock_service.get_all_metrics_leaderboard.assert_called_once_with(
+            "emnlp_demo_scifact",
+            "retrieval",
+            pipeline_names=("bm25", "vector_search", "hyde"),
+            metric_names=("retrieval_ndcg", "retrieval_recall", "retrieval_mrr"),
+        )
 
     def test_on_dataset_change_empty_db_returns_empty(self):
         """Test on_dataset_change returns empty for empty db_name."""
@@ -239,3 +281,19 @@ class TestAppCreation:
 
             assert isinstance(app, gr.Blocks)
             assert app.title == "AutoRAG-Research Leaderboard"
+
+    def test_create_leaderboard_app_with_scope_skips_dataset_discovery(self):
+        """Test a scoped app exposes only its configured database."""
+        scope = LeaderboardScope(
+            db_name="emnlp_demo_scifact",
+            pipeline_names={"retrieval": ("bm25", "vector_search", "hyde"), "generation": ()},
+            metric_names={
+                "retrieval": ("retrieval_ndcg", "retrieval_recall", "retrieval_mrr"),
+                "generation": (),
+            },
+        )
+        with patch("autorag_research.reporting.ui.get_service") as mock_get:
+            app = create_leaderboard_app(scope)
+
+        assert isinstance(app, gr.Blocks)
+        mock_get.assert_not_called()

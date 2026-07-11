@@ -129,6 +129,9 @@ class TestReportingService:
 
         assert not df.empty
         assert list(df.columns) == ["rank", "pipeline", "score", "time_ms"]
+        query = mock_conn.execute.call_args_list[-1][0][0]
+        assert "evaluation_result" in query
+        assert "FROM metric_scores s" in query
 
     def test_get_leaderboard_ascending(self, service_with_mock):
         """Test get_leaderboard with ascending order."""
@@ -436,6 +439,45 @@ class TestReportingService:
         query = call_args[0][0]
         assert "generation" in query
 
+    def test_get_all_metrics_leaderboard_filters_pipelines_and_metrics(self, service_with_mock):
+        """Test experiment allowlists are included in the leaderboard query."""
+        service, mock_conn = service_with_mock
+        mock_conn.execute.return_value.df.return_value = pd.DataFrame()
+
+        service.get_all_metrics_leaderboard(
+            "test-db",
+            "retrieval",
+            pipeline_names=["bm25", "vector_search", "hyde"],
+            metric_names=["retrieval_ndcg", "retrieval_recall", "retrieval_mrr"],
+        )
+
+        query = mock_conn.execute.call_args_list[-1][0][0]
+        assert "p.name IN" in query
+        assert "m.name IN" in query
+        assert "bm25" in query
+        assert "vector_search" in query
+        assert "hyde" in query
+        assert "retrieval_ndcg" in query
+        assert "retrieval_recall" in query
+        assert "retrieval_mrr" in query
+
+    @pytest.mark.parametrize("pipeline_names,metric_names", [([], None), (None, [])])
+    def test_get_all_metrics_leaderboard_empty_allowlist_returns_empty(
+        self, service_with_mock, pipeline_names, metric_names
+    ):
+        """Test an explicitly empty experiment section cannot expose all results."""
+        service, mock_conn = service_with_mock
+
+        df = service.get_all_metrics_leaderboard(
+            "test-db",
+            "retrieval",
+            pipeline_names=pipeline_names,
+            metric_names=metric_names,
+        )
+
+        assert df.empty
+        mock_conn.execute.assert_not_called()
+
     def test_get_all_metrics_leaderboard_empty_result(self, service_with_mock):
         """Test get_all_metrics_leaderboard returns empty DataFrame when no data."""
         service, mock_conn = service_with_mock
@@ -487,8 +529,8 @@ class TestReportingService:
             result = MagicMock()
             if "ATTACH" in query:
                 return result
-            # First call: get_pipeline_type (contains config->>'pipeline_type')
-            if "config" in query:
+            # First call: get_pipeline_type (selects evaluated metric type)
+            if "SELECT m.type as pipeline_type" in query:
                 result.df.return_value = pd.DataFrame({"pipeline_type": ["retrieval"]})
             # Subsequent calls: metric data for each dataset
             else:
@@ -544,7 +586,7 @@ class TestReportingService:
             result = MagicMock()
             if "ATTACH" in query:
                 return result
-            if "config" in query:
+            if "SELECT m.type as pipeline_type" in query:
                 result.df.return_value = pd.DataFrame({"pipeline_type": ["retrieval"]})
             else:
                 result.df.return_value = pd.DataFrame({
