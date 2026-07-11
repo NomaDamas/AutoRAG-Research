@@ -1132,7 +1132,7 @@ def token_f1(metric_inputs: list[MetricInput]) -> list[float]:
     return _compute_generation_reference_scores(metric_inputs, _token_f1_score)
 
 
-@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@metric_loop(fields_to_check=["generation_gt"])
 @with_embedding()
 def sem_score(
     metric_inputs: list[MetricInput],

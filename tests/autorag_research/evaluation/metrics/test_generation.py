@@ -277,6 +277,25 @@ def test_sem_score_from_string_configs():
     assert all(isinstance(score, float) for score in scores)
 
 
+class EmptyPredictionEmbeddings(Embeddings):
+    """Map empty predictions orthogonally to non-empty references."""
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[0.0, 1.0] if text == "" else [1.0, 0.0] for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return [0.0, 1.0] if text == "" else [1.0, 0.0]
+
+
+@pytest.mark.parametrize("generated_texts", [None, ""])
+def test_sem_score_scores_missing_prediction_as_empty(generated_texts: str | None):
+    metric_inputs = [MetricInput(generated_texts=generated_texts, generation_gt=["answer"])]
+
+    scores = sem_score(metric_inputs, embedding_model=EmptyPredictionEmbeddings())
+
+    assert scores == [0.0]
+
+
 @pytest.mark.gpu
 def test_bert_score_en():
     base_test_metrics(
