@@ -1,10 +1,13 @@
+import bz2
+import io
+import json
 import logging
 import re
+import urllib.request
 from html import unescape
 from html.parser import HTMLParser
 from typing import Any, Literal
 
-from datasets import load_dataset
 from langchain_core.embeddings import Embeddings
 
 from autorag_research.data.base import TextEmbeddingDataIngestor
@@ -21,6 +24,7 @@ CRAG_SUBSET_TO_SPLIT = {
     "test": 1,
 }
 DEFAULT_BATCH_SIZE = 100
+CRAG_MAX_CHUNK_CHARS = 8000
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -45,10 +49,13 @@ class _HTMLTextExtractor(HTMLParser):
         return _normalize_text(" ".join(self._parts))
 
 
-def _normalize_text(value: str | None) -> str:
-    if not value:
+def _normalize_text(value: Any | None) -> str:
+    if value is None:
         return ""
-    return re.sub(r"\s+", " ", unescape(value)).strip()
+    text = str(value)
+    if not text:
+        return ""
+    return re.sub(r"\s+", " ", unescape(text)).strip()
 
 
 def _resolve_subset(subset: str) -> int:
@@ -80,6 +87,18 @@ def _extract_page_text(page_result: str | None) -> str:
     return _normalize_text(stripped)
 
 
+def _iter_crag_examples() -> Any:
+    with (
+        urllib.request.urlopen(CRAG_DATA_URL) as response,  # noqa: S310
+        bz2.BZ2File(response) as compressed,
+        io.TextIOWrapper(compressed, encoding="utf-8") as text_stream,
+    ):
+        for line in text_stream:
+            stripped = line.strip()
+            if stripped:
+                yield json.loads(stripped)
+
+
 def _build_generation_gt(answer: str | None, alt_ans: list[str] | None) -> list[str] | None:
     deduped_answers: list[str] = []
     seen: set[str] = set()
@@ -109,7 +128,8 @@ def _format_search_result_contents(search_result: dict[str, Any]) -> str:
         ("Last Modified", last_modified),
         ("Content", content),
     ]
-    return "\n".join(f"{label}: {value}" for label, value in sections if value)
+    formatted = "\n".join(f"{label}: {value}" for label, value in sections if value)
+    return formatted[:CRAG_MAX_CHUNK_CHARS]
 
 
 @register_ingestor(
@@ -145,7 +165,7 @@ class CRAGIngestor(TextEmbeddingDataIngestor):
                 "min_corpus_cnt is ineffective for CRAG. Each query ships with its own search results rather than a shared corpus."
             )
 
-        dataset = load_dataset("json", data_files=CRAG_DATA_URL, split="train", streaming=True)
+        dataset = _iter_crag_examples()
 
         batch: list[dict[str, Any]] = []
         total_processed = 0
