@@ -520,6 +520,42 @@ class TestMetricEvaluationRules:
         assert result.total_metrics_evaluated == 2
 
 
+class TestRetrievalCompletionFallback:
+    @pytest.mark.parametrize(
+        ("run_result", "expected_success"),
+        [
+            ({"pipeline_id": 999, "total_queries": 1, "failed_queries": []}, True),
+            ({"pipeline_id": 999, "total_queries": 1}, False),
+            ({"pipeline_id": 999, "total_queries": 0, "failed_queries": []}, False),
+        ],
+    )
+    def test_requires_explicit_successful_run_result(self, session_factory, run_result, expected_success):
+        @dataclass
+        class MockRetrievalPipeline(BaseRetrievalPipelineConfig):
+            def get_pipeline_class(self) -> type:
+                return MagicMock
+
+            def get_pipeline_kwargs(self) -> dict[str, Any]:
+                return {}
+
+        config = ExecutorConfig(
+            pipelines=[MockRetrievalPipeline(name="test_retrieval_completion_fallback")],
+            metrics=[],
+            max_retries=0,
+            health_check_queries=0,
+        )
+        executor = Executor(session_factory, config)
+        mock_pipeline = MagicMock()
+        mock_pipeline.pipeline_id = 999
+        mock_pipeline.run.return_value = run_result
+        config.pipelines[0].get_pipeline_class = lambda: lambda **kwargs: mock_pipeline
+        executor._verify_pipeline_completion = MagicMock(return_value=False)
+
+        result = executor.run()
+
+        assert result.pipeline_results[0].success is expected_success
+
+
 class TestHealthCheck:
     """Test suite for health check functionality."""
 

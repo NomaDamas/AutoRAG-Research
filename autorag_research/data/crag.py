@@ -25,6 +25,35 @@ CRAG_SUBSET_TO_SPLIT = {
 }
 DEFAULT_BATCH_SIZE = 100
 CRAG_MAX_CHUNK_CHARS = 8000
+CRAG_DOWNLOAD_TIMEOUT_SECONDS = 60
+CRAG_MAX_COMPRESSED_BYTES = 2_000_000_000
+CRAG_MAX_DECOMPRESSED_BYTES = 20_000_000_000
+CRAG_MAX_JSON_LINE_BYTES = 64 * 1024 * 1024
+CRAG_MAX_RECORDS = 1_000_000
+
+
+class _BoundedReader(io.RawIOBase):
+    """Limit bytes read from a streaming response."""
+
+    def __init__(self, stream: Any, max_bytes: int):
+        self._stream = stream
+        self._max_bytes = max_bytes
+        self._remaining = max_bytes
+
+    def read(self, size: int = -1) -> bytes:
+        if self._remaining == 0:
+            if self._stream.read(1):
+                msg = f"CRAG compressed download exceeds {self._max_bytes} bytes"
+                raise ValueError(msg)
+            return b""
+
+        read_size = self._remaining if size < 0 else min(size, self._remaining)
+        data = self._stream.read(read_size)
+        self._remaining -= len(data)
+        return data
+
+    def readable(self) -> bool:
+        return True
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -88,14 +117,29 @@ def _extract_page_text(page_result: str | None) -> str:
 
 
 def _iter_crag_examples() -> Any:
-    with (
-        urllib.request.urlopen(CRAG_DATA_URL) as response,  # noqa: S310
-        bz2.BZ2File(response) as compressed,
-        io.TextIOWrapper(compressed, encoding="utf-8") as text_stream,
-    ):
-        for line in text_stream:
-            stripped = line.strip()
-            if stripped:
+    with urllib.request.urlopen(CRAG_DATA_URL, timeout=CRAG_DOWNLOAD_TIMEOUT_SECONDS) as response:  # noqa: S310
+        compressed_bytes = _BoundedReader(response, CRAG_MAX_COMPRESSED_BYTES)
+        with bz2.BZ2File(compressed_bytes) as compressed:
+            total_decompressed_bytes = 0
+            record_count = 0
+
+            while line := compressed.readline(CRAG_MAX_JSON_LINE_BYTES + 1):
+                total_decompressed_bytes += len(line)
+                if total_decompressed_bytes > CRAG_MAX_DECOMPRESSED_BYTES:
+                    msg = f"CRAG decompressed stream exceeds {CRAG_MAX_DECOMPRESSED_BYTES} bytes"
+                    raise ValueError(msg)
+                if len(line) > CRAG_MAX_JSON_LINE_BYTES:
+                    msg = f"CRAG JSONL record exceeds {CRAG_MAX_JSON_LINE_BYTES} bytes"
+                    raise ValueError(msg)
+
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                record_count += 1
+                if record_count > CRAG_MAX_RECORDS:
+                    msg = f"CRAG stream exceeds {CRAG_MAX_RECORDS} records"
+                    raise ValueError(msg)
                 yield json.loads(stripped)
 
 

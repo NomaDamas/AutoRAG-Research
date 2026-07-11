@@ -12,6 +12,7 @@ Test Strategy:
 - Edge case tests for filtering scenarios
 """
 
+import asyncio
 from statistics import mean, stdev
 from unittest.mock import MagicMock
 
@@ -159,17 +160,10 @@ class TestMAINRAGPipelineUnit:
         assert abs(threshold - expected) < 0.001
         assert threshold < expected_mean  # Lower threshold is more permissive
 
-    # ==================== LogprobsNotSupportedError Tests ====================
     @pytest.mark.asyncio
-    async def test_generate_raises_error_without_logprobs(
+    async def test_generate_uses_text_fallback_without_logprobs(
         self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
     ):
-        """Test that _generate raises LogprobsNotSupportedError when LLM doesn't support logprobs.
-
-        The error should be raised during the Agent-2 (Judge) phase when multiple documents
-        are retrieved and filtering is needed.
-        """
-        from autorag_research.exceptions import LogprobsNotSupportedError
         from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
 
         # Create mock LLM WITHOUT logprobs
@@ -183,9 +177,10 @@ class TestMAINRAGPipelineUnit:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        # This should raise LogprobsNotSupportedError during the Judge phase
-        with pytest.raises(LogprobsNotSupportedError):
-            await pipeline._generate(query_id=1, top_k=3)
+        result = await pipeline._generate(query_id=1, top_k=3)
+
+        assert result.text == "Yes"
+        assert result.metadata["filtered_doc_count"] == 3
 
     # ==================== Pipeline Configuration Tests ====================
 
@@ -945,6 +940,62 @@ class TestMAINRAGParallelExecution:
         assert response.usage_metadata["total_tokens"] == 70
 
     @pytest.mark.asyncio
+    async def test_llm_concurrency_limit_is_shared_across_calls(
+        self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
+    ):
+        from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
+
+        active_calls = 0
+        max_active_calls = 0
+        mock_llm = MagicMock()
+
+        async def mock_ainvoke(_messages):
+            nonlocal active_calls, max_active_calls
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+            await asyncio.sleep(0.01)
+            active_calls -= 1
+            return MagicMock(content="answer")
+
+        mock_llm.ainvoke = mock_ainvoke
+        pipeline = MAINRAGPipeline(
+            session_factory=session_factory,
+            name="test_shared_agent_concurrency",
+            llm=mock_llm,
+            retrieval_pipeline=mock_retrieval_pipeline,
+            agent_max_concurrency=2,
+        )
+        cleanup_pipeline_results.append(pipeline.pipeline_id)
+
+        await asyncio.gather(*[pipeline._aagent_predict("query", f"document-{index}") for index in range(8)])
+
+        assert max_active_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_parallel_agent_failure_preserves_provider_exception(
+        self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
+    ):
+        from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
+
+        mock_llm = MagicMock()
+
+        async def mock_ainvoke(_messages):
+            msg = "provider returned 429"
+            raise ValueError(msg)
+
+        mock_llm.ainvoke = mock_ainvoke
+        pipeline = MAINRAGPipeline(
+            session_factory=session_factory,
+            name="test_parallel_provider_error",
+            llm=mock_llm,
+            retrieval_pipeline=mock_retrieval_pipeline,
+        )
+        cleanup_pipeline_results.append(pipeline.pipeline_id)
+
+        with pytest.raises(ValueError, match="provider returned 429"):
+            await pipeline._generate(query_id=1, top_k=3)
+
+    @pytest.mark.asyncio
     async def test_aagent_judge_returns_correct_score(
         self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
     ):
@@ -999,11 +1050,9 @@ class TestMAINRAGParallelExecution:
         assert response.usage_metadata["total_tokens"] == 70
 
     @pytest.mark.asyncio
-    async def test_aagent_judge_raises_logprobs_not_supported(
+    async def test_aagent_judge_uses_text_fallback_without_logprobs(
         self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
     ):
-        """Test that async _aagent_judge raises LogprobsNotSupportedError when no logprobs."""
-        from autorag_research.exceptions import LogprobsNotSupportedError
         from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
 
         mock_llm = MagicMock()
@@ -1030,8 +1079,10 @@ class TestMAINRAGParallelExecution:
         )
         cleanup_pipeline_results.append(pipeline.pipeline_id)
 
-        with pytest.raises(LogprobsNotSupportedError):
-            await pipeline._aagent_judge("test query", "test document", "test answer")
+        score, response = await pipeline._aagent_judge("test query", "test document", "test answer")
+
+        assert score == 1.0
+        assert response.content == "Yes"
 
     def test_run_with_batch_size(self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results):
         """Test that run() works correctly with batch_size parameter."""
@@ -1178,6 +1229,7 @@ class TestMAINRAGPipelineConfig:
         assert kwargs["llm"] == mock_llm
         assert kwargs["retrieval_pipeline"] == mock_retrieval
         assert kwargs["std_multiplier"] == 0.5
+        assert kwargs["agent_max_concurrency"] == 4
         assert "predictor_system_prompt" in kwargs
         assert "predictor_user_prompt" in kwargs
         assert "judge_system_prompt" in kwargs
@@ -1196,6 +1248,7 @@ class TestMAINRAGPipelineConfig:
         )
 
         assert config.std_multiplier == 0.0
+        assert config.agent_max_concurrency == 4
 
 
 class TestCalculateBinaryLogprobScore:

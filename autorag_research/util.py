@@ -7,7 +7,7 @@ import logging
 import re
 import string
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Any, TypeVar, cast
+from typing import Any, Literal, TypeVar, cast, overload
 
 import numpy as np
 import pandas as pd
@@ -25,6 +25,34 @@ R = TypeVar("R")
 
 
 _PLUGIN_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+class LoopBoundSemaphore:
+    """Provide one semaphore per event loop for a reusable async component."""
+
+    def __init__(self, max_concurrency: int):
+        if max_concurrency < 1:
+            msg = "max_concurrency must be at least 1"
+            raise ValueError(msg)
+        self._max_concurrency = max_concurrency
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._semaphore: asyncio.Semaphore | None = None
+
+    def get(self) -> asyncio.Semaphore:
+        """Return the semaphore associated with the running event loop."""
+        loop = asyncio.get_running_loop()
+        if self._loop is not loop:
+            self._loop = loop
+            self._semaphore = asyncio.Semaphore(self._max_concurrency)
+        if self._semaphore is None:
+            msg = "Semaphore was not initialized"
+            raise RuntimeError(msg)
+        return self._semaphore
+
+
+class _ConcurrencyFailure:
+    def __init__(self, error: Exception):
+        self.error = error
 
 
 def validate_plugin_name(name: str) -> bool:
@@ -131,11 +159,35 @@ def unpack_and_run(target_list: list[list[Any]], func: Callable, *args: tuple, *
     return result
 
 
+@overload
 async def run_with_concurrency_limit(
     items: Iterable[T],
     async_func: Callable[[T], Awaitable[R]],
     max_concurrency: int,
     error_message: str = "Task failed",
+    *,
+    raise_on_error: Literal[True],
+) -> list[R]: ...
+
+
+@overload
+async def run_with_concurrency_limit(
+    items: Iterable[T],
+    async_func: Callable[[T], Awaitable[R]],
+    max_concurrency: int,
+    error_message: str = "Task failed",
+    *,
+    raise_on_error: Literal[False] = False,
+) -> list[R | None]: ...
+
+
+async def run_with_concurrency_limit(
+    items: Iterable[T],
+    async_func: Callable[[T], Awaitable[R]],
+    max_concurrency: int,
+    error_message: str = "Task failed",
+    *,
+    raise_on_error: bool = False,
 ) -> list[R | None]:
     """Run async function on items with concurrency limit using semaphore.
 
@@ -148,6 +200,7 @@ async def run_with_concurrency_limit(
         async_func: Async function that takes an item and returns a result.
         max_concurrency: Maximum number of concurrent operations.
         error_message: Message to log when an operation fails.
+        raise_on_error: Re-raise the original exception instead of returning None.
 
     Returns:
         List of results (or None if failed) in same order as items.
@@ -168,8 +221,13 @@ async def run_with_concurrency_limit(
     """
     semaphore = asyncio.Semaphore(max_concurrency)
 
-    async def process_with_semaphore(item: T) -> R | None:
+    async def process_with_semaphore(item: T) -> R | None | _ConcurrencyFailure:
         async with semaphore:
+            if raise_on_error:
+                try:
+                    return await async_func(item)
+                except Exception as error:
+                    return _ConcurrencyFailure(error)
             try:
                 return await async_func(item)
             except Exception:
@@ -177,7 +235,13 @@ async def run_with_concurrency_limit(
                 return None
 
     tasks = [process_with_semaphore(item) for item in items]
-    return await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks)
+    completed: list[R | None] = []
+    for result in results:
+        if isinstance(result, _ConcurrencyFailure):
+            raise result.error
+        completed.append(result)
+    return completed
 
 
 def to_async_func(func: Callable[..., R]) -> Callable[..., Awaitable[R]]:

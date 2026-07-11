@@ -418,9 +418,10 @@ class Executor:
                 # row-presence verification would fail forever. When the run itself
                 # completed with no failed queries, accept it as complete.
                 verified = self._verify_pipeline_completion(pipeline_id, config.pipeline_type)
-                if not verified and config.pipeline_type == PipelineType.RETRIEVAL:
-                    failed = run_result.get("failed_queries") if isinstance(run_result, dict) else None
-                    if not failed:
+                if not verified and config.pipeline_type == PipelineType.RETRIEVAL and isinstance(run_result, dict):
+                    failed_queries = run_result.get("failed_queries")
+                    total_queries = run_result.get("total_queries")
+                    if failed_queries == [] and isinstance(total_queries, int) and total_queries > 0:
                         verified = True
                 if verified:
                     logger.info(

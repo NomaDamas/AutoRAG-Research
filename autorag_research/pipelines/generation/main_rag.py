@@ -5,7 +5,6 @@ Uses three LLM agents to collaboratively filter retrieved documents through
 adaptive thresholding and probabilistic scoring.
 """
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 from statistics import mean, stdev
@@ -19,9 +18,10 @@ from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
 from autorag_research.schema import GENERATION_CONTEXT_CHUNK_ID_KEY
-from autorag_research.util import TokenUsageTracker
+from autorag_research.util import LoopBoundSemaphore, TokenUsageTracker, run_with_concurrency_limit
 
 logger = logging.getLogger("AutoRAG-Research")
+
 
 # Agent-1 (Predictor) prompts
 DEFAULT_PREDICTOR_SYSTEM_PROMPT = """You are an accurate and reliable AI assistant that can answer questions with the help of external documents. You should only provide the correct answer without repeating the question and instruction."""
@@ -90,6 +90,7 @@ class MAINRAGPipelineConfig(BaseGenerationPipelineConfig):
     """
 
     std_multiplier: float = 0.0
+    agent_max_concurrency: int = 4
     predictor_system_prompt: str = field(default=DEFAULT_PREDICTOR_SYSTEM_PROMPT)
     predictor_user_prompt: str = field(default=DEFAULT_PREDICTOR_USER_PROMPT)
     judge_system_prompt: str = field(default=DEFAULT_JUDGE_SYSTEM_PROMPT)
@@ -111,6 +112,7 @@ class MAINRAGPipelineConfig(BaseGenerationPipelineConfig):
             "llm": self.llm,
             "retrieval_pipeline": self._retrieval_pipeline,
             "std_multiplier": self.std_multiplier,
+            "agent_max_concurrency": self.agent_max_concurrency,
             "predictor_system_prompt": self.predictor_system_prompt,
             "predictor_user_prompt": self.predictor_user_prompt,
             "judge_system_prompt": self.judge_system_prompt,
@@ -237,6 +239,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         llm: BaseLanguageModel,
         retrieval_pipeline: BaseRetrievalPipeline,
         std_multiplier: float = 0.0,
+        agent_max_concurrency: int = 4,
         predictor_system_prompt: str = DEFAULT_PREDICTOR_SYSTEM_PROMPT,
         predictor_user_prompt: str = DEFAULT_PREDICTOR_USER_PROMPT,
         judge_system_prompt: str = DEFAULT_JUDGE_SYSTEM_PROMPT,
@@ -257,6 +260,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
                 threshold = mean - n * std. Default 0.0 means threshold = mean.
                 Higher values are more permissive (lower threshold).
                 Negative values are more aggressive (higher threshold).
+            agent_max_concurrency: Maximum concurrent agent calls across this pipeline instance.
             predictor_system_prompt: System prompt for Agent-1 (Predictor).
             predictor_user_prompt: User prompt template for Agent-1.
                 Must contain {document} and {query} placeholders.
@@ -271,6 +275,11 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         # Store custom attributes BEFORE super().__init__()
         # because _get_pipeline_config() is called in parent init
         self._std_multiplier = std_multiplier
+        if agent_max_concurrency < 1:
+            msg = "agent_max_concurrency must be at least 1"
+            raise ValueError(msg)
+        self._agent_max_concurrency = agent_max_concurrency
+        self._agent_limiter = LoopBoundSemaphore(agent_max_concurrency)
         self._predictor_system_prompt = predictor_system_prompt
         self._predictor_user_prompt = predictor_user_prompt
         self._judge_system_prompt = judge_system_prompt
@@ -285,6 +294,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         return {
             "type": "main_rag",
             "std_multiplier": self._std_multiplier,
+            "agent_max_concurrency": self._agent_max_concurrency,
             "predictor_system_prompt": self._predictor_system_prompt,
             "predictor_user_prompt": self._predictor_user_prompt,
             "judge_system_prompt": self._judge_system_prompt,
@@ -323,7 +333,8 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt.format(**format_kwargs)),
         ]
-        return await self._llm.ainvoke(messages)
+        async with self._agent_limiter.get():
+            return await self._llm.ainvoke(messages)
 
     async def _aagent_predict(self, query: str, document: str) -> tuple[str, Any]:
         """Async version of Agent-1 (Predictor).
@@ -497,17 +508,30 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             )
 
         # ==================== Phase 2: Agent-1 (Predictor) ====================
-        predictor_results = await asyncio.gather(*(self._aagent_predict(query, doc) for doc in chunk_contents))
+        predictor_results = await run_with_concurrency_limit(
+            items=chunk_contents,
+            async_func=lambda document: self._aagent_predict(query, document),
+            max_concurrency=self._agent_max_concurrency,
+            error_message="MAIN-RAG predictor failed",
+            raise_on_error=True,
+        )
         candidate_answers = [answer for answer, _response in predictor_results]
         for _answer, response in predictor_results:
             tracker.record(response)
 
         # ==================== Phase 3: Agent-2 (Judge) ====================
-        judge_results = await asyncio.gather(
-            *(
-                self._aagent_judge(query, doc, answer)
-                for doc, answer in zip(chunk_contents, candidate_answers, strict=True)
-            )
+        judge_inputs = list(zip(chunk_contents, candidate_answers, strict=True))
+
+        async def judge_document(item: tuple[str, str]) -> tuple[float, Any]:
+            document, answer = item
+            return await self._aagent_judge(query, document, answer)
+
+        judge_results = await run_with_concurrency_limit(
+            items=judge_inputs,
+            async_func=judge_document,
+            max_concurrency=self._agent_max_concurrency,
+            error_message="MAIN-RAG judge failed",
+            raise_on_error=True,
         )
         relevance_scores = [score for score, _response in judge_results]
         for _score, response in judge_results:

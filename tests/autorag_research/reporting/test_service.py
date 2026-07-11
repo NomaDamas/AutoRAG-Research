@@ -184,7 +184,11 @@ class TestReportingService:
         mock_conn.execute.return_value.df.return_value = pd.DataFrame({"pipeline_type": ["generation"]})
 
         result = service.get_pipeline_type("test-db", "naive_rag_pipeline")
+
         assert result == "generation"
+        query = mock_conn.execute.call_args_list[-1][0][0]
+        assert "executor_result" in query
+        assert "BOOL_OR(m.type = ''generation'')" in query
 
     def test_get_pipeline_type_not_found(self, service_with_mock):
         """Test get_pipeline_type returns None when pipeline not found."""
@@ -530,7 +534,7 @@ class TestReportingService:
             if "ATTACH" in query:
                 return result
             # First call: get_pipeline_type (selects evaluated metric type)
-            if "SELECT m.type as pipeline_type" in query:
+            if "END AS pipeline_type" in query:
                 result.df.return_value = pd.DataFrame({"pipeline_type": ["retrieval"]})
             # Subsequent calls: metric data for each dataset
             else:
@@ -586,7 +590,7 @@ class TestReportingService:
             result = MagicMock()
             if "ATTACH" in query:
                 return result
-            if "SELECT m.type as pipeline_type" in query:
+            if "END AS pipeline_type" in query:
                 result.df.return_value = pd.DataFrame({"pipeline_type": ["retrieval"]})
             else:
                 result.df.return_value = pd.DataFrame({

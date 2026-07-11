@@ -66,6 +66,29 @@ class TestRunWithConcurrencyLimit:
         assert results == [2, 4, None, 8, 10]
 
     @pytest.mark.asyncio
+    async def test_can_propagate_original_exception(self):
+        completed: list[int] = []
+
+        async def fail(_item: int) -> int:
+            msg = "provider returned 429"
+            raise ValueError(msg)
+
+        async def finish(item: int) -> int:
+            await asyncio.sleep(0.01)
+            completed.append(item)
+            return item
+
+        async def process(item: int) -> int:
+            if item == 1:
+                return await fail(item)
+            return await finish(item)
+
+        with pytest.raises(ValueError, match="provider returned 429"):
+            await run_with_concurrency_limit([1, 2], process, max_concurrency=2, raise_on_error=True)
+
+        assert completed == [2]
+
+    @pytest.mark.asyncio
     async def test_empty_input(self):
         """Test that empty input returns empty list."""
 

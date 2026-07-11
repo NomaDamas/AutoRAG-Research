@@ -162,7 +162,7 @@ class ReportingService:
         return self._pg_query(db_name, sql)["name"].tolist()
 
     def get_pipeline_type(self, db_name: str, pipeline_name: str) -> Literal["retrieval", "generation"] | None:
-        """Get the metric type associated with a pipeline's evaluated results.
+        """Get a pipeline's execution type from persisted results.
 
         Args:
             db_name: Name of the PostgreSQL database.
@@ -174,13 +174,18 @@ class ReportingService:
         escaped_name = self._escape_sql_value(pipeline_name)
         sql = f"""
             {self._metric_scores_cte()}
-            SELECT m.type as pipeline_type
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM executor_result e WHERE e.pipeline_id = p.id
+                ) OR BOOL_OR(m.type = 'generation')
+                THEN 'generation'
+                ELSE 'retrieval'
+            END AS pipeline_type
             FROM metric_scores s
             JOIN pipeline p ON s.pipeline_id = p.id
             JOIN metric m ON s.metric_id = m.id
             WHERE p.name = '{escaped_name}'
-            GROUP BY m.type
-            ORDER BY COUNT(*) DESC, m.type
+            GROUP BY p.id
             LIMIT 1
             """  # noqa: S608
         result = self._pg_query(db_name, sql)

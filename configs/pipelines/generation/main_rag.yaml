@@ -25,6 +25,7 @@ retrieval_pipeline_name: bm25
 llm: gpt-5.2
 top_k: 20
 batch_size: 10
+agent_max_concurrency: 4
 
 # Adaptive filtering parameter
 # n=0: threshold = mean (default, recommended by paper)

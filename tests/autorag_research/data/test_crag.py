@@ -1,6 +1,8 @@
 """Tests for CRAGIngestor."""
 
+import bz2
 import importlib
+import io
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,6 +12,7 @@ from autorag_research.data.crag import (
     CRAGIngestor,
     _build_generation_gt,
     _format_search_result_contents,
+    _iter_crag_examples,
     _make_chunk_id,
     _make_query_id,
     _resolve_subset,
@@ -122,10 +125,30 @@ class TestIdsAndRegistry:
         assert meta.hf_repo is None
 
 
+class TestCRAGStreaming:
+    @patch("autorag_research.data.crag.urllib.request.urlopen")
+    def test_streaming_download_uses_timeout(self, mock_urlopen):
+        mock_urlopen.return_value = io.BytesIO(bz2.compress(b'{"interaction_id": "dev-1"}\n'))
+
+        assert list(_iter_crag_examples()) == [{"interaction_id": "dev-1"}]
+        mock_urlopen.assert_called_once_with(
+            "https://github.com/facebookresearch/CRAG/raw/refs/heads/main/data/crag_task_1_and_2_dev_v4.jsonl.bz2",
+            timeout=60,
+        )
+
+    @patch("autorag_research.data.crag.urllib.request.urlopen")
+    def test_streaming_rejects_oversized_json_record(self, mock_urlopen, monkeypatch):
+        monkeypatch.setattr("autorag_research.data.crag.CRAG_MAX_JSON_LINE_BYTES", 32, raising=False)
+        mock_urlopen.return_value = io.BytesIO(bz2.compress(b'{"value": "' + b"x" * 64 + b'"}\n'))
+
+        with pytest.raises(ValueError, match="CRAG JSONL record exceeds"):
+            list(_iter_crag_examples())
+
+
 class TestIngestUnit:
-    @patch("autorag_research.data.crag.load_dataset")
-    def test_ingest_filters_to_requested_split_and_skips_retrieval_gt(self, mock_load_dataset, mock_embedding_model):
-        mock_load_dataset.return_value = SAMPLE_EXAMPLES
+    @patch("autorag_research.data.crag._iter_crag_examples")
+    def test_ingest_filters_to_requested_split_and_skips_retrieval_gt(self, mock_iter_examples, mock_embedding_model):
+        mock_iter_examples.return_value = iter(SAMPLE_EXAMPLES)
         service = MagicMock()
         ingestor = CRAGIngestor(mock_embedding_model, batch_size=10)
         ingestor.set_service(service)
@@ -152,14 +175,14 @@ class TestIngestUnit:
         service.add_retrieval_gt.assert_not_called()
         service.clean.assert_called_once_with()
 
-    @patch("autorag_research.data.crag.load_dataset")
+    @patch("autorag_research.data.crag._iter_crag_examples")
     def test_ingest_warns_that_train_alias_duplicates_dev_examples(
         self,
-        mock_load_dataset,
+        mock_iter_examples,
         mock_embedding_model,
         caplog,
     ):
-        mock_load_dataset.return_value = []
+        mock_iter_examples.return_value = iter(())
         service = MagicMock()
         ingestor = CRAGIngestor(mock_embedding_model, batch_size=10)
         ingestor.set_service(service)

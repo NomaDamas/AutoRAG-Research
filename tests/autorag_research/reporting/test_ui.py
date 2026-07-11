@@ -24,15 +24,15 @@ from autorag_research.reporting.ui import (
 class TestLeaderboardScope:
     """Tests for experiment-scoped leaderboard configuration."""
 
-    def test_load_screencast_scope(self):
-        """Test the screencast config resolves its database, pipelines, and metrics."""
-        scope = load_leaderboard_scope("experiment_screencast")
+    def test_load_default_experiment_scope(self):
+        """Test the shipped experiment config resolves its database, pipelines, and metrics."""
+        scope = load_leaderboard_scope("experiment")
 
-        assert scope.db_name == "emnlp_demo_scifact"
-        assert scope.pipeline_names["retrieval"] == ("bm25", "vector_search", "hyde")
-        assert scope.pipeline_names["generation"] == ()
-        assert scope.metric_names["retrieval"] == ("retrieval_ndcg", "retrieval_recall", "retrieval_mrr")
-        assert scope.metric_names["generation"] == ()
+        assert scope.db_name == "beir_scifact_test"
+        assert scope.pipeline_names["retrieval"] == ("bm25",)
+        assert scope.pipeline_names["generation"] == ("basic_rag",)
+        assert scope.metric_names["retrieval"] == ("retrieval_recall", "retrieval_ndcg")
+        assert scope.metric_names["generation"] == ("rouge_rougeL",)
 
 
 class TestServiceManagement:

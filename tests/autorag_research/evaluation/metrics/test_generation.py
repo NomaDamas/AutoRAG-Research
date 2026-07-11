@@ -2,7 +2,7 @@ import math
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -228,6 +228,30 @@ def test_rouge():
     base_test_metrics(rouge, [0.909, 0.35714, 1.0], similarity_generation_metric_inputs)
 
 
+@pytest.mark.parametrize("metric_func", [rouge, exact_match, token_f1])
+def test_reference_metrics_score_missing_prediction_as_empty(metric_func):
+    metric_inputs = [MetricInput(generated_texts=None, generation_gt=["answer"])]
+
+    assert metric_func(metric_inputs) == [0.0]
+
+
+def test_bert_score_scores_missing_prediction_as_empty(monkeypatch):
+    evaluator = MagicMock()
+    evaluator.compute.return_value = {"f1": [0.0]}
+    monkeypatch.setattr("autorag_research.evaluation.metrics.generation.evaluate.load", lambda _name: evaluator)
+
+    scores = bert_score([MetricInput(generated_texts=None, generation_gt=["answer"])], n_threads=1)
+
+    assert scores == [0.0]
+    evaluator.compute.assert_called_once_with(
+        predictions=[""],
+        references=["answer"],
+        lang="en",
+        nthreads=1,
+        batch_size=128,
+    )
+
+
 @patch.object(
     OpenAIEmbeddings,
     "embed_documents",
@@ -360,7 +384,6 @@ def test_response_relevancy_mixed_noncommittal_keeps_score():
     scores = response_relevancy(metric_inputs, llm=llm, embedding_model=KeywordEmbeddings(), strictness=3)
 
     assert scores[0] == pytest.approx(1.0)
-
 
 
 def test_response_relevancy_invalid_json_zeroes_score():
