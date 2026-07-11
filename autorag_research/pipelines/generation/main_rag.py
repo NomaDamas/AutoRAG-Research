@@ -5,6 +5,7 @@ Uses three LLM agents to collaboratively filter retrieved documents through
 adaptive thresholding and probabilistic scoring.
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from statistics import mean, stdev
@@ -353,10 +354,10 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         Returns:
             Tuple of (relevance_score, raw_response).
 
-        Raises:
-            LogprobsNotSupportedError: If LLM does not support logprobs.
+        Notes:
+            When provider logprobs are unavailable, the judge falls back to the
+            binary text score returned by calculate_binary_logprob_score().
         """
-        from autorag_research.exceptions import LogprobsNotSupportedError
 
         response = await self._ainvoke_llm(
             self._judge_system_prompt,
@@ -369,7 +370,7 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         score, used_logprobs = calculate_binary_logprob_score(response)
 
         if not used_logprobs:
-            raise LogprobsNotSupportedError(self.name)
+            logger.debug("MAIN-RAG judge response did not include logprobs; using text fallback score")
 
         return score, response
 
@@ -496,17 +497,20 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             )
 
         # ==================== Phase 2: Agent-1 (Predictor) ====================
-        candidate_answers: list[str] = []
-        for doc in chunk_contents:
-            answer, response = await self._aagent_predict(query, doc)
-            candidate_answers.append(answer)
+        predictor_results = await asyncio.gather(*(self._aagent_predict(query, doc) for doc in chunk_contents))
+        candidate_answers = [answer for answer, _response in predictor_results]
+        for _answer, response in predictor_results:
             tracker.record(response)
 
         # ==================== Phase 3: Agent-2 (Judge) ====================
-        relevance_scores: list[float] = []
-        for doc, answer in zip(chunk_contents, candidate_answers, strict=True):
-            score, response = await self._aagent_judge(query, doc, answer)
-            relevance_scores.append(score)
+        judge_results = await asyncio.gather(
+            *(
+                self._aagent_judge(query, doc, answer)
+                for doc, answer in zip(chunk_contents, candidate_answers, strict=True)
+            )
+        )
+        relevance_scores = [score for score, _response in judge_results]
+        for _score, response in judge_results:
             tracker.record(response)
 
         # ==================== Phase 4: Adaptive Filtering ====================

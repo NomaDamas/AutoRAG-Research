@@ -1,5 +1,6 @@
 """SPD-RAG (Sub-Agent Per Document) Pipeline for AutoRAG-Research."""
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -217,9 +218,16 @@ class SPDRAGPipeline(BaseGenerationPipeline):
         retrieval_scores = [result["score"] for result in retrieved]
         chunk_contents = self._service.get_chunk_contents(chunk_ids)
 
+        sub_agent_results = await asyncio.gather(
+            *(self._sub_agent_generate(query, document) for document in chunk_contents)
+        )
         partial_answers: list[dict[str, Any]] = []
-        for chunk_id, document in zip(chunk_ids, chunk_contents, strict=True):
-            partial_answer, response = await self._sub_agent_generate(query, document)
+        for chunk_id, document, (partial_answer, response) in zip(
+            chunk_ids,
+            chunk_contents,
+            sub_agent_results,
+            strict=True,
+        ):
             partial_answers.append({
                 "doc_id": chunk_id,
                 "content": document,
@@ -227,13 +235,18 @@ class SPDRAGPipeline(BaseGenerationPipeline):
             })
             tracker.record(response)
 
-        relevant_answers: list[dict[str, Any]] = []
-        for partial_answer in partial_answers:
-            is_relevant, response = await self._coordinator_evaluate(
-                query,
-                partial_answer["partial_answer"],
-                partial_answer["content"],
+        coordinator_results = await asyncio.gather(
+            *(
+                self._coordinator_evaluate(
+                    query,
+                    partial_answer["partial_answer"],
+                    partial_answer["content"],
+                )
+                for partial_answer in partial_answers
             )
+        )
+        relevant_answers: list[dict[str, Any]] = []
+        for partial_answer, (is_relevant, response) in zip(partial_answers, coordinator_results, strict=True):
             tracker.record(response)
             if is_relevant:
                 relevant_answers.append(partial_answer)
