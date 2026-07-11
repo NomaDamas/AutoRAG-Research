@@ -17,6 +17,10 @@ T = TypeVar("T")
 
 logger = logging.getLogger("AutoRAG-Research")
 
+# Max rows per multi-row INSERT. Keeps total bound parameters well under
+# PostgreSQL's 65535 limit even for wide tables (e.g. 500 rows x ~20 cols).
+_BULK_INSERT_CHUNK = 500
+
 
 def _sanitize_text_value(value: Any) -> Any:
     """Remove NUL bytes from string values for PostgreSQL compatibility.
@@ -141,9 +145,15 @@ class GenericRepository(Generic[T]):
         # Sanitize all string values to remove NUL bytes for PostgreSQL compatibility
         sanitized_items = [_sanitize_dict(item) for item in items]
 
-        stmt = insert(self.model_cls).values(sanitized_items).returning(self.model_cls.id)  # ty: ignore[possibly-missing-attribute]
-        result = self.session.execute(stmt)
-        return [row[0] for row in result]
+        # Insert in sub-batches so a single multi-row INSERT never exceeds
+        # PostgreSQL's 65535 bound-parameter limit for large corpora.
+        inserted_ids: list[Any] = []
+        for start in range(0, len(sanitized_items), _BULK_INSERT_CHUNK):
+            chunk = sanitized_items[start : start + _BULK_INSERT_CHUNK]
+            stmt = insert(self.model_cls).values(chunk).returning(self.model_cls.id)  # ty: ignore[possibly-missing-attribute]
+            result = self.session.execute(stmt)
+            inserted_ids.extend(row[0] for row in result)
+        return inserted_ids
 
     def add_bulk_skip_duplicates(self, items: list[dict]) -> list[Any]:
         """Memory-efficient bulk insert that skips rows with duplicate primary keys.
@@ -168,11 +178,16 @@ class GenericRepository(Generic[T]):
             return []
 
         sanitized_items = [_sanitize_dict(item) for item in items]
-        stmt = (
-            insert(self.model_cls).values(sanitized_items).on_conflict_do_nothing().returning(self.model_cls.id)  # ty: ignore[possibly-missing-attribute]
-        )
-        result = self.session.execute(stmt)
-        return [row[0] for row in result]
+
+        inserted_ids: list[Any] = []
+        for start in range(0, len(sanitized_items), _BULK_INSERT_CHUNK):
+            chunk = sanitized_items[start : start + _BULK_INSERT_CHUNK]
+            stmt = (
+                insert(self.model_cls).values(chunk).on_conflict_do_nothing().returning(self.model_cls.id)  # ty: ignore[possibly-missing-attribute]
+            )
+            result = self.session.execute(stmt)
+            inserted_ids.extend(row[0] for row in result)
+        return inserted_ids
 
     def get_by_id(self, _id: Any) -> T | None:
         """Retrieve an entity by its primary key.
