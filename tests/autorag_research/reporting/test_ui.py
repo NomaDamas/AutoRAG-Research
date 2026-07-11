@@ -40,7 +40,7 @@ class TestServiceManagement:
 
     def test_get_service_creates_singleton(self):
         """Test that get_service creates a singleton instance."""
-        with patch("autorag_research.reporting.ui.ReportingService") as mock_cls:
+        with patch("autorag_research.reporting.service_manager.ReportingService") as mock_cls:
             mock_service = MagicMock()
             mock_cls.return_value = mock_service
 
@@ -58,7 +58,7 @@ class TestServiceManagement:
 
     def test_reset_service_closes_and_clears(self):
         """Test that reset_service closes the service and clears singleton."""
-        with patch("autorag_research.reporting.ui.ReportingService") as mock_cls:
+        with patch("autorag_research.reporting.service_manager.ReportingService") as mock_cls:
             mock_service = MagicMock()
             mock_cls.return_value = mock_service
 

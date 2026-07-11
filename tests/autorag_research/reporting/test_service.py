@@ -1,7 +1,9 @@
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pandas as pd
 import pytest
+from sqlalchemy import text
 
 from autorag_research.orm.connection import DBConnection
 from autorag_research.reporting.service import ReportingService
@@ -129,9 +131,6 @@ class TestReportingService:
 
         assert not df.empty
         assert list(df.columns) == ["rank", "pipeline", "score", "time_ms"]
-        query = mock_conn.execute.call_args_list[-1][0][0]
-        assert "evaluation_result" in query
-        assert "FROM metric_scores s" in query
 
     def test_get_leaderboard_ascending(self, service_with_mock):
         """Test get_leaderboard with ascending order."""
@@ -186,9 +185,6 @@ class TestReportingService:
         result = service.get_pipeline_type("test-db", "naive_rag_pipeline")
 
         assert result == "generation"
-        query = mock_conn.execute.call_args_list[-1][0][0]
-        assert "executor_result" in query
-        assert "BOOL_OR(m.type = ''generation'')" in query
 
     def test_get_pipeline_type_not_found(self, service_with_mock):
         """Test get_pipeline_type returns None when pipeline not found."""
@@ -443,28 +439,6 @@ class TestReportingService:
         query = call_args[0][0]
         assert "generation" in query
 
-    def test_get_all_metrics_leaderboard_filters_pipelines_and_metrics(self, service_with_mock):
-        """Test experiment allowlists are included in the leaderboard query."""
-        service, mock_conn = service_with_mock
-        mock_conn.execute.return_value.df.return_value = pd.DataFrame()
-
-        service.get_all_metrics_leaderboard(
-            "test-db",
-            "retrieval",
-            pipeline_names=["bm25", "vector_search", "hyde"],
-            metric_names=["retrieval_ndcg", "retrieval_recall", "retrieval_mrr"],
-        )
-
-        query = mock_conn.execute.call_args_list[-1][0][0]
-        assert "p.name IN" in query
-        assert "m.name IN" in query
-        assert "bm25" in query
-        assert "vector_search" in query
-        assert "hyde" in query
-        assert "retrieval_ndcg" in query
-        assert "retrieval_recall" in query
-        assert "retrieval_mrr" in query
-
     @pytest.mark.parametrize("pipeline_names,metric_names", [([], None), (None, [])])
     def test_get_all_metrics_leaderboard_empty_allowlist_returns_empty(
         self, service_with_mock, pipeline_names, metric_names
@@ -608,3 +582,73 @@ class TestReportingService:
             for col in df.select_dtypes(include=["float64"]).columns:
                 for val in df[col]:
                     assert round(val, 3) == val
+
+
+class TestReportingServiceIntegration:
+    @pytest.fixture
+    def reporting_service(self, db_connection):
+        config = DBConnection(
+            host=db_connection.host,
+            port=db_connection.port,
+            username=db_connection.username,
+            password=db_connection.password,
+            database=db_connection.database,
+        )
+        with ReportingService(config) as service:
+            yield service
+
+    def test_get_all_metrics_leaderboard_prefers_evaluations_and_applies_allowlists(self, reporting_service):
+        df = reporting_service.get_all_metrics_leaderboard(
+            reporting_service.config.database,
+            "retrieval",
+            pipeline_names=("baseline",),
+            metric_names=("retrieval@k",),
+        )
+
+        assert df["pipeline"].tolist() == ["baseline"]
+        assert df["rank"].tolist() == [1]
+        assert df["retrieval@k"].tolist() == pytest.approx([0.8])
+        assert df["Average"].tolist() == pytest.approx([0.8])
+
+    def test_get_all_metrics_leaderboard_uses_legacy_summary_fallback(self, reporting_service):
+        df = reporting_service.get_all_metrics_leaderboard(
+            reporting_service.config.database,
+            "generation",
+            pipeline_names=("rerank",),
+            metric_names=("bleu",),
+        )
+
+        assert df["pipeline"].tolist() == ["rerank"]
+        assert df["bleu"].tolist() == pytest.approx([0.62])
+
+    def test_get_pipeline_type_detects_generation_metric_without_executor_result(
+        self,
+        reporting_service,
+        db_engine,
+    ):
+        pipeline_name = f"reporting_generation_{uuid4().hex}"
+        with db_engine.begin() as connection:
+            pipeline_id = connection.execute(
+                text("INSERT INTO pipeline (name, config) VALUES (:name, '{}'::jsonb) RETURNING id"),
+                {"name": pipeline_name},
+            ).scalar_one()
+            connection.execute(
+                text(
+                    "INSERT INTO evaluation_result (query_id, pipeline_id, metric_id, metric_result) "
+                    "VALUES (1, :pipeline_id, 1, 0.7), (2, :pipeline_id, 2, 0.6)"
+                ),
+                {"pipeline_id": pipeline_id},
+            )
+
+        try:
+            assert reporting_service.get_pipeline_type(reporting_service.config.database, pipeline_name) == "generation"
+        finally:
+            with db_engine.begin() as connection:
+                connection.execute(
+                    text("DELETE FROM evaluation_result WHERE pipeline_id = :pipeline_id"),
+                    {"pipeline_id": pipeline_id},
+                )
+                connection.execute(
+                    text("DELETE FROM pipeline WHERE id = :pipeline_id"),
+                    {"pipeline_id": pipeline_id},
+                )

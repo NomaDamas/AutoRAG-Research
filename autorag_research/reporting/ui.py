@@ -3,109 +3,32 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 from functools import partial
-from typing import Literal
 
 import gradio as gr
 import pandas as pd
-from hydra.utils import instantiate
-from omegaconf import DictConfig, OmegaConf
 
-from autorag_research.cli.config_resolver import ConfigResolver
-from autorag_research.cli.utils import get_config_dir
+from autorag_research.reporting.scope import (
+    LeaderboardScope,
+    MetricType,
+    initial_scope_metric_type,
+    load_leaderboard_scope,
+    scope_filters,
+    scope_metric_types,
+)
 from autorag_research.reporting.service import ReportingService
-
-METRIC_TYPES = Literal["retrieval", "generation"]
-
-
-@dataclass(frozen=True)
-class LeaderboardScope:
-    """Experiment-defined database, pipeline, and metric allowlists."""
-
-    db_name: str
-    pipeline_names: dict[str, tuple[str, ...]]
-    metric_names: dict[str, tuple[str, ...]]
-
-
-def _config_references(config: DictConfig, section: str, metric_type: METRIC_TYPES) -> list[str]:
-    """Return normalized config references for one experiment section and type."""
-    section_config = config.get(section, {})
-    references = section_config.get(metric_type, []) if isinstance(section_config, DictConfig) else []
-    if isinstance(references, str):
-        return [references]
-    return [str(reference) for reference in references]
-
-
-def load_leaderboard_scope(config_name: str) -> LeaderboardScope:
-    """Load leaderboard allowlists from an experiment YAML config."""
-    config_dir = get_config_dir()
-    experiment_path = config_dir / f"{config_name}.yaml"
-    if not experiment_path.exists():
-        raise FileNotFoundError(f"Config file not found: {experiment_path}")  # noqa: TRY003
-
-    experiment_config = OmegaConf.load(experiment_path)
-    if not isinstance(experiment_config, DictConfig):
-        raise TypeError(f"Experiment config must be a YAML mapping: {experiment_path}")  # noqa: TRY003
-
-    db_name = experiment_config.get("db_name")
-    if not db_name:
-        raise ValueError(f"Experiment config must define db_name: {experiment_path}")  # noqa: TRY003
-
-    resolver = ConfigResolver(config_dir=config_dir)
-    pipeline_names: dict[str, tuple[str, ...]] = {}
-    metric_names: dict[str, tuple[str, ...]] = {}
-    for metric_type in ("retrieval", "generation"):
-        pipeline_references = _config_references(experiment_config, "pipelines", metric_type)
-        resolved_pipeline_names = []
-        for reference in pipeline_references:
-            pipeline_config = resolver.resolve_config(["pipelines", metric_type], reference)
-            resolved_pipeline_names.append(str(pipeline_config.get("name", reference)))
-        pipeline_names[metric_type] = tuple(resolved_pipeline_names)
-
-        metric_references = _config_references(experiment_config, "metrics", metric_type)
-        resolved_metric_names = []
-        for reference in metric_references:
-            metric_config = resolver.resolve_config(["metrics", metric_type], reference)
-            resolved_metric_names.append(str(instantiate(metric_config).get_metric_name()))
-        metric_names[metric_type] = tuple(resolved_metric_names)
-
-    return LeaderboardScope(
-        db_name=str(db_name),
-        pipeline_names=pipeline_names,
-        metric_names=metric_names,
-    )
-
-
-# === Service Management ===
-class _ServiceManager:
-    """Manages ReportingService singleton without global variables."""
-
-    _instance: ReportingService | None = None
-
-    @classmethod
-    def get(cls) -> ReportingService:
-        """Get or create ReportingService singleton."""
-        if cls._instance is None:
-            cls._instance = ReportingService()
-        return cls._instance
-
-    @classmethod
-    def reset(cls) -> None:
-        """Reset the service singleton (useful for testing)."""
-        if cls._instance is not None:
-            cls._instance.close()
-            cls._instance = None
+from autorag_research.reporting.service_manager import get_service as _get_service
+from autorag_research.reporting.service_manager import reset_service as _reset_service
 
 
 def get_service() -> ReportingService:
-    """Get or create ReportingService singleton."""
-    return _ServiceManager.get()
+    """Get or create the reporting service."""
+    return _get_service()
 
 
 def reset_service() -> None:
-    """Reset the service singleton (useful for testing)."""
-    _ServiceManager.reset()
+    """Close and clear the reporting service."""
+    _reset_service()
 
 
 def format_dataset_stats(db_name: str) -> str:
@@ -119,22 +42,13 @@ def format_dataset_stats(db_name: str) -> str:
 # === UI Update Handlers ===
 
 
-def _scope_filters(
-    scope: LeaderboardScope | None, metric_type: METRIC_TYPES
-) -> tuple[tuple[str, ...] | None, tuple[str, ...] | None]:
-    """Return pipeline and metric allowlists for the selected metric type."""
-    if scope is None:
-        return None, None
-    return scope.pipeline_names.get(metric_type, ()), scope.metric_names.get(metric_type, ())
-
-
 def on_dataset_change(
-    db_name: str, metric_type: METRIC_TYPES, scope: LeaderboardScope | None = None
+    db_name: str, metric_type: MetricType, scope: LeaderboardScope | None = None
 ) -> tuple[pd.DataFrame, dict]:
     """Handle dataset selection change - returns leaderboard DataFrame and stats."""
     if not db_name:
         return pd.DataFrame(), gr.update(value="")
-    pipeline_names, metric_names = _scope_filters(scope, metric_type)
+    pipeline_names, metric_names = scope_filters(scope, metric_type)
     df = get_service().get_all_metrics_leaderboard(
         db_name,
         metric_type,
@@ -145,13 +59,11 @@ def on_dataset_change(
     return df, gr.update(value=stats)
 
 
-def on_metric_type_change(
-    db_name: str, metric_type: METRIC_TYPES, scope: LeaderboardScope | None = None
-) -> pd.DataFrame:
+def on_metric_type_change(db_name: str, metric_type: MetricType, scope: LeaderboardScope | None = None) -> pd.DataFrame:
     """Handle metric type selection change - returns leaderboard DataFrame."""
     if not db_name:
         return pd.DataFrame()
-    pipeline_names, metric_names = _scope_filters(scope, metric_type)
+    pipeline_names, metric_names = scope_filters(scope, metric_type)
     return get_service().get_all_metrics_leaderboard(
         db_name,
         metric_type,
@@ -161,12 +73,12 @@ def on_metric_type_change(
 
 
 def on_refresh_leaderboard(
-    db_name: str, metric_type: METRIC_TYPES, scope: LeaderboardScope | None = None
+    db_name: str, metric_type: MetricType, scope: LeaderboardScope | None = None
 ) -> tuple[pd.DataFrame, dict]:
     """Refresh leaderboard data."""
     if not db_name:
         return pd.DataFrame(), gr.update(value="")
-    pipeline_names, metric_names = _scope_filters(scope, metric_type)
+    pipeline_names, metric_names = scope_filters(scope, metric_type)
     df = get_service().get_all_metrics_leaderboard(
         db_name,
         metric_type,
@@ -206,12 +118,8 @@ def build_single_dataset_tab(
     scope: LeaderboardScope | None = None,
 ) -> tuple[gr.Tab, gr.Dropdown, gr.Dropdown, gr.Dataframe, gr.Textbox]:
     """Build the single dataset leaderboard tab."""
-    metric_types = [
-        metric_type
-        for metric_type in ("retrieval", "generation")
-        if scope is None or (scope.pipeline_names.get(metric_type) and scope.metric_names.get(metric_type))
-    ]
-    selected_metric_type = metric_types[0] if metric_types else "retrieval"
+    metric_types = scope_metric_types(scope)
+    selected_metric_type = initial_scope_metric_type(scope)
     dataset_change_handler = partial(on_dataset_change, scope=scope)
     metric_type_change_handler = partial(on_metric_type_change, scope=scope)
     refresh_handler = partial(on_refresh_leaderboard, scope=scope)
@@ -350,9 +258,7 @@ def build_borda_ranking_tab(all_datasets: list[str]) -> tuple[gr.Tab, gr.Checkbo
 def create_leaderboard_app(scope: LeaderboardScope | None = None) -> gr.Blocks:
     """Create the Gradio leaderboard application."""
     datasets = [scope.db_name] if scope is not None else get_service().list_available_datasets()
-    initial_metric_type: METRIC_TYPES = "retrieval"
-    if scope is not None and not (scope.pipeline_names.get("retrieval") and scope.metric_names.get("retrieval")):
-        initial_metric_type = "generation"
+    initial_metric_type = initial_scope_metric_type(scope)
 
     with gr.Blocks(title="AutoRAG-Research Leaderboard") as app:
         gr.Markdown("# 🏆 AutoRAG-Research Leaderboard")
