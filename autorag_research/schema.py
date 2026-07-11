@@ -12,13 +12,15 @@ GENERATION_CONTEXT_CHUNK_ID_KEYS = (
     GENERATION_CONTEXT_CHUNK_ID_KEY,
     "source_chunk_ids",
     "selected_subset_chunk_ids",
+    "selected_chunk_ids",
     "chunk_ids",
 )
 """Ordered metadata keys that identify final generation evidence.
 
 ``context_chunk_ids`` is the canonical contract for new generation pipelines.
-The remaining names are accepted by generation evaluation for compatibility
-with existing pipeline-specific metadata.
+``selected_chunk_ids`` is accepted for dynamic retrieval pipelines that store the
+post-selection evidence set under that name. The remaining names are accepted by
+generation evaluation for compatibility with existing pipeline-specific metadata.
 """
 
 GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS = ("retrieved_chunk_ids", "retrieval_chunk_ids")

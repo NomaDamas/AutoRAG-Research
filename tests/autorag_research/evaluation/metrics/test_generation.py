@@ -362,7 +362,8 @@ def test_response_relevancy_mixed_noncommittal_keeps_score():
     assert scores[0] == pytest.approx(1.0)
 
 
-def test_response_relevancy_invalid_json_returns_nan():
+
+def test_response_relevancy_invalid_json_zeroes_score():
     metric_inputs = [
         MetricInput(
             query="Where was Albert Einstein born?",
@@ -373,7 +374,7 @@ def test_response_relevancy_invalid_json_returns_nan():
 
     scores = response_relevancy(metric_inputs, llm=llm, embedding_model=KeywordEmbeddings(), strictness=3)
 
-    assert scores[0] != scores[0]  # NaN check
+    assert scores == [0.0]
 
 
 def test_exact_match_uses_squad_normalization():

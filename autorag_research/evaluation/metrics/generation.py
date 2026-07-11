@@ -204,7 +204,7 @@ def _calculate_response_relevancy_score(
     """RAGAS response relevancy core logic."""
     if all(question == "" for question in generated_questions):
         logger.warning("Invalid JSON response. Expected dictionary with key 'question'")
-        return float("nan")
+        return 0.0
 
     query_vector = np.asarray(embedding_model.embed_query(query)).reshape(1, -1)
     generated_vectors = np.asarray(embedding_model.embed_documents(generated_questions)).reshape(
@@ -1076,7 +1076,7 @@ def meteor(
     return result
 
 
-@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@metric_loop(fields_to_check=["generation_gt"])
 def rouge(
     metric_inputs: list[MetricInput],
     rouge_type: str | None = "rougeL",
@@ -1117,13 +1117,13 @@ def rouge(
     return result
 
 
-@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@metric_loop(fields_to_check=["generation_gt"])
 def exact_match(metric_inputs: list[MetricInput]) -> list[float]:
     """Compute SQuAD-style exact match for generation."""
     return _compute_generation_reference_scores(metric_inputs, _exact_match_score)
 
 
-@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@metric_loop(fields_to_check=["generation_gt"])
 def token_f1(metric_inputs: list[MetricInput]) -> list[float]:
     """Compute SQuAD-style token F1 for generation."""
     return _compute_generation_reference_scores(metric_inputs, _token_f1_score)
@@ -1173,7 +1173,7 @@ def sem_score(
     return result
 
 
-@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@metric_loop(fields_to_check=["generation_gt"])
 def bert_score(
     metric_inputs: list[MetricInput],
     lang: str = "en",

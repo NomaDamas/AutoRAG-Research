@@ -93,6 +93,7 @@ class TestGenerationEvaluationService:
             "context_chunk_ids",
             "source_chunk_ids",
             "selected_subset_chunk_ids",
+            "selected_chunk_ids",
             "chunk_ids",
         )
         assert GENERATION_LEGACY_RETRIEVED_CHUNK_ID_KEYS == ("retrieved_chunk_ids", "retrieval_chunk_ids")
@@ -232,6 +233,47 @@ class TestGenerationEvaluationService:
                             result_metadata={
                                 "retrieval_chunk_ids": [1, 2, 3],
                                 "selected_subset_chunk_ids": [2, 3],
+                            },
+                        )
+                    ]
+                )
+                self.chunk_results = Obj(get_by_query_and_pipeline=lambda query_ids, pipeline_id: [])
+                self.retrieval_relations = Obj(get_by_query_id=lambda query_id: [])
+                self.chunks = Obj(
+                    get_by_ids=lambda chunk_ids: [
+                        Obj(id=1, contents="retrieved only"),
+                        Obj(id=2, contents="selected two"),
+                        Obj(id=3, contents="selected three"),
+                    ]
+                )
+                self.queries = Obj(get_by_id=lambda query_id: Obj(contents="q1", generation_gt=["gt"]))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        monkeypatch.setattr(service, "_create_uow", lambda: FakeUow())
+
+        results = service._get_execution_results(pipeline_id=1, query_ids=[1])
+        assert results[1]["retrieved_contents"] == ["selected two", "selected three"]
+
+    def test_get_execution_results_uses_selected_chunk_ids_as_generation_context(self, service, monkeypatch):
+        class Obj:
+            def __init__(self, **kwargs):
+                self.__dict__.update(kwargs)
+
+        class FakeUow:
+            def __init__(self):
+                self.executor_results = Obj(
+                    get_by_queries_and_pipeline=lambda query_ids, pipeline_id: [
+                        Obj(
+                            query_id=1,
+                            generation_result="Generated answer",
+                            result_metadata={
+                                "selected_chunk_ids": [2, 3],
+                                "retrieved_chunk_ids": [1, 2, 3],
                             },
                         )
                     ]
