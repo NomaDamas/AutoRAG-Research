@@ -54,9 +54,9 @@ dependencies = [
 autorag-research = "autorag_research.cli.app:main"
 
 [project.urls]
-Homepage = "https://vkehfdl1.github.io/AutoRAG-Research/"
-Repository = "https://github.com/vkehfdl1/AutoRAG-Research"
-Documentation = "https://vkehfdl1.github.io/AutoRAG-Research/"
+Homepage = "https://nomadamas.github.io/AutoRAG-Research/"
+Repository = "https://github.com/NomaDamas/AutoRAG-Research"
+Documentation = "https://nomadamas.github.io/AutoRAG-Research/"
 
 [project.optional-dependencies]
 gpu = [
