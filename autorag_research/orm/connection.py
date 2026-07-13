@@ -331,9 +331,16 @@ class DBConnection:
             raise FileNotFoundError
 
         if create:
-            from autorag_research.orm.util import create_database
+            from autorag_research.orm.util import create_database, install_vector_extensions
 
             create_database(
+                host=self.host,
+                port=self.port,
+                user=self.username,
+                password=self.password,
+                database=self.database,
+            )
+            install_vector_extensions(
                 host=self.host,
                 port=self.port,
                 user=self.username,

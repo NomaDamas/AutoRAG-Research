@@ -121,7 +121,7 @@ def _compute_generation_reference_scores(
     """Compute best-reference scores for generation metric inputs."""
     scores = []
     for metric_input in metric_inputs:
-        generated_text = cast(str, metric_input.generated_texts)
+        generated_text = metric_input.generated_texts or ""
         generation_gt = cast(list[str], metric_input.generation_gt)
         scores.append(_score_generation_against_references(generated_text, generation_gt, scorer))
     return scores
@@ -204,7 +204,7 @@ def _calculate_response_relevancy_score(
     """RAGAS response relevancy core logic."""
     if all(question == "" for question in generated_questions):
         logger.warning("Invalid JSON response. Expected dictionary with key 'question'")
-        return float("nan")
+        return 0.0
 
     query_vector = np.asarray(embedding_model.embed_query(query)).reshape(1, -1)
     generated_vectors = np.asarray(embedding_model.embed_documents(generated_questions)).reshape(
@@ -1076,7 +1076,7 @@ def meteor(
     return result
 
 
-@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@metric_loop(fields_to_check=["generation_gt"])
 def rouge(
     metric_inputs: list[MetricInput],
     rouge_type: str | None = "rougeL",
@@ -1110,26 +1110,29 @@ def rouge(
     )
 
     result = [
-        rouge_instance.score_multi(metric_input.generation_gt, metric_input.generated_texts)[rouge_type].fmeasure
+        rouge_instance.score_multi(
+            cast(list[str], metric_input.generation_gt),
+            metric_input.generated_texts or "",
+        )[rouge_type].fmeasure
         for metric_input in metric_inputs
     ]
     del rouge_instance
     return result
 
 
-@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@metric_loop(fields_to_check=["generation_gt"])
 def exact_match(metric_inputs: list[MetricInput]) -> list[float]:
     """Compute SQuAD-style exact match for generation."""
     return _compute_generation_reference_scores(metric_inputs, _exact_match_score)
 
 
-@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@metric_loop(fields_to_check=["generation_gt"])
 def token_f1(metric_inputs: list[MetricInput]) -> list[float]:
     """Compute SQuAD-style token F1 for generation."""
     return _compute_generation_reference_scores(metric_inputs, _token_f1_score)
 
 
-@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@metric_loop(fields_to_check=["generation_gt"])
 @with_embedding()
 def sem_score(
     metric_inputs: list[MetricInput],
@@ -1152,12 +1155,12 @@ def sem_score(
     if not isinstance(embedding_model, Embeddings):
         raise EmbeddingError
 
-    generations = [metric_input.generated_texts for metric_input in metric_inputs]
-    generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
+    generations = [metric_input.generated_texts or "" for metric_input in metric_inputs]
+    generation_gt = [cast(list[str], metric_input.generation_gt) for metric_input in metric_inputs]
 
     # Truncate texts to fit embedding model limit (Use tiktoken)
-    generations = truncate_texts(generations, max_tokens=truncate_length)  # ty: ignore
-    generation_gt = [truncate_texts(gen_gt, max_tokens=truncate_length) for gen_gt in generation_gt]  # ty: ignore
+    generations = truncate_texts(generations, max_tokens=truncate_length)
+    generation_gt = [truncate_texts(gen_gt, max_tokens=truncate_length) for gen_gt in generation_gt]
 
     embedded_pred: list[list[float]] = embedding_model.embed_documents(generations)
     embedded_gt: list[list[float]] = unpack_and_run(
@@ -1173,7 +1176,7 @@ def sem_score(
     return result
 
 
-@metric_loop(fields_to_check=["generation_gt", "generated_texts"])
+@metric_loop(fields_to_check=["generation_gt"])
 def bert_score(
     metric_inputs: list[MetricInput],
     lang: str = "en",
@@ -1191,7 +1194,7 @@ def bert_score(
     Returns:
         A list of BERTScore F1 scores.
     """
-    generations = [metric_input.generated_texts for metric_input in metric_inputs]
+    generations = [metric_input.generated_texts or "" for metric_input in metric_inputs]
     generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
     evaluator = evaluate.load("bertscore")
 

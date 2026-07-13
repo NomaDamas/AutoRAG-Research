@@ -62,6 +62,38 @@ class ReportingService:
         """Escape a string value for safe embedding in SQL by doubling single quotes."""
         return value.replace("'", "''")
 
+    @staticmethod
+    def _metric_scores_cte() -> str:
+        """Return canonical aggregate metric scores with legacy summary fallback.
+
+        Evaluation results are persisted per query. Summary rows are retained for
+        legacy databases, but only supply a pipeline/metric pair when no evaluated
+        rows exist for that pair.
+        """
+        return """
+            WITH metric_scores AS (
+                SELECT
+                    pipeline_id,
+                    metric_id,
+                    AVG(metric_result) AS metric_result,
+                    NULL::DOUBLE PRECISION AS execution_time
+                FROM evaluation_result
+                GROUP BY pipeline_id, metric_id
+                UNION ALL
+                SELECT
+                    s.pipeline_id,
+                    s.metric_id,
+                    s.metric_result,
+                    s.execution_time
+                FROM summary s
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM evaluation_result e
+                    WHERE e.pipeline_id = s.pipeline_id AND e.metric_id = s.metric_id
+                )
+            )
+        """
+
     def _pg_query(self, db_name: str, sql: str) -> pd.DataFrame:
         """Execute a raw SQL query against PostgreSQL via DuckDB's postgres_query().
 
@@ -96,12 +128,13 @@ class ReportingService:
         order = "ASC" if ascending else "DESC"
         escaped_metric = self._escape_sql_value(metric_name)
         sql = f"""
+            {self._metric_scores_cte()}
             SELECT
                 ROW_NUMBER() OVER (ORDER BY s.metric_result {order}) as rank,
                 p.name as pipeline,
                 s.metric_result as score,
                 s.execution_time as time_ms
-            FROM summary s
+            FROM metric_scores s
             JOIN pipeline p ON s.pipeline_id = p.id
             JOIN metric m ON s.metric_id = m.id
             WHERE m.name = '{escaped_metric}'
@@ -119,23 +152,41 @@ class ReportingService:
         Returns:
             List of pipeline names.
         """
-        return self._pg_query(db_name, "SELECT name FROM pipeline")["name"].tolist()
+        sql = f"""
+            {self._metric_scores_cte()}
+            SELECT DISTINCT p.name
+            FROM metric_scores s
+            JOIN pipeline p ON s.pipeline_id = p.id
+            ORDER BY p.name
+            """  # noqa: S608
+        return self._pg_query(db_name, sql)["name"].tolist()
 
     def get_pipeline_type(self, db_name: str, pipeline_name: str) -> Literal["retrieval", "generation"] | None:
-        """Get the type of a pipeline from its config.
+        """Get a pipeline's execution type from persisted results.
 
         Args:
             db_name: Name of the PostgreSQL database.
             pipeline_name: Name of the pipeline.
 
         Returns:
-            Pipeline type ('retrieval' or 'generation'), or None if not found.
+            Pipeline type ('retrieval' or 'generation'), or None if no results exist.
         """
         escaped_name = self._escape_sql_value(pipeline_name)
         sql = f"""
-            SELECT config->>'pipeline_type' as pipeline_type
-            FROM pipeline
-            WHERE name = '{escaped_name}'
+            {self._metric_scores_cte()}
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM executor_result e WHERE e.pipeline_id = p.id
+                ) OR BOOL_OR(m.type = 'generation')
+                THEN 'generation'
+                ELSE 'retrieval'
+            END AS pipeline_type
+            FROM metric_scores s
+            JOIN pipeline p ON s.pipeline_id = p.id
+            JOIN metric m ON s.metric_id = m.id
+            WHERE p.name = '{escaped_name}'
+            GROUP BY p.id
+            LIMIT 1
             """  # noqa: S608
         result = self._pg_query(db_name, sql)
         if result.empty or result["pipeline_type"].iloc[0] is None:
@@ -151,7 +202,14 @@ class ReportingService:
         Returns:
             List of metric names.
         """
-        return self._pg_query(db_name, "SELECT name FROM metric")["name"].tolist()
+        sql = f"""
+            {self._metric_scores_cte()}
+            SELECT DISTINCT m.name
+            FROM metric_scores s
+            JOIN metric m ON s.metric_id = m.id
+            ORDER BY m.name
+            """  # noqa: S608
+        return self._pg_query(db_name, sql)["name"].tolist()
 
     # === Dataset Discovery ===
 
@@ -213,9 +271,15 @@ class ReportingService:
         if metric_type not in ("retrieval", "generation"):
             raise ValueError(f"Invalid metric_type: '{metric_type}'. Must be 'retrieval' or 'generation'.")  # noqa: TRY003
 
-        return self._pg_query(db_name, f"SELECT name FROM metric WHERE type = '{metric_type}' ORDER BY name")[  # noqa: S608
-            "name"
-        ].tolist()
+        sql = f"""
+            {self._metric_scores_cte()}
+            SELECT DISTINCT m.name
+            FROM metric_scores s
+            JOIN metric m ON s.metric_id = m.id
+            WHERE m.type = '{metric_type}'
+            ORDER BY m.name
+            """  # noqa: S608
+        return self._pg_query(db_name, sql)["name"].tolist()
 
     def get_dataset_stats(self, db_name: str) -> dict:
         """Return dataset statistics including query, chunk, and document counts.
@@ -259,8 +323,9 @@ class ReportingService:
         results = []
         for db_name in db_names:
             sql = f"""
+                {self._metric_scores_cte()}
                 SELECT s.metric_result as score, s.execution_time as time_ms
-                FROM summary s
+                FROM metric_scores s
                 JOIN pipeline p ON s.pipeline_id = p.id
                 JOIN metric m ON s.metric_id = m.id
                 WHERE p.name = '{escaped_pipeline}' AND m.name = '{escaped_metric}'
@@ -272,13 +337,19 @@ class ReportingService:
         return pd.concat(results, ignore_index=True) if results else pd.DataFrame()
 
     def get_all_metrics_leaderboard(
-        self, db_name: str, metric_type: Literal["retrieval", "generation"]
+        self,
+        db_name: str,
+        metric_type: Literal["retrieval", "generation"],
+        pipeline_names: list[str] | tuple[str, ...] | None = None,
+        metric_names: list[str] | tuple[str, ...] | None = None,
     ) -> pd.DataFrame:
-        """Get leaderboard with all metrics as columns.
+        """Get leaderboard with selected pipelines and metrics as columns.
 
         Args:
             db_name: Name of the PostgreSQL database.
             metric_type: One of 'retrieval' or 'generation'.
+            pipeline_names: Optional pipeline allowlist. ``None`` includes every pipeline.
+            metric_names: Optional metric allowlist. ``None`` includes every metric of the requested type.
 
         Returns:
             DataFrame with columns: rank, pipeline, <metric1>, <metric2>, ..., Average
@@ -286,13 +357,27 @@ class ReportingService:
         """
         if metric_type not in ("retrieval", "generation"):
             raise ValueError(f"Invalid metric_type: '{metric_type}'. Must be 'retrieval' or 'generation'.")  # noqa: TRY003
+        if pipeline_names is not None and not pipeline_names:
+            return pd.DataFrame()
+        if metric_names is not None and not metric_names:
+            return pd.DataFrame()
+
+        filters = [f"m.type = '{metric_type}'"]
+        if pipeline_names is not None:
+            escaped_pipelines = ", ".join(f"'{self._escape_sql_value(name)}'" for name in pipeline_names)
+            filters.append(f"p.name IN ({escaped_pipelines})")
+        if metric_names is not None:
+            escaped_metrics = ", ".join(f"'{self._escape_sql_value(name)}'" for name in metric_names)
+            filters.append(f"m.name IN ({escaped_metrics})")
+        where_clause = " AND ".join(filters)
 
         sql = f"""
+            {self._metric_scores_cte()}
             SELECT p.name as pipeline, m.name as metric, s.metric_result as score
-            FROM summary s
+            FROM metric_scores s
             JOIN pipeline p ON s.pipeline_id = p.id
             JOIN metric m ON s.metric_id = m.id
-            WHERE m.type = '{metric_type}'
+            WHERE {where_clause}
             """  # noqa: S608
         df = self._pg_query(db_name, sql)
 
@@ -335,8 +420,9 @@ class ReportingService:
         for db_name in db_names:
             escaped_dataset = self._escape_sql_value(db_name)
             sql = f"""
+                {self._metric_scores_cte()}
                 SELECT '{escaped_dataset}' as dataset, m.name as metric, s.metric_result as score
-                FROM summary s
+                FROM metric_scores s
                 JOIN pipeline p ON s.pipeline_id = p.id
                 JOIN metric m ON s.metric_id = m.id
                 WHERE p.name = '{escaped_pipeline}' AND m.type = '{pipeline_type}'
@@ -403,10 +489,11 @@ class ReportingService:
                 escaped_metric = self._escape_sql_value(metric_name)
 
                 sql = f"""
+                    {self._metric_scores_cte()}
                     SELECT
                         p.name as pipeline,
                         RANK() OVER (ORDER BY s.metric_result {order}) as rank
-                    FROM summary s
+                    FROM metric_scores s
                     JOIN pipeline p ON s.pipeline_id = p.id
                     JOIN metric m ON s.metric_id = m.id
                     WHERE m.name = '{escaped_metric}'

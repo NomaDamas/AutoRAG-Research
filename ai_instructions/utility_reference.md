@@ -17,6 +17,7 @@
 | `normalize_zscore(scores)` | Z-score standardization (mean=0, std=1), handles None |
 | `normalize_dbsf(scores)` | 3-sigma distribution-based score fusion, clips to [0,1] |
 | `run_with_concurrency_limit(items, async_func, max_concurrency)` | Async semaphore-based concurrency control |
+| `LoopBoundSemaphore(max_concurrency)` | Reusable semaphore that safely rebinds across event loops |
 | `to_async_func(func)` | Convert sync function to async via `asyncio.to_thread` |
 | `unpack_and_run(target_list, func)` | Flatten sublists, run func, regroup by original lengths |
 | `load_image(img)` | ImageType (str/Path/bytes/BytesIO) → PIL Image (RGB) |

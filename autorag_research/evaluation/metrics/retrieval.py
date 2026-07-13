@@ -8,7 +8,7 @@ from autorag_research.evaluation.metrics.util import metric
 from autorag_research.schema import MetricInput
 
 
-@metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
+@metric(fields_to_check=["retrieval_gt"])
 def retrieval_f1(metric_input: MetricInput) -> float:
     """Compute f1 score for retrieval.
 
@@ -26,7 +26,7 @@ def retrieval_f1(metric_input: MetricInput) -> float:
         return 2 * (recall_score * precision_score) / (recall_score + precision_score)
 
 
-@metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
+@metric(fields_to_check=["retrieval_gt"])
 def retrieval_recall(metric_input: MetricInput) -> float:
     """Compute recall score for retrieval.
 
@@ -47,7 +47,7 @@ def retrieval_recall(metric_input: MetricInput) -> float:
     return recall
 
 
-@metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
+@metric(fields_to_check=["retrieval_gt"])
 def retrieval_precision(metric_input: MetricInput) -> float:
     """Compute precision score for retrieval.
 
@@ -68,7 +68,7 @@ def retrieval_precision(metric_input: MetricInput) -> float:
     return precision
 
 
-@metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
+@metric(fields_to_check=["retrieval_gt"])
 def retrieval_ndcg(metric_input: MetricInput) -> float:  # noqa: C901
     """Compute NDCG for multi-hop retrieval with AND-OR group semantics.
 
@@ -144,7 +144,7 @@ def retrieval_ndcg(metric_input: MetricInput) -> float:  # noqa: C901
     return dcg / idcg if idcg > 0 else 0.0
 
 
-@metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
+@metric(fields_to_check=["retrieval_gt"])
 def retrieval_full_recall(metric_input: MetricInput) -> float:
     """Compute full recall (binary) for retrieval.
 
@@ -170,7 +170,7 @@ def retrieval_full_recall(metric_input: MetricInput) -> float:
     return 1.0
 
 
-@metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
+@metric(fields_to_check=["retrieval_gt"])
 def retrieval_mrr(metric_input: MetricInput) -> float:
     """Compute MRR (Mean Reciprocal Rank) score for retrieval.
 
@@ -199,7 +199,7 @@ def retrieval_mrr(metric_input: MetricInput) -> float:
     return sum(rr_list) / len(gt_sets) if rr_list else 0.0
 
 
-@metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
+@metric(fields_to_check=["retrieval_gt"])
 def retrieval_map(metric_input: MetricInput) -> float:
     """Compute MAP (Mean Average Precision) score for retrieval.
 

@@ -1,5 +1,6 @@
 """Tests for SPD-RAG (Sub-Agent Per Document) generation pipeline."""
 
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -48,6 +49,62 @@ class TestSPDRAGPipelineUnit:
             session.commit()
         finally:
             session.close()
+
+    @pytest.mark.asyncio
+    async def test_llm_concurrency_limit_is_shared_across_calls(
+        self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
+    ):
+        from autorag_research.pipelines.generation.spd_rag import SPDRAGPipeline
+
+        active_calls = 0
+        max_active_calls = 0
+        mock_llm = MagicMock()
+
+        async def mock_ainvoke(_messages):
+            nonlocal active_calls, max_active_calls
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+            await asyncio.sleep(0.01)
+            active_calls -= 1
+            return MagicMock(content="answer")
+
+        mock_llm.ainvoke = mock_ainvoke
+        pipeline = SPDRAGPipeline(
+            session_factory=session_factory,
+            name="test_spd_shared_agent_concurrency",
+            llm=mock_llm,
+            retrieval_pipeline=mock_retrieval_pipeline,
+            agent_max_concurrency=2,
+        )
+        cleanup_pipeline_results.append(pipeline.pipeline_id)
+
+        await asyncio.gather(*[pipeline._sub_agent_generate("query", f"document-{index}") for index in range(8)])
+
+        assert max_active_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_parallel_agent_failure_preserves_provider_exception(
+        self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
+    ):
+        from autorag_research.pipelines.generation.spd_rag import SPDRAGPipeline
+
+        mock_llm = MagicMock()
+
+        async def mock_ainvoke(_messages):
+            msg = "provider returned 429"
+            raise ValueError(msg)
+
+        mock_llm.ainvoke = mock_ainvoke
+        pipeline = SPDRAGPipeline(
+            session_factory=session_factory,
+            name="test_spd_parallel_provider_error",
+            llm=mock_llm,
+            retrieval_pipeline=mock_retrieval_pipeline,
+        )
+        cleanup_pipeline_results.append(pipeline.pipeline_id)
+
+        with pytest.raises(ValueError, match="provider returned 429"):
+            await pipeline._generate(query_id=1, top_k=3)
 
     def test_pipeline_config_contains_required_fields(
         self, session_factory, mock_retrieval_pipeline, cleanup_pipeline_results
@@ -500,6 +557,7 @@ class TestSPDRAGPipelineConfig:
         assert kwargs["retrieval_pipeline"] == mock_retrieval
         assert kwargs["max_synthesis_tokens"] == 2048
         assert kwargs["synthesis_batch_size"] == 4
+        assert kwargs["agent_max_concurrency"] == 4
         assert "sub_agent_system_prompt" in kwargs
         assert "sub_agent_user_prompt" in kwargs
         assert "coordinator_system_prompt" in kwargs
@@ -519,3 +577,4 @@ class TestSPDRAGPipelineConfig:
 
         assert config.synthesis_batch_size == 3
         assert config.max_synthesis_tokens == 4000
+        assert config.agent_max_concurrency == 4

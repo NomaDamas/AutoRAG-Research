@@ -2,7 +2,7 @@ import math
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -228,6 +228,30 @@ def test_rouge():
     base_test_metrics(rouge, [0.909, 0.35714, 1.0], similarity_generation_metric_inputs)
 
 
+@pytest.mark.parametrize("metric_func", [rouge, exact_match, token_f1])
+def test_reference_metrics_score_missing_prediction_as_empty(metric_func):
+    metric_inputs = [MetricInput(generated_texts=None, generation_gt=["answer"])]
+
+    assert metric_func(metric_inputs) == [0.0]
+
+
+def test_bert_score_scores_missing_prediction_as_empty(monkeypatch):
+    evaluator = MagicMock()
+    evaluator.compute.return_value = {"f1": [0.0]}
+    monkeypatch.setattr("autorag_research.evaluation.metrics.generation.evaluate.load", lambda _name: evaluator)
+
+    scores = bert_score([MetricInput(generated_texts=None, generation_gt=["answer"])], n_threads=1)
+
+    assert scores == [0.0]
+    evaluator.compute.assert_called_once_with(
+        predictions=[""],
+        references=["answer"],
+        lang="en",
+        nthreads=1,
+        batch_size=128,
+    )
+
+
 @patch.object(
     OpenAIEmbeddings,
     "embed_documents",
@@ -251,6 +275,25 @@ def test_sem_score_from_string_configs():
 
     assert len(scores) == len(generation_gts)
     assert all(isinstance(score, float) for score in scores)
+
+
+class EmptyPredictionEmbeddings(Embeddings):
+    """Map empty predictions orthogonally to non-empty references."""
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[0.0, 1.0] if text == "" else [1.0, 0.0] for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return [0.0, 1.0] if text == "" else [1.0, 0.0]
+
+
+@pytest.mark.parametrize("generated_texts", [None, ""])
+def test_sem_score_scores_missing_prediction_as_empty(generated_texts: str | None):
+    metric_inputs = [MetricInput(generated_texts=generated_texts, generation_gt=["answer"])]
+
+    scores = sem_score(metric_inputs, embedding_model=EmptyPredictionEmbeddings())
+
+    assert scores == [0.0]
 
 
 @pytest.mark.gpu
@@ -362,7 +405,7 @@ def test_response_relevancy_mixed_noncommittal_keeps_score():
     assert scores[0] == pytest.approx(1.0)
 
 
-def test_response_relevancy_invalid_json_returns_nan():
+def test_response_relevancy_invalid_json_zeroes_score():
     metric_inputs = [
         MetricInput(
             query="Where was Albert Einstein born?",
@@ -373,7 +416,7 @@ def test_response_relevancy_invalid_json_returns_nan():
 
     scores = response_relevancy(metric_inputs, llm=llm, embedding_model=KeywordEmbeddings(), strictness=3)
 
-    assert scores[0] != scores[0]  # NaN check
+    assert scores == [0.0]
 
 
 def test_exact_match_uses_squad_normalization():

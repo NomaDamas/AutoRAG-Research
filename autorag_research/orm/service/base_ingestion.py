@@ -41,7 +41,7 @@ logger = logging.getLogger("AutoRAG-Research")
 ENTITY_CONFIG: dict[str, tuple[str, str, str, bool]] = {
     "query": ("queries", "contents", "queries", False),
     "chunk": ("chunks", "contents", "chunks", False),
-    "image_chunk": ("image_chunks", "content", "image chunks", True),
+    "image_chunk": ("image_chunks", "contents", "image chunks", True),
 }
 
 

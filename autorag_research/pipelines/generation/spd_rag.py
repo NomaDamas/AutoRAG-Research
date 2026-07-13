@@ -11,9 +11,10 @@ from autorag_research.config import BaseGenerationPipelineConfig
 from autorag_research.orm.service.generation_pipeline import GenerationResult
 from autorag_research.pipelines.generation.base import BaseGenerationPipeline
 from autorag_research.pipelines.retrieval.base import BaseRetrievalPipeline
-from autorag_research.util import TokenUsageTracker
+from autorag_research.util import LoopBoundSemaphore, TokenUsageTracker, run_with_concurrency_limit
 
 logger = logging.getLogger("AutoRAG-Research")
+
 
 DEFAULT_SUB_AGENT_SYSTEM_PROMPT = """You are a focused document analyst. Your task is to answer the given question using ONLY the provided document. If the document does not contain relevant information, state that clearly. Provide a concise, specific answer based solely on the document's content."""
 
@@ -59,6 +60,7 @@ class SPDRAGPipelineConfig(BaseGenerationPipelineConfig):
     synthesis_user_prompt: str = field(default=DEFAULT_SYNTHESIS_USER_PROMPT)
     max_synthesis_tokens: int = 4000
     synthesis_batch_size: int = 3
+    agent_max_concurrency: int = 4
 
     def get_pipeline_class(self) -> type["SPDRAGPipeline"]:
         """Return the SPD-RAG pipeline class."""
@@ -81,6 +83,7 @@ class SPDRAGPipelineConfig(BaseGenerationPipelineConfig):
             "synthesis_user_prompt": self.synthesis_user_prompt,
             "max_synthesis_tokens": self.max_synthesis_tokens,
             "synthesis_batch_size": self.synthesis_batch_size,
+            "agent_max_concurrency": self.agent_max_concurrency,
         }
 
 
@@ -101,9 +104,13 @@ class SPDRAGPipeline(BaseGenerationPipeline):
         synthesis_user_prompt: str = DEFAULT_SYNTHESIS_USER_PROMPT,
         max_synthesis_tokens: int = 4000,
         synthesis_batch_size: int = 3,
+        agent_max_concurrency: int = 4,
         schema: Any | None = None,
     ) -> None:
         """Initialize SPD-RAG pipeline."""
+        if agent_max_concurrency < 1:
+            msg = "agent_max_concurrency must be at least 1"
+            raise ValueError(msg)
         self._sub_agent_system_prompt = sub_agent_system_prompt
         self._sub_agent_user_prompt = sub_agent_user_prompt
         self._coordinator_system_prompt = coordinator_system_prompt
@@ -112,6 +119,8 @@ class SPDRAGPipeline(BaseGenerationPipeline):
         self._synthesis_user_prompt = synthesis_user_prompt
         self._max_synthesis_tokens = max_synthesis_tokens
         self._synthesis_batch_size = synthesis_batch_size
+        self._agent_max_concurrency = agent_max_concurrency
+        self._agent_limiter = LoopBoundSemaphore(agent_max_concurrency)
 
         super().__init__(session_factory, name, llm, retrieval_pipeline, schema)
 
@@ -127,6 +136,7 @@ class SPDRAGPipeline(BaseGenerationPipeline):
             "synthesis_user_prompt": self._synthesis_user_prompt,
             "max_synthesis_tokens": self._max_synthesis_tokens,
             "synthesis_batch_size": self._synthesis_batch_size,
+            "agent_max_concurrency": self._agent_max_concurrency,
         }
 
     async def _ainvoke_llm(self, system_prompt: str, user_prompt: str, **format_kwargs: Any) -> Any:
@@ -137,7 +147,8 @@ class SPDRAGPipeline(BaseGenerationPipeline):
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt.format(**format_kwargs)),
         ]
-        return await self._llm.ainvoke(messages)
+        async with self._agent_limiter.get():
+            return await self._llm.ainvoke(messages)
 
     async def _sub_agent_generate(self, query: str, document: str) -> tuple[str, Any]:
         """Generate a partial answer from a single document."""
@@ -217,9 +228,20 @@ class SPDRAGPipeline(BaseGenerationPipeline):
         retrieval_scores = [result["score"] for result in retrieved]
         chunk_contents = self._service.get_chunk_contents(chunk_ids)
 
+        sub_agent_results = await run_with_concurrency_limit(
+            items=chunk_contents,
+            async_func=lambda document: self._sub_agent_generate(query, document),
+            max_concurrency=self._agent_max_concurrency,
+            error_message="SPD-RAG sub-agent failed",
+            raise_on_error=True,
+        )
         partial_answers: list[dict[str, Any]] = []
-        for chunk_id, document in zip(chunk_ids, chunk_contents, strict=True):
-            partial_answer, response = await self._sub_agent_generate(query, document)
+        for chunk_id, document, (partial_answer, response) in zip(
+            chunk_ids,
+            chunk_contents,
+            sub_agent_results,
+            strict=True,
+        ):
             partial_answers.append({
                 "doc_id": chunk_id,
                 "content": document,
@@ -227,13 +249,22 @@ class SPDRAGPipeline(BaseGenerationPipeline):
             })
             tracker.record(response)
 
-        relevant_answers: list[dict[str, Any]] = []
-        for partial_answer in partial_answers:
-            is_relevant, response = await self._coordinator_evaluate(
+        async def evaluate_partial_answer(partial_answer: dict[str, Any]) -> tuple[bool, Any]:
+            return await self._coordinator_evaluate(
                 query,
                 partial_answer["partial_answer"],
                 partial_answer["content"],
             )
+
+        coordinator_results = await run_with_concurrency_limit(
+            items=partial_answers,
+            async_func=evaluate_partial_answer,
+            max_concurrency=self._agent_max_concurrency,
+            error_message="SPD-RAG coordinator failed",
+            raise_on_error=True,
+        )
+        relevant_answers: list[dict[str, Any]] = []
+        for partial_answer, (is_relevant, response) in zip(partial_answers, coordinator_results, strict=True):
             tracker.record(response)
             if is_relevant:
                 relevant_answers.append(partial_answer)

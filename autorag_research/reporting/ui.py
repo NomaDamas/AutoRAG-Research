@@ -2,45 +2,33 @@
 
 from __future__ import annotations
 
-from typing import Literal
+import argparse
+from functools import partial
 
 import gradio as gr
 import pandas as pd
 
+from autorag_research.reporting.scope import (
+    LeaderboardScope,
+    MetricType,
+    initial_scope_metric_type,
+    load_leaderboard_scope,
+    scope_filters,
+    scope_metric_types,
+)
 from autorag_research.reporting.service import ReportingService
-
-METRIC_TYPES = Literal["retrieval", "generation"]
-
-
-# === Service Management ===
-class _ServiceManager:
-    """Manages ReportingService singleton without global variables."""
-
-    _instance: ReportingService | None = None
-
-    @classmethod
-    def get(cls) -> ReportingService:
-        """Get or create ReportingService singleton."""
-        if cls._instance is None:
-            cls._instance = ReportingService()
-        return cls._instance
-
-    @classmethod
-    def reset(cls) -> None:
-        """Reset the service singleton (useful for testing)."""
-        if cls._instance is not None:
-            cls._instance.close()
-            cls._instance = None
+from autorag_research.reporting.service_manager import get_service as _get_service
+from autorag_research.reporting.service_manager import reset_service as _reset_service
 
 
 def get_service() -> ReportingService:
-    """Get or create ReportingService singleton."""
-    return _ServiceManager.get()
+    """Get or create the reporting service."""
+    return _get_service()
 
 
 def reset_service() -> None:
-    """Reset the service singleton (useful for testing)."""
-    _ServiceManager.reset()
+    """Close and clear the reporting service."""
+    _reset_service()
 
 
 def format_dataset_stats(db_name: str) -> str:
@@ -54,27 +42,49 @@ def format_dataset_stats(db_name: str) -> str:
 # === UI Update Handlers ===
 
 
-def on_dataset_change(db_name: str, metric_type: METRIC_TYPES) -> tuple[pd.DataFrame, dict]:
+def on_dataset_change(
+    db_name: str, metric_type: MetricType, scope: LeaderboardScope | None = None
+) -> tuple[pd.DataFrame, dict]:
     """Handle dataset selection change - returns leaderboard DataFrame and stats."""
     if not db_name:
         return pd.DataFrame(), gr.update(value="")
-    df = get_service().get_all_metrics_leaderboard(db_name, metric_type)
+    pipeline_names, metric_names = scope_filters(scope, metric_type)
+    df = get_service().get_all_metrics_leaderboard(
+        db_name,
+        metric_type,
+        pipeline_names=pipeline_names,
+        metric_names=metric_names,
+    )
     stats = format_dataset_stats(db_name)
     return df, gr.update(value=stats)
 
 
-def on_metric_type_change(db_name: str, metric_type: METRIC_TYPES) -> pd.DataFrame:
+def on_metric_type_change(db_name: str, metric_type: MetricType, scope: LeaderboardScope | None = None) -> pd.DataFrame:
     """Handle metric type selection change - returns leaderboard DataFrame."""
     if not db_name:
         return pd.DataFrame()
-    return get_service().get_all_metrics_leaderboard(db_name, metric_type)
+    pipeline_names, metric_names = scope_filters(scope, metric_type)
+    return get_service().get_all_metrics_leaderboard(
+        db_name,
+        metric_type,
+        pipeline_names=pipeline_names,
+        metric_names=metric_names,
+    )
 
 
-def on_refresh_leaderboard(db_name: str, metric_type: METRIC_TYPES) -> tuple[pd.DataFrame, dict]:
+def on_refresh_leaderboard(
+    db_name: str, metric_type: MetricType, scope: LeaderboardScope | None = None
+) -> tuple[pd.DataFrame, dict]:
     """Refresh leaderboard data."""
     if not db_name:
         return pd.DataFrame(), gr.update(value="")
-    df = get_service().get_all_metrics_leaderboard(db_name, metric_type)
+    pipeline_names, metric_names = scope_filters(scope, metric_type)
+    df = get_service().get_all_metrics_leaderboard(
+        db_name,
+        metric_type,
+        pipeline_names=pipeline_names,
+        metric_names=metric_names,
+    )
     stats = format_dataset_stats(db_name)
     return df, gr.update(value=stats)
 
@@ -104,21 +114,29 @@ def on_datasets_select_for_metrics(db_names: list[str]) -> dict:
 # === UI Component Builders ===
 
 
-def build_single_dataset_tab() -> tuple[gr.Tab, gr.Dropdown, gr.Dropdown, gr.Dataframe, gr.Textbox]:
+def build_single_dataset_tab(
+    scope: LeaderboardScope | None = None,
+) -> tuple[gr.Tab, gr.Dropdown, gr.Dropdown, gr.Dataframe, gr.Textbox]:
     """Build the single dataset leaderboard tab."""
+    metric_types = scope_metric_types(scope)
+    selected_metric_type = initial_scope_metric_type(scope)
+    dataset_change_handler = partial(on_dataset_change, scope=scope)
+    metric_type_change_handler = partial(on_metric_type_change, scope=scope)
+    refresh_handler = partial(on_refresh_leaderboard, scope=scope)
+
     with gr.Tab("Single Dataset") as tab:
         with gr.Row():
             dataset_dropdown = gr.Dropdown(
                 label="Dataset",
                 choices=[],
-                interactive=True,
+                interactive=scope is None,
                 scale=2,
             )
             metric_type_dropdown = gr.Dropdown(
                 label="Metric Type",
-                choices=["retrieval", "generation"],
-                value="retrieval",
-                interactive=True,
+                choices=metric_types,
+                value=selected_metric_type,
+                interactive=len(metric_types) > 1,
                 scale=1,
             )
             refresh_btn = gr.Button("🔄 Refresh", scale=1)
@@ -136,17 +154,17 @@ def build_single_dataset_tab() -> tuple[gr.Tab, gr.Dropdown, gr.Dropdown, gr.Dat
 
         # Event handlers
         dataset_dropdown.change(
-            fn=on_dataset_change,
+            fn=dataset_change_handler,
             inputs=[dataset_dropdown, metric_type_dropdown],
             outputs=[leaderboard_table, stats_display],
         )
         metric_type_dropdown.change(
-            fn=on_metric_type_change,
+            fn=metric_type_change_handler,
             inputs=[dataset_dropdown, metric_type_dropdown],
             outputs=[leaderboard_table],
         )
         refresh_btn.click(
-            fn=on_refresh_leaderboard,
+            fn=refresh_handler,
             inputs=[dataset_dropdown, metric_type_dropdown],
             outputs=[leaderboard_table, stats_display],
         )
@@ -237,10 +255,10 @@ def build_borda_ranking_tab(all_datasets: list[str]) -> tuple[gr.Tab, gr.Checkbo
 # === Main App Factory ===
 
 
-def create_leaderboard_app() -> gr.Blocks:
+def create_leaderboard_app(scope: LeaderboardScope | None = None) -> gr.Blocks:
     """Create the Gradio leaderboard application."""
-    # Pre-fetch available datasets
-    datasets = get_service().list_available_datasets()
+    datasets = [scope.db_name] if scope is not None else get_service().list_available_datasets()
+    initial_metric_type = initial_scope_metric_type(scope)
 
     with gr.Blocks(title="AutoRAG-Research Leaderboard") as app:
         gr.Markdown("# 🏆 AutoRAG-Research Leaderboard")
@@ -252,9 +270,10 @@ def create_leaderboard_app() -> gr.Blocks:
                 _single_metric_type_dropdown,
                 single_leaderboard_table,
                 single_stats_display,
-            ) = build_single_dataset_tab()
-            _cross_tab, _cross_datasets_checkbox = build_cross_dataset_tab(datasets)
-            _borda_tab, _borda_datasets_checkbox, _borda_metrics_checkbox = build_borda_ranking_tab(datasets)
+            ) = build_single_dataset_tab(scope)
+            if scope is None:
+                _cross_tab, _cross_datasets_checkbox = build_cross_dataset_tab(datasets)
+                _borda_tab, _borda_datasets_checkbox, _borda_metrics_checkbox = build_borda_ranking_tab(datasets)
 
         # Initialize single dataset dropdown with available datasets
         app.load(
@@ -265,7 +284,7 @@ def create_leaderboard_app() -> gr.Blocks:
         # Auto-load leaderboard when app starts if datasets exist
         if datasets:
             app.load(
-                fn=lambda: on_dataset_change(datasets[0], "retrieval"),
+                fn=partial(on_dataset_change, datasets[0], initial_metric_type, scope=scope),
                 outputs=[single_leaderboard_table, single_stats_display],
             )
 
@@ -274,7 +293,14 @@ def create_leaderboard_app() -> gr.Blocks:
 
 def main() -> None:
     """Launch the leaderboard application."""
-    app = create_leaderboard_app()
+    parser = argparse.ArgumentParser(description="Launch the AutoRAG-Research leaderboard.")
+    parser.add_argument(
+        "--config-name",
+        help="Experiment config name used to restrict the database, pipelines, and metrics.",
+    )
+    args = parser.parse_args()
+    scope = load_leaderboard_scope(args.config_name) if args.config_name else None
+    app = create_leaderboard_app(scope)
     app.launch()
 
 

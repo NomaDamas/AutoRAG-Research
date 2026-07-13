@@ -4,9 +4,12 @@ Tests the count methods for single and multi-vector embeddings.
 Uses existing database data for read operations.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 from sqlalchemy.orm import Session
 
+import autorag_research.orm.repository.base as base_repository
 from autorag_research.orm.repository.base import _sanitize_dict, _sanitize_text_value
 from autorag_research.orm.repository.chunk import ChunkRepository
 from autorag_research.orm.repository.query import QueryRepository
@@ -172,6 +175,21 @@ class TestAddBulkSanitization:
         """Test add_bulk with empty list returns empty list."""
         result = chunk_repository.add_bulk([])
         assert result == []
+
+    def test_add_bulk_splits_large_insert(self, db_session: Session, chunk_repository: ChunkRepository, monkeypatch):
+        monkeypatch.setattr(base_repository, "_BULK_INSERT_CHUNK", 2)
+        execute = MagicMock(wraps=db_session.execute)
+        monkeypatch.setattr(db_session, "execute", execute)
+
+        ids = chunk_repository.add_bulk([{"contents": f"chunk {index}"} for index in range(3)])
+        db_session.flush()
+
+        assert len(ids) == 3
+        assert execute.call_count == 2
+
+        for chunk_id in ids:
+            db_session.delete(db_session.get(Chunk, chunk_id))
+        db_session.commit()
 
 
 class TestAddBulkSkipDuplicates:
