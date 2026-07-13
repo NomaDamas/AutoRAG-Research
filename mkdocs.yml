@@ -99,6 +99,7 @@ nav:
   - Contributing:
       - contributing/index.md
       - contributing/development-setup.md
+      - PyPI Release: contributing/pypi-release.md
 
 plugins:
   - search
