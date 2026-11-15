@@ -13,6 +13,9 @@ Test Strategy:
 """
 
 import asyncio
+import json
+import math
+import sys
 from statistics import mean, stdev
 from unittest.mock import MagicMock
 
@@ -801,6 +804,83 @@ class TestMAINRAGEdgeCases:
         assert "filtered_doc_count" in result.metadata
         assert "threshold" in result.metadata
         assert "std_multiplier" in result.metadata
+        # Final answer had no logprobs, so no confidence report is attached
+        assert "answer_confidence" not in result.metadata
+
+    @pytest.mark.asyncio
+    async def test_metadata_contains_final_answer_confidence(self, session_factory, cleanup_pipeline_results):
+        """Final-answer logprobs (already requested for the judge) are scored, not discarded."""
+        pytest.importorskip("llm_token_visualizer")
+        from autorag_research.pipelines.generation.main_rag import MAINRAGPipeline
+
+        mock_llm = MagicMock()
+        call_count = [0]
+
+        def token(text: str, logprob: float) -> dict:
+            return {"token": text, "logprob": logprob, "bytes": list(text.encode()), "top_logprobs": []}
+
+        def create_response(idx: int) -> MagicMock:
+            response = MagicMock()
+
+            if idx < 3:
+                response.content = f"Answer {idx}"
+                response.response_metadata = {}
+            elif idx < 6:
+                response.content = "Yes"
+                response.response_metadata = {
+                    "logprobs": {"content": [{**token("Yes", -0.1), "top_logprobs": [token("No", -2.5)]}]}
+                }
+            else:
+                # Final predictor: confident except for the year (p ~= 0.22)
+                response.content = "It opened in 1887."
+                response.response_metadata = {
+                    "logprobs": {
+                        "content": [
+                            token("It", -0.01),
+                            token(" opened", -0.02),
+                            token(" in", -0.01),
+                            token(" 1887", -1.5),
+                            token(".", -0.01),
+                        ]
+                    }
+                }
+
+            response.usage_metadata = {"input_tokens": 50, "output_tokens": 20, "total_tokens": 70}
+            return response
+
+        async def mock_ainvoke(prompt):
+            idx = call_count[0]
+            call_count[0] += 1
+            return create_response(idx)
+
+        mock_llm.ainvoke = mock_ainvoke
+
+        mock_retrieval = MagicMock()
+        mock_retrieval.pipeline_id = 1
+
+        async def mock_retrieve(query, top_k):
+            return [
+                {"doc_id": 1, "score": 0.95},
+                {"doc_id": 2, "score": 0.85},
+                {"doc_id": 3, "score": 0.75},
+            ]
+
+        mock_retrieval._retrieve_by_id = mock_retrieve
+
+        pipeline = MAINRAGPipeline(
+            session_factory=session_factory,
+            name="test_main_rag_answer_confidence",
+            llm=mock_llm,
+            retrieval_pipeline=mock_retrieval,
+        )
+        cleanup_pipeline_results.append(pipeline.pipeline_id)
+
+        result = await pipeline._generate(query_id=1, top_k=3)
+
+        confidence = result.metadata["answer_confidence"]
+        assert confidence["flagged"] is True
+        assert confidence["token_count"] == 5
+        assert [span["text"] for span in confidence["low_confidence_spans"]] == [" 1887"]
 
 
 class TestMAINRAGParallelExecution:
@@ -1453,6 +1533,105 @@ class TestCalculateBinaryLogprobScore:
 
         assert used_logprobs is True
         assert score == 0.0
+
+
+class TestScoreAnswerConfidence:
+    """Tests for score_answer_confidence function.
+
+    The final predictor's token logprobs are already returned when the LLM is bound
+    with logprobs=True; this checks that low-confidence spans in the answer are flagged.
+    """
+
+    @staticmethod
+    def _token(token: str, prob: float, alternatives: tuple[tuple[str, float], ...] = ()) -> dict:
+        return {
+            "token": token,
+            "logprob": math.log(prob),
+            "bytes": list(token.encode()),
+            "top_logprobs": [
+                {"token": alt, "logprob": math.log(alt_prob), "bytes": list(alt.encode())}
+                for alt, alt_prob in alternatives
+            ],
+        }
+
+    def _create_mock_response(self, logprobs_content: list[dict]) -> MagicMock:
+        response = MagicMock()
+        response.content = "".join(entry["token"] for entry in logprobs_content)
+        response.response_metadata = {"logprobs": {"content": logprobs_content}}
+        return response
+
+    def test_flags_low_confidence_span_in_answer(self):
+        """A hesitant entity in the final answer is reported with the model's alternatives."""
+        pytest.importorskip("llm_token_visualizer")
+        from autorag_research.pipelines.generation.main_rag import score_answer_confidence
+
+        response = self._create_mock_response([
+            self._token("The", 0.99),
+            self._token(" capital", 0.98),
+            self._token(" is", 0.99),
+            self._token(" Lyon", 0.3, ((" Paris", 0.6), (" Lyon", 0.3))),
+            self._token(".", 0.99),
+        ])
+
+        confidence = score_answer_confidence(response)
+
+        assert confidence is not None
+        assert confidence["flagged"] is True
+        assert confidence["token_count"] == 5
+        assert confidence["mean_prob"] == pytest.approx(0.85)
+        assert len(confidence["low_confidence_spans"]) == 1
+        span = confidence["low_confidence_spans"][0]
+        assert span["text"] == " Lyon"
+        assert span["min_prob"] == pytest.approx(0.3)
+        assert span["alternatives"][0][0] == " Paris"
+        # Stored in GenerationResult metadata, so it must be JSON-serializable
+        json.dumps(confidence)
+
+    def test_confident_answer_is_not_flagged(self):
+        """An answer with every token above the threshold has no spans."""
+        pytest.importorskip("llm_token_visualizer")
+        from autorag_research.pipelines.generation.main_rag import score_answer_confidence
+
+        response = self._create_mock_response([self._token("Paris", 0.97), self._token(".", 0.99)])
+
+        confidence = score_answer_confidence(response)
+
+        assert confidence is not None
+        assert confidence["flagged"] is False
+        assert confidence["low_confidence_spans"] == []
+        assert confidence["threshold"] == pytest.approx(0.5)
+
+    def test_custom_threshold(self):
+        """A stricter threshold flags tokens the default threshold accepts."""
+        pytest.importorskip("llm_token_visualizer")
+        from autorag_research.pipelines.generation.main_rag import score_answer_confidence
+
+        response = self._create_mock_response([self._token("Paris", 0.7), self._token(".", 0.99)])
+
+        assert score_answer_confidence(response)["flagged"] is False
+        assert score_answer_confidence(response, threshold=0.9)["flagged"] is True
+
+    def test_returns_none_without_logprobs(self):
+        """Responses without logprobs keep the old metadata (no answer_confidence)."""
+        from autorag_research.pipelines.generation.main_rag import score_answer_confidence
+
+        response = MagicMock()
+        response.response_metadata = {}
+        assert score_answer_confidence(response) is None
+
+        response.response_metadata = {"logprobs": {"content": []}}
+        assert score_answer_confidence(response) is None
+
+        assert score_answer_confidence("plain string response") is None
+
+    def test_returns_none_when_dependency_missing(self, monkeypatch):
+        """Without the optional llm-token-visualizer dependency, scoring is skipped."""
+        from autorag_research.pipelines.generation.main_rag import score_answer_confidence
+
+        monkeypatch.setitem(sys.modules, "llm_token_visualizer", None)
+        response = self._create_mock_response([self._token("Paris", 0.2)])
+
+        assert score_answer_confidence(response) is None
 
 
 @pytest.mark.ci_skip
