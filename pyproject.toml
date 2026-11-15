@@ -78,6 +78,9 @@ reranker = [
 openvino = [
     "optimum-intel>=1.0.0",
 ]
+logprobs = [
+    "llm-token-visualizer>=0.7.0",
+]
 all = [
     "colpali-engine>=0.3.13",
     "torch>=2.8.0",
@@ -90,6 +93,7 @@ all = [
     "cohere>=5.0.0",
     "voyageai>=0.3.0",
     "optimum-intel>=1.0.0",
+    "llm-token-visualizer>=0.7.0",
 ]
 
 [dependency-groups]

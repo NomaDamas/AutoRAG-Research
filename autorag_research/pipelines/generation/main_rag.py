@@ -51,6 +51,9 @@ DEFAULT_FINAL_PREDICTOR_USER_PROMPT = """Documents:
 
 Question: {query}"""
 
+# Token probability below which a word of the final answer is flagged as low-confidence
+DEFAULT_ANSWER_CONFIDENCE_THRESHOLD = 0.5
+
 
 @dataclass(kw_only=True)
 class MAINRAGPipelineConfig(BaseGenerationPipelineConfig):
@@ -64,6 +67,10 @@ class MAINRAGPipelineConfig(BaseGenerationPipelineConfig):
         retrieval_pipeline_name: Name of the retrieval pipeline to use.
         llm: LangChain BaseLanguageModel instance for text generation.
             For optimal results, enable logprobs: llm.bind(logprobs=True, top_logprobs=5)
+            With logprobs enabled and the optional ``logprobs`` extra installed
+            (``pip install 'autorag-research[logprobs]'``), the final answer's token
+            logprobs are also scored for low-confidence spans and stored in the
+            result metadata under ``answer_confidence``.
         std_multiplier: Multiplier for standard deviation in threshold calculation.
             threshold = mean - n * std. Default 0.0 means threshold = mean.
         predictor_system_prompt: System prompt for Agent-1 (Predictor).
@@ -181,6 +188,58 @@ def calculate_binary_logprob_score(
     else:
         logger.warning(f"Ambiguous judge response (no logprobs): {response_text[:50]}")
         return 0.0, False
+
+
+def score_answer_confidence(
+    response: Any,
+    threshold: float = DEFAULT_ANSWER_CONFIDENCE_THRESHOLD,
+) -> dict[str, Any] | None:
+    """Flag low-confidence spans in a generated answer from its token logprobs.
+
+    MAIN-RAG binds the shared LLM with logprobs for the judge's Yes/No scoring,
+    so the final predictor's answer already carries token logprobs at no extra cost.
+    They are scored with ``llm-token-visualizer``: any word whose token
+    probability falls below ``threshold`` is reported as a low-confidence span,
+    a cheap hallucination signal for the generated answer.
+
+    Args:
+        response: LangChain LLM response object with
+            ``response_metadata["logprobs"]["content"]``.
+        threshold: Token probability below which a word is flagged (0 to 1).
+
+    Returns:
+        A JSON-serializable dict with ``threshold``, ``flagged``, ``mean_prob``,
+        ``perplexity``, ``token_count`` and ``low_confidence_spans``, or None
+        when the response carries no logprobs or the optional
+        ``llm-token-visualizer`` dependency is not installed.
+    """
+    metadata = getattr(response, "response_metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    logprobs = metadata.get("logprobs")
+    if not isinstance(logprobs, dict) or not logprobs.get("content"):
+        return None
+
+    try:
+        import llm_token_visualizer as ltv
+    except ImportError:
+        logger.debug("llm-token-visualizer is not installed; skipping MAIN-RAG answer confidence scoring")
+        return None
+
+    try:
+        result = ltv.score(logprobs, threshold)
+    except ltv.LogprobsError as e:
+        logger.debug(f"Could not score MAIN-RAG answer logprobs: {e}")
+        return None
+
+    return {
+        "threshold": result.threshold,
+        "flagged": result.flagged,
+        "mean_prob": result.mean_prob,
+        "perplexity": result.perplexity,
+        "token_count": result.token_count,
+        "low_confidence_spans": [span.to_dict() for span in result.spans()],
+    }
 
 
 class MAINRAGPipeline(BaseGenerationPipeline):
@@ -490,21 +549,26 @@ class MAINRAGPipeline(BaseGenerationPipeline):
             final_answer, final_response = await self._aagent_final_predict(query, chunk_contents)
             tracker.record(final_response)
 
+            single_doc_metadata: dict[str, Any] = {
+                "pipeline_type": "main_rag",
+                "std_multiplier": self._std_multiplier,
+                "skipped_filtering": True,
+                "original_doc_count": 1,
+                "filtered_doc_count": 1,
+                "threshold": None,
+                GENERATION_CONTEXT_CHUNK_ID_KEY: chunk_ids,
+                "retrieved_chunk_ids": chunk_ids,
+                "retrieval_scores": retrieval_scores,
+                "relevance_scores": [{"doc_id": chunk_ids[0], "score": None}],
+            }
+            answer_confidence = score_answer_confidence(final_response)
+            if answer_confidence is not None:
+                single_doc_metadata["answer_confidence"] = answer_confidence
+
             return GenerationResult(
                 text=final_answer,
                 token_usage=tracker.total,
-                metadata={
-                    "pipeline_type": "main_rag",
-                    "std_multiplier": self._std_multiplier,
-                    "skipped_filtering": True,
-                    "original_doc_count": 1,
-                    "filtered_doc_count": 1,
-                    "threshold": None,
-                    GENERATION_CONTEXT_CHUNK_ID_KEY: chunk_ids,
-                    "retrieved_chunk_ids": chunk_ids,
-                    "retrieval_scores": retrieval_scores,
-                    "relevance_scores": [{"doc_id": chunk_ids[0], "score": None}],
-                },
+                metadata=single_doc_metadata,
             )
 
         # ==================== Phase 2: Agent-1 (Predictor) ====================
@@ -569,18 +633,24 @@ class MAINRAGPipeline(BaseGenerationPipeline):
         relevance_scores_metadata = [{"doc_id": doc["doc_id"], "score": doc["score"]} for doc in filtered_docs]
         context_chunk_ids = [doc["doc_id"] for doc in filtered_docs]
 
+        metadata: dict[str, Any] = {
+            "pipeline_type": "main_rag",
+            "std_multiplier": self._std_multiplier,
+            "threshold": threshold,
+            "original_doc_count": len(chunk_contents),
+            "filtered_doc_count": len(filtered_docs),
+            GENERATION_CONTEXT_CHUNK_ID_KEY: context_chunk_ids,
+            "retrieved_chunk_ids": chunk_ids,
+            "retrieval_scores": retrieval_scores,
+            "relevance_scores": relevance_scores_metadata,
+        }
+        # The final predictor already paid for logprobs; flag its low-confidence spans.
+        answer_confidence = score_answer_confidence(final_response)
+        if answer_confidence is not None:
+            metadata["answer_confidence"] = answer_confidence
+
         return GenerationResult(
             text=final_answer,
             token_usage=tracker.total,
-            metadata={
-                "pipeline_type": "main_rag",
-                "std_multiplier": self._std_multiplier,
-                "threshold": threshold,
-                "original_doc_count": len(chunk_contents),
-                "filtered_doc_count": len(filtered_docs),
-                GENERATION_CONTEXT_CHUNK_ID_KEY: context_chunk_ids,
-                "retrieved_chunk_ids": chunk_ids,
-                "retrieval_scores": retrieval_scores,
-                "relevance_scores": relevance_scores_metadata,
-            },
+            metadata=metadata,
         )
